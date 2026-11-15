@@ -251,6 +251,7 @@ impl App {
             enabled: &|_| true,
             themes: &no_themes,
             theme_tokens: &lokyr_plugin_sdk::fake::theme_tokens_of,
+            theme_value: &|_, _, _| Ok(()),
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,

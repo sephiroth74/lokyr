@@ -152,7 +152,7 @@ pub enum Terminal {
 }
 
 /// The names of the 16 colors, as an expression writes them.
-const PALETTE: [&str; 16] = [
+pub const PALETTE: [&str; 16] = [
     "black",
     "red",
     "green",

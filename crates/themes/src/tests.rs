@@ -895,3 +895,88 @@ fn each_token_given_tells_its_source_its_file_and_line_or_its_theme() {
     assert_eq!(resolved.sources["accent"], Source::Theme(name));
     let _ = fs::remove_dir_all(directory);
 }
+
+#[test]
+fn a_value_set_or_taken_away_keeps_the_file_s_comments_order_and_other_keys() {
+    let path = Path::new("/themes/Mine.toml");
+    let text = format!(
+        "# Mine.\n[theme]\nname = \"Mine\"\n\n[terminal]\nbackground = \"#101010\"   # the default background\nforeground = \"#e0e0e0\"\n{PALETTE}\n\n[search]\nmatch = \"#ffd60a4d\"\n\n[button]\nhover.bg = \"#ffffff1f\"   # hovered\n\n[interface]\n\"accent\" = \"#4c9bff\"\n# Every other token, of Lokyr's rule: a line uncommented gives it.\n# \"focus.ring\" = \"accent / 60%\"\n"
+    );
+    let theme = builtin();
+    let set = |text: &str, name: &str, value: Option<&str>| {
+        set_value(text, path, name, value, &theme).unwrap()
+    };
+    // A key of `[terminal]`, its comment kept; one new; one taken away.
+    let edited = set(&text, "background", Some("#202020"));
+    assert!(
+        edited.contains("background = \"#202020\"   # the default background\n"),
+        "{edited}"
+    );
+    assert!(edited.starts_with("# Mine.\n[theme]\n"), "{edited}");
+    let edited = set(&edited, "cursor", Some("#ff0000"));
+    assert!(edited.contains("cursor = \"#ff0000\""), "{edited}");
+    let edited = set(&edited, "cursor", None);
+    assert!(!edited.contains("cursor ="), "{edited}");
+    // A palette's color in its place, the others as they are.
+    let edited = set(&text, "bright-white", Some("#fefefe"));
+    assert!(edited.contains("\"#003333\", \"#fefefe\"]"), "{edited}");
+    // A token where the file writes it: its section, `[search]`,
+    // `[interface]`.
+    let edited = set(&text, "button.hover.bg", Some("accent / 20%"));
+    assert!(
+        edited.contains("hover.bg = \"accent / 20%\"   # hovered\n"),
+        "{edited}"
+    );
+    let edited = set(&edited, "search.match", Some("#ff000080"));
+    assert!(edited.contains("match = \"#ff000080\""), "{edited}");
+    let edited = set(&edited, "accent", Some("#00ff00"));
+    assert!(edited.contains("\"accent\" = \"#00ff00\"\n"), "{edited}");
+    // A new one in `[interface]`, its rule's comment gone.
+    let edited = set(&edited, "focus.ring", Some("accent / 40%"));
+    assert!(
+        edited.contains("\"focus.ring\" = \"accent / 40%\""),
+        "{edited}"
+    );
+    let edited = set(&edited, "separator", Some("#ffffff1a"));
+    assert!(
+        edited.contains("\n\"separator\" = \"#ffffff1a\"\n"),
+        "{edited}"
+    );
+    assert!(!edited.contains("# \"focus.ring\""), "{edited}");
+    let read = parse(&edited, path).unwrap().partial;
+    assert_eq!(
+        read.tokens["focus.ring"],
+        TokenValue::Expr("accent / 40%".to_owned())
+    );
+    assert_eq!(
+        read.tokens["button.hover.bg"],
+        TokenValue::Expr("accent / 20%".to_owned())
+    );
+    // Taken away: of its section, the table that it empties too.
+    let edited = set(&edited, "button.hover.bg", None);
+    assert!(!edited.contains("hover"), "{edited}");
+    let edited = set(&edited, "focus.ring", None);
+    assert!(!edited.contains("focus.ring"), "{edited}");
+    // A file of no `[interface]` nor palette: both made.
+    let bare = "[theme]\nextends = \"Lokyr Dark\"\n";
+    let edited = set(bare, "text.secondary", Some("#999999"));
+    assert!(
+        edited.ends_with("[interface]\n\"text.secondary\" = \"#999999\"\n"),
+        "{edited}"
+    );
+    let edited = set(bare, "red", Some("#ff0000"));
+    let read = parse(&edited, path).unwrap().partial;
+    let palette = read.palette.unwrap();
+    assert_eq!(palette[1], ThemeColor::hex(0xff0000));
+    assert_eq!(palette[0], theme.terminal.palette[0]);
+    // Refused: a color that does not read, an expression that does not
+    // read, a palette's color taken away alone.
+    for (name, value) in [
+        ("background", Some("accent")),
+        ("accent", Some("mix(")),
+        ("red", None),
+    ] {
+        let error = set_value(&text, path, name, value, &theme).unwrap_err();
+        assert_eq!(error.path, path, "{name}");
+    }
+}

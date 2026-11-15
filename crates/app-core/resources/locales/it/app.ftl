@@ -231,6 +231,7 @@ convert-theme-no-file = Nessun file .itermcolors di { $folder } contiene «{ $na
 convert-theme-convert = Converti
 convert-theme-cancel = Annulla
 convert-theme-failed = Il tema non si può convertire.
+theme-value-failed = Il colore del tema non si può scrivere.
 
 import-themes-panel = Scegli i temi da importare, .itermcolors o .toml: Lokyr li copia così come sono nella sua cartella dei temi.
 import-themes-taken-message = { $count ->

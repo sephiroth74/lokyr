@@ -275,6 +275,7 @@ convert-theme-no-file = No .itermcolors file of { $folder } holds â€œ{ $name }â€
 convert-theme-convert = Convert
 convert-theme-cancel = Cancel
 convert-theme-failed = The theme cannot be converted.
+theme-value-failed = The theme's color cannot be written.
 
 # Themes imported: the open panel's message, the question of the files of a
 # name in the themes' folder already, its buttons, and the files that are

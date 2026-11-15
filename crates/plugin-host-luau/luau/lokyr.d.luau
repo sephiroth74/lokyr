@@ -31,6 +31,7 @@ export type Cx = {
     set_theme: (variant: ThemeVariant, name: string) -> (true?, string?, number?),
     copy_theme: (text: string) -> (number?, string?, number?),
     convert_theme: (text: string) -> (number?, string?, number?),
+    set_theme_value: (theme: string, name: string, value: string?) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
     day: () -> (number?, string?, number?),
     notice_shows: () -> (boolean?, string?, number?),
@@ -959,6 +960,7 @@ export type ThemeToken = {
     name: string,
     color: string,
     origin: TokenOrigin,
+    value: string?,
 }
 
 export type ThemeTokens = {

@@ -377,6 +377,46 @@ impl<B: Backend> App<B> {
         self.plugins.answer(&plugin, id, Some(ask.name));
     }
 
+    /// Sets the color `name` of the theme `theme`, a file of Lokyr's format
+    /// of the themes' folder, to `value`, or takes it away of none, its
+    /// comments and its order kept, as the Theme Editor asks; then the
+    /// themes read anew, which shows the change at once; or tells why not.
+    pub(super) fn set_theme_value(
+        &mut self,
+        platform: &mut dyn Platform,
+        theme: &str,
+        name: &str,
+        value: Option<&str>,
+    ) {
+        let places = self.theme_places();
+        let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+        let written = places
+            .folder
+            .as_deref()
+            .map(|folder| folder.join(format!("{theme}.toml")))
+            .ok_or_else(|| self.texts.text("theme-install-no-folder"))
+            .and_then(|path| {
+                let resolved = places
+                    .resolve(theme, &builtins)
+                    .map_err(|error| error.to_string())?;
+                let text = fs::read_to_string(&path)
+                    .map_err(|error| format!("{}: {error}", shown_path(&path)))?;
+                let text = themes::set_value(&text, &path, name, value, &resolved.theme)
+                    .map_err(|error| error.to_string())?;
+                lokyr_pkg_model::write_whole(&path, &text)
+                    .map_err(|error| format!("{}: {error}", shown_path(&path)))
+            });
+        if let Err(why) = written {
+            return self.tell_theme_failed(platform, "theme-value-failed", why);
+        }
+        self.load_themes(platform);
+        self.theme_catalog.borrow_mut().renew(
+            self.theme_places(),
+            self.waker.as_ref(),
+            Instant::now(),
+        );
+    }
+
     /// Forgets the questions of a new theme and of a conversion shown on
     /// `window`, which closes: the plugins that asked them answered none.
     pub(super) fn forget_theme_asks(&mut self, window: WindowId) {

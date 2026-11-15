@@ -338,6 +338,16 @@ pub enum Request {
         /// The theme's name.
         name: String,
     },
+    /// Set the color `name` of the theme `theme` to `value`, or take it
+    /// away of none, in the theme's file.
+    SetThemeValue {
+        /// The theme's name.
+        theme: String,
+        /// The color's name.
+        name: String,
+        /// Its value; none takes it away.
+        value: Option<String>,
+    },
     /// Ask the user for a text, whose answer [`Plugins::answer`] gives the
     /// plugin.
     AskText {
@@ -404,6 +414,10 @@ pub trait Panes {
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
 }
 
+/// Whether the color of a name of a theme of a name can take a value, or
+/// none, or why not: the theme's, the color's and the value's.
+pub type ThemeValueCheck<'a> = dyn Fn(&str, &str, Option<&str>) -> Result<(), String> + 'a;
+
 /// What the host reaches of the app during a plugin's call.
 pub struct Context<'a> {
     /// The commands.
@@ -434,6 +448,10 @@ pub struct Context<'a> {
     /// Every token of a theme, by its name or the appearance in force's of
     /// none, as it resolves; none of a name of no theme.
     pub theme_tokens: &'a dyn Fn(Option<&str>) -> Option<host::ThemeTokens>,
+    /// Whether the color of a name of a theme of a name can take a value,
+    /// or none, as its names resolve, or why not, as the app resolves the
+    /// theme.
+    pub theme_value: &'a ThemeValueCheck<'a>,
     /// The system's monospaced font families, and the family in force, as
     /// the app reads them.
     pub fonts: &'a dyn Fn() -> host::Fonts,
@@ -6134,6 +6152,14 @@ impl Host<'_, '_> {
                     name,
                 });
                 return Ok(Response::Asking(id));
+            }
+            // A color of a theme of the user's folder, of a value that
+            // reads and whose names resolve.
+            Asked::SetThemeValue { theme, name, value } => {
+                host::check_theme_value(&(self.context.themes)(), &theme, &name, value.as_deref())?;
+                (self.context.theme_value)(&theme, &name, value.as_deref())
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                Request::SetThemeValue { theme, name, value }
             }
             Asked::ConvertTheme(name) => {
                 host::converted_theme(&(self.context.themes)(), &name)?;

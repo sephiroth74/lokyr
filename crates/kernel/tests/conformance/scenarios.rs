@@ -2014,6 +2014,27 @@ fn app_requests(world: &World) -> Scenario {
                 Request::ConvertTheme("Nothing".to_owned()),
                 failed(Code::NotFound, "there is no theme `Nothing`"),
             ),
+            // A color of a theme of the user's folder alone, which the
+            // built-in ones are not.
+            (
+                Request::SetThemeValue {
+                    theme: "Lokyr Dark".to_owned(),
+                    name: "accent".to_owned(),
+                    value: Some("#ff0000".to_owned()),
+                },
+                failed(
+                    Code::Failed,
+                    "`Lokyr Dark` is read-only: a copy of it is edited",
+                ),
+            ),
+            (
+                Request::SetThemeValue {
+                    theme: "Nothing".to_owned(),
+                    name: "accent".to_owned(),
+                    value: None,
+                },
+                failed(Code::NotFound, "there is no theme `Nothing`"),
+            ),
             // The system's monospaced families, a preview and its end, the
             // choice, and a family that is not there or not monospaced.
             (

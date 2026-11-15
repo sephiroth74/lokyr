@@ -156,6 +156,22 @@ pub enum Request {
     /// which the host tells. Of the capability `config`, Lokyr's own
     /// plugins' alone.
     ConvertTheme(String),
+    /// Sets the color `name` of the theme `theme`, a theme of Lokyr's
+    /// format of the user's themes folder, to `value`, or takes it away of
+    /// none, in the theme's file, which the host writes, its comments and
+    /// its order kept, then reads again: a key of `[terminal]` or a color of
+    /// its palette, by the names that a read of the theme's colors gives
+    /// them, a color; or a token, a color or an expression of its rules,
+    /// refused where its names do not resolve. Of the capability `config`,
+    /// Lokyr's own plugins' alone.
+    SetThemeValue {
+        /// The theme's name.
+        theme: String,
+        /// The color's name.
+        name: String,
+        /// Its value, as the file writes it; none takes it away.
+        value: Option<String>,
+    },
     /// The system's monospaced font families, and the family in force.
     Fonts,
     /// The day of the system's clock, in days since 1970-01-01, in UTC, as
@@ -1008,7 +1024,8 @@ impl Request {
             Self::Settings
             | Self::SetSetting { .. }
             | Self::CopyTheme(_)
-            | Self::ConvertTheme(_) => Some(Capability::Config),
+            | Self::ConvertTheme(_)
+            | Self::SetThemeValue { .. } => Some(Capability::Config),
             Self::SelectionText(_)
             | Self::LineText { .. }
             | Self::LinkAt { .. }
@@ -1238,6 +1255,7 @@ impl Request {
             | Self::AskText { .. }
             | Self::CopyTheme(_)
             | Self::ConvertTheme(_)
+            | Self::SetThemeValue { .. }
             | Self::SaveFile { .. }
             | Self::Notify { .. }
             | Self::Packages(_)
@@ -1717,6 +1735,7 @@ impl Request {
             | Self::Emit { .. }
             | Self::PreviewTheme { .. }
             | Self::SetTheme { .. }
+            | Self::SetThemeValue { .. }
             | Self::PreviewFont { .. }
             | Self::PreviewFontStyle { .. }
             | Self::SetFont { .. }

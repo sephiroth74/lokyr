@@ -546,6 +546,7 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
         origin: TokenOrigin::Rule {
             text: "mix(background, foreground, 10%)".to_owned(),
         },
+        value: None,
     });
     host.set_theme_tokens(vec![fake]);
     host.deliver(&mut plugin).unwrap();
@@ -593,4 +594,179 @@ fn every_part_s_tokens_are_tokens_of_lokyr_s() {
     for (_, title, _) in parts::PARTS {
         assert!(parts::WORDS.contains(&title), "{title}");
     }
+}
+
+/// The tokens of the fake host's themes and of Paper, of the folder: its
+/// accent and background of its own file, its focus ring of its rule, its
+/// bright blue of its palette.
+fn paper_tokens() -> Vec<ThemeTokens> {
+    let mut all = theme_tokens();
+    let mut paper = all[0].clone();
+    paper.theme = "Paper".to_owned();
+    paper.variant = ThemeVariant::Light;
+    let own = |line: u32| TokenOrigin::File {
+        path: "/themes/Paper.toml".to_owned(),
+        line,
+        theme: "Paper".to_owned(),
+    };
+    for token in paper.terminal.iter_mut().chain(paper.tokens.iter_mut()) {
+        if matches!(token.name.as_str(), "background" | "bright-blue" | "accent") {
+            token.origin = own(4);
+            token.value = Some(token.color.to_string());
+        }
+    }
+    all.push(paper);
+    all
+}
+
+/// The page's tree of Paper chosen in the Editor, of its color `name`'s
+/// row chosen.
+fn editing(name: &str) -> (FakeHost, SettingsPage) {
+    let (mut host, mut plugin) = shown();
+    host.set_themes(kinds("Lokyr Dark"));
+    host.set_theme_tokens(paper_tokens());
+    host.deliver(&mut plugin).unwrap();
+    choose(&mut host, &mut plugin, "Paper");
+    page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{ROW}{name}")))
+        .unwrap();
+    let _ = host.take_done();
+    (host, plugin)
+}
+
+/// The field event `kind` of the color `name`'s field.
+fn typed(name: &str, kind: UiEventKind) -> UiEvent {
+    UiEvent {
+        view: themes_page(),
+        key: format!("{VALUE}{name}").as_str().into(),
+        kind,
+    }
+}
+
+/// The request that sets the color `name` of Paper to `value`.
+fn set_paper(name: &str, value: Option<&str>) -> Request {
+    Request::SetThemeValue {
+        theme: "Paper".to_owned(),
+        name: name.to_owned(),
+        value: value.map(str::to_owned),
+    }
+}
+
+#[test]
+fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
+    let (mut host, mut plugin) = editing("accent");
+    let tree = page(&mut host, &mut plugin);
+    // Its value as the file writes it, and Reset, of its own file's.
+    match find(&tree, &format!("{VALUE}accent")).map(|node| &node.kind) {
+        Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("#4c9bff")),
+        other => panic!("{other:?}"),
+    }
+    assert!(find(&tree, &format!("{RESET}accent")).is_some());
+    // A token of its rule: an empty field of the rule's text, no Reset.
+    host.ui_event(&mut plugin, &click(&format!("{ROW}focus.ring")))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert!(find(&tree, &format!("{VALUE}accent")).is_none());
+    match find(&tree, &format!("{VALUE}focus.ring")).map(|node| &node.kind) {
+        Some(Kind::Field(field)) => {
+            assert_eq!(field.text.as_deref(), Some(""));
+            assert_eq!(field.placeholder, "accent / 60%");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(find(&tree, &format!("{RESET}focus.ring")).is_none());
+    // A palette's color: no Reset, as the palette holds the 16 whole.
+    host.ui_event(&mut plugin, &click(&format!("{ROW}bright-blue")))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert!(find(&tree, &format!("{VALUE}bright-blue")).is_some());
+    assert!(find(&tree, &format!("{RESET}bright-blue")).is_none());
+    // A read-only theme's row: no field.
+    choose(&mut host, &mut plugin, "Lokyr Dark");
+    let tree = page(&mut host, &mut plugin);
+    host.ui_event(&mut plugin, &click(&format!("{ROW}accent")))
+        .unwrap();
+    assert!(find(&tree, &format!("{VALUE}accent")).is_none());
+    assert!(find(&page(&mut host, &mut plugin), &format!("{VALUE}accent")).is_none());
+}
+
+/// The values that the plugin wrote since the last look, its other
+/// requests left out.
+fn written(host: &mut FakeHost) -> Vec<Request> {
+    host.take_done()
+        .into_iter()
+        .filter(|request| matches!(request, Request::SetThemeValue { .. }))
+        .collect()
+}
+
+#[test]
+fn a_value_typed_is_written_as_typing_pauses_on_return_and_as_its_field_is_left() {
+    let (mut host, mut plugin) = editing("accent");
+    page(&mut host, &mut plugin);
+    let changed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    // Paused: a whole value written.
+    host.ui_event(&mut plugin, &typed("accent", changed("#00ff00")))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    host.advance(PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#00ff00"))]);
+    // Half typed: left for later as it pauses, refused on Return, why
+    // told under the field.
+    host.ui_event(&mut plugin, &typed("accent", changed("mix(")))
+        .unwrap();
+    host.advance(PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    host.ui_event(
+        &mut plugin,
+        &typed(
+            "accent",
+            UiEventKind::Submit {
+                text: "mix(".to_owned(),
+                shift: false,
+            },
+        ),
+    )
+    .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    let why = texts(find(&tree, "editor-refused:accent").expect("why"));
+    assert!(why[0].contains("is left out"), "{why:?}");
+    // The field typed as it was kept.
+    match find(&tree, &format!("{VALUE}accent")).map(|node| &node.kind) {
+        Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("mix(")),
+        other => panic!("{other:?}"),
+    }
+    // Left of an expression: written, the reason gone.
+    host.ui_event(&mut plugin, &typed("accent", changed("bright-blue / 80%")))
+        .unwrap();
+    host.ui_event(&mut plugin, &typed("accent", UiEventKind::Blur))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [set_paper("accent", Some("bright-blue / 80%"))]
+    );
+    assert!(find(&page(&mut host, &mut plugin), "editor-refused:accent").is_none());
+    // Its value as it is, or an empty field: nothing written.
+    for text in ["#4c9bff", "  "] {
+        host.ui_event(
+            &mut plugin,
+            &typed(
+                "accent",
+                UiEventKind::Submit {
+                    text: text.to_owned(),
+                    shift: false,
+                },
+            ),
+        )
+        .unwrap();
+        assert!(written(&mut host).is_empty(), "{text:?}");
+    }
+    // Reset: taken away of the file.
+    host.ui_event(&mut plugin, &click(&format!("{RESET}accent")))
+        .unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", None)]);
 }

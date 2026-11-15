@@ -8,11 +8,11 @@ use std::path::Path;
 pub use lokyr_themes::{
     Credits, DARK, DIRECTORY, EXTENSIONS, LIGHT, MOST_THEME_BYTES, MOST_THEME_FILES, Resolved,
     Source, TerminalColors, Theme, ThemeColor, ThemeCredits, ThemeVariant, copy_of, directory,
-    is_name, itermcolors_file, native, new_theme_of, read_file,
+    is_name, itermcolors_file, native, new_theme_of, read_file, set_value,
 };
 
 /// The rules of the interface's tokens, and their arithmetic.
-pub use lokyr_plugin_sdk::theme::rules;
+pub use lokyr_plugin_sdk::theme::{is_terminal_color, rules};
 
 use crate::config::Error;
 

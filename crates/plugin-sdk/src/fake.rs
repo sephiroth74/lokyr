@@ -3796,6 +3796,10 @@ impl Calling<'_> {
                 host::converted_theme(&self.host.themes, name)?;
                 Response::Asking(self.host.next_id())
             }
+            Request::SetThemeValue { theme, name, value } => {
+                host::check_theme_value(&self.host.themes, theme, name, value.as_deref())?;
+                Response::Done
+            }
             Request::SetFontSize(Some(size)) => {
                 // The text's sizes, in points, as the app takes them.
                 let (smallest, largest) = (4.0_f32, 200.0_f32);
@@ -4561,6 +4565,8 @@ pub fn theme_tokens() -> Vec<host::ThemeTokens> {
     let token = |name: &str, color: u32, origin: host::TokenOrigin| host::ThemeToken {
         name: name.to_owned(),
         color: crate::theme::ThemeColor::hex(color),
+        value: (!matches!(origin, host::TokenOrigin::Rule { .. }))
+            .then(|| crate::theme::ThemeColor::hex(color).to_string()),
         origin,
     };
     vec![host::ThemeTokens {

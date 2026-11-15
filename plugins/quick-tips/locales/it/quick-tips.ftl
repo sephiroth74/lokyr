@@ -43,7 +43,7 @@ tip-sleip = I plugin vengono dal registro: `sleip search` li elenca, e `sleip ad
 tip-settings-window = Lokyr › Apri la finestra delle impostazioni mostra ogni impostazione per sezione, anche quelle dei plugin, con cosa fa, e la cambia nel tuo file di configurazione, commenti compresi.
 tip-settings-keys = Nella pagina Tasti della finestra delle impostazioni, scrivi nel filtro per trovare una scorciatoia, fai clic sui suoi tasti e premi quelli nuovi, o Aggiungi una scorciatoia tua: ci sono tutte quelle predefinite, e Ripristina ne rimette una.
 tip-settings-themes = La pagina Temi della finestra delle impostazioni mostra ogni tema con un'anteprima dei suoi colori: un clic lo usa.
-tip-theme-editor = Editor, nella pagina Temi della finestra delle impostazioni, mostra ogni colore di un tema e da dove viene, subito quando salvi il suo file: Modifica, nel menu contestuale della scheda di un tema, mostra quel tema lì.
+tip-theme-editor = Editor, nella pagina Temi della finestra delle impostazioni, mostra ogni colore di un tema e da dove viene, e modifica i tuoi: fai clic sulla riga di un colore per scriverne il valore. Modifica, nel menu contestuale della scheda di un tema, mostra quel tema lì.
 tip-settings-search = Nella finestra delle impostazioni, scrivi nel campo di ricerca in cima alla barra laterale per trovare un'impostazione per nome, per cosa fa o per i tasti di una scorciatoia.
 tip-plugins = Lokyr › Plugin… elenca ogni plugin, il suo stato e cosa può fare, lo disattiva, lo aggiorna o lo rimuove, e installa quelli del registro.
 

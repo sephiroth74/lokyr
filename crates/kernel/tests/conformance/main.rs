@@ -652,6 +652,7 @@ impl Kernel {
             enabled: &|_| true,
             themes: &themes,
             theme_tokens: &lokyr_plugin_sdk::fake::theme_tokens_of,
+            theme_value: &|_, _, _| Ok(()),
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             plugins: &self.plugin_infos,
@@ -1095,11 +1096,12 @@ fn kind(request: &Request) -> usize {
         Request::ThemeTokens(_) => 119,
         Request::CopyTheme(_) => 120,
         Request::ConvertTheme(_) => 121,
+        Request::SetThemeValue { .. } => 122,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 122;
+const KINDS: usize = 123;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use lokyr_kernel::config;
 use lokyr_kernel::plugins::host::{ThemeInfo, ThemeOrigin};
+use lokyr_kernel::themes::rules::PALETTE;
 use lokyr_kernel::themes::{self, TerminalColors, Theme};
 use lokyr_platform_core::Waker;
 use lokyr_ui_core::theme as ui_theme;
@@ -98,16 +99,23 @@ pub(crate) fn theme_tokens(
         .into_iter()
         .filter_map(|token| {
             let color = colors.get(&token)?;
-            let origin = match resolved.sources.get(&token) {
-                Some(source) => origin_of(source),
-                None => TokenOrigin::Rule {
-                    text: rules::rule(&token)?.text(dark).to_owned(),
-                },
+            let (origin, value) = match resolved.sources.get(&token) {
+                Some(source) => (
+                    origin_of(source),
+                    theme.tokens.get(&token).map(ToString::to_string),
+                ),
+                None => (
+                    TokenOrigin::Rule {
+                        text: rules::rule(&token)?.text(dark).to_owned(),
+                    },
+                    None,
+                ),
             };
             Some(ThemeToken {
                 name: token,
                 color: color_of(color),
                 origin,
+                value,
             })
         })
         .collect();
@@ -150,6 +158,7 @@ pub(crate) fn theme_tokens(
                 name: key.to_owned(),
                 color,
                 origin: source(key),
+                value: Some(color.to_string()),
             },
             None => ThemeToken {
                 name: key.to_owned(),
@@ -157,6 +166,7 @@ pub(crate) fn theme_tokens(
                 origin: TokenOrigin::Rule {
                     text: rule.to_owned(),
                 },
+                value: None,
             },
         })
         .collect();
@@ -164,6 +174,7 @@ pub(crate) fn theme_tokens(
         name: (*palette).to_owned(),
         color: terminal.palette[at],
         origin: source(&format!("palette.{at}")),
+        value: Some(terminal.palette[at].to_string()),
     }));
     Some(ThemeTokens {
         theme: name.to_owned(),
@@ -173,25 +184,51 @@ pub(crate) fn theme_tokens(
     })
 }
 
-/// The names of the 16 colors, as a theme's expressions write them.
-const PALETTE: [&str; 16] = [
-    "black",
-    "red",
-    "green",
-    "yellow",
-    "blue",
-    "magenta",
-    "cyan",
-    "white",
-    "bright-black",
-    "bright-red",
-    "bright-green",
-    "bright-yellow",
-    "bright-blue",
-    "bright-magenta",
-    "bright-cyan",
-    "bright-white",
-];
+/// Whether the color `name` of the theme `theme` of `places` can be set to
+/// `value`, or taken away of none, in its file: a theme of a file of
+/// Lokyr's format of the themes' folder; a token's value of no problem
+/// that the theme had not, as a name of no color or a cycle, as the rules
+/// resolve it; or why not. Whether the value reads, the request's check
+/// tells.
+pub(crate) fn theme_value(
+    places: &Places,
+    theme: &str,
+    name: &str,
+    value: Option<&str>,
+) -> Result<(), String> {
+    use lokyr_kernel::themes::rules;
+    let file = places
+        .folder
+        .as_deref()
+        .map(|folder| folder.join(format!("{theme}.toml")));
+    if !file.is_some_and(|file| file.is_file()) {
+        return Err(format!(
+            "`{theme}` has no file of Lokyr's format in the themes folder"
+        ));
+    }
+    let Some(value) = value else {
+        return Ok(());
+    };
+    if lokyr_kernel::themes::is_terminal_color(name) {
+        return Ok(());
+    }
+    let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+    let resolved = places
+        .resolve(theme, &builtins)
+        .map_err(|error| error.to_string())?;
+    let given = value
+        .parse()
+        .map_err(|error| format!("`{name}` is left out, as {error}"))?;
+    let before = rules::problems(&resolved.theme.terminal, &resolved.theme.tokens);
+    let mut tokens = resolved.theme.tokens.clone();
+    tokens.insert(name.to_owned(), given);
+    let after = rules::problems(&resolved.theme.terminal, &tokens);
+    match after.into_iter().find(|problem| !before.contains(problem)) {
+        Some((token, why)) if token == name => Err(why.to_string()),
+        Some((token, why)) => Err(format!("`{token}`: {why}")),
+        None => Ok(()),
+    }
+}
 
 /// A part of a read of the themes.
 #[derive(Debug)]

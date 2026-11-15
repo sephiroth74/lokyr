@@ -34,7 +34,10 @@ use lokyr_plugin_sdk::theme::rules;
 pub use lokyr_plugin_sdk::theme::{TerminalColors, Theme, ThemeColor, ThemeVariant, TokenValue};
 use toml_edit::{Document, Item, TableLike, Value};
 
+mod edit;
 pub mod itermcolors;
+
+pub use edit::set_value;
 
 /// What does not read in a theme's file: the file, its place in it and
 /// what is wrong, as the app tells a config's errors.
@@ -909,17 +912,7 @@ fn lightness(color: ThemeColor) -> u32 {
 const THEME_KEYS: [&str; 6] = ["name", "author", "license", "source", "variant", "extends"];
 
 /// The keys of `[terminal]` of one color each.
-const TERMINAL_COLORS: [&str; 9] = [
-    "background",
-    "foreground",
-    "cursor",
-    "cursor-text",
-    "selection",
-    "selection-text",
-    "bold",
-    "link",
-    "underline",
-];
+const TERMINAL_COLORS: [&str; 9] = lokyr_plugin_sdk::theme::TERMINAL_KEYS;
 
 /// Reads the text of a theme's file, which `path` names in its errors.
 fn parse(text: &str, path: &Path) -> Result<File, Error> {

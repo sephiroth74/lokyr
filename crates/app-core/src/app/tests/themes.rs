@@ -1524,3 +1524,105 @@ fn the_theme_editor_s_copy_and_conversion_answer_its_plugin_of_no_editor_opened(
     assert_eq!(heard(&mut fake, &mut app, 7).1, None);
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// A plugin that sets the colors of the theme Mine, or takes one away, as
+/// its commands say, keeping each call's error, or none.
+struct Values(std::rc::Rc<std::cell::RefCell<Vec<Option<String>>>>);
+
+impl plugins::Plugin for Values {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        for (name, ..) in VALUES {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        let Some(&(_, color, value)) = VALUES.iter().find(|(command, ..)| *command == name) else {
+            return Ok(());
+        };
+        let told = cx.set_theme_value("Mine", color, value).err();
+        self.0.borrow_mut().push(told.map(|error| error.message));
+        Ok(())
+    }
+}
+
+/// The commands of [`Values`]: each a color of Mine and its value, or none.
+const VALUES: [(&str, &str, Option<&str>); 6] = [
+    ("values.background", "background", Some("#202020")),
+    ("values.accent", "accent", Some("#00ff00")),
+    ("values.unknown", "accent", Some("nowhere / 50%")),
+    ("values.ring", "focus.ring", Some("field.focus")),
+    ("values.cycle", "field.focus", Some("focus.ring")),
+    ("values.reset", "accent", None),
+];
+
+#[test]
+fn a_theme_s_color_set_of_a_plugin_is_written_into_its_file_and_shows_at_once() {
+    let mine = format!(
+        "[theme]\nname = \"Mine\"\n\n[terminal]\nbackground = \"#101010\"   # mine\nforeground = \"#e0e0e0\"\n{PALETTE}\n"
+    );
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-themes-values-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    let file = directory.join("themes/Mine.toml");
+    std::fs::write(&file, &mine).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, "[theme]\nlight = \"Mine\"\n").unwrap();
+    let told = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let mut app = App::new(None, Config::read(&path).unwrap(), Some(path.clone()))
+        .with_program(quiet())
+        .with_plugin("values", Box::new(Values(std::rc::Rc::clone(&told))));
+    let mut fake = Fake::default();
+    fake.start(&mut app);
+    // The themes' list read, which the requests are checked against.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && std::time::Instant::now() < deadline {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+        told.borrow().last().cloned().expect("a call")
+    };
+    // A terminal's color: written, its comment kept, shown at once.
+    assert_eq!(run(&mut fake, &mut app, "values.background"), None);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("background = \"#202020\"   # mine"), "{text}");
+    assert_eq!(app.theme.light.colors.background, rgb(0x202020));
+    // A token: into `[interface]`.
+    assert_eq!(run(&mut fake, &mut app, "values.accent"), None);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        text.contains("[interface]\n\"accent\" = \"#00ff00\""),
+        "{text}"
+    );
+    // A name of no color, and a cycle, refused, why told, the file as it
+    // was.
+    let why = run(&mut fake, &mut app, "values.unknown").expect("refused");
+    assert!(why.contains("`nowhere` names no color"), "{why}");
+    assert_eq!(run(&mut fake, &mut app, "values.ring"), None);
+    let why = run(&mut fake, &mut app, "values.cycle").expect("refused");
+    assert!(why.contains("name each other"), "{why}");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("\"field.focus\" ="), "{text}");
+    // Taken away.
+    assert_eq!(run(&mut fake, &mut app, "values.reset"), None);
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(!text.contains("\"accent\""), "{text}");
+    let _ = std::fs::remove_dir_all(&directory);
+}

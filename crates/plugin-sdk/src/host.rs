@@ -753,6 +753,11 @@ pub struct ThemeToken {
     pub color: crate::theme::ThemeColor,
     /// Where it comes from.
     pub origin: TokenOrigin,
+    /// Its value as the theme gives it, of its file or of a theme that it
+    /// extends: a color, or a token's expression, as `accent / 60%`; none
+    /// of a rule's or of a default's.
+    #[serde(default)]
+    pub value: Option<String>,
 }
 
 /// Every color of a theme, as a read of them gives them: the theme's
@@ -842,6 +847,75 @@ pub fn converted_theme(themes: &Themes, name: &str) -> Result<(), crate::command
         ));
     }
     Ok(())
+}
+
+/// Whether the color `name` of the theme `theme` of `themes` can be set to
+/// `value`, or taken away of none, in the theme's file, or the error that
+/// tells why not: a theme of Lokyr's format of the user's folder; a key of
+/// `[terminal]` or a color of its palette, a color, a palette's never taken
+/// away alone; or a token's name, a color or an expression that reads.
+/// Whether an expression's names resolve is the host's to tell.
+pub fn check_theme_value(
+    themes: &Themes,
+    theme: &str,
+    name: &str,
+    value: Option<&str>,
+) -> Result<(), crate::command::Error> {
+    use crate::command::{Code, Error};
+    let Some(info) = themes.themes.iter().find(|info| info.name == theme) else {
+        return Err(Error::new(
+            Code::NotFound,
+            format!("there is no theme `{theme}`"),
+        ));
+    };
+    if info.is_read_only() {
+        return Err(Error::new(
+            Code::Failed,
+            format!("`{theme}` is read-only: a copy of it is edited"),
+        ));
+    }
+    if info.format != ThemeFormat::Lokyr {
+        return Err(Error::new(
+            Code::Failed,
+            format!("`{theme}` is an `.itermcolors` theme: converted, it is edited"),
+        ));
+    }
+    let palette = crate::theme::rules::PALETTE.contains(&name);
+    if crate::theme::is_terminal_color(name) {
+        return match value {
+            Some(value) => value
+                .parse::<crate::theme::ThemeColor>()
+                .map(|_| ())
+                .map_err(|e| Error::new(Code::Failed, format!("`{name}` is a color: {e}"))),
+            None if palette => Err(Error::new(
+                Code::Failed,
+                format!(
+                    "`{name}` is a color of the palette, which holds the 16 whole: none is taken away alone"
+                ),
+            )),
+            None => Ok(()),
+        };
+    }
+    let named = !name.is_empty()
+        && !name.starts_with('.')
+        && !name.ends_with('.')
+        && !name.contains("..")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '.' || c == '-');
+    if !named {
+        return Err(Error::new(
+            Code::InvalidName,
+            format!("`{name}` is no color's name of a theme"),
+        ));
+    }
+    match value {
+        Some(value) => value
+            .parse::<crate::theme::TokenValue>()
+            .map(|_| ())
+            .map_err(|e| Error::new(Code::Failed, format!("`{name}` is left out, as {e}"))),
+        None => Ok(()),
+    }
 }
 
 /// The system's monospaced font families, as a picker lists them, and the

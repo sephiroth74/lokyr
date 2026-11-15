@@ -701,6 +701,23 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Sets the color `name` of the theme `theme` to `value`, or takes it
+    /// away of none, in the theme's file, which the host writes and reads
+    /// again, as this call returns; refused as [`Request::SetThemeValue`]
+    /// tells.
+    pub fn set_theme_value(
+        &mut self,
+        theme: &str,
+        name: &str,
+        value: Option<&str>,
+    ) -> Result<(), Error> {
+        self.done(Request::SetThemeValue {
+            theme: theme.to_owned(),
+            name: name.to_owned(),
+            value: value.map(str::to_owned),
+        })
+    }
+
     /// The system's monospaced font families, and the family in force.
     pub fn fonts(&mut self) -> Result<crate::host::Fonts, Error> {
         match self.request(Request::Fonts) {

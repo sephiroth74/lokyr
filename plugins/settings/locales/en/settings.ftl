@@ -7,6 +7,7 @@ editor-theme = Theme
 editor-no-theme = No theme
 editor-read-only = Theme is read-only, duplicate it first
 editor-itermcolors = Theme is an iTerm2 file, convert it to Lokyr's format first
+editor-reset = Reset
 editor-filter = Filter the tokens
 editor-filter-clear = Empty the filter
 editor-rule = rule: { $rule }

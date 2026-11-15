@@ -3276,6 +3276,16 @@ impl<B: Backend> App<B> {
             };
             theme_catalog::theme_tokens(&places, name, (appearance, theme_config))
         };
+        // Whether a theme's color can take a value, as its names resolve.
+        let theme_value = |theme: &str, name: &str, value: Option<&str>| {
+            let places = theme_catalog::Places {
+                folder: config_file
+                    .as_ref()
+                    .and_then(|file| themes::directory(&file.path)),
+                held: held_themes.clone(),
+            };
+            theme_catalog::theme_value(&places, theme, name, value)
+        };
         // The monospaced families that a picker lists, of the config's
         // family in force, read as a plugin asks, again past a while.
         let font_list = &self.font_list;
@@ -3328,6 +3338,7 @@ impl<B: Backend> App<B> {
             enabled: &enabled,
             themes: &theme_list,
             theme_tokens: &theme_tokens,
+            theme_value: &theme_value,
             fonts: &fonts,
             font_styles: &font_styles,
             plugins: &plugin_infos,
@@ -3481,6 +3492,9 @@ impl<B: Backend> App<B> {
                 }
                 Request::ConvertTheme { plugin, id, name } => {
                     self.ask_convert_theme(platform, (plugin, id), name);
+                }
+                Request::SetThemeValue { theme, name, value } => {
+                    self.set_theme_value(platform, &theme, &name, value.as_deref());
                 }
                 Request::AskText {
                     plugin,

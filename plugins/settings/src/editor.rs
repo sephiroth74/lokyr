@@ -47,6 +47,15 @@ const ACT: &str = "editor-act:";
 /// A token's row, by its name.
 const ROW: &str = "editor-token:";
 
+/// The field of a color's value as its row is chosen, and its link that
+/// takes the value away, by the color's name.
+const VALUE: &str = "editor-value:";
+const RESET: &str = "editor-reset:";
+
+/// How long typing pauses before a value typed is written, as the
+/// settings' fields wait.
+const PAUSE: Duration = Duration::from_millis(600);
+
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
 
@@ -80,6 +89,14 @@ pub(crate) struct Editor {
     /// The `.itermcolors` theme whose conversion it asked last as it
     /// showed it, asked again of the lock alone until another shows.
     offered: Option<String>,
+    /// The values typed into the colors' fields and not written yet, by
+    /// the colors' names.
+    typed: BTreeMap<String, String>,
+    /// The timer of typing's pause, which writes them.
+    pause: Option<u64>,
+    /// Why a value written was refused, by the colors' names, under their
+    /// fields.
+    refused: BTreeMap<String, String>,
 }
 
 /// Why the theme shown cannot be edited as it is.
@@ -145,6 +162,15 @@ impl Editor {
                 cx.request_render(themes_page())?;
                 Ok(true)
             }
+            // Typing paused: the values whole written, of no reason told.
+            Event::Timer { id } if self.pause == Some(*id) => {
+                self.pause = None;
+                let names: Vec<String> = self.typed.keys().cloned().collect();
+                for name in names {
+                    self.write(cx, &name, false)?;
+                }
+                Ok(true)
+            }
             Event::Timer { id } if self.lit_timer == Some(*id) => {
                 self.lit_timer = None;
                 self.lit.clear();
@@ -205,6 +231,27 @@ impl Editor {
                 cx.request_render(themes_page())?;
             }
             (UiEventKind::Click, LOCK) => self.unlock(cx)?,
+            // A color's value typed: written as typing pauses, on Return,
+            // and as its field is left.
+            (UiEventKind::InputChanged { text, .. }, _) if key.starts_with(VALUE) => {
+                self.typed
+                    .insert(key[VALUE.len()..].to_owned(), text.clone());
+                if let Some(pause) = self.pause.take() {
+                    cx.cancel_timer(pause)?;
+                }
+                self.pause = Some(cx.start_timer(PAUSE, false)?);
+            }
+            (UiEventKind::Submit { text, .. }, _) if key.starts_with(VALUE) => {
+                let name = key[VALUE.len()..].to_owned();
+                self.typed.insert(name.clone(), text.clone());
+                self.write(cx, &name, true)?;
+            }
+            (UiEventKind::Blur, _) if key.starts_with(VALUE) => {
+                self.write(cx, &key[VALUE.len()..], true)?;
+            }
+            (UiEventKind::Click, _) if key.starts_with(RESET) => {
+                self.reset(cx, &key[RESET.len()..])?;
+            }
             (UiEventKind::Click, THEME) => cx.open_panel(
                 THEMES_MENU,
                 PanelOptions {
@@ -249,6 +296,74 @@ impl Editor {
         let in_force = cx.themes()?.current;
         let chosen = (name != in_force).then(|| name.to_owned());
         self.preview(cx, chosen)
+    }
+
+    /// Writes the value typed for the color `name` into the theme shown's
+    /// file, where it differs from its value: of `tell`, as Return or the
+    /// field's leaving, why the host refuses it told under its field; else,
+    /// as typing pauses, a value that does not read yet, half typed, left
+    /// for later, of no reason told. An empty field writes nothing.
+    fn write(&mut self, cx: &mut Cx<'_>, name: &str, tell: bool) -> Result<(), Error> {
+        let (Some(theme), Some(text)) = (
+            self.shown_theme().map(str::to_owned),
+            self.typed.get(name).map(|text| text.trim().to_owned()),
+        ) else {
+            return Ok(());
+        };
+        let now = self
+            .token(name)
+            .and_then(|token| token.value.clone())
+            .unwrap_or_default();
+        if text.is_empty() || text == now {
+            self.typed.remove(name);
+            if self.refused.remove(name).is_some() {
+                cx.request_render(themes_page())?;
+            }
+            return Ok(());
+        }
+        if !tell && !reads(name, &text) {
+            return Ok(());
+        }
+        match cx.set_theme_value(&theme, name, Some(&text)) {
+            Ok(()) => {
+                self.typed.remove(name);
+                self.refused.remove(name);
+            }
+            Err(error) if tell => {
+                self.refused.insert(name.to_owned(), error.message);
+            }
+            Err(_) => return Ok(()),
+        }
+        cx.request_render(themes_page())
+    }
+
+    /// Takes the color `name` away of the theme shown's file, which then
+    /// takes its rule's, its default's or the theme's that it extends.
+    fn reset(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+        let Some(theme) = self.shown_theme().map(str::to_owned) else {
+            return Ok(());
+        };
+        self.typed.remove(name);
+        match cx.set_theme_value(&theme, name, None) {
+            Ok(()) => {
+                self.refused.remove(name);
+            }
+            Err(error) => {
+                self.refused.insert(name.to_owned(), error.message);
+            }
+        }
+        cx.request_render(themes_page())
+    }
+
+    /// The color `name` of the theme shown, its terminal's or a token, as
+    /// it read them last.
+    fn token(&self, name: &str) -> Option<&ThemeToken> {
+        let tokens = self.tokens.as_ref()?;
+        tokens
+            .terminal
+            .iter()
+            .chain(&tokens.tokens)
+            .find(|token| token.name == name)
     }
 
     /// Why the theme shown cannot be edited as it is, if it cannot, of the
@@ -404,9 +519,26 @@ impl Editor {
             None => BTreeSet::new(),
         };
         let marks = (&self.lit, &marked);
+        // The chosen color's field, of a theme that it edits.
+        let editable = self.locked(cx).is_none();
+        let editing = match (&self.picked, tokens) {
+            (Some(Pick::Token(name)), Some(tokens)) if editable => Some(Editing {
+                name,
+                theme: &tokens.theme,
+                typed: self.typed.get(name).map(String::as_str),
+                refused: self.refused.get(name).map(String::as_str),
+            }),
+            _ => None,
+        };
         let rows = tokens.map_or_else(Vec::new, |tokens| {
-            let mut rows = token_rows(cx, (&tokens.terminal, true), &wanted, marks);
-            rows.extend(token_rows(cx, (&tokens.tokens, false), &wanted, marks));
+            let mut rows = token_rows(cx, (&tokens.terminal, true), &wanted, marks, editing);
+            rows.extend(token_rows(
+                cx,
+                (&tokens.tokens, false),
+                &wanted,
+                marks,
+                editing,
+            ));
             rows
         });
         let list = Node::scroll(vec![Node::container(rows).key("editor-tokens").layout(
@@ -628,6 +760,7 @@ fn token_rows(
     (tokens, terminal): (&[ThemeToken], bool),
     words: &[String],
     (lit, marked): (&BTreeSet<String>, &BTreeSet<String>),
+    editing: Option<Editing<'_>>,
 ) -> Vec<Node> {
     let mut rows = Vec::new();
     let mut last: Option<&str> = None;
@@ -672,8 +805,102 @@ fn token_rows(
             None
         };
         rows.push(token_row(cx, token, (&value, &origin), shade));
+        if let Some(editing) = editing.filter(|editing| editing.name == token.name) {
+            rows.push(value_editor(cx, token, editing));
+        }
     }
     rows
+}
+
+/// The color chosen of a theme that the Editor edits: its name, the
+/// theme's, the text typed into its field and not written yet, and why
+/// the last value written was refused.
+#[derive(Clone, Copy, Debug)]
+struct Editing<'a> {
+    name: &'a str,
+    theme: &'a str,
+    typed: Option<&'a str>,
+    refused: Option<&'a str>,
+}
+
+/// Whether `text` reads as a value of the color `name`: a color, or for a
+/// token an expression of the rules, whatever its names.
+fn reads(name: &str, text: &str) -> bool {
+    if lokyr_plugin_sdk::theme::is_terminal_color(name) {
+        text.parse::<lokyr_plugin_sdk::theme::ThemeColor>().is_ok()
+    } else {
+        text.parse::<lokyr_plugin_sdk::theme::TokenValue>().is_ok()
+    }
+}
+
+/// The field of the value of `token`, of the theme that `editing` edits,
+/// under its row: the value as the theme gives it, or the text typed, of
+/// its rule or its default as its placeholder; Reset, an underlined link,
+/// where the theme's own file gives it, but a palette's color, which the
+/// palette holds whole; and why the last value written was refused.
+fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> Node {
+    let placeholder = match &token.origin {
+        TokenOrigin::Rule { text } => text.clone(),
+        _ => token.color.to_string(),
+    };
+    let text = editing
+        .typed
+        .map(str::to_owned)
+        .or_else(|| token.value.clone())
+        .unwrap_or_default();
+    let field = Node::field(placeholder)
+        .key(format!("{VALUE}{}", token.name).as_str())
+        .label(token.name.as_str())
+        .holding(text)
+        .style(code())
+        .layout(Layout {
+            grow: 1.0,
+            min_width: Length::Points(0.0),
+            ..Layout::default()
+        });
+    let mut line = vec![field];
+    let own = matches!(&token.origin, TokenOrigin::File { theme, .. } if theme == editing.theme);
+    if own && !in_palette(&token.name) {
+        let mut reset = Node::button(message(cx, "editor-reset", &[]).as_str())
+            .key(format!("{RESET}{}", token.name).as_str());
+        if let Kind::Button(button) = &mut reset.kind {
+            button.link = true;
+        }
+        line.push(reset);
+    }
+    let mut parts = vec![Node::container(line).layout(Layout {
+        direction: Direction::Row,
+        gap: 8.0,
+        align: Align::Center,
+        width: Length::Fraction(1.0),
+        ..Layout::default()
+    })];
+    if let Some(why) = editing.refused {
+        parts.push(
+            Node::text(why)
+                .key(format!("editor-refused:{}", token.name).as_str())
+                .style(Style {
+                    color: Some(Token::from("text.warning")),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                })
+                .layout(super::wrapped()),
+        );
+    }
+    Node::container(parts)
+        .key(format!("editor-editing:{}", token.name).as_str())
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 4.0,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 2.0,
+                right: 4.0,
+                bottom: 6.0,
+                left: 42.0,
+            },
+            ..Layout::default()
+        })
 }
 
 /// What `origin` tells, as a row shows it: a file's name and line, a
