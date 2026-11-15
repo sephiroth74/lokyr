@@ -395,3 +395,38 @@ fn the_x_keywords_are_annotations_that_no_value_is_checked_against() {
     // A keyword of no `x-` stays refused.
     assert!(Schema::parse(r#"{"type": "object", "y-guide": "no"}"#).is_err());
 }
+
+#[test]
+fn a_chain_of_nested_defaults_holds_each_once_and_fills_as_it_is_taken() {
+    // Twenty levels of objects of `"default": {}`, the deepest of a key
+    // of its own default.
+    let mut node = json!({ "type": "object", "properties": { "leaf": { "type": "integer", "default": 7 } }, "default": {} });
+    for _ in 0..20 {
+        node = json!({ "type": "object", "properties": { "next": node }, "default": {} });
+    }
+    let text = json!({ "type": "object", "properties": { "root": node } }).to_string();
+    let schema = Schema::parse(&text).unwrap();
+    // Each level keeps its default as it is written, of no copy of the
+    // defaults below it.
+    let mut at = &schema.root.properties["root"];
+    let mut levels = 0;
+    loop {
+        assert_eq!(at.default, Some(json!({})), "level {levels}");
+        match at.properties.get("next") {
+            Some(next) => at = next,
+            None => break,
+        }
+        levels += 1;
+    }
+    assert_eq!(levels, 20);
+    // Taken, a default holds those of its subtree, to the leaf's.
+    let defaults = schema.defaults();
+    let mut value = &defaults["root"];
+    for _ in 0..20 {
+        value = &value["next"];
+    }
+    assert_eq!(value, &json!({ "leaf": 7 }));
+    // A section that leaves the key out, alike.
+    let checked = schema.check(&Map::new()).values.unwrap();
+    assert_eq!(Value::Object(checked)["root"], defaults["root"]);
+}

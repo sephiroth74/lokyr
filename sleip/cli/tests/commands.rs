@@ -1014,6 +1014,41 @@ fn deadline(pid: u32, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
 }
 
 #[test]
+fn a_config_schema_past_the_bound_that_lokyr_reads_is_refused() {
+    let sandbox = Sandbox::new("schema-bound");
+    let folder = made(&sandbox, "bounded");
+    edit(&folder, "plugin.toml", |text| {
+        text.replacen(
+            "[contributes]\n",
+            "[contributes]\nconfig-schema = \"schema.json\"\n",
+            1,
+        )
+    });
+    // A schema of 70 KiB, of a long description.
+    let padding = "x".repeat(70 * 1024);
+    std::fs::write(
+        folder.join("schema.json"),
+        format!("{{\"type\": \"object\", \"description\": \"{padding}\"}}"),
+    )
+    .unwrap();
+    let check = checked(&sandbox, &folder, &[]);
+    assert_eq!(check.status.code(), Some(1));
+    assert!(
+        stdout(&check).contains("schema.json: Schema: it is larger than 64 KiB"),
+        "{}",
+        stdout(&check)
+    );
+    // Within it, as it was.
+    std::fs::write(folder.join("schema.json"), "{\"type\": \"object\"}").unwrap();
+    let check = checked(&sandbox, &folder, &[]);
+    assert!(
+        !stdout(&check).contains("larger than"),
+        "{}",
+        stdout(&check)
+    );
+}
+
+#[test]
 fn a_package_of_themes_is_none_of_sleip_s() {
     let sandbox = Sandbox::new("themes-refused");
     let folder = sandbox.home.join("harbor");

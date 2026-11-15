@@ -23,6 +23,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- `sleip check`, and the registry's checks, refuse a plugin's config schema larger than 64 KiB, the most that Lokyr reads of one; a schema of objects of nested defaults holds each default once.
 - A part of a plugin's view no longer slides on its own as a part around it starts or stops sliding, as a dragged tab's close button did.
 - A resize no longer clears a running command's output of a shell whose prompt marks its start alone: its prompt clears as the shell draws it again only where the shell tells its input or its commands too.
 - The keyboard and a zoom stay on one pane: a pane that takes the keyboard, as Go to Next Agent or a notification's click brings it forward, ends its tab's zoom of another, and a pane zoomed takes the keyboard.

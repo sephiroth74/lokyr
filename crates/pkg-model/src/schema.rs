@@ -242,13 +242,19 @@ impl Schema {
         Checked { values, ignored }
     }
 
-    /// The section's defaults: the defaults of its keys, those that it
-    /// needs, of no default, left out.
+    /// The section's defaults: the defaults of its keys, each of the
+    /// defaults of its subtree, as a whole number of a fraction of an
+    /// integer's schema the integer; those that it needs, of no default,
+    /// left out.
     pub fn defaults(&self) -> Map<String, Value> {
         self.root
             .properties
             .iter()
-            .filter_map(|(key, property)| Some((key.clone(), property.default.clone()?)))
+            .filter_map(|(key, property)| {
+                let default = property.default.as_ref()?;
+                let filled = check(property, default, &mut Vec::new()).ok()?;
+                Some((key.clone(), filled))
+            })
             .collect()
     }
 }
@@ -385,21 +391,24 @@ fn node(value: &Value, at: &str) -> Result<Node, String> {
             }
         }
     }
-    // A default is its schema's value, as a whole number of a fraction of
-    // an integer's schema is the integer.
-    if let Some(default) = &node.default {
-        match check(&node, default, &mut Vec::new()) {
-            Ok(checked) => node.default = Some(checked),
-            Err(problem) => {
-                return Err(format!(
-                    "the default at `{place}` is not of its schema: {}",
-                    problem.message.replacen("the section", "it", 1)
-                ));
-            }
-        }
+    // A default is of its schema, and stays as it is written: the defaults
+    // of its subtree fill it as it is taken, so that a chain of objects of
+    // defaults holds each once, not once a level.
+    if let Some(default) = &node.default
+        && let Err(problem) = check(&node, default, &mut Vec::new())
+    {
+        return Err(format!(
+            "the default at `{place}` is not of its schema: {}",
+            problem.message.replacen("the section", "it", 1)
+        ));
     }
     Ok(node)
 }
+
+/// The most bytes of a plugin's config's schema, which the app, `sleip
+/// check` and the registry read no more of: a plugin's keys take a few
+/// thousand.
+pub const MOST_SCHEMA_BYTES: u64 = 64 * 1024;
 
 /// Whether `a` and `b` are the same value, their numbers by their values,
 /// as `1` and `1.0`, as JSON Schema compares them.
@@ -582,11 +591,17 @@ fn check(node: &Node, value: &Value, path: &mut Vec<String>) -> Result<Value, Pr
                     return Err(fail(path, format!("{} needs `{name}`", what)));
                 }
             }
+            // A key left out of its default, of the defaults of its
+            // subtree, as a whole number of a fraction of an integer's
+            // schema the integer, which its schema's check took.
             for (key, property) in &node.properties {
                 if !checked.contains_key(key)
                     && let Some(default) = &property.default
                 {
-                    checked.insert(key.clone(), default.clone());
+                    path.push(key.clone());
+                    let filled = check(property, default, path);
+                    path.pop();
+                    checked.insert(key.clone(), filled.unwrap_or_else(|_| default.clone()));
                 }
             }
             Ok(Value::Object(checked))

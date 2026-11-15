@@ -199,9 +199,8 @@ fn on_change(platform: &dyn Platform, flags: Vec<Arc<AtomicBool>>) -> impl Fn() 
     }
 }
 
-/// The most bytes of an installed plugin's config's schema: a plugin's
-/// keys take a few thousand.
-const MOST_SCHEMA: u64 = 64 * 1024;
+/// The most bytes of an installed plugin's config's schema.
+const MOST_SCHEMA: u64 = lokyr_pkg_model::schema::MOST_SCHEMA_BYTES;
 
 /// The sources of the package in `folder`, by their paths in the package,
 /// of `/` between their folders: `.luau` of its `src`, its catalogs,

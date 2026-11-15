@@ -224,6 +224,20 @@ fn check_schema(folder: &Path, manifest: &Manifest, findings: &mut Findings) {
     let Some(file) = manifest.contributes.config_schema.as_deref() else {
         return;
     };
+    // Of the bound that Lokyr reads, refused past it, read no further.
+    let most = lokyr_pkg_model::schema::MOST_SCHEMA_BYTES;
+    if std::fs::metadata(folder.join(file)).is_ok_and(|metadata| metadata.len() > most) {
+        findings.problem(
+            file,
+            None,
+            "Schema",
+            &format!(
+                "it is larger than {} KiB, the most that Lokyr reads of a config's schema",
+                most / 1024
+            ),
+        );
+        return;
+    }
     let Ok(text) = std::fs::read_to_string(folder.join(file)) else {
         return;
     };
