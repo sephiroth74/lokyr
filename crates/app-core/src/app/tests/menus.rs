@@ -147,6 +147,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
         [
             "Minimize cmd+m",
             "Zoom",
+            "Cycle Through Windows cmd+`",
             "-",
             "Float on Top",
             "Go to Next Agent alt+cmd+a",
@@ -306,7 +307,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 127);
+    assert_eq!(app.keymap.bindings().len(), 129);
 }
 
 #[test]
@@ -392,7 +393,13 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("window.close", "Close Window", Category::Windows),
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
+            ("window.next", "Cycle Through Windows", Category::Windows),
             ("window.next-agent", "Go to Next Agent", Category::Windows),
+            (
+                "window.previous",
+                "Cycle Back Through Windows",
+                Category::Windows
+            ),
             ("window.set-title", "Set Title…", Category::Windows),
             (
                 "window.toggle-float-on-top",

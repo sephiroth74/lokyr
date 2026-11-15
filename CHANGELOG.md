@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Added
+
+- Window › Cycle Through Windows, ⌘`, brings forward your next window, the settings window too, and ⇧⌘` the previous one, of the key left of 1 by its place, as macOS's: ⌘\ on the Italian layout.
+
 ### Changed
 
 - The settings window's pages draw anew faster, the Keys part above all, as the plugins' texts are read once a language rather than at each title and message; Lokyr starts a little sooner too.

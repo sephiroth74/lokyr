@@ -907,10 +907,28 @@
   {
     "capabilities": [],
     "category": "windows",
+    "name": "window.next",
+    "params": [],
+    "plugin": null,
+    "title": "Cycle Through Windows",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
     "name": "window.next-agent",
     "params": [],
     "plugin": null,
     "title": "Go to Next Agent",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.previous",
+    "params": [],
+    "plugin": null,
+    "title": "Cycle Back Through Windows",
     "when": null
   },
   {

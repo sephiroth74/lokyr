@@ -58,9 +58,28 @@ struct Heading<'a> {
 }
 
 /// The names that `title` gives in backquotes, as `bold` and `italic` of
-/// "`bold`, `italic`".
+/// "`bold`, `italic`": Markdown's spans of code, of one backquote, or of
+/// more around one padded by a space each side, as `` cmd+` `` writes a key
+/// of a backquote.
 fn quoted(title: &str) -> Vec<&str> {
-    title.split('`').skip(1).step_by(2).collect()
+    let mut spans = Vec::new();
+    let mut rest = title;
+    while let Some(start) = rest.find('`') {
+        let ticks = rest[start..].chars().take_while(|&c| c == '`').count();
+        let body = &rest[start + ticks..];
+        let Some(end) = body.find(&"`".repeat(ticks)) else {
+            break;
+        };
+        let code = &body[..end];
+        let padded = ticks > 1 && code.len() > 2 && code.starts_with(' ') && code.ends_with(' ');
+        spans.push(if padded {
+            &code[1..code.len() - 1]
+        } else {
+            code
+        });
+        rest = &body[end + ticks..];
+    }
+    spans
 }
 
 /// The headings of `guide`, a section's `##` and a key's `###`, in order.
@@ -548,6 +567,11 @@ mod tests {
 
     #[test]
     fn the_guide_s_bindings_take_a_line_each() {
+        // A key of a backquote, in a span of two.
+        assert_eq!(
+            bindings("`` cmd+` ``", "`window.next`"),
+            [" \"cmd+`\" = \"window.next\""]
+        );
         assert_eq!(
             bindings("`cmd+=`, `cmd+shift+=`, `cmd++`", "`font.bigger`"),
             [

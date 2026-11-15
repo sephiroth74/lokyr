@@ -172,6 +172,10 @@ const GOTO_WINDOW: &str = "window.goto";
 /// Brings forward the next pane whose AI agent waits for the user, or, of
 /// none, is done, or, of none, works, in every window.
 const NEXT_AGENT: &str = "window.next-agent";
+/// The command that brings forward the next window.
+const NEXT_WINDOW: &str = "window.next";
+/// The command that brings forward the previous window.
+const PREVIOUS_WINDOW: &str = "window.previous";
 
 /// The command that keeps the window above the other applications'
 /// windows, or puts it back among them, which the Window menu's item ticks.
@@ -2304,6 +2308,38 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Brings forward the window after the one with the focus, or before
+    /// it where not `forward`, in the order that the windows opened, round:
+    /// the terminals' windows and the settings', not the quick terminal's,
+    /// which its own key shows and hides; the first of no window of them
+    /// with the focus.
+    fn cycle_window(&mut self, platform: &mut dyn Platform, forward: bool) {
+        let windows: Vec<WindowId> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|window| !self.quick.contains_key(window))
+            .collect();
+        let focused = self
+            .windows
+            .iter()
+            .find(|(_, state)| state.focused)
+            .map(|(&window, _)| window)
+            .or_else(|| platform.focused_window());
+        let at = focused.and_then(|focused| windows.iter().position(|&window| window == focused));
+        let count = windows.len();
+        let next = match at {
+            Some(at) if forward => windows.get((at + 1) % count),
+            Some(at) => windows.get((at + count - 1) % count),
+            None => windows.first(),
+        };
+        if let Some(&next) = next
+            && Some(next) != focused
+        {
+            platform.focus_window(next);
+        }
+    }
+
     /// Shows `shown`, a window of the workspace that a plugin's move made,
     /// as a tab's or a pane's out to a window of its own, in a window of
     /// the platform's, of its focused pane's cells; a window that does not
@@ -2989,6 +3025,14 @@ impl<B: Backend> App<B> {
                 }
                 NEXT_AGENT => {
                     self.next_agent(platform);
+                    Ok(())
+                }
+                NEXT_WINDOW => {
+                    self.cycle_window(platform, true);
+                    Ok(())
+                }
+                PREVIOUS_WINDOW => {
+                    self.cycle_window(platform, false);
                     Ok(())
                 }
                 LOOK_UP => {
@@ -5028,6 +5072,8 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (SET_TITLE, "window-set-title", Category::Windows),
         (GOTO_WINDOW, "window-goto", Category::Windows),
         (NEXT_AGENT, "window-next-agent", Category::Windows),
+        (NEXT_WINDOW, "window-next", Category::Windows),
+        (PREVIOUS_WINDOW, "window-previous", Category::Windows),
         (
             FLOAT_ON_TOP,
             "window-toggle-float-on-top",

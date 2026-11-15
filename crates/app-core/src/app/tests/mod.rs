@@ -2991,6 +2991,64 @@ fn the_quick_terminal_shows_and_hides_keeping_its_pane() {
 }
 
 #[test]
+fn the_next_and_the_previous_window_go_round_the_windows_and_the_settings_but_not_the_quick_terminal()
+ {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    // Alone, a window stays.
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    fake.send_app(&mut app, AppEvent::Command("window.next".to_owned()));
+    assert!(fake.focus_requests().is_empty());
+    // A second window, the settings' window and the quick terminal.
+    fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+    fake.send_app(
+        &mut app,
+        AppEvent::Command("app.settings-window".to_owned()),
+    );
+    toggle(&mut fake, &mut app);
+    let quick = quick_window(&fake).unwrap();
+    let mut round: Vec<WindowId> = fake.windows().filter(|&window| window != quick).collect();
+    round.sort_unstable();
+    assert_eq!(round.len(), 3, "two terminals' windows and the settings'");
+    assert!(app.shows_settings(round[2]));
+    let focus = |fake: &mut Fake, app: &mut App, window: WindowId| {
+        for other in fake.windows().collect::<Vec<_>>() {
+            fake.send(app, other, WindowEvent::Focused(other == window));
+        }
+    };
+    let go = |fake: &mut Fake, app: &mut App, command: &str| {
+        let before = fake.focus_requests().len();
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+        let requests = fake.focus_requests();
+        assert_eq!(requests.len(), before + 1, "{command} brings one forward");
+        requests[before]
+    };
+    // Forward, in the order that they opened, round, the settings' too.
+    focus(&mut fake, &mut app, round[0]);
+    assert_eq!(go(&mut fake, &mut app, "window.next"), round[1]);
+    focus(&mut fake, &mut app, round[1]);
+    assert_eq!(go(&mut fake, &mut app, "window.next"), round[2]);
+    focus(&mut fake, &mut app, round[2]);
+    assert_eq!(go(&mut fake, &mut app, "window.next"), round[0]);
+    // Back, the last before the first.
+    focus(&mut fake, &mut app, round[0]);
+    assert_eq!(go(&mut fake, &mut app, "window.previous"), round[2]);
+    // From the quick terminal, the first.
+    focus(&mut fake, &mut app, quick);
+    assert_eq!(go(&mut fake, &mut app, "window.next"), round[0]);
+    // The key left of 1 by its place, `\\` on the Italian layout, as
+    // macOS's ⌘`.
+    focus(&mut fake, &mut app, round[0]);
+    let before = fake.focus_requests().len();
+    fake.send(
+        &mut app,
+        round[0],
+        key_event(KeyCode::Backquote, "\\", CMD, true),
+    );
+    assert_eq!(fake.focus_requests()[before..], [round[1]]);
+}
+
+#[test]
 fn a_quick_window_closes_as_its_plugin_stops_and_comes_back_alone() {
     let (mut fake, mut app) = started();
     let config = |text: &str| Config::parse(text, std::path::Path::new("config.toml")).unwrap();

@@ -23,9 +23,9 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL,
     FLOAT_ON_TOP, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS,
-    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, OPEN_THEMES, PERFORMANCE,
-    PLUGINS, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context,
-    show_selection, shown_top,
+    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, NEXT_WINDOW, OPEN_THEMES,
+    PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS,
+    SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -639,6 +639,8 @@ pub(super) fn main_menu(
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
+                    && command.name != NEXT_WINDOW
+                    && command.name != PREVIOUS_WINDOW
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })
@@ -875,9 +877,15 @@ pub(super) fn main_menu(
                         Some(cmd('m', false)),
                     ),
                     standard("menu-zoom", StandardAction::Zoom, None),
-                    MenuItem::Separator,
                 ]
                 .into_iter()
+                // Cycle Through Windows, as macOS's apps have it.
+                .chain(commands.get(NEXT_WINDOW).map(|command| MenuItem::Command {
+                    title: command.title.clone(),
+                    command: NEXT_WINDOW.to_owned(),
+                    shortcut: keymap.shortcut(NEXT_WINDOW).and_then(shortcut),
+                }))
+                .chain([MenuItem::Separator])
                 // Float on Top, and the agents, in the windows' menu.
                 .chain(
                     [FLOAT_ON_TOP, NEXT_AGENT, SHOW_AGENTS]

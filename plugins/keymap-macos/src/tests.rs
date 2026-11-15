@@ -124,12 +124,31 @@ fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
         .and_then(|(_, rest)| rest.split_once("\n| Keys | Command | What it does |\n"))
         .map(|(_, rest)| rest)
         .expect("the guide's `[keys]` has its defaults");
+    // Markdown's spans of code, of one backtick or of more around one, as
+    // `` cmd+` `` writes a key of a backtick.
     let quoted = |cell: &str| -> Vec<String> {
-        cell.split('`')
-            .skip(1)
-            .step_by(2)
-            .map(str::to_owned)
-            .collect()
+        let mut spans = Vec::new();
+        let mut rest = cell;
+        while let Some(start) = rest.find('`') {
+            let ticks = rest[start..].chars().take_while(|&c| c == '`').count();
+            let body = &rest[start + ticks..];
+            let Some(end) = body.find(&"`".repeat(ticks)) else {
+                break;
+            };
+            let code = &body[..end];
+            let padded =
+                ticks > 1 && code.len() > 2 && code.starts_with(' ') && code.ends_with(' ');
+            spans.push(
+                if padded {
+                    &code[1..code.len() - 1]
+                } else {
+                    code
+                }
+                .to_owned(),
+            );
+            rest = &body[end + ticks..];
+        }
+        spans
     };
     let mut told = Vec::new();
     for row in section
