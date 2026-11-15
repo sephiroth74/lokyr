@@ -2240,6 +2240,95 @@ fn the_themes_page_shows_a_progress_while_their_list_is_read() {
 }
 
 #[test]
+fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it() {
+    use lokyr_plugin_sdk::command::{Command, Kind as ParamKind, Param};
+    // The app's command of a new theme, which the plugin's manifest says
+    // it runs.
+    let new_theme = Command {
+        name: NEW_THEME.to_owned(),
+        title: "New Theme from Current…".to_owned(),
+        category: Category::View,
+        capabilities: Vec::new(),
+        params: vec![Param {
+            name: "theme".to_owned(),
+            kind: ParamKind::String,
+            default: Some(Value::String(String::new())),
+        }],
+        when: None,
+    };
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(vec![new_theme]);
+    host.pane(PaneId(1));
+    host.set_settings(settings());
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    host.set_themes(many_themes());
+    host.show_page(THEMES);
+    host.deliver(&mut plugin).unwrap();
+    host.render(&mut plugin, &themes_page());
+    let _ = host.take_done();
+    let menu = ViewId::Panel(PanelId::from(THEME_MENU));
+    let event = |view: &ViewId, key: &str, kind: UiEventKind| UiEvent {
+        view: view.clone(),
+        key: key.into(),
+        kind,
+    };
+    let opened = |host: &mut FakeHost, plugin: &mut SettingsPage, card: &str| {
+        host.ui_event(
+            plugin,
+            &event(&themes_page(), card, UiEventKind::ContextMenu),
+        )
+        .unwrap();
+        // A menu at the card, of its two items.
+        let options = host.panels().get(&PanelId::from(THEME_MENU)).cloned();
+        assert_eq!(
+            options.map(|options| (options.role, options.anchor)),
+            Some((
+                PanelRole::Menu,
+                Anchor::Node {
+                    view: themes_page(),
+                    key: card.into(),
+                }
+            ))
+        );
+        let tree = host
+            .render(plugin, &ViewId::Panel(PanelId::from(THEME_MENU)))
+            .unwrap();
+        assert!(find_node(&tree, THEME_USE).is_some());
+        assert!(find_node(&tree, THEME_DUPLICATE).is_some());
+    };
+    // Duplicate…: the app's new theme of the card's theme.
+    opened(&mut host, &mut plugin, "theme:dark:Nord");
+    host.ui_event(
+        &mut plugin,
+        &event(&menu, THEME_DUPLICATE, UiEventKind::Click),
+    )
+    .unwrap();
+    let done = host.take_done();
+    assert!(
+        done.iter().any(|request| *request
+            == Request::RunCommand {
+                name: NEW_THEME.to_owned(),
+                args: Args::from([("theme".to_owned(), Value::String("Nord".to_owned()))]),
+            }),
+        "{done:?}"
+    );
+    assert!(host.panels().get(&PanelId::from(THEME_MENU)).is_none());
+    // Use: named for its appearance, as a click does.
+    opened(&mut host, &mut plugin, "theme:dark:Dracula");
+    host.ui_event(&mut plugin, &event(&menu, THEME_USE, UiEventKind::Click))
+        .unwrap();
+    assert!(host.take_done().iter().any(|request| *request
+        == Request::SetTheme {
+            variant: ThemeVariant::Dark,
+            name: "Dracula".to_owned(),
+        }));
+}
+
+#[test]
 fn a_theme_s_card_names_it_in_the_config_for_its_appearance() {
     let (mut host, mut plugin) = host();
     host.set_themes(many_themes());

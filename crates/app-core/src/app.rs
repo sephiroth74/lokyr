@@ -85,6 +85,7 @@ mod tab_drag;
 #[cfg(test)]
 mod tests;
 mod theme_catalog;
+mod theme_copies;
 mod tools;
 
 use input::{show_selection, shown_top};
@@ -103,6 +104,9 @@ const SETTINGS_TAB: &str = "app.settings-window";
 /// The command that opens the themes' folder beside the config file in
 /// the file manager, made first when it is not there.
 const OPEN_THEMES: &str = "app.open-themes-folder";
+/// A new theme of a whole copy of an existing one, the one in force or the
+/// one that its argument `theme` names.
+const NEW_THEME: &str = "app.new-theme";
 
 /// The command that opens the About panel: the app's version and build,
 /// its copyright and its credits.
@@ -753,6 +757,9 @@ pub struct App<B: Backend> {
     /// The themes' files that the user is asked to install, by their
     /// alerts.
     theme_asks: BTreeMap<AlertId, installs::ThemeInstall>,
+    /// The questions of a new theme's name, each of the theme that it
+    /// copies.
+    new_theme_asks: BTreeMap<AlertId, theme_copies::NewTheme>,
     /// The contexts in which the menus' commands that tell one can run, and
     /// whether the platform has each one's items enabled, as the focused
     /// pane's last frame had it.
@@ -1027,6 +1034,7 @@ impl<B: Backend> App<B> {
             pastes_unconfirmed: false,
             open_asks: BTreeMap::new(),
             theme_asks: BTreeMap::new(),
+            new_theme_asks: BTreeMap::new(),
             links_chosen: (None, None),
             appearance_chosen: None,
             performance: None,
@@ -2953,6 +2961,14 @@ impl<B: Backend> App<B> {
                 }
                 OPEN_THEMES => {
                     self.open_themes_folder(platform);
+                    Ok(())
+                }
+                NEW_THEME => {
+                    let from = match args.get("theme") {
+                        Some(Value::String(theme)) if !theme.is_empty() => Some(theme.clone()),
+                        _ => None,
+                    };
+                    self.ask_new_theme(platform, from);
                     Ok(())
                 }
                 SETTINGS_TAB => {
@@ -5068,6 +5084,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (PERFORMANCE, "app-performance", Category::View),
         (OPEN_THEMES, "app-open-themes-folder", Category::View),
+        (NEW_THEME, "app-new-theme", Category::View),
         (SETTINGS_TAB, "app-settings-window", Category::App),
         (NEW_WINDOW, "window-new", Category::Windows),
         (CLOSE_WINDOW, "window-close", Category::Windows),
@@ -5094,12 +5111,19 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             .map(|(name, _, title)| (name, title, Category::View)),
     );
     for (name, title, category) in commands {
-        // Bringing a window forward takes its number.
+        // Bringing a window forward takes its number; a new theme the
+        // name of the theme that it copies, of the one in force for none.
         let params = if name == GOTO_WINDOW {
             vec![Param {
                 name: "index".to_owned(),
                 kind: Kind::Integer,
                 default: None,
+            }]
+        } else if name == NEW_THEME {
+            vec![Param {
+                name: "theme".to_owned(),
+                kind: Kind::String,
+                default: Some(Value::String(String::new())),
             }]
         } else {
             Vec::new()

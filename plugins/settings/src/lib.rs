@@ -21,7 +21,7 @@
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{Category, Error, Value};
+use lokyr_plugin_sdk::command::{Args, Category, Error, Value};
 use lokyr_plugin_sdk::host::{
     FontFace, SettingBinding, SettingKey, SettingKind, Settings, SettingsSection,
 };
@@ -51,6 +51,15 @@ const THEMES: &str = "themes";
 /// The prefix of the key of a theme's card on the themes' page, of its
 /// appearance and its name, as `theme:dark:Lokyr Dark`.
 const THEME_CARD: &str = "theme:";
+
+/// The panel of a theme's card's context menu, of its items' keys: the
+/// theme used, or a new theme made of it.
+const THEME_MENU: &str = "theme-menu";
+const THEME_USE: &str = "theme-use";
+const THEME_DUPLICATE: &str = "theme-duplicate";
+
+/// The app's command that makes a new theme of an existing one.
+const NEW_THEME: &str = "app.new-theme";
 
 /// How many themes' cards a row of the themes' page holds.
 const CARDS_ACROSS: usize = 3;
@@ -213,6 +222,8 @@ pub struct SettingsPage {
     /// themes it shows, the one in force's until its sidebar chooses one.
     themes_shown: bool,
     themes_variant: Option<ThemeVariant>,
+    /// The theme of the card whose context menu shows, of its appearance.
+    theme_menu: Option<(ThemeVariant, String)>,
     /// The font of the item highlighted last, which shows once the timer
     /// of its rest fires.
     pending_preview: Option<(FontPreview, String)>,
@@ -322,6 +333,9 @@ impl Plugin for SettingsPage {
                     self.adding = None;
                     self.refused.remove(NEW_REFUSED);
                 }
+                Event::PanelClosed(PanelId(panel)) if panel == THEME_MENU => {
+                    self.theme_menu = None;
+                }
                 // A menu of values closed: the font that it showed goes,
                 // the one in force back, or the one chosen.
                 Event::PanelClosed(PanelId(panel)) if panel.starts_with(CHOICES) => {
@@ -371,8 +385,28 @@ impl Plugin for SettingsPage {
 
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
-        // A theme's card: the theme named in `[theme]` for its appearance;
-        // an appearance of the sidebar, whose themes show.
+        // An item of a theme's card's context menu: the theme used, or a
+        // new theme made of it, as the app asks its name.
+        if event.view == ViewId::Panel(PanelId::from(THEME_MENU)) {
+            if event.kind != UiEventKind::Click {
+                return Ok(());
+            }
+            let Some((variant, name)) = self.theme_menu.take() else {
+                return Ok(());
+            };
+            let _ = cx.close_panel(THEME_MENU);
+            return match key {
+                THEME_USE => cx.set_theme(variant, &name),
+                THEME_DUPLICATE => cx.run_command(
+                    NEW_THEME,
+                    Args::from([("theme".to_owned(), Value::String(name))]),
+                ),
+                _ => Ok(()),
+            };
+        }
+        // A theme's card: the theme named in `[theme]` for its appearance,
+        // or its context menu; an appearance of the sidebar, whose themes
+        // show.
         if event.view == themes_page() {
             if let (UiEventKind::Select { item } | UiEventKind::Activate { item }, VARIANTS) =
                 (&event.kind, key)
@@ -385,16 +419,38 @@ impl Plugin for SettingsPage {
                 }
                 return Ok(());
             }
-            if event.kind == UiEventKind::Click
-                && let Some((variant, name)) = key
-                    .strip_prefix(THEME_CARD)
-                    .and_then(|rest| rest.split_once(':'))
-            {
-                let variant = match variant {
-                    "light" => ThemeVariant::Light,
-                    _ => ThemeVariant::Dark,
-                };
-                cx.set_theme(variant, name)?;
+            let Some((variant, name)) = key
+                .strip_prefix(THEME_CARD)
+                .and_then(|rest| rest.split_once(':'))
+            else {
+                return Ok(());
+            };
+            let variant = match variant {
+                "light" => ThemeVariant::Light,
+                _ => ThemeVariant::Dark,
+            };
+            match event.kind {
+                UiEventKind::Click => cx.set_theme(variant, name)?,
+                UiEventKind::ContextMenu => {
+                    self.theme_menu = Some((variant, name.to_owned()));
+                    // Another card's menu, open still, gives way.
+                    let _ = cx.close_panel(THEME_MENU);
+                    cx.open_panel(
+                        THEME_MENU,
+                        PanelOptions {
+                            anchor: Anchor::Node {
+                                view: themes_page(),
+                                key: event.key.clone(),
+                            },
+                            role: PanelRole::Menu,
+                            close_outside: true,
+                            close_escape: true,
+                            takes_keys: false,
+                            close_typing: false,
+                        },
+                    )?;
+                }
+                _ => {}
             }
             return Ok(());
         }
@@ -608,6 +664,13 @@ impl Plugin for SettingsPage {
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
         if *view == themes_page() {
             return Some(themes_tree(cx, self.themes_variant));
+        }
+        if *view == ViewId::Panel(PanelId::from(THEME_MENU)) {
+            self.theme_menu.as_ref()?;
+            return Some(Node::container(vec![
+                Node::button(message(cx, "theme-use", &[]).as_str()).key(THEME_USE),
+                Node::button(message(cx, "theme-duplicate", &[]).as_str()).key(THEME_DUPLICATE),
+            ]));
         }
         let settings = page_settings(cx).ok()?;
         match view {

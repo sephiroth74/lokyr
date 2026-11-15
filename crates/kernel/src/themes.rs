@@ -7,7 +7,8 @@ use std::path::{Path, PathBuf};
 
 pub use lokyr_themes::{
     Credits, DARK, DIRECTORY, EXTENSIONS, LIGHT, MOST_THEME_BYTES, MOST_THEME_FILES, Resolved,
-    TerminalColors, Theme, ThemeColor, ThemeVariant, directory, is_name, native, read_file,
+    TerminalColors, Theme, ThemeColor, ThemeCredits, ThemeVariant, copy_of, directory, is_name,
+    native, read_file,
 };
 
 use crate::config::Error;

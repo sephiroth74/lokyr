@@ -15,5 +15,9 @@ open = true
 # highlighted.
 appearance-write = true
 
+# A theme's card's Duplicate…, a new theme that the app makes.
+[uses]
+commands = ["app.new-theme"]
+
 [contributes]
 pages = [{ id = "settings", icon = "settings" }, { id = "themes", icon = "symbol-color" }]

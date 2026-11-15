@@ -20,6 +20,7 @@ command-app-install-command-line-tools = Install Command Line Tools…
 command-app-install-claude-code-integration = Install Claude Code Integration…
 command-app-performance = Show Performance
 command-app-open-themes-folder = Open Themes Folder
+command-app-new-theme = New Theme from Current…
 command-app-settings-window = Open Settings Window
 performance-measuring = Measuring…
 performance-frames = { $rate } FPS
@@ -244,6 +245,17 @@ theme-install-switch = { $variant ->
 theme-install-failed = The theme cannot be installed.
 theme-install-no-folder = Lokyr has no config folder to hold its themes.
 theme-install-not-copied = It cannot be copied into { $folder }: { $error }
+
+# The question of a new theme's name, made of the theme { $name }: the
+# field's first name, the buttons, and why a name given cannot be one.
+new-theme-message = New theme of “{ $name }”
+new-theme-detail = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder }, uses it and opens it in your editor.
+new-theme-name = { $name } Copy
+new-theme-create = Create
+new-theme-cancel = Cancel
+new-theme-not-a-name = “{ $name }” cannot name a theme: a name is not empty, holds no / nor \, and does not start with a dot.
+new-theme-taken = A theme named “{ $name }” is there already: choose another name.
+new-theme-failed = The new theme cannot be made.
 
 # The notification of a long command's end, under the command as its title:
 # whether it succeeded, or its exit status, or neither as the shell told

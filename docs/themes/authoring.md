@@ -63,6 +63,8 @@ Lokyr applies it as you save either file, in the windows that are open too. A fi
 
 [`example.toml`](example.toml) is a theme of every key and every color that this guide tells, of the values of Lokyr's own dark theme: copy it and change what you like.
 
+To start from a theme that you like, View › New Theme from Current… makes a new theme of every color of the one in force, and **Duplicate…** in the context menu of a theme's card on the settings window's Themes page of that theme: Lokyr asks its name, writes it whole into the themes folder, `themes/<name>.toml`, of the original's author, license and source, uses it for its appearance and opens it in your editor, where each save shows at once. A name that a theme has already, of the folder, of Lokyr's own, built in or installed, is refused.
+
 ## Installing and choosing a theme
 
 - **Install** a theme by putting its file in the themes folder; or drop the file on Lokyr's icon in the Dock, or open an `.itermcolors` file with Lokyr, and Lokyr asks whether to install it: **Install** copies it into the folder, **Install and Use** names it in your config for its appearance too, and a checkbox switches Lokyr to that appearance where the theme is of the other one.

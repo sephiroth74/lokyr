@@ -5,6 +5,9 @@ themes-description = Every theme, of a preview of its colors: a click uses it fo
 themes-light = Light
 themes-dark = Dark
 themes-loading = Reading the themes…
+# A theme's card's context menu.
+theme-use = Use
+theme-duplicate = Duplicate…
 
 # The sidebar's sections, the config's, then the plugins'.
 section-font = Font

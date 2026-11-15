@@ -710,7 +710,7 @@ fn open_themes_folder_opens_the_folder_made_first_in_the_file_manager() {
         .iter()
         .position(|item| item == "Choose Theme…")
         .unwrap();
-    assert_eq!(view[picker + 1], "Open Themes Folder");
+    assert_eq!(view[picker + 2], "Open Themes Folder");
     // A folder that is not there is made, then opens.
     fake.send_app(&mut app, AppEvent::Command(OPEN_THEMES.to_owned()));
     assert!(themes.is_dir());
@@ -722,6 +722,110 @@ fn open_themes_folder_opens_the_folder_made_first_in_the_file_manager() {
     assert_eq!(fake.opened().len(), 2);
     assert!(themes.join("Kept.toml").is_file());
     assert!(fake.alerts().is_empty());
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
+fn a_new_theme_of_an_existing_one_is_written_whole_named_for_its_variant_and_opened() {
+    // The light appearance in force, of a dark theme of the folder.
+    let night = format!(
+        "[theme]\nauthor = \"Ada\"\nlicense = \"MIT\"\n{}",
+        theme("#101010")
+    );
+    let (mut fake, mut app, directory) = with_themes(
+        "new-theme",
+        "[theme]\nlight = \"Night\"\n",
+        &[("Night", &night)],
+    );
+    let held = directory.join("held");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(held.join("Held Dawn.toml"), theme("#fafafa")).unwrap();
+    app.held_themes = Some(held);
+    // The view's menu has it after the palette's theme picker, before the
+    // themes' folder.
+    let view = menu_items(&fake, 3);
+    let picker = view
+        .iter()
+        .position(|item| item == "Choose Theme…")
+        .unwrap();
+    assert_eq!(
+        view[picker + 1..picker + 3],
+        ["New Theme from Current…", "Open Themes Folder"]
+    );
+    let answered = |fake: &mut Fake, app: &mut App, text: &str| {
+        let asked = fake.alerts().last().cloned().expect("a question");
+        fake.send_app(
+            app,
+            AppEvent::AlertClosed {
+                alert: asked.id,
+                button: 0,
+                suppressed: false,
+                text: Some(text.to_owned()),
+            },
+        );
+        fake.alerts().last().cloned().expect("an alert")
+    };
+    // Of the one in force: its name asked, of a first one of it.
+    fake.send_app(&mut app, AppEvent::Command(NEW_THEME.to_owned()));
+    let asked = fake.alerts().last().cloned().expect("a question");
+    assert_eq!(asked.alert.input.as_deref(), Some("Night Copy"));
+    assert!(asked.alert.message.contains("Night"), "{:?}", asked.alert);
+    // A name taken, of a held theme, or that names no file: asked again,
+    // why told, the text kept.
+    let again = answered(&mut fake, &mut app, "Held Dawn");
+    assert_ne!(again.id, asked.id);
+    assert!(
+        again.alert.detail.contains("is there already"),
+        "{:?}",
+        again.alert
+    );
+    assert_eq!(again.alert.input.as_deref(), Some("Held Dawn"));
+    let again = answered(&mut fake, &mut app, ".hidden");
+    assert!(
+        again.alert.detail.contains("cannot name a theme"),
+        "{:?}",
+        again.alert
+    );
+    // A name of its own: written whole, its credits kept, named for its
+    // variant, the dark one, shown and opened.
+    let alerts = fake.alerts().len();
+    answered(&mut fake, &mut app, "  Midnight  ");
+    assert_eq!(fake.alerts().len(), alerts, "no question more");
+    let file = directory.join("themes/Midnight.toml");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("name = \"Midnight\""), "{text}");
+    assert!(text.contains("author = \"Ada\""), "{text}");
+    assert!(text.contains("variant = \"dark\""), "{text}");
+    assert!(text.contains("palette = ["), "{text}");
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("dark = \"Midnight\""), "{written}");
+    assert_eq!(app.theme.dark.colors.background, rgb(0x101010));
+    let opened = std::fs::canonicalize(&file).unwrap();
+    assert_eq!(fake.opened().last(), Some(&opened.display().to_string()));
+    // Of the theme that its argument names, a held one, light.
+    app.run(
+        &mut fake,
+        NEW_THEME,
+        Args::from([("theme".to_owned(), Value::String("Held Dawn".to_owned()))]),
+    );
+    answered(&mut fake, &mut app, "Dawn Mine");
+    let written = std::fs::read_to_string(directory.join("config.toml")).unwrap();
+    assert!(written.contains("light = \"Dawn Mine\""), "{written}");
+    assert!(directory.join("themes/Dawn Mine.toml").is_file());
+    // Of a name of no theme: told, nothing asked.
+    app.run(
+        &mut fake,
+        NEW_THEME,
+        Args::from([("theme".to_owned(), Value::String("Nowhere".to_owned()))]),
+    );
+    let told = fake.alerts().last().cloned().unwrap();
+    assert_eq!(told.alert.message, "The new theme cannot be made.");
+    assert!(
+        told.alert.detail.contains("there is no theme `Nowhere`"),
+        "{:?}",
+        told.alert
+    );
+    assert_eq!(told.alert.input, None);
     let _ = std::fs::remove_dir_all(&directory);
 }
 

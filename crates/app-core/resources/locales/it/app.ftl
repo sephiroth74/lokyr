@@ -19,6 +19,7 @@ command-app-install-command-line-tools = Installa gli strumenti da riga di coman
 command-app-install-claude-code-integration = Installa l'integrazione con Claude Code…
 command-app-performance = Mostra prestazioni
 command-app-open-themes-folder = Apri la cartella dei temi
+command-app-new-theme = Nuovo tema dall'attuale…
 command-app-settings-window = Apri la finestra delle impostazioni
 performance-measuring = Misurazione…
 performance-frames = { $rate } FPS
@@ -204,6 +205,15 @@ theme-install-switch = { $variant ->
 theme-install-failed = Il tema non si può installare.
 theme-install-no-folder = Lokyr non ha una cartella della configurazione che tenga i suoi temi.
 theme-install-not-copied = Non si può copiare in { $folder }: { $error }
+
+new-theme-message = Nuovo tema da «{ $name }»
+new-theme-detail = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder }, lo usa e lo apre nel tuo editor.
+new-theme-name = { $name } copia
+new-theme-create = Crea
+new-theme-cancel = Annulla
+new-theme-not-a-name = «{ $name }» non può essere il nome di un tema: un nome non è vuoto, non contiene / né \ e non inizia con un punto.
+new-theme-taken = Un tema di nome «{ $name }» c'è già: scegline un altro.
+new-theme-failed = Il nuovo tema non si può creare.
 
 command-succeeded = Riuscito dopo { $took }
 command-failed = Fallito con stato { $status } dopo { $took }

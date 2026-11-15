@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- View › New Theme from Current… makes a new theme of every color of the theme in force: Lokyr asks its name, writes it into the themes folder, uses it and opens it in your editor; a theme's card on the Themes page has Use and Duplicate… in its context menu.
 - Themes of the packages that Sleip installs, as `sleip add owner/name`: the theme picker and the Themes page list them, of their package's name, and `[theme]` names them; a package's theme takes no name of another, so that installing one changes no theme in force.
 - `sleip dev` links a package of themes too, whose themes Lokyr shows anew as each file is saved.
 - `sleip new --themes owner/name` makes a package of themes, its manifest, a theme of Lokyr's format and a README, which `sleip check` checks, each theme read as Lokyr reads it, its errors at their lines, `sleip test` runs nothing of, and `sleip add --path`, `update` and `remove` install, update and remove; a package of themes holds no code, its manifest of no capability, activation, command nor dependency.

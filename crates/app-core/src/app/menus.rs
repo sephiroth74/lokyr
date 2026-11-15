@@ -23,9 +23,9 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 use super::{
     ABOUT, APPEARANCES, App, CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL,
     FLOAT_ON_TOP, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE, MAN_KEYWORDS,
-    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEXT_AGENT, NEXT_WINDOW, OPEN_THEMES,
-    PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT, SETTINGS,
-    SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
+    MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT, NEXT_WINDOW,
+    OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB, SECURE_INPUT,
+    SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -636,6 +636,7 @@ pub(super) fn main_menu(
                     && APPEARANCES.iter().all(|(name, ..)| *name != command.name)
                     && command.name != PERFORMANCE
                     && command.name != OPEN_THEMES
+                    && command.name != NEW_THEME
                     && command.name != FLOAT_ON_TOP
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
@@ -702,24 +703,33 @@ pub(super) fn main_menu(
         })
         .collect();
     let mut view = items(&[Category::View]);
-    // The themes' folder right after the palette's theme picker, where the
-    // palette is there; else after the view's other commands.
-    if let Some(command) = commands.get(OPEN_THEMES) {
-        let item = MenuItem::Command {
-            title: command.title.clone(),
-            command: OPEN_THEMES.to_owned(),
-            shortcut: keymap.shortcut(OPEN_THEMES).and_then(shortcut),
-        };
+    // A new theme of the one in force and the themes' folder right after
+    // the palette's theme picker, where the palette is there; else after
+    // the view's other commands.
+    let themes: Vec<MenuItem> = [NEW_THEME, OPEN_THEMES]
+        .into_iter()
+        .filter_map(|name| {
+            commands.get(name).map(|command| MenuItem::Command {
+                title: command.title.clone(),
+                command: name.to_owned(),
+                shortcut: keymap.shortcut(name).and_then(shortcut),
+            })
+        })
+        .collect();
+    if !themes.is_empty() {
         let picker = view.iter().position(
             |item| matches!(item, MenuItem::Command { command, .. } if command == PICK_THEME),
         );
         match picker {
-            Some(at) => view.insert(at + 1, item),
+            Some(at) => {
+                let after = at + 1;
+                view.splice(after..after, themes);
+            }
             None => {
                 if !view.is_empty() {
                     view.push(MenuItem::Separator);
                 }
-                view.push(item);
+                view.extend(themes);
             }
         }
     }

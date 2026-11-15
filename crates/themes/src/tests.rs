@@ -589,6 +589,57 @@ fn an_installed_package_s_theme_comes_last_and_takes_no_other_s_name() {
 }
 
 #[test]
+fn a_theme_s_credits_come_of_its_file_or_of_those_that_it_extends_and_its_copy_is_whole() {
+    let held = folder(
+        "credits-held",
+        &[(
+            "Harbor",
+            &format!(
+                "[theme]\nauthor = \"Ada\"\nlicense = \"MIT\"\nsource = \"https://example.com\"\n[search]\nmatch = \"#ffd60a4d\"\n{}",
+                theme_file("#101820")
+            ),
+        )],
+    );
+    let directory = folder(
+        "credits-folder",
+        &[(
+            "Mine",
+            "[theme]\nextends = \"Harbor\"\nauthor = \"Grace\"\n[terminal]\nforeground = \"#fefefe\"\n",
+        )],
+    );
+    let resolved =
+        |name: &str| resolve(name, Some(&directory), Some(&held), &[builtin()], &[]).unwrap();
+    let harbor = resolved("Harbor");
+    assert_eq!(harbor.credits.author.as_deref(), Some("Ada"));
+    assert_eq!(harbor.credits.license.as_deref(), Some("MIT"));
+    assert_eq!(
+        harbor.credits.source.as_deref(),
+        Some("https://example.com")
+    );
+    // Its own author, the license and the source of the theme that it
+    // extends, as its colors.
+    let mine = resolved("Mine");
+    assert_eq!(mine.credits.author.as_deref(), Some("Grace"));
+    assert_eq!(mine.credits.license.as_deref(), Some("MIT"));
+    assert_eq!(resolved(DARK).credits, ThemeCredits::default());
+    // A copy reads back as the same theme of its new name, whole, of no
+    // theme to extend, its credits kept.
+    let text = copy_of(&mine, "Mine Copy");
+    let other = folder("credits-copy", &[("Mine Copy", &text)]);
+    let copy = resolve("Mine Copy", Some(&other), None, &[], &[]).unwrap();
+    assert_eq!(copy.theme.name, "Mine Copy");
+    assert_eq!(copy.theme.terminal, mine.theme.terminal);
+    assert_eq!(copy.theme.tokens, mine.theme.tokens);
+    assert_eq!(copy.theme.variant, mine.theme.variant);
+    assert_eq!(copy.credits, mine.credits);
+    assert!(text.contains("name = \"Mine Copy\""), "{text}");
+    assert!(!text.contains("extends"), "{text}");
+    for folder in [held, directory, other] {
+        let _ = fs::remove_dir_all(folder);
+    }
+}
+
+#[test]
 fn the_guide_s_example_theme_holds_every_key_and_token() {
     let text = include_str!("../../../docs/themes/example.toml");
     let file = parse(text, Path::new("docs/themes/example.toml")).unwrap();

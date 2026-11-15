@@ -104,15 +104,50 @@ pub fn directory(config: &Path) -> Option<PathBuf> {
     Some(config.parent()?.join(DIRECTORY))
 }
 
-/// A theme as it resolved: the theme, whole, and the files that its name
-/// and those that it extends were looked for at, there or not, which a
-/// watch of them tells the changes of.
+/// A theme as it resolved: the theme, whole, what it tells people of
+/// itself, and the files that its name and those that it extends were
+/// looked for at, there or not, which a watch of them tells the changes of.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Resolved {
     /// The theme.
     pub theme: Theme,
+    /// Its author, license and source, its own file's, or else of the
+    /// themes that it extends, as its colors are.
+    pub credits: ThemeCredits,
     /// The files looked for.
     pub files: Vec<PathBuf>,
+}
+
+/// What a theme tells people of itself, as its file's `[theme]` writes it,
+/// held.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ThemeCredits {
+    /// Who made it.
+    pub author: Option<String>,
+    /// Its license, an SPDX expression.
+    pub license: Option<String>,
+    /// Where it comes from.
+    pub source: Option<String>,
+}
+
+impl ThemeCredits {
+    /// These credits, borrowed, as [`native`] writes them.
+    pub fn credits(&self) -> Credits<'_> {
+        Credits {
+            author: self.author.as_deref(),
+            license: self.license.as_deref(),
+            source: self.source.as_deref(),
+        }
+    }
+
+    /// These credits where they give a value, `base`'s otherwise.
+    fn over(self, base: Self) -> Self {
+        Self {
+            author: self.author.or(base.author),
+            license: self.license.or(base.license),
+            source: self.source.or(base.source),
+        }
+    }
 }
 
 /// The theme of `name`: its file of the themes' folder `directory`, if
@@ -138,8 +173,13 @@ pub fn resolve(
     let mut files = Vec::new();
     let mut chain = Vec::new();
     let partial = load(name, &sources, &mut files, &mut chain)?;
+    let credits = partial.credits.clone();
     let theme = partial.finish(name, files.first().map(PathBuf::as_path))?;
-    Ok(Resolved { theme, files })
+    Ok(Resolved {
+        theme,
+        credits,
+        files,
+    })
 }
 
 /// Whether `name` can name a theme: a file's name of the themes' folder,
@@ -454,6 +494,16 @@ pub fn native(theme: &Theme, credits: Credits<'_>) -> String {
     text
 }
 
+/// The text of a file of the native format of a whole copy of `resolved`,
+/// as a new theme of `name` made of it: every terminal color and the tokens
+/// that it gives, those that it leaves out derived as its own are, and its
+/// credits.
+pub fn copy_of(resolved: &Resolved, name: &str) -> String {
+    let mut theme = resolved.theme.clone();
+    theme.name = name.to_owned();
+    native(&theme, resolved.credits.credits())
+}
+
 /// `text` as a basic string of TOML, of its escapes.
 fn quoted(text: &str) -> String {
     let mut quoted = String::from("\"");
@@ -551,6 +601,7 @@ struct Partial {
     link: Option<ThemeColor>,
     underline: Option<ThemeColor>,
     tokens: BTreeMap<String, ThemeColor>,
+    credits: ThemeCredits,
 }
 
 impl Partial {
@@ -571,6 +622,7 @@ impl Partial {
             link: terminal.link,
             underline: terminal.underline,
             tokens: theme.tokens.clone(),
+            credits: ThemeCredits::default(),
         }
     }
 
@@ -596,6 +648,7 @@ impl Partial {
             link: self.link.or(base.link),
             underline: self.underline.or(base.underline),
             tokens,
+            credits: self.credits.over(base.credits),
         }
     }
 
@@ -719,7 +772,9 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
                         }
                         "extends" => extends = Some((text.to_owned(), span.unwrap_or(0..0))),
                         // The author, the license and the source tell people.
-                        _ => {}
+                        "author" => partial.credits.author = Some(text.to_owned()),
+                        "license" => partial.credits.license = Some(text.to_owned()),
+                        _ => partial.credits.source = Some(text.to_owned()),
                     }
                 }
             }

@@ -74,6 +74,23 @@
   {
     "capabilities": [],
     "category": "view",
+    "name": "app.new-theme",
+    "params": [
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "theme"
+      }
+    ],
+    "plugin": null,
+    "title": "New Theme from Current…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
     "name": "app.open-themes-folder",
     "params": [],
     "plugin": null,

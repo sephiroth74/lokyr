@@ -270,7 +270,7 @@ fn same_file(one: &Path, other: &Path) -> bool {
 }
 
 /// `path` as a person reads it: of `~` for the home directory.
-fn shown_path(path: &Path) -> String {
+pub(super) fn shown_path(path: &Path) -> String {
     match std::env::home_dir().and_then(|home| path.strip_prefix(home).ok().map(Path::to_path_buf))
     {
         Some(inner) => format!("~/{}", inner.display()),

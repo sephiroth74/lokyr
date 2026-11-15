@@ -5,6 +5,8 @@ themes-description = Ogni tema, con un'anteprima dei suoi colori: un clic lo usa
 themes-light = Chiari
 themes-dark = Scuri
 themes-loading = Lettura dei temi…
+theme-use = Usa
+theme-duplicate = Duplica…
 
 # Le sezioni della barra laterale, della config, poi dei plugin.
 section-font = Font

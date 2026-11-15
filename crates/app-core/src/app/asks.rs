@@ -73,6 +73,9 @@ impl<B: Backend> App<B> {
         if let Some(ask) = self.theme_asks.remove(&alert) {
             self.theme_answered(platform, &ask, (button, suppressed));
         }
+        if let Some(ask) = self.new_theme_asks.remove(&alert) {
+            self.new_theme_answered(platform, ask, button, text);
+        }
         if self.claude_code_answered(platform, alert, button) {
             return;
         }
@@ -409,7 +412,7 @@ impl<B: Backend> App<B> {
     /// address, where it names one, and as the system opens it where it
     /// names none or the editor does not open, as one not installed; the
     /// rest as the system opens it.
-    fn open_resolved(
+    pub(super) fn open_resolved(
         &mut self,
         platform: &mut dyn Platform,
         resolved: &Target,
