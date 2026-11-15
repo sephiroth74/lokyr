@@ -695,6 +695,57 @@ pub struct ThemeInfo {
     pub origin: ThemeOrigin,
 }
 
+/// Where a theme's token comes from, as a read of its tokens tells.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TokenOrigin {
+    /// A theme's file, of the theme itself or of one that it extends: the
+    /// file's path, its line from 1, and the theme's name.
+    File {
+        /// The file's path.
+        path: String,
+        /// Its line, from 1; 0 of no place.
+        line: u32,
+        /// The theme of the file, its name.
+        theme: String,
+    },
+    /// A theme of no file: a built-in one, or an `.itermcolors` file's,
+    /// by its name.
+    Theme {
+        /// The theme's name.
+        theme: String,
+    },
+    /// Its rule, of the theme's variant, which a theme left it to.
+    Rule {
+        /// The rule's text, as `accent / 60%`.
+        text: String,
+    },
+}
+
+/// A token of a theme, as it resolves.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeToken {
+    /// Its name, as `focus.ring`.
+    pub name: String,
+    /// Its color, `#rrggbb` or `#rrggbbaa`.
+    pub color: crate::theme::ThemeColor,
+    /// Where it comes from.
+    pub origin: TokenOrigin,
+}
+
+/// Every token of a theme, as a read of them gives them: the theme's
+/// name, its variant, and its tokens, Lokyr's in their rules' order, then
+/// a plugin's.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThemeTokens {
+    /// The theme's name.
+    pub theme: String,
+    /// Its variant.
+    pub variant: crate::theme::ThemeVariant,
+    /// Its tokens.
+    pub tokens: Vec<ThemeToken>,
+}
+
 /// The themes that the app can show, as a read of them gives them: the
 /// appearance in force, the theme in force for it as `[theme]` names it,
 /// and every theme, by name, a file of the user's folder before one of its

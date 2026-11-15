@@ -120,6 +120,19 @@ pub struct Resolved {
     /// expression that does not read, names no color or comes back to
     /// itself, which keeps its rule; the rest of the theme in force.
     pub notices: Vec<Error>,
+    /// Where each token that it gives comes from, of its own file or of
+    /// a theme's that it extends; the others take their rules.
+    pub sources: BTreeMap<String, Source>,
+}
+
+/// Where a token that a theme gives comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Source {
+    /// A file of the native format, and the token's place in it.
+    File(PathBuf, Option<Position>),
+    /// A theme of no file of its own, as a built-in one or an
+    /// `.itermcolors` file's, by its name.
+    Theme(String),
 }
 
 /// What a theme tells people of itself, as its file's `[theme]` writes it,
@@ -175,12 +188,13 @@ pub fn resolve(
     let mut chain = Vec::new();
     let partial = load(name, &sources, &mut files, &mut chain)?;
     let credits = partial.credits.clone();
-    let (theme, notices) = partial.finish(name, files.first().map(PathBuf::as_path))?;
+    let (theme, notices, sources) = partial.finish(name, files.first().map(PathBuf::as_path))?;
     Ok(Resolved {
         theme,
         credits,
         files,
         notices,
+        sources,
     })
 }
 
@@ -672,6 +686,9 @@ struct File {
     extends: Option<(String, Range<usize>)>,
 }
 
+/// A theme made whole: the theme, its notices, and its tokens' sources.
+type Finished = (Theme, Vec<Error>, BTreeMap<String, Source>);
+
 /// A theme of what it gives alone, which the themes that it extends fill.
 #[derive(Clone, Debug, Default, PartialEq)]
 struct Partial {
@@ -688,9 +705,9 @@ struct Partial {
     link: Option<ThemeColor>,
     underline: Option<ThemeColor>,
     tokens: BTreeMap<String, TokenValue>,
-    /// The place of each token that a file gives, which a notice of it
+    /// Where each token that it gives comes from, which a notice of it
     /// tells.
-    places: BTreeMap<String, (PathBuf, Option<Position>)>,
+    sources: BTreeMap<String, Source>,
     /// What the files tell that colors nothing, as [`Resolved::notices`].
     notices: Vec<Error>,
     credits: ThemeCredits,
@@ -714,7 +731,11 @@ impl Partial {
             link: terminal.link,
             underline: terminal.underline,
             tokens: theme.tokens.clone(),
-            places: BTreeMap::new(),
+            sources: theme
+                .tokens
+                .keys()
+                .map(|token| (token.clone(), Source::Theme(theme.name.clone())))
+                .collect(),
             notices: Vec::new(),
             credits: ThemeCredits::default(),
         }
@@ -728,8 +749,8 @@ impl Partial {
         };
         let mut tokens = base.tokens;
         tokens.extend(self.tokens);
-        let mut places = base.places;
-        places.extend(self.places);
+        let mut sources = base.sources;
+        sources.extend(self.sources);
         let mut notices = base.notices;
         notices.extend(self.notices);
         Self {
@@ -746,7 +767,7 @@ impl Partial {
             link: self.link.or(base.link),
             underline: self.underline.or(base.underline),
             tokens,
-            places,
+            sources,
             notices,
             credits: self.credits.over(base.credits),
         }
@@ -757,7 +778,7 @@ impl Partial {
     /// where it says none and its background is the lighter; and its
     /// notices, those of its tokens that do not resolve among them, which
     /// it leaves out, their rules in force.
-    fn finish(self, name: &str, path: Option<&Path>) -> Result<(Theme, Vec<Error>), Error> {
+    fn finish(self, name: &str, path: Option<&Path>) -> Result<Finished, Error> {
         let missing = |what: &str| Error {
             path: path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
             position: None,
@@ -795,19 +816,22 @@ impl Partial {
         let mut notices = self.notices;
         for (token, why) in rules::problems(&theme.terminal, &theme.tokens) {
             theme.tokens.remove(&token);
-            let (path, position) = self.places.get(&token).cloned().unwrap_or_else(|| {
-                (
+            let (path, position) = match self.sources.get(&token) {
+                Some(Source::File(path, position)) => (path.clone(), *position),
+                _ => (
                     path.map_or_else(|| PathBuf::from(name), Path::to_path_buf),
                     None,
-                )
-            });
+                ),
+            };
             notices.push(Error {
                 path,
                 position,
                 message: format!("`{token}` is left out, as {why}"),
             });
         }
-        Ok((theme, notices))
+        let mut sources = self.sources;
+        sources.retain(|token, _| theme.tokens.contains_key(token));
+        Ok((theme, notices, sources))
     }
 }
 
@@ -1006,8 +1030,8 @@ fn give(
         Ok(value) => {
             let place = error(span, String::new());
             partial
-                .places
-                .insert(name.clone(), (place.path, place.position));
+                .sources
+                .insert(name.clone(), Source::File(place.path, place.position));
             partial.tokens.insert(name, value);
         }
         Err(why) => partial

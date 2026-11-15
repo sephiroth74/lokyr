@@ -409,6 +409,9 @@ pub struct Context<'a> {
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     pub themes: &'a dyn Fn() -> host::Themes,
+    /// Every token of a theme, by its name or the appearance in force's of
+    /// none, as it resolves; none of a name of no theme.
+    pub theme_tokens: &'a dyn Fn(Option<&str>) -> Option<host::ThemeTokens>,
     /// The system's monospaced font families, and the family in force, as
     /// the app reads them.
     pub fonts: &'a dyn Fn() -> host::Fonts,
@@ -5476,6 +5479,9 @@ impl Host<'_, '_> {
                 }
             }
             Asked::Themes => Response::Themes((self.context.themes)()),
+            Asked::ThemeTokens(name) => {
+                Response::ThemeTokens((self.context.theme_tokens)(name.as_deref()))
+            }
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),

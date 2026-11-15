@@ -541,6 +541,9 @@ type Event =
     -- The themes that the app can show changed, as `themes` tells: their list read, as the app reads it off its main
     -- thread, or a theme added, removed or changed; of no capability.
     | { kind: "themes-changed" }
+    -- The theme in force resolved anew, of other colors: another theme named, its file saved, the appearance
+    -- changed, which `theme_tokens` reads; of no capability.
+    | { kind: "theme-changed" }
     -- A drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.
     | { kind: "tab-bar-resized", width: number }
@@ -690,6 +693,9 @@ type Cx = {
     -- the built-in ones, which the app reads off its main thread, a read starting where none did lately; the built-in
     -- ones alone, of `loading`, while its first read runs, whose end `themes-changed` tells.
     themes: () -> (Themes?, Error?),
+    -- Every token of the theme of a name, or of the appearance in force's of nil, as it resolves: its color and its
+    -- origin, its file's path and line, a theme of no file's, or its rule's text; nil of a name of no theme.
+    theme_tokens: (theme: string?) -> (ThemeTokens?, Error?),
     -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.
     preview_theme: (name: string?) -> (boolean, Error?),

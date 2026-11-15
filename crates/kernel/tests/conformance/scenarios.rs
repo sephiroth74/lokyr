@@ -1978,6 +1978,20 @@ fn app_requests(world: &World) -> Scenario {
         subscriptions: Vec::new(),
         steps: vec![ask(vec![
             (Request::Themes, Response::Themes(super::themes())),
+            // A theme's tokens, the one in force's, of a name, and of a
+            // name of no theme.
+            (
+                Request::ThemeTokens(None),
+                Response::ThemeTokens(lokyr_plugin_sdk::fake::theme_tokens_of(None)),
+            ),
+            (
+                Request::ThemeTokens(Some("Lokyr Dark".to_owned())),
+                Response::ThemeTokens(lokyr_plugin_sdk::fake::theme_tokens_of(None)),
+            ),
+            (
+                Request::ThemeTokens(Some("Nothing".to_owned())),
+                Response::ThemeTokens(None),
+            ),
             // The system's monospaced families, a preview and its end, the
             // choice, and a family that is not there or not monospaced.
             (

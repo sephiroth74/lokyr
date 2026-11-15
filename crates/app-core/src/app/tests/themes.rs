@@ -1182,3 +1182,75 @@ fn the_cursor_guide_shows_as_its_item_toggles_it_until_the_config_s_key_changes(
     assert!(app.theme.dark.tokens.get("cursor.guide").is_some());
     let _ = std::fs::remove_dir_all(directory);
 }
+
+#[test]
+fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules() {
+    use lokyr_kernel::plugins::host::TokenOrigin;
+    use lokyr_kernel::themes::ThemeColor;
+    let mine = format!(
+        "[theme]\nextends = \"Lokyr Dark\"\n\n[terminal]\nbackground = \"#101012\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n\n[interface]\n\"accent\" = \"#c678dd\"\n[command-header]\npill = \"panel.bg\"\n"
+    );
+    let config = "[theme]\ndark = \"Mine\"\nlight = \"Mine\"\n";
+    let (fake, app, directory) = with_themes("tokens", config, &[("Mine", &mine)]);
+    let places = app.theme_places();
+    let tokens = theme_catalog::theme_tokens(&places, None, (fake.appearance(), &app.config.theme))
+        .expect("the theme in force's tokens");
+    assert_eq!(tokens.theme, "Mine");
+    let token = |name: &str| {
+        tokens
+            .tokens
+            .iter()
+            .find(|token| token.name == name)
+            .unwrap()
+    };
+    // Of its own file, at its line.
+    let accent = token("accent");
+    assert_eq!(accent.color, ThemeColor::hex(0xc678dd));
+    let TokenOrigin::File { path, line, theme } = &accent.origin else {
+        panic!("{:?}", accent.origin);
+    };
+    assert!(path.ends_with("Mine.toml"), "{path}");
+    assert_eq!((*line, theme.as_str()), (11, "Mine"));
+    // Of the built-in theme that it extends, of no file.
+    assert_eq!(
+        token("panel.bg").origin,
+        TokenOrigin::Theme {
+            theme: "Lokyr Dark".to_owned()
+        }
+    );
+    // Of its rule, its color the accent's at 60%.
+    assert_eq!(
+        token("focus.ring").origin,
+        TokenOrigin::Rule {
+            text: "accent / 60%".to_owned()
+        }
+    );
+    assert_eq!(
+        token("focus.ring").color,
+        ThemeColor::hex(0xc678dd).with_alpha(153)
+    );
+    // Lokyr's in their rules' order, then a plugin's.
+    assert_eq!(tokens.tokens[0].name, "text");
+    assert_eq!(tokens.tokens.last().unwrap().name, "command-header.pill");
+    assert_eq!(
+        tokens.tokens.len(),
+        lokyr_kernel::themes::rules::tokens().count() + 1
+    );
+    // A name of no theme, none; a built-in one's, of its own.
+    assert!(
+        theme_catalog::theme_tokens(
+            &places,
+            Some("Nothing"),
+            (fake.appearance(), &app.config.theme)
+        )
+        .is_none()
+    );
+    let light = theme_catalog::theme_tokens(
+        &places,
+        Some("Lokyr Light"),
+        (fake.appearance(), &app.config.theme),
+    )
+    .unwrap();
+    assert_eq!(light.variant, lokyr_kernel::themes::ThemeVariant::Light);
+    let _ = std::fs::remove_dir_all(directory);
+}

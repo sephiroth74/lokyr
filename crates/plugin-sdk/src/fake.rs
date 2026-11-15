@@ -439,6 +439,9 @@ pub struct FakeHost {
     registry: Vec<host::CommandInfo>,
     /// The themes that the app can show, as the test gave them.
     themes: host::Themes,
+    /// The tokens of the themes, as the test gave them, the theme in
+    /// force's first.
+    theme_tokens: Vec<host::ThemeTokens>,
     /// The system's monospaced families that it gives.
     fonts: host::Fonts,
     /// The system's day, whether a notice of the app's shows, and whether
@@ -570,6 +573,7 @@ impl FakeHost {
             page: None,
             notice: false,
             keeps_state: true,
+            theme_tokens: theme_tokens(),
             themes: host::Themes {
                 appearance: crate::theme::ThemeVariant::Dark,
                 current: "Lokyr Dark".to_owned(),
@@ -786,6 +790,17 @@ impl FakeHost {
             found.marks = marks;
         }
         self.looked(tab, &before);
+        self
+    }
+
+    /// Gives the app the tokens of themes, `tokens`, which a read of a
+    /// theme's tokens gives, of its name, the first of none, as the theme
+    /// in force's; the plugin hears `theme-changed` as the first changes.
+    pub fn set_theme_tokens(&mut self, tokens: Vec<host::ThemeTokens>) -> &mut Self {
+        if self.activated && tokens.first() != self.theme_tokens.first() {
+            self.owed.push(Event::ThemeChanged);
+        }
+        self.theme_tokens = tokens;
         self
     }
 
@@ -3296,6 +3311,14 @@ impl Calling<'_> {
             Request::FontSize => Response::FontSize(host.font_size),
             Request::TabBarPlace => Response::TabBarPlace(host.bar_place),
             Request::Themes => Response::Themes(host.themes.clone()),
+            Request::ThemeTokens(name) => Response::ThemeTokens(match name {
+                Some(name) => host
+                    .theme_tokens
+                    .iter()
+                    .find(|tokens| tokens.theme == *name)
+                    .cloned(),
+                None => host.theme_tokens.first().cloned(),
+            }),
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
@@ -4518,6 +4541,55 @@ struct Declared {
 /// The system's day that the fake host gives by default, in days since
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
+
+/// The tokens of the themes that the fake host gives by default: Lokyr
+/// Dark's, in force, of a token of its own, one of a rule and a plugin's.
+pub fn theme_tokens() -> Vec<host::ThemeTokens> {
+    let token = |name: &str, color: u32, origin: host::TokenOrigin| host::ThemeToken {
+        name: name.to_owned(),
+        color: crate::theme::ThemeColor::hex(color),
+        origin,
+    };
+    vec![host::ThemeTokens {
+        theme: "Lokyr Dark".to_owned(),
+        variant: crate::theme::ThemeVariant::Dark,
+        tokens: vec![
+            token(
+                "accent",
+                0x4c9bff,
+                host::TokenOrigin::Theme {
+                    theme: "Lokyr Dark".to_owned(),
+                },
+            ),
+            token(
+                "focus.ring",
+                0x4c9bff,
+                host::TokenOrigin::Rule {
+                    text: "accent / 60%".to_owned(),
+                },
+            ),
+            token(
+                "command-header.pill",
+                0x2a2a2d,
+                host::TokenOrigin::File {
+                    path: "/themes/Lokyr Dark.toml".to_owned(),
+                    line: 3,
+                    theme: "Lokyr Dark".to_owned(),
+                },
+            ),
+        ],
+    }]
+}
+
+/// The tokens of the theme of `name` among [`theme_tokens`], the first's
+/// of none.
+pub fn theme_tokens_of(name: Option<&str>) -> Option<host::ThemeTokens> {
+    let all = theme_tokens();
+    match name {
+        Some(name) => all.into_iter().find(|tokens| tokens.theme == name),
+        None => all.into_iter().next(),
+    }
+}
 
 /// The system's families that the fake host gives by default: Menlo,
 /// Monaco and SF Mono, which is in force, monospaced, and Helvetica and SF

@@ -639,6 +639,19 @@ impl<'a> Cx<'a> {
         self.done(Request::AddMenuItem(item))
     }
 
+    /// Every token of the theme `theme`, or of the appearance in force's
+    /// of none, as it resolves, each of its color and its origin; `None`
+    /// of a name of no theme.
+    pub fn theme_tokens(
+        &mut self,
+        theme: Option<&str>,
+    ) -> Result<Option<crate::host::ThemeTokens>, Error> {
+        match self.request(Request::ThemeTokens(theme.map(str::to_owned))) {
+            Response::ThemeTokens(tokens) => Ok(tokens),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     pub fn themes(&mut self) -> Result<crate::host::Themes, Error> {

@@ -92,6 +92,7 @@ impl App {
             keys: &|_, _| None,
             enabled: &|_| true,
             themes: &themes,
+            theme_tokens: &lokyr_plugin_sdk::fake::theme_tokens_of,
             fonts: &host::Fonts::default,
             font_styles: &|_| Vec::new(),
             plugins: &[],

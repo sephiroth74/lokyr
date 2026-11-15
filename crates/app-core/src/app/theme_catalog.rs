@@ -43,6 +43,77 @@ impl Places {
     }
 }
 
+/// Every token of the theme of `name`, or of the one that `[theme]` of
+/// `config` names for `appearance` of none, of `places` and the built-in
+/// themes, as it resolves: each of its color and its origin, its file's
+/// line, a theme of no file's, or its rule's; Lokyr's in their rules'
+/// order, then a plugin's; none of a name of no theme.
+pub(crate) fn theme_tokens(
+    places: &Places,
+    name: Option<&str>,
+    (appearance, config): (lokyr_platform_core::Appearance, &config::ThemeConfig),
+) -> Option<lokyr_kernel::plugins::host::ThemeTokens> {
+    use lokyr_kernel::plugins::host::{ThemeToken, ThemeTokens, TokenOrigin};
+    use lokyr_kernel::themes::rules;
+    let name = name.unwrap_or(match appearance {
+        lokyr_platform_core::Appearance::Light => config.light.as_str(),
+        lokyr_platform_core::Appearance::Dark => config.dark.as_str(),
+    });
+    let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+    let resolved = places.resolve(name, &builtins).ok()?;
+    let theme = &resolved.theme;
+    let colors = rules::resolve(&theme.terminal, &theme.tokens);
+    let dark = rules::is_dark(&theme.terminal);
+    let byte = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let names: Vec<String> = rules::tokens()
+        .map(str::to_owned)
+        .chain(
+            colors
+                .keys()
+                .filter(|token| rules::rule(token).is_none())
+                .cloned(),
+        )
+        .collect();
+    let tokens = names
+        .into_iter()
+        .filter_map(|token| {
+            let color = colors.get(&token)?;
+            let origin = match resolved.sources.get(&token) {
+                Some(themes::Source::File(path, position)) => TokenOrigin::File {
+                    path: path.display().to_string(),
+                    line: position.map_or(0, |at| u32::try_from(at.line).unwrap_or(u32::MAX)),
+                    theme: path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or_default()
+                        .to_owned(),
+                },
+                Some(themes::Source::Theme(theme)) => TokenOrigin::Theme {
+                    theme: theme.clone(),
+                },
+                None => TokenOrigin::Rule {
+                    text: rules::rule(&token)?.text(dark).to_owned(),
+                },
+            };
+            Some(ThemeToken {
+                name: token,
+                color: themes::ThemeColor {
+                    red: byte(color.red),
+                    green: byte(color.green),
+                    blue: byte(color.blue),
+                    alpha: byte(color.alpha),
+                },
+                origin,
+            })
+        })
+        .collect();
+    Some(ThemeTokens {
+        theme: name.to_owned(),
+        variant: theme.variant,
+        tokens,
+    })
+}
+
 /// A part of a read of the themes.
 #[derive(Debug)]
 pub(crate) enum Part {

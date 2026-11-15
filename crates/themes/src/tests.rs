@@ -837,3 +837,33 @@ fn the_guide_s_smallest_theme_and_its_extension_resolve() {
     assert_eq!(bright.terminal.background, ThemeColor::hex(0x0b0e13));
     assert_eq!(bright.terminal.palette, harbor.terminal.palette);
 }
+
+#[test]
+fn each_token_given_tells_its_source_its_file_and_line_or_its_theme() {
+    let base = format!(
+        "[theme]\nname = \"Base\"\n\n[terminal]\nbackground = \"#101012\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n\n[interface]\n\"accent\" = \"#c678dd\"\n\"panel.bg\" = \"#202024\"\n"
+    );
+    let child = "[theme]\nextends = \"Base\"\n\n[interface]\n\"panel.bg\" = \"#303034\"\n";
+    let directory = folder("sources", &[("Base", &base), ("Child", child)]);
+    let resolved = resolve("Child", Some(&directory), None, &[builtin()]).unwrap();
+    let line = |token: &str| match &resolved.sources[token] {
+        Source::File(path, position) => (
+            path.file_name().unwrap().to_str().unwrap().to_owned(),
+            position.map(|at| at.line),
+        ),
+        Source::Theme(name) => (name.clone(), None),
+    };
+    assert_eq!(line("panel.bg"), ("Child.toml".to_owned(), Some(5)));
+    assert_eq!(line("accent"), ("Base.toml".to_owned(), Some(11)));
+    assert_eq!(resolved.sources.len(), 2);
+    // A built-in theme's own tokens, of its name.
+    let mut built_in = builtin();
+    built_in.tokens.insert(
+        "accent".to_owned(),
+        TokenValue::Color(ThemeColor::hex(0x123456)),
+    );
+    let name = built_in.name.clone();
+    let resolved = resolve(&name, None, None, &[built_in]).unwrap();
+    assert_eq!(resolved.sources["accent"], Source::Theme(name));
+    let _ = fs::remove_dir_all(directory);
+}

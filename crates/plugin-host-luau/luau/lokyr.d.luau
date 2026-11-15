@@ -26,6 +26,7 @@ export type Cx = {
     emit: (name: string, schema: string, value: Data) -> (true?, string?, number?),
     commands: () -> ({ CommandInfo }?, string?, number?),
     themes: () -> (Themes?, string?, number?),
+    theme_tokens: (value: string?) -> (ThemeTokens?, string?, number?),
     preview_theme: (name: string?) -> (true?, string?, number?),
     set_theme: (variant: ThemeVariant, name: string) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
@@ -174,6 +175,7 @@ export type Event =
     | { kind: "plugins-changed" }
     | { kind: "settings-changed" }
     | { kind: "themes-changed" }
+    | { kind: "theme-changed" }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
     | { kind: "custom", name: string, schema: string, value: Data }
@@ -946,6 +948,18 @@ export type ThemeOrigin =
     | "held"
     | "built-in"
 
+export type ThemeToken = {
+    name: string,
+    color: string,
+    origin: TokenOrigin,
+}
+
+export type ThemeTokens = {
+    theme: string,
+    variant: ThemeVariant,
+    tokens: { ThemeToken },
+}
+
 export type ThemeVariant =
     | "light"
     | "dark"
@@ -958,6 +972,11 @@ export type Themes = {
 }
 
 export type Token = string
+
+export type TokenOrigin =
+    | { file: { path: string, line: number, theme: string } }
+    | { theme: { theme: string } }
+    | { rule: { text: string } }
 
 export type Transition = {
     duration: number?,

@@ -123,6 +123,9 @@ pub enum Request {
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     Themes,
+    /// Every token of the theme of a name, or of the appearance in force's
+    /// of none, as it resolves: its color and where it comes from.
+    ThemeTokens(Option<String>),
     /// Shows the theme of a name in place of the appearance in force's,
     /// for a while, as a picker previews it, until the next preview, the
     /// theme's choice, or `None`, which shows the config's again.
@@ -1088,6 +1091,7 @@ impl Request {
             | Self::SetState(_)
             | Self::Commands
             | Self::Themes
+            | Self::ThemeTokens(_)
             | Self::Fonts
             | Self::FontStyles(_)
             | Self::Day
@@ -1139,6 +1143,7 @@ impl Request {
             | Self::Message { .. }
             | Self::Commands
             | Self::Themes
+            | Self::ThemeTokens(_)
             | Self::Fonts
             | Self::Day
             | Self::NoticeShows
@@ -1262,6 +1267,8 @@ pub enum Response {
     Commands(Vec<CommandInfo>),
     /// The themes that the app can show.
     Themes(crate::host::Themes),
+    /// A theme's tokens, as they resolve; none of a name of no theme.
+    ThemeTokens(Option<crate::host::ThemeTokens>),
     /// The system's monospaced font families.
     Fonts(crate::host::Fonts),
     /// A font family's styles, from the lightest.
@@ -1347,6 +1354,9 @@ pub const SETTINGS_CHANGED: &str = "settings-changed";
 /// The name of [`Event::ThemesChanged`], as a plugin subscribes to it.
 pub const THEMES_CHANGED: &str = "themes-changed";
 
+/// The name of [`Event::ThemeChanged`], as a plugin subscribes to it.
+pub const THEME_CHANGED: &str = "theme-changed";
+
 /// Whether a plugin can subscribe to the events of `name`: one of the
 /// workspace's, the host's own that every plugin hears of, or a plugin's
 /// own, `namespace.event`.
@@ -1362,6 +1372,7 @@ pub fn is_event_name(name: &str) -> bool {
             PLUGINS_CHANGED,
             SETTINGS_CHANGED,
             THEMES_CHANGED,
+            THEME_CHANGED,
         ]
         .contains(&name)
         || crate::command::is_name(name)
@@ -1551,6 +1562,10 @@ pub enum Event {
     /// their list read, as the app reads it off its main thread, a theme
     /// added, removed or changed, to a plugin that subscribes to it.
     ThemesChanged,
+    /// The theme in force resolved anew, of other colors: another theme
+    /// named, its file saved, the appearance changed, to a plugin that
+    /// subscribes to it, whose read of a theme's tokens tells the new ones.
+    ThemeChanged,
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.
     ConfigChanged,
@@ -1591,6 +1606,7 @@ impl Event {
             Self::PluginsChanged => PLUGINS_CHANGED,
             Self::SettingsChanged => SETTINGS_CHANGED,
             Self::ThemesChanged => THEMES_CHANGED,
+            Self::ThemeChanged => THEME_CHANGED,
             Self::TabBarResized { .. } => "tab-bar-resized",
             Self::KeysChanged => KEYS_CHANGED,
             Self::WindowFocus { .. } => WINDOW_FOCUS,
@@ -1742,6 +1758,7 @@ impl Request {
             | Self::CancelTimer { .. } => "done",
             Self::Commands { .. } => "commands",
             Self::Themes { .. } => "themes",
+            Self::ThemeTokens { .. } => "theme-tokens",
             Self::Fonts { .. } => "fonts",
             Self::FontStyles { .. } => "font-styles",
             Self::Day { .. } => "day",

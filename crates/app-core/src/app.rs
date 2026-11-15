@@ -3261,6 +3261,16 @@ impl<B: Backend> App<B> {
             };
             pickers::theme_list(catalog, (&places, waker), appearance, theme_config)
         };
+        // A theme's tokens, read as a plugin asks, of the same places.
+        let theme_tokens = |name: Option<&str>| {
+            let places = theme_catalog::Places {
+                folder: config_file
+                    .as_ref()
+                    .and_then(|file| themes::directory(&file.path)),
+                held: held_themes.clone(),
+            };
+            theme_catalog::theme_tokens(&places, name, (appearance, theme_config))
+        };
         // The monospaced families that a picker lists, of the config's
         // family in force, read as a plugin asks, again past a while.
         let font_list = &self.font_list;
@@ -3312,6 +3322,7 @@ impl<B: Backend> App<B> {
             keys: &keys,
             enabled: &enabled,
             themes: &theme_list,
+            theme_tokens: &theme_tokens,
             fonts: &fonts,
             font_styles: &font_styles,
             plugins: &plugin_infos,
@@ -4430,6 +4441,8 @@ impl<B: Backend> App<B> {
     /// The app's appearance is `appearance`: the panes take its theme's
     /// variant, every pane of every tab, and the windows draw again.
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
+        // The plugins that read the theme's tokens read them anew.
+        self.plugins.post(plugins::Event::ThemeChanged);
         let colors = self.colors(appearance);
         for state in self.windows.values().filter(|state| state.page.is_none()) {
             for id in self.workspace.panes_of(state.window) {
