@@ -71,6 +71,9 @@ pub struct CursorConfig {
     pub hidden: Span,
     /// How it moves to a new cell.
     pub movement: Movement,
+    /// Whether a band across its row shows where it is, the cursor guide,
+    /// of the theme's token `cursor.guide`.
+    pub guide: bool,
 }
 
 impl Default for CursorConfig {
@@ -91,6 +94,7 @@ impl Default for CursorConfig {
             fade_out_curve: breathing.fade_out_curve,
             hidden: Span(breathing.hidden),
             movement: Movement::Instant,
+            guide: false,
         }
     }
 }

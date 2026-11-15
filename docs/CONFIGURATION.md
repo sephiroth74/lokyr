@@ -83,6 +83,7 @@ fade-out-curve = "ease-in"
 visible = 700                        # ms held visible, from 0 to 10000
 hidden = 200                         # ms held hidden
 movement = "snappy"                  # instant | snappy: how it moves to a new cell
+guide = true                         # true | false: a band across the cursor's row
 
 [window]
 columns = 120                        # a new window's size, in cells, from 1 to 1000
@@ -627,6 +628,21 @@ Default: `"instant"`.
 - The window server slides it, as it blinks it: Lokyr draws no frame of its own for it, and wakes no more. What it costs: a key's echo shows a refresh later more often, about 2.6 ms of the latency's median at 60 Hz on an M5 Pro, as the window server shows the frame of a slide's start later; the tail is no longer, and at rest it costs nothing.
 - With Reduce motion on, in System Settings › Accessibility › Display on macOS, it moves at once.
 - It applies as you save the file.
+
+### `guide`
+
+<sub>Platforms: macOS</sub>
+
+Whether a band across the cursor's row shows where the cursor is, the cursor guide, under the text.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- Its color is the theme's `cursor.guide`, as [the authors' guide](themes/authoring.md) tells, of an `.itermcolors` file's Cursor Guide Color too, else the text's color at 10%.
+- View › Show Cursor Guide turns it on and off in every window until the config's value changes, as its command, `window.toggle-cursor-guide`, bound to ⌥⌘; by default.
+- It shows in the pane that has the keyboard, while the cursor shows; a program that hides its cursor, as a full-screen one may, hides the band too.
+- It applies at once, as you save the file.
 
 ## `[window]`
 
@@ -1614,6 +1630,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+=`, `cmd+shift+=`, `cmd++` | `font.bigger` | Makes the text a point larger, in every window, up to 200 |
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
+| `alt+cmd+;` | `window.toggle-cursor-guide` | Shows the cursor guide, a band across the cursor's row, or hides it, in every window, as View › Show Cursor Guide does, until [`guide`](#guide) changes |
 | `shift+cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
 | `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
 | `cmd+up` | `pane.prompt-previous` | Scrolls the view to the prompt above its top, of the commands that the shell marks, as [`shell-integration`](#shell-integration) has it, the prompt at the view's top |

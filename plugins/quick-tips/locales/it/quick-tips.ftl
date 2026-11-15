@@ -38,6 +38,7 @@ tip-look-up = Fai clic destro su una parola per cercarla nel dizionario, sul web
 tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › Nuovo tab Lokyr qui per un terminale lì.
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
+tip-cursor-guide = Premi { $keys }, o Vista › Mostra la guida del cursore, per una banda sulla riga del cursore che mostra dov'è.
 tip-sleip = I plugin vengono dal registro: `sleip search` li elenca, e `sleip add` ne installa uno.
 tip-settings-window = Lokyr › Apri la finestra delle impostazioni mostra ogni impostazione per sezione, anche quelle dei plugin, con cosa fa, e la cambia nel tuo file di configurazione, commenti compresi.
 tip-settings-keys = Nella pagina Tasti della finestra delle impostazioni, scrivi nel filtro per trovare una scorciatoia, fai clic sui suoi tasti e premi quelli nuovi, o Aggiungi una scorciatoia tua: ci sono tutte quelle predefinite, e Ripristina ne rimette una.

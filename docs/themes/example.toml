@@ -116,6 +116,9 @@ chosen.fg = "contrasting(segments.chosen.bg)"
 box.bg = "#ffffff08"
 box.border = "#ffffff1a"
 
+[cursor]                            # the cursor guide's band across the cursor's row
+guide = "foreground / 10%"
+
 [gutter]                            # the bar beside each prompt of a command that ran
 running = "accent"
 succeeded = "#ffffff40"

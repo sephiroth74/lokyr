@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- The cursor guide, a band across the cursor's row under the text, as iTerm2's: View › Show Cursor Guide, ⌥⌘;, or `[cursor] guide`; its color the theme's `cursor.guide`, or an `.itermcolors` file's Cursor Guide Color.
 - `[text] faint-opacity`, from 0.1 to 1, 0.5 by default, the opacity of the dim text that programs write over its background, its underlines too.
 - A theme's color can be an expression of other colors, as `accent / 40%`, `mix(background, foreground, 8%)` or `contrasting(list.selection.bg)`, which follows them as they change, as the authors' guide tells.
 - New… on the Themes page makes a new theme of Lokyr's own light or dark values, as the page shows, every key written, the terminal's optional ones as comments of their defaults and the interface colors that it leaves to their rules as comments of the rules, so that the file shows every color: Lokyr asks its name, "New Dark Theme" first, writes it into the themes folder, uses it and opens it in your editor.

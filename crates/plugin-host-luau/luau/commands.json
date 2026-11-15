@@ -975,6 +975,15 @@
   },
   {
     "capabilities": [],
+    "category": "view",
+    "name": "window.toggle-cursor-guide",
+    "params": [],
+    "plugin": null,
+    "title": "Show Cursor Guide",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "windows",
     "name": "window.toggle-float-on-top",
     "params": [],

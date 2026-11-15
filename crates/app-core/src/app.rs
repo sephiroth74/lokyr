@@ -189,6 +189,10 @@ const PREVIOUS_WINDOW: &str = "window.previous";
 /// windows, or puts it back among them, which the Window menu's item ticks.
 const FLOAT_ON_TOP: &str = "window.toggle-float-on-top";
 
+/// Shows the cursor guide, the band across the cursor's row, or hides it,
+/// in every window, until the config's `[cursor] guide` changes.
+const CURSOR_GUIDE: &str = "window.toggle-cursor-guide";
+
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
 const LOOK_UP: &str = "pane.look-up";
@@ -543,6 +547,9 @@ pub struct App<B: Backend> {
     /// The theme that a plugin's picker previews in place of the
     /// appearance in force's, if one does.
     theme_preview: Option<String>,
+    /// Whether the cursor guide shows, as `[cursor] guide` says until View ›
+    /// Show Cursor Guide changes it.
+    cursor_guide: bool,
     /// The card of the notice that shows, in every window.
     notice: notice_card::NoticeCard,
     /// The settings tab's pages, the chosen one, and its tree's revision.
@@ -959,6 +966,7 @@ impl<B: Backend> App<B> {
             theme_catalog: std::cell::RefCell::default(),
             waker: None,
             theme_preview: None,
+            cursor_guide: config.cursor.guide,
             notice: notice_card::NoticeCard::default(),
             settings: settings_tab::SettingsTab::default(),
             font_list: std::cell::RefCell::new(None),
@@ -1872,6 +1880,10 @@ impl<B: Backend> App<B> {
                 .shell_integration
                 .then(|| environment::shell_integration(self.environment.resources.as_deref()))
                 .flatten();
+        }
+        if config.cursor.guide != self.config.cursor.guide {
+            self.cursor_guide = config.cursor.guide;
+            platform.set_command_checked(CURSOR_GUIDE, self.cursor_guide);
         }
         let agents = std::mem::replace(&mut self.config, config).agents;
         if self.config.agents != agents {
@@ -3068,6 +3080,12 @@ impl<B: Backend> App<B> {
                     self.install_claude_code(platform);
                     Ok(())
                 }
+                CURSOR_GUIDE => {
+                    self.cursor_guide = !self.cursor_guide;
+                    platform.set_command_checked(CURSOR_GUIDE, self.cursor_guide);
+                    self.request_frames(platform);
+                    Ok(())
+                }
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -3270,6 +3288,7 @@ impl<B: Backend> App<B> {
                 config: self.config.text,
                 blink_shown: true,
                 minimum_contrast: self.config.theme.minimum_contrast.value(),
+                cursor_guide: None,
             },
             padding: (self.config.window.padding_x, self.config.window.padding_y),
             scale: scale as f32,
@@ -5165,6 +5184,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             "window-toggle-float-on-top",
             Category::Windows,
         ),
+        (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),

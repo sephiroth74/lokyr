@@ -237,6 +237,9 @@ pub struct TextLook {
     /// none, to 21: a text of less moves toward white or black, as the
     /// theme's `minimum-contrast` asks.
     pub minimum_contrast: f32,
+    /// The cursor guide's color, the band across the cursor's row under
+    /// the text, where it shows.
+    pub cursor_guide: Option<Color>,
 }
 
 impl Default for TextLook {
@@ -245,6 +248,7 @@ impl Default for TextLook {
             config: TextConfig::default(),
             blink_shown: true,
             minimum_contrast: 1.0,
+            cursor_guide: None,
         }
     }
 }
@@ -542,6 +546,8 @@ fn cells_of(
     // its own characters, as a ligature would not, in either phase of its
     // blinking, so that the ligature does not join and split as it blinks.
     let at = cursor_cell(snapshot).map(|(column, row, _)| (column, row));
+    // The cursor guide's row and color, while the cursor shows.
+    let guide = text.cursor_guide.zip(at.map(|(_, row)| row));
     let mut run = RunBuilder::default();
     let mut decorations = Decorations::default();
     for row in 0..rows {
@@ -623,6 +629,11 @@ fn cells_of(
                         }
                     }
                 };
+            }
+            // The cursor guide over the background, under the text, but
+            // of a selected cell.
+            if let Some((band, _)) = guide.filter(|&(_, at)| at == row && chosen.is_none()) {
+                background = over(band, background);
             }
             batch.backgrounds.push(background);
             // Text that blinks shows half of the time.
@@ -1378,6 +1389,21 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
     }
 }
 
+/// `top` over `under`, each of its opacity, as their blending shows them.
+fn over(top: Color, under: Color) -> Color {
+    let alpha = top.alpha + under.alpha * (1.0 - top.alpha);
+    if alpha <= 0.0 {
+        return Color::CLEAR;
+    }
+    let mix = |a: f32, b: f32| (a * top.alpha + b * under.alpha * (1.0 - top.alpha)) / alpha;
+    Color {
+        red: mix(top.red, under.red),
+        green: mix(top.green, under.green),
+        blue: mix(top.blue, under.blue),
+        alpha,
+    }
+}
+
 /// Faint text's color `text` at `opacity` over `under`, in the encoded
 /// space, where the text blends, of its own opacity.
 fn faint(text: Color, under: Color, opacity: f32) -> Color {
@@ -1640,6 +1666,48 @@ mod tests {
             look,
             &mut atlas(&mut asked),
         )
+    }
+
+    #[test]
+    fn the_cursor_guide_bands_the_cursor_s_row_under_the_text_while_it_shows() {
+        let band = Color::from_rgb8(255, 0, 0).with_alpha(0.25);
+        let banded = |text: &str| {
+            let snapshot = snapshot(3, 2, text);
+            let mut asked = Vec::new();
+            let look = TextLook {
+                cursor_guide: Some(band),
+                ..TextLook::default()
+            };
+            cells_with(
+                &snapshot,
+                &cell(),
+                (0, 0),
+                None,
+                None,
+                look,
+                &mut atlas(&mut asked),
+            )
+        };
+        let colors = Colors::default();
+        let clear_bg = clear(color(colors.background));
+        // The cursor on the second row: its three cells banded, the first
+        // row's not; a cell's own background under the band.
+        let batch = banded("ab\r\nc\x1b[44md\x1b[0m");
+        assert_eq!(&batch.backgrounds[..3], [clear_bg; 3]);
+        assert_eq!(batch.backgrounds[3], over(band, clear_bg));
+        assert_eq!(batch.backgrounds[3].alpha, 0.25);
+        let blue = color(colors.palette[4]);
+        assert_eq!(batch.backgrounds[4], over(band, blue));
+        assert_eq!(batch.backgrounds[4].alpha, 1.0);
+        assert!(batch.backgrounds[4].red > blue.red);
+        // The text over the band keeps its color.
+        assert_eq!(batch.glyphs[2].color, color(colors.foreground));
+        // A hidden cursor, no band.
+        let batch = banded("ab\r\ncd\x1b[?25l");
+        assert!(batch.backgrounds.iter().all(|&bg| bg == clear_bg));
+        // None asked, none.
+        let batch = looked("ab", TextConfig::default(), true);
+        assert!(batch.backgrounds.iter().all(|bg| bg.alpha == 0.0));
     }
 
     #[test]

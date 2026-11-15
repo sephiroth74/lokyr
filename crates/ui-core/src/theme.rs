@@ -697,6 +697,10 @@ mod tests {
     fn resolves_as_derived(theme: &Spec) {
         let resolved = Variant::of(theme).tokens;
         let mut derived = derived(&theme.terminal);
+        // The token that came after the derivation, of its rule alone.
+        if let Some(color) = resolved.0.get("cursor.guide") {
+            derived.set("cursor.guide", *color);
+        }
         for (name, value) in &theme.tokens {
             let lokyr_plugin_sdk::theme::TokenValue::Color(color) = value else {
                 panic!("{}: {name} of an expression", theme.name);
@@ -765,10 +769,12 @@ mod tests {
     fn the_derived_tokens_are_the_sdk_s_and_the_built_in_themes_give_of_them() {
         use std::collections::BTreeSet;
         let sdk: BTreeSet<&str> = lokyr_plugin_sdk::theme::TOKENS.into_iter().collect();
+        // Those of before the rules, and those that came after them.
+        let after = BTreeSet::from(["cursor.guide"]);
         for theme in terminal_themes() {
             let derived = derived(&theme.terminal);
             let names: BTreeSet<&str> = derived.0.keys().map(String::as_str).collect();
-            assert_eq!(names, sdk, "{}", theme.name);
+            assert_eq!(&names | &after, sdk, "{}", theme.name);
         }
         for (name, ..) in LIGHT_TOKENS.iter().chain(DARK_TOKENS) {
             assert!(sdk.contains(name), "{name}");

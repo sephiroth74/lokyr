@@ -8,6 +8,7 @@ command-window-next-agent = Vai al prossimo agente
 command-window-next = Passa alla finestra successiva
 command-window-previous = Passa alla finestra precedente
 command-window-toggle-float-on-top = Sempre in primo piano
+command-window-toggle-cursor-guide = Mostra la guida del cursore
 command-app-about = Informazioni su Lokyr
 command-app-quit = Esci da Lokyr
 command-app-check-for-updates = Controlla aggiornamenti…

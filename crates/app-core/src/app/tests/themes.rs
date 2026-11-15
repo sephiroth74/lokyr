@@ -1152,3 +1152,33 @@ fn the_themes_list_and_colors_come_off_the_main_thread_a_part_at_a_time() {
     assert!(app.theme_catalog.borrow().finished());
     let _ = std::fs::remove_dir_all(directory);
 }
+
+#[test]
+fn the_cursor_guide_shows_as_its_item_toggles_it_until_the_config_s_key_changes() {
+    let (mut fake, mut app, directory) = with_themes("guide", "", &[]);
+    let toggle = |fake: &mut Fake, app: &mut App| {
+        fake.send_app(app, AppEvent::Command(CURSOR_GUIDE.to_owned()));
+    };
+    // Off by default, its item not ticked, in the View menu.
+    assert!(!app.cursor_guide && !fake.command_checked(CURSOR_GUIDE));
+    toggle(&mut fake, &mut app);
+    assert!(app.cursor_guide && fake.command_checked(CURSOR_GUIDE));
+    toggle(&mut fake, &mut app);
+    assert!(!app.cursor_guide && !fake.command_checked(CURSOR_GUIDE));
+    // The config's key turns it on, and off again as it changes; the same
+    // key again keeps the item's choice.
+    let mut config = Config::default();
+    config.cursor.guide = true;
+    app.apply(&mut fake, config.clone());
+    assert!(app.cursor_guide && fake.command_checked(CURSOR_GUIDE));
+    toggle(&mut fake, &mut app);
+    config.text.bold = !config.text.bold;
+    app.apply(&mut fake, config.clone());
+    assert!(!app.cursor_guide);
+    config.cursor.guide = false;
+    app.apply(&mut fake, config);
+    assert!(!app.cursor_guide && !fake.command_checked(CURSOR_GUIDE));
+    // Its color the theme's token.
+    assert!(app.theme.dark.tokens.get("cursor.guide").is_some());
+    let _ = std::fs::remove_dir_all(directory);
+}

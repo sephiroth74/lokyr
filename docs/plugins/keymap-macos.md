@@ -13,6 +13,7 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⌘N, ⇧⌘W, ⇧⌘I, ⌥⌘1 to ⌥⌘9 | `window.new`, `window.close`, `window.set-title`, `window.goto` |
 | ⌘C, ⌘V, ⌘A, ⌘K | `pane.copy`, `pane.paste`, `pane.select-all`, `pane.clear` |
 | ⌘=, ⌘+, ⌘-, ⌘0 | `font.bigger`, `font.smaller`, `font.reset` |
+| ⌥⌘; | `window.toggle-cursor-guide`: the band across the cursor's row |
 | ⇧⌘↑, ⇧⌘↓, ⌘Page Up, ⌘Page Down, ⌘Home, ⌘End | scrolling, by a line, a page, or to the top and the bottom |
 | ⌘↑, ⌘↓ | the previous prompt and the next, of the commands that the shell marks |
 | ⌘-click | `links.open` |

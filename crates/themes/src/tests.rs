@@ -746,7 +746,7 @@ fn a_new_theme_of_a_built_in_one_writes_every_key_its_optional_ones_as_comments(
     assert!(text.find("the text's when left out").unwrap() < text.find("\n[interface]\n").unwrap());
     assert!(
         text.trim_end()
-            .ends_with("\"terminal.fg\" = \"foreground\""),
+            .ends_with("\"cursor.guide\" = \"foreground / 10%\""),
         "{text}"
     );
     let _ = fs::remove_dir_all(folder);

@@ -472,6 +472,8 @@ impl<B: Backend> App<B> {
                 platform.set_command_enabled(&command, true);
             }
         }
+        // The cursor guide's item ticked as it shows.
+        platform.set_command_checked(super::CURSOR_GUIDE, self.cursor_guide);
         self.menu_contexts = menu_contexts(&self.commands, &self.menu_items);
         // The plugins' items of the menu bar ticked as their plugins say,
         // each, as the items' places change with the menu.
@@ -639,6 +641,7 @@ pub(super) fn main_menu(
                     && command.name != NEW_THEME
                     && command.name != IMPORT_THEMES
                     && command.name != FLOAT_ON_TOP
+                    && command.name != super::CURSOR_GUIDE
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
                     && command.name != NEXT_WINDOW
@@ -704,6 +707,29 @@ pub(super) fn main_menu(
         })
         .collect();
     let mut view = items(&[Category::View]);
+    // The cursor guide, a group of its own after the view's scrolls and
+    // jumps, before the palette where it is there.
+    if let Some(command) = commands.get(super::CURSOR_GUIDE) {
+        let item = MenuItem::Command {
+            title: command.title.clone(),
+            command: super::CURSOR_GUIDE.to_owned(),
+            shortcut: keymap.shortcut(super::CURSOR_GUIDE).and_then(shortcut),
+        };
+        let palette = view.iter().position(
+            |item| matches!(item, MenuItem::Command { command, .. } if command == "command-palette.open"),
+        );
+        match palette {
+            Some(at) => view
+                .splice(at..at, [item, MenuItem::Separator])
+                .for_each(drop),
+            None => {
+                if !view.is_empty() {
+                    view.push(MenuItem::Separator);
+                }
+                view.push(item);
+            }
+        }
+    }
     // A new theme of the one in force, themes imported and the themes'
     // folder right after the palette's theme picker, where the palette is
     // there; else after the view's other commands.

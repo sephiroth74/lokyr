@@ -143,3 +143,5 @@
 "terminal.bg" = "background"
 # A bar of the terminal's own text.
 "terminal.fg" = "foreground"
+# The band across the cursor's row, as the cursor guide shows it.
+"cursor.guide" = "foreground / 10%"

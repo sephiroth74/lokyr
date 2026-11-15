@@ -133,6 +133,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Jump to Previous Prompt cmd+ArrowUp",
             "Jump to Next Prompt cmd+ArrowDown",
             "-",
+            "Show Cursor Guide alt+cmd+;",
+            "-",
             "Command Palette… shift+cmd+p",
             "Choose Theme…",
             "New Theme from Current…",
@@ -309,7 +311,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 129);
+    assert_eq!(app.keymap.bindings().len(), 130);
 }
 
 #[test]
@@ -405,6 +407,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::Windows
             ),
             ("window.set-title", "Set Title…", Category::Windows),
+            (
+                "window.toggle-cursor-guide",
+                "Show Cursor Guide",
+                Category::View,
+            ),
             (
                 "window.toggle-float-on-top",
                 "Float on Top",

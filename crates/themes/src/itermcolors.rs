@@ -167,6 +167,11 @@ fn theme(
             .tokens
             .insert("search.match".to_owned(), TokenValue::Color(matched));
     }
+    if let Some(guide) = color("Cursor Guide Color")? {
+        theme
+            .tokens
+            .insert("cursor.guide".to_owned(), TokenValue::Color(guide));
+    }
     Ok(theme)
 }
 

@@ -9,6 +9,7 @@ command-window-next-agent = Go to Next Agent
 command-window-next = Cycle Through Windows
 command-window-previous = Cycle Back Through Windows
 command-window-toggle-float-on-top = Float on Top
+command-window-toggle-cursor-guide = Show Cursor Guide
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…

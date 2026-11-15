@@ -211,6 +211,7 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `gutter.failed` | The bar beside the prompt of a command that failed | `red` |
 | `terminal.bg` | A bar of the terminal's own background | `background` |
 | `terminal.fg` | A bar of the terminal's own text | `foreground` |
+| `cursor.guide` | The band across the cursor's row, as the cursor guide shows it | `foreground / 10%` |
 
 <!-- The tokens' table's end. -->
 
@@ -245,7 +246,7 @@ A theme that extends another takes all of its colors and gives its own over them
 
 ## How Lokyr reads `.itermcolors`
 
-Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and never converts it: its name is the file's, without `.itermcolors`. Each color's `Color Space` tells how its components read: `sRGB` as they are, `P3` of Display P3, and `Calibrated`, `Device` or none, as old files have, of calibrated Generic RGB; each converted to sRGB and cut to its gamut, as macOS cuts it. Lokyr takes its `Ansi 0 Color` to `Ansi 15 Color`, `Background Color`, `Foreground Color`, `Cursor Color`, `Cursor Text Color`, `Selection Color`, `Selected Text Color`, `Bold Color`, `Link Color` and `Underline Color`, and colors the interface of them by the tokens' rules. A file of keys of both appearances, ending in ` (Light)` and ` (Dark)`, is two themes, `<name> (Light)` and `<name> (Dark)`, each named so in the config.
+Lokyr reads an `.itermcolors` file of the themes folder as iTerm2 reads it, and never converts it: its name is the file's, without `.itermcolors`. Each color's `Color Space` tells how its components read: `sRGB` as they are, `P3` of Display P3, and `Calibrated`, `Device` or none, as old files have, of calibrated Generic RGB; each converted to sRGB and cut to its gamut, as macOS cuts it. Lokyr takes its `Ansi 0 Color` to `Ansi 15 Color`, `Background Color`, `Foreground Color`, `Cursor Color`, `Cursor Text Color`, `Selection Color`, `Selected Text Color`, `Bold Color`, `Link Color`, `Underline Color` and `Cursor Guide Color`, the token `cursor.guide`, and colors the interface of them by the tokens' rules. A file of keys of both appearances, ending in ` (Light)` and ` (Dark)`, is two themes, `<name> (Light)` and `<name> (Dark)`, each named so in the config.
 
 ## Sharing a theme
 

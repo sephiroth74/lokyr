@@ -3685,7 +3685,8 @@ long-command = 0
                 "fade-out",
                 "fade-out-curve",
                 "hidden",
-                "movement"
+                "movement",
+                "guide"
             ]
         );
         let font = keys::<FontConfig>();

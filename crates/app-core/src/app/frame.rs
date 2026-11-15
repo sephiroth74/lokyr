@@ -858,6 +858,15 @@ impl<B: Backend> App<B> {
             config: text,
             blink_shown,
             minimum_contrast: self.config.theme.minimum_contrast.value(),
+            cursor_guide: None,
+        };
+        // The cursor guide, of the pane that has the keyboard alone.
+        let guided = TextLook {
+            cursor_guide: self
+                .cursor_guide
+                .then(|| self.variant(platform, window).tokens.get("cursor.guide"))
+                .flatten(),
+            ..look
         };
         let config = self.config.cursor;
         let movement = config.movement;
@@ -957,7 +966,7 @@ impl<B: Backend> App<B> {
             (x, y),
             selection.as_ref(),
             grid_cursor,
-            look,
+            guided,
             font,
         );
         let mut other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
@@ -968,7 +977,7 @@ impl<B: Backend> App<B> {
                 (x, y),
                 selection.as_ref(),
                 grid_cursor,
-                look,
+                guided,
                 font,
             );
             other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
