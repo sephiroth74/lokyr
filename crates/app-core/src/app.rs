@@ -758,6 +758,8 @@ pub struct App<B: Backend> {
     /// The themes' files that the user is asked to install, by their
     /// alerts.
     theme_asks: BTreeMap<AlertId, installs::ThemeInstall>,
+    /// The targets that resolve off the main thread, before they open.
+    resolutions: asks::Resolutions,
     /// The questions of a new theme's name, each of the theme that it
     /// copies.
     new_theme_asks: BTreeMap<AlertId, theme_copies::NewTheme>,
@@ -1039,6 +1041,7 @@ impl<B: Backend> App<B> {
             open_asks: BTreeMap::new(),
             theme_asks: BTreeMap::new(),
             new_theme_asks: BTreeMap::new(),
+            resolutions: asks::Resolutions::default(),
             importing: false,
             import_asks: BTreeMap::new(),
             links_chosen: (None, None),
@@ -4489,6 +4492,8 @@ impl<B: Backend> App<B> {
                     .collect();
                 self.collect(platform, &changed);
                 self.exits(platform);
+                // The targets that their threads resolved, which open.
+                self.take_resolved(platform);
                 // The reading waits for the changes to settle: each change
                 // puts it off.
                 if let Some(file) = &mut self.config_file

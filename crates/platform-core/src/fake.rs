@@ -238,6 +238,9 @@ pub struct Fake {
     /// The save panels that are open: each its id, its window and its
     /// file's name.
     save_panels: Vec<(SavePanelId, WindowId, String, String)>,
+    /// Whether the resolutions of targets off the main thread wait, as of
+    /// a file system that does not answer, and what lets them go.
+    held_targets: Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
     /// The save panels whose windows closed, whose ends are to tell.
     ended_saves: Vec<SavePanelId>,
     /// The open panels shown, each its window, its extensions and its
@@ -342,6 +345,7 @@ impl Fake {
             clipboard: None,
             clipboard_image: None,
             save_panels: Vec::new(),
+            held_targets: Arc::default(),
             ended_saves: Vec::new(),
             open_panels: Vec::new(),
             awake: (Awake::Off, String::new()),
@@ -566,6 +570,16 @@ impl Fake {
     /// its id, its window, its file's name and its message.
     pub fn save_panels(&self) -> &[(SavePanelId, WindowId, String, String)] {
         &self.save_panels
+    }
+
+    /// Holds the resolutions of targets off the main thread, as a file
+    /// system that does not answer would, of `true`, or lets them go.
+    pub fn hold_targets(&self, held: bool) {
+        let (lock, released) = &*self.held_targets;
+        *lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = held;
+        released.notify_all();
     }
 
     /// The open panels that the app showed, each its window, its
@@ -1579,29 +1593,24 @@ impl Platform for Fake {
     /// of another machine and a text that is no URL fail, as a backend's
     /// do.
     fn resolve_target(&self, target: &str) -> Result<Target, Error> {
-        let failed = |why: String| Error::Open(target.to_owned(), why);
-        let path = match given(target) {
-            Given::Url => {
-                return Ok(Target {
-                    kind: TargetKind::Url,
-                    location: target.to_owned(),
-                });
+        resolve(target)
+    }
+
+    /// [`resolve`], once the targets that the test holds are let go.
+    fn target_resolver(&self) -> crate::TargetResolver {
+        let held = Arc::clone(&self.held_targets);
+        Arc::new(move |target: &str| {
+            let (lock, released) = &*held;
+            let mut holding = lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            while *holding {
+                holding = released
+                    .wait(holding)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
             }
-            Given::Path(path) => path,
-            Given::Neither(why) => return Err(failed(why.to_owned())),
-        };
-        let path = std::fs::canonicalize(path).map_err(|error| failed(error.to_string()))?;
-        let metadata = std::fs::metadata(&path).map_err(|error| failed(error.to_string()))?;
-        let kind = if crate::runs_by_itself(&path, &metadata) {
-            TargetKind::Program
-        } else if metadata.is_dir() {
-            TargetKind::Directory
-        } else {
-            TargetKind::File
-        };
-        Ok(Target {
-            kind,
-            location: path.display().to_string(),
+            drop(holding);
+            resolve(target)
         })
     }
 
@@ -1757,4 +1766,36 @@ pub fn quarantined(path: &Path) -> bool {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .contains(&(metadata.dev(), metadata.ino()))
+}
+
+/// A URL, unless of `file`; a directory, a program, as the shared rule
+/// tells of the file that the target's links lead to, or a file, at the
+/// path that its links lead to; a path that leads nowhere, a `file` URL
+/// of another machine and a text that is no URL fail, as a backend's
+/// do.
+fn resolve(target: &str) -> Result<Target, Error> {
+    let failed = |why: String| Error::Open(target.to_owned(), why);
+    let path = match given(target) {
+        Given::Url => {
+            return Ok(Target {
+                kind: TargetKind::Url,
+                location: target.to_owned(),
+            });
+        }
+        Given::Path(path) => path,
+        Given::Neither(why) => return Err(failed(why.to_owned())),
+    };
+    let path = std::fs::canonicalize(path).map_err(|error| failed(error.to_string()))?;
+    let metadata = std::fs::metadata(&path).map_err(|error| failed(error.to_string()))?;
+    let kind = if crate::runs_by_itself(&path, &metadata) {
+        TargetKind::Program
+    } else if metadata.is_dir() {
+        TargetKind::Directory
+    } else {
+        TargetKind::File
+    };
+    Ok(Target {
+        kind,
+        location: path.display().to_string(),
+    })
 }

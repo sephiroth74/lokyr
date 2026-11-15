@@ -25,6 +25,50 @@ pub(super) type Place = (u32, Option<u32>);
 /// the place at which a file opens.
 pub(super) type Asked = (String, TargetKind, Option<Place>);
 
+/// What a target's resolution off the main thread is for: an opening, of
+/// the place at which a file opens, or the answer to its question, of what
+/// the user chose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Purpose {
+    Open(Option<Place>),
+    Answered(Chosen, Option<Place>),
+}
+
+/// A target's resolution: its number, and what the platform told of it.
+type Told = (u64, Result<Target, lokyr_platform_core::Error>);
+
+/// The targets that resolve off the main thread, as a path's file system
+/// may not answer, each of its number with its target and its purpose, and
+/// the channel that their threads tell them on.
+#[derive(Debug)]
+pub(super) struct Resolutions {
+    sender: std::sync::mpsc::Sender<Told>,
+    receiver: std::sync::mpsc::Receiver<Told>,
+    pub(super) pending: std::collections::BTreeMap<u64, (String, Purpose)>,
+    next: u64,
+}
+
+impl Default for Resolutions {
+    fn default() -> Self {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        Self {
+            sender,
+            receiver,
+            pending: std::collections::BTreeMap::new(),
+            next: 0,
+        }
+    }
+}
+
+/// Whether `target` reaches a file system as it resolves: a path, or a
+/// `file` URL, whatever its case; any other URL resolves of its text.
+fn reaches_files(target: &str) -> bool {
+    target.starts_with('/')
+        || target
+            .get(..5)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("file:"))
+}
+
 /// A save that a plugin asked, whose panel shows: the window of the
 /// workspace that shows it, the plugin, the question's id and the file's
 /// bytes.
@@ -295,17 +339,87 @@ impl<B: Backend> App<B> {
 
     /// Opens `target` as [`open_target`](Self::open_target) does, a file
     /// that opens at `place`, its line and column, in the config's editor,
-    /// where it names one.
+    /// where it names one, once it resolves.
     pub(super) fn open_target_at(
         &mut self,
         platform: &mut dyn Platform,
         target: String,
         place: Option<Place>,
     ) {
-        let resolved = match platform.resolve_target(&target) {
+        self.resolve_then(platform, target, Purpose::Open(place));
+    }
+
+    /// Resolves `target`, then goes on with `purpose`: a path or a `file`
+    /// URL on a thread of its own, whose answer comes as the main thread
+    /// wakes, so that a file system that does not answer, as a network's
+    /// volume, holds no main thread; any other URL here, of its text.
+    fn resolve_then(&mut self, platform: &mut dyn Platform, target: String, purpose: Purpose) {
+        if !reaches_files(&target) {
+            let resolved = platform.resolve_target(&target);
+            return self.target_resolved(platform, target, purpose, resolved);
+        }
+        let resolutions = &mut self.resolutions;
+        let id = resolutions.next;
+        resolutions.next += 1;
+        resolutions.pending.insert(id, (target.clone(), purpose));
+        let (resolve, waker) = (platform.target_resolver(), platform.waker());
+        let sender = resolutions.sender.clone();
+        let spawned = std::thread::Builder::new()
+            .name("lokyr-targets".to_owned())
+            .spawn(move || {
+                let resolved = resolve(&target);
+                if sender.send((id, resolved)).is_ok() {
+                    waker.wake();
+                }
+            });
+        // Of no thread, here, as before.
+        if spawned.is_err()
+            && let Some((target, purpose)) = self.resolutions.pending.remove(&id)
+        {
+            let resolved = platform.resolve_target(&target);
+            self.target_resolved(platform, target, purpose, resolved);
+        }
+    }
+
+    /// Takes the targets that their threads resolved since, each going on
+    /// with its purpose.
+    pub(super) fn take_resolved(&mut self, platform: &mut dyn Platform) {
+        while let Ok((id, resolved)) = self.resolutions.receiver.try_recv() {
+            if let Some((target, purpose)) = self.resolutions.pending.remove(&id) {
+                self.target_resolved(platform, target, purpose, resolved);
+            }
+        }
+    }
+
+    /// Goes on with `purpose` of `target`, as it resolved, `resolved`: an
+    /// opening, as [`opening`] decides, or the answer to its question.
+    fn target_resolved(
+        &mut self,
+        platform: &mut dyn Platform,
+        target: String,
+        purpose: Purpose,
+        resolved: Result<Target, lokyr_platform_core::Error>,
+    ) {
+        let resolved = match resolved {
             Ok(resolved) => resolved,
             Err(error) => {
                 eprintln!("lokyr: {error}");
+                return;
+            }
+        };
+        let place = match purpose {
+            Purpose::Open(place) => place,
+            Purpose::Answered(chosen, place) => {
+                let program = resolved.kind == TargetKind::Program
+                    && self.editor_address(&resolved, place).is_none();
+                let done = if program || chosen == Chosen::File(OpenFile::Reveal) {
+                    platform.reveal(&resolved)
+                } else {
+                    self.open_resolved(platform, &resolved, place)
+                };
+                if let Err(error) = done {
+                    eprintln!("lokyr: {error}");
+                }
                 return;
             }
         };
@@ -394,21 +508,10 @@ impl<B: Backend> App<B> {
             (_, 0) => Chosen::Url(OpenUrl::Open),
             _ => return,
         };
-        let done = platform.resolve_target(&target).and_then(|resolved| {
-            let program = resolved.kind == TargetKind::Program
-                && self.editor_address(&resolved, place).is_none();
-            if program || chosen == Chosen::File(OpenFile::Reveal) {
-                platform.reveal(&resolved)
-            } else {
-                self.open_resolved(platform, &resolved, place)
-            }
-        });
-        if let Err(error) = done {
-            eprintln!("lokyr: {error}");
-        }
         if suppressed {
             self.remember_opening(chosen);
         }
+        self.resolve_then(platform, target, Purpose::Answered(chosen, place));
     }
 
     /// Opens `resolved`: a file of a `place` in the config's editor, of its
@@ -964,7 +1067,7 @@ pub(super) fn invisible(c: char) -> bool {
 
 /// What the user chose that links do, as the config writes it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Chosen {
+pub(super) enum Chosen {
     /// What a URL does.
     Url(OpenUrl),
     /// What a file does.

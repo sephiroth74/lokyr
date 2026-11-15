@@ -3306,9 +3306,21 @@ fn pasting(test: &str, text: &str, program: Program) -> (Fake, App, WindowId, Pa
 
 /// Opens with Command-click what `window` shows at `col` of its first
 /// row.
+/// Lets the targets that resolve off the main thread tell their answers,
+/// as their threads wake the app.
+fn resolved(fake: &mut Fake, app: &mut App) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !app.resolutions.pending.is_empty() {
+        assert!(Instant::now() < deadline, "the targets resolved");
+        std::thread::sleep(Duration::from_millis(1));
+        fake.send_app(app, AppEvent::Wake);
+    }
+}
+
 fn cmd_click(fake: &mut Fake, app: &mut App, window: WindowId, col: u16) {
     fake.send(app, window, click(true, cell(col, 0), CMD, 1));
     fake.send(app, window, click(false, cell(col, 0), CMD, 1));
+    resolved(fake, app);
 }
 
 /// A drag of the left button from `from` to `to`, with `mods`.

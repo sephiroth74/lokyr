@@ -620,6 +620,7 @@ fn a_cmd_click_opens_the_link_under_it_rather_than_selecting() {
     let cmd_click = |fake: &mut Fake, app: &mut App, col, row| {
         fake.send(app, window, click(true, cell(col, row), CMD, 1));
         fake.send(app, window, click(false, cell(col, row), CMD, 1));
+        resolved(fake, app);
     };
     // A URL, a path from the program's directory, an OSC 8 link, and
     // nothing on a space.

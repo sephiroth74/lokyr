@@ -268,6 +268,35 @@ fn app_of(config: Config, program: Program) -> App {
 }
 
 #[test]
+fn a_path_resolves_off_the_main_thread_and_opens_as_its_answer_comes() {
+    let base = real_directory("resolved-off");
+    let file = base.join("notes.txt");
+    std::fs::write(&file, "notes").unwrap();
+    let path = std::fs::canonicalize(&file).unwrap().display().to_string();
+    let mut config = Config::default();
+    config.links.files = lokyr_kernel::config::OpenFile::Open;
+    config.links.urls = lokyr_kernel::config::OpenUrl::Open;
+    let mut fake = Fake::default();
+    let mut app = super::app(config, quiet());
+    fake.start(&mut app);
+    // A file system that does not answer: the main thread goes on, the
+    // path waiting, a URL opening of its text alone.
+    fake.hold_targets(true);
+    app.open_target_at(&mut fake, path.clone(), None);
+    assert_eq!(app.resolutions.pending.len(), 1);
+    app.open_target_at(&mut fake, "https://lokyr.dev/x".to_owned(), None);
+    for _ in 0..5 {
+        fake.send_app(&mut app, AppEvent::Wake);
+    }
+    assert_eq!(fake.opened(), ["https://lokyr.dev/x"]);
+    // It answers: the path opens.
+    fake.hold_targets(false);
+    resolved(&mut fake, &mut app);
+    assert_eq!(fake.opened(), ["https://lokyr.dev/x".to_owned(), path]);
+    let _ = std::fs::remove_dir_all(&base);
+}
+
+#[test]
 fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let base = real_directory("editor-line");
     let file = base.join("My File.rs");
@@ -284,6 +313,7 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("vscode"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    resolved(&mut fake, &mut app);
     let escaped = path.replace(' ', "%20");
     assert_eq!(fake.opened(), [format!("vscode://file{escaped}:42:7")]);
     // Of no column, the first; Sublime Text's of its query.
@@ -291,6 +321,7 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("sublime"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((3, None)));
+    resolved(&mut fake, &mut app);
     assert_eq!(
         fake.opened(),
         [format!("subl://open?url=file://{escaped}&line=3&column=1")]
@@ -301,12 +332,14 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("system"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.opened(), std::slice::from_ref(&path));
     let mut fake = Fake::default();
     fake.leave_unhandled("zed");
     let mut app = super::app(with("zed"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, path.clone(), Some((42, Some(7))));
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.opened(), std::slice::from_ref(&path));
     // A file that its own application would run, as a script, or a
     // source file that a terminal claims: the editor's, as nothing runs;
@@ -321,11 +354,13 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("vscode"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.opened(), [format!("vscode://file{script_path}:2:1")]);
     let mut fake = Fake::default();
     let mut app = super::app(with("system"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    resolved(&mut fake, &mut app);
     assert!(fake.opened().is_empty());
     assert_eq!(fake.revealed(), std::slice::from_ref(&script_path));
     // Not installed, the Finder too.
@@ -334,6 +369,7 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     let mut app = super::app(with("vscode"), quiet());
     fake.start(&mut app);
     app.open_target_at(&mut fake, script_path.clone(), Some((2, None)));
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.revealed(), std::slice::from_ref(&script_path));
     // A folder opens as before, whatever the line.
     let mut fake = Fake::default();
@@ -341,5 +377,6 @@ fn a_file_s_line_opens_in_the_config_s_editor_or_as_the_file() {
     fake.start(&mut app);
     let folder = std::fs::canonicalize(&base).unwrap().display().to_string();
     app.open_target_at(&mut fake, folder.clone(), Some((1, None)));
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.opened(), [folder]);
 }

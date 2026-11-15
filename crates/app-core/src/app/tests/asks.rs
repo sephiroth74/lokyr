@@ -266,6 +266,7 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
     assert_eq!(shown(&fake), url);
     // Ticked, but cancelled: nothing changes.
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
+    resolved(&mut fake, &mut app);
     // A file: Open, Show in Finder, or Cancel.
     cmd_click(&mut fake, &mut app, window, 22);
     let file = (
@@ -292,8 +293,10 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
     // without a question, before the file's reload too.
     cmd_click(&mut fake, &mut app, window, 2);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+    resolved(&mut fake, &mut app);
     cmd_click(&mut fake, &mut app, window, 22);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 1, true);
+    resolved(&mut fake, &mut app);
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(written.starts_with("# mine\n"), "{written}");
     let links = Config::read(&path).unwrap().links;
@@ -314,6 +317,7 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
     app.apply(&mut fake, Config::default());
     cmd_click(&mut fake, &mut app, window, 22);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+    resolved(&mut fake, &mut app);
     assert_eq!(fake.opened().last(), Some(&real("/etc/hosts")));
     assert_eq!(Config::read(&path).unwrap().links.files, OpenFile::Open);
     assert!(app.links_chosen == (None, None));
@@ -369,6 +373,7 @@ fn a_file_that_becomes_a_program_while_its_question_waits_shows_in_the_finder() 
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
     fake.answer_alert(&mut app, fake.alerts()[0].id, 0);
+    resolved(&mut fake, &mut app);
     #[cfg(unix)]
     {
         assert!(fake.opened().is_empty());
@@ -433,8 +438,10 @@ fn a_link_s_answer_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
     let (mut fake, mut app, window, path) = pasting("bad-links", text, links());
     cmd_click(&mut fake, &mut app, window, 2);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+    resolved(&mut fake, &mut app);
     cmd_click(&mut fake, &mut app, window, 22);
     fake.answer_alert_with(&mut app, fake.alerts()[0].id, 0, true);
+    resolved(&mut fake, &mut app);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
     assert_eq!(
         app.links_chosen,
@@ -544,6 +551,7 @@ fn don_t_ask_again_writes_the_config() {
     let id = fake.alerts()[0].id;
     // Ticked, but cancelled: nothing changes.
     fake.answer_alert_with(&mut app, id, 2, true);
+    resolved(&mut fake, &mut app);
     assert_eq!(
         std::fs::read_to_string(&path).unwrap(),
         "# mine\n[font]\nsize = 14\n"
@@ -551,6 +559,7 @@ fn don_t_ask_again_writes_the_config() {
     paste_key(&mut fake, &mut app, window, "a\nb");
     let id = fake.alerts()[0].id;
     fake.answer_alert_with(&mut app, id, 0, true);
+    resolved(&mut fake, &mut app);
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(
         written.starts_with("# mine\n[font]\nsize = 14\n"),
@@ -574,6 +583,7 @@ fn don_t_ask_again_lasts_until_the_app_quits_where_the_config_cannot_keep_it() {
     paste_key(&mut fake, &mut app, window, "a\nb");
     let id = fake.alerts()[0].id;
     fake.answer_alert_with(&mut app, id, 1, true);
+    resolved(&mut fake, &mut app);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
     assert!(app.pastes_unconfirmed);
     // A reload of the file does not bring the question back.

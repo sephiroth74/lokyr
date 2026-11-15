@@ -1066,6 +1066,10 @@ impl Platform for Backend {
         open::resolve(target)
     }
 
+    fn target_resolver(&self) -> lokyr_platform_core::TargetResolver {
+        std::sync::Arc::new(open::resolve)
+    }
+
     fn open(&mut self, target: &Target) -> Result<(), Error> {
         open::open(target)
     }

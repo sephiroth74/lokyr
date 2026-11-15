@@ -65,6 +65,10 @@ pub use runs::{RUNS, runs_by_itself};
 pub use tools::{LinkOutcome, ToolLink};
 pub use waker::Waker;
 
+/// What resolves a target, as [`Platform::resolve_target`] does, from any
+/// thread.
+pub type TargetResolver = std::sync::Arc<dyn Fn(&str) -> Result<Target, Error> + Send + Sync>;
+
 /// A window, which no other window of the process takes, even once it is
 /// closed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -941,6 +945,11 @@ pub trait Platform {
     /// machine and a text that is no URL fail. The platform tells the
     /// facts, and decides nothing: the app decides what opens, and how.
     fn resolve_target(&self, target: &str) -> Result<Target, Error>;
+
+    /// What resolves a target as [`Platform::resolve_target`] does, from
+    /// any thread, so that a path of a file system that does not answer,
+    /// as a network's volume, holds no main thread.
+    fn target_resolver(&self) -> TargetResolver;
 
     /// Opens `target`, as [`Platform::resolve_target`] told it, with the
     /// system's handler: a URL in its application, as the browser; a file
