@@ -38,7 +38,7 @@ const ACT: &str = "inspector-act:";
 const LIT: Duration = Duration::from_secs(3);
 
 /// The width of the tokens' column.
-const COLUMN: f32 = 460.0;
+const COLUMN: f32 = 300.0;
 
 /// The state of the Inspector.
 #[derive(Debug, Default)]
@@ -182,22 +182,32 @@ impl Inspector {
         cx.request_render(themes_page())
     }
 
-    /// Opens the file of the token `name` at its line, or copies its line,
-    /// `"name" = "value"`, of its rule's text or of its color, to paste into
-    /// a theme's file.
+    /// Opens the file of the color `name` at its line, or copies its line
+    /// to paste into a theme's file: a token's `"name" = "value"`, of its
+    /// rule's text or of its color, a key of `[terminal]`'s `name =
+    /// "#rrggbb"`, and one of the palette's colors its color alone.
     fn act(&self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
-        let Some(token) = self
-            .tokens
-            .as_ref()
-            .and_then(|tokens| tokens.tokens.iter().find(|token| token.name == name))
+        let Some(tokens) = self.tokens.as_ref() else {
+            return Ok(());
+        };
+        let terminal = tokens.terminal.iter().position(|token| token.name == name);
+        let Some(token) = terminal
+            .map(|at| &tokens.terminal[at])
+            .or_else(|| tokens.tokens.iter().find(|token| token.name == name))
         else {
             return Ok(());
         };
-        match &token.origin {
-            TokenOrigin::File { path, line, .. } => cx.open_at(path, (*line).max(1), None),
-            TokenOrigin::Rule { text } => copy(cx, name, text),
-            TokenOrigin::Theme { .. } => copy(cx, name, &token.color.to_string()),
-        }
+        let color = token.color.to_string();
+        let line = match (&token.origin, terminal) {
+            (TokenOrigin::File { path, line, .. }, _) => {
+                return cx.open_at(path, (*line).max(1), None);
+            }
+            (_, Some(_)) if in_palette(name) => format!("\"{color}\""),
+            (_, Some(_)) => format!("{name} = \"{color}\""),
+            (TokenOrigin::Rule { text }, None) => format!("\"{name}\" = \"{text}\""),
+            (TokenOrigin::Theme { .. }, None) => format!("\"{name}\" = \"{color}\""),
+        };
+        copy(cx, &line)
     }
 
     /// Its part of the themes page: the tokens' column at its left; the
@@ -239,7 +249,9 @@ impl Inspector {
         });
         let wanted = words(&self.filter);
         let rows = tokens.map_or_else(Vec::new, |tokens| {
-            token_rows(cx, &tokens.tokens, &wanted, &self.lit)
+            let mut rows = token_rows(cx, (&tokens.terminal, true), &wanted, &self.lit);
+            rows.extend(token_rows(cx, (&tokens.tokens, false), &wanted, &self.lit));
+            rows
         });
         let list = Node::scroll(vec![Node::container(rows).key("inspector-tokens").layout(
             Layout {
@@ -326,10 +338,9 @@ impl Inspector {
     }
 }
 
-/// Copies the line of the token `name` of `value` to paste, and tells it,
-/// as the notices' pace lets it.
-fn copy(cx: &mut Cx<'_>, name: &str, value: &str) -> Result<(), Error> {
-    let line = format!("\"{name}\" = \"{value}\"");
+/// Copies `line` to paste, and tells it, as the notices' pace lets it.
+fn copy(cx: &mut Cx<'_>, line: &str) -> Result<(), Error> {
+    let line = line.to_owned();
     cx.set_clipboard_text(&line)?;
     let told = message(cx, "inspector-copied", &[("line", line)]);
     // Copied all the same where notices come too fast to tell each.
@@ -337,8 +348,9 @@ fn copy(cx: &mut Cx<'_>, name: &str, value: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// The tokens of `now` whose color or origin differs from `before`'s, or
-/// that `before` had not; none of a first read.
+/// The colors of `now`, its terminal's and its tokens, whose color or
+/// origin differs from `before`'s, or that `before` had not; none of a
+/// first read.
 fn changed(before: Option<&ThemeTokens>, now: Option<&ThemeTokens>) -> BTreeSet<String> {
     let (Some(before), Some(now)) = (before, now) else {
         return BTreeSet::new();
@@ -347,15 +359,43 @@ fn changed(before: Option<&ThemeTokens>, now: Option<&ThemeTokens>) -> BTreeSet<
         return BTreeSet::new();
     }
     let old: BTreeMap<&str, &ThemeToken> = before
-        .tokens
+        .terminal
         .iter()
+        .chain(&before.tokens)
         .map(|token| (token.name.as_str(), token))
         .collect();
-    now.tokens
+    now.terminal
         .iter()
+        .chain(&now.tokens)
         .filter(|token| old.get(token.name.as_str()) != Some(token))
         .map(|token| token.name.clone())
         .collect()
+}
+
+/// The names of the palette's 16 colors, as a theme's expressions write
+/// them.
+const PALETTE: [&str; 16] = [
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright-black",
+    "bright-red",
+    "bright-green",
+    "bright-yellow",
+    "bright-blue",
+    "bright-magenta",
+    "bright-cyan",
+    "bright-white",
+];
+
+/// Whether `name` is one of the palette's colors.
+fn in_palette(name: &str) -> bool {
+    PALETTE.contains(&name)
 }
 
 /// The group of the token `name`: its name's first part, Lokyr's own by
@@ -365,10 +405,13 @@ fn group(name: &str) -> &str {
 }
 
 /// The rows of `tokens` that the filter's `words` keep, all of them, in
-/// their order, each group under its heading, those of `lit` lit.
+/// their order, each group under its heading, those of `lit` lit: of the
+/// terminal's colors where `terminal` says so, its keys under `[terminal]`
+/// and its palette's under `[terminal] palette`, as a theme's file writes
+/// them.
 fn token_rows(
     cx: &mut Cx<'_>,
-    tokens: &[ThemeToken],
+    (tokens, terminal): (&[ThemeToken], bool),
     words: &[String],
     lit: &BTreeSet<String>,
 ) -> Vec<Node> {
@@ -381,7 +424,11 @@ fn token_rows(
         if !words.iter().all(|word| haystack.contains(word.as_str())) {
             continue;
         }
-        let heading = group(&token.name);
+        let heading = match (terminal, in_palette(&token.name)) {
+            (true, false) => "[terminal]",
+            (true, true) => "[terminal] palette",
+            (false, _) => group(&token.name),
+        };
         if last != Some(heading) {
             last = Some(heading);
             rows.push(
@@ -429,8 +476,8 @@ fn origin_text(cx: &mut Cx<'_>, origin: &TokenOrigin) -> String {
     }
 }
 
-/// The row of `token`: its color over the terminal's background, its name,
-/// its value and its origin, and its button, which opens its file or copies
+/// The row of `token`: its color over the terminal's background, of its
+/// value as a tooltip, its name and its origin, and its button, which opens its file or copies
 /// its line; lit as a change made it.
 fn token_row(
     cx: &mut Cx<'_>,
@@ -468,7 +515,10 @@ fn token_row(
         }),
         radius: 4.0,
         ..Style::default()
-    });
+    })
+    // Its value as the pointer rests on it.
+    .key(format!("inspector-swatch:{}", token.name).as_str())
+    .tooltip(value.to_owned());
     let file = matches!(token.origin, TokenOrigin::File { .. });
     let (icon, tip) = if file {
         ("edit", message(cx, "inspector-open", &[]))
@@ -492,7 +542,6 @@ fn token_row(
             min_width: Length::Points(0.0),
             ..Layout::default()
         }),
-        Node::text(value).style(code()),
         Node::icon_button(icon)
             .key(format!("{ACT}{}", token.name).as_str())
             .label(tip.as_str())

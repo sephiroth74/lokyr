@@ -957,6 +957,7 @@ export type ThemeToken = {
 export type ThemeTokens = {
     theme: string,
     variant: ThemeVariant,
+    terminal: { ThemeToken }?,
     tokens: { ThemeToken },
 }
 

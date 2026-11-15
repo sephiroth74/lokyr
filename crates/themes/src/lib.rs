@@ -123,6 +123,10 @@ pub struct Resolved {
     /// Where each token that it gives comes from, of its own file or of
     /// a theme's that it extends; the others take their rules.
     pub sources: BTreeMap<String, Source>,
+    /// Where each of its terminal's colors that it gives comes from, by its
+    /// key of `[terminal]`, as `background`, or `palette.3` of the
+    /// palette's fourth color.
+    pub terminal_sources: BTreeMap<String, Source>,
 }
 
 /// Where a token that a theme gives comes from.
@@ -188,13 +192,15 @@ pub fn resolve(
     let mut chain = Vec::new();
     let partial = load(name, &sources, &mut files, &mut chain)?;
     let credits = partial.credits.clone();
-    let (theme, notices, sources) = partial.finish(name, files.first().map(PathBuf::as_path))?;
+    let (theme, notices, sources, terminal_sources) =
+        partial.finish(name, files.first().map(PathBuf::as_path))?;
     Ok(Resolved {
         theme,
         credits,
         files,
         notices,
         sources,
+        terminal_sources,
     })
 }
 
@@ -686,8 +692,14 @@ struct File {
     extends: Option<(String, Range<usize>)>,
 }
 
-/// A theme made whole: the theme, its notices, and its tokens' sources.
-type Finished = (Theme, Vec<Error>, BTreeMap<String, Source>);
+/// A theme made whole: the theme, its notices, and its tokens' and its
+/// terminal colors' sources.
+type Finished = (
+    Theme,
+    Vec<Error>,
+    BTreeMap<String, Source>,
+    BTreeMap<String, Source>,
+);
 
 /// A theme of what it gives alone, which the themes that it extends fill.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -708,6 +720,9 @@ struct Partial {
     /// Where each token that it gives comes from, which a notice of it
     /// tells.
     sources: BTreeMap<String, Source>,
+    /// Where each of its terminal's colors comes from, by its key, as
+    /// `background`, or `palette.3` of the palette's fourth color.
+    terminal_sources: BTreeMap<String, Source>,
     /// What the files tell that colors nothing, as [`Resolved::notices`].
     notices: Vec<Error>,
     credits: ThemeCredits,
@@ -736,6 +751,10 @@ impl Partial {
                 .keys()
                 .map(|token| (token.clone(), Source::Theme(theme.name.clone())))
                 .collect(),
+            terminal_sources: terminal_keys(terminal)
+                .into_iter()
+                .map(|key| (key, Source::Theme(theme.name.clone())))
+                .collect(),
             notices: Vec::new(),
             credits: ThemeCredits::default(),
         }
@@ -751,6 +770,8 @@ impl Partial {
         tokens.extend(self.tokens);
         let mut sources = base.sources;
         sources.extend(self.sources);
+        let mut terminal_sources = base.terminal_sources;
+        terminal_sources.extend(self.terminal_sources);
         let mut notices = base.notices;
         notices.extend(self.notices);
         Self {
@@ -768,6 +789,7 @@ impl Partial {
             underline: self.underline.or(base.underline),
             tokens,
             sources,
+            terminal_sources,
             notices,
             credits: self.credits.over(base.credits),
         }
@@ -831,8 +853,30 @@ impl Partial {
         }
         let mut sources = self.sources;
         sources.retain(|token, _| theme.tokens.contains_key(token));
-        Ok((theme, notices, sources))
+        Ok((theme, notices, sources, self.terminal_sources))
     }
+}
+
+/// The keys of `[terminal]` that `terminal` gives, the palette's colors as
+/// `palette.0` to `palette.15`.
+fn terminal_keys(terminal: &TerminalColors) -> Vec<String> {
+    let given = [
+        ("background", true),
+        ("foreground", true),
+        ("cursor", terminal.cursor.is_some()),
+        ("cursor-text", terminal.cursor_text.is_some()),
+        ("selection", terminal.selection.is_some()),
+        ("selection-text", terminal.selection_text.is_some()),
+        ("bold", terminal.bold.is_some()),
+        ("link", terminal.link.is_some()),
+        ("underline", terminal.underline.is_some()),
+    ];
+    given
+        .into_iter()
+        .filter(|(_, given)| *given)
+        .map(|(key, _)| key.to_owned())
+        .chain((0..16).map(|at| format!("palette.{at}")))
+        .collect()
 }
 
 /// A color's lightness, of its components' sum, which tells the lighter of
@@ -925,6 +969,15 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
                     let span = value.span();
                     if key == "palette" {
                         partial.palette = Some(palette(value, &error)?);
+                        if let Some(array) = value.as_array() {
+                            for (at, entry) in array.iter().enumerate() {
+                                let place = error(entry.span(), String::new());
+                                partial.terminal_sources.insert(
+                                    format!("palette.{at}"),
+                                    Source::File(place.path, place.position),
+                                );
+                            }
+                        }
                         continue;
                     }
                     if !TERMINAL_COLORS.contains(&key) {
@@ -936,7 +989,11 @@ fn parse(text: &str, path: &Path) -> Result<File, Error> {
                             ),
                         ));
                     }
-                    let color = Some(color(value, span, &error)?);
+                    let color = Some(color(value, span.clone(), &error)?);
+                    let place = error(span, String::new());
+                    partial
+                        .terminal_sources
+                        .insert(key.to_owned(), Source::File(place.path, place.position));
                     match key {
                         "background" => partial.background = color,
                         "foreground" => partial.foreground = color,

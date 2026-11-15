@@ -77,9 +77,26 @@ fn click(key: &str) -> UiEvent {
 fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
     let (mut host, mut plugin) = shown();
     let tree = page(&mut host, &mut plugin);
-    // The fake's tokens, in their order, each group under its heading.
-    assert_eq!(rows(&tree), ["accent", "focus.ring", "command-header.pill"]);
-    for group in ["accent", "focus", "command-header"] {
+    // The terminal's colors first, its keys' then its palette's, then
+    // the tokens, in their order, each group under its heading.
+    assert_eq!(
+        rows(&tree),
+        [
+            "background",
+            "cursor",
+            "bright-blue",
+            "accent",
+            "focus.ring",
+            "command-header.pill"
+        ]
+    );
+    for group in [
+        "[terminal]",
+        "[terminal] palette",
+        "accent",
+        "focus",
+        "command-header",
+    ] {
         assert!(
             find(&tree, &format!("inspector-group:{group}")).is_some(),
             "{group}"
@@ -87,18 +104,22 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
     }
     let all = texts(&tree);
     for text in [
-        "#4c9bff",
         "Lokyr Dark",
         "inspector-rule",
         "Lokyr Dark.toml:3",
-        "#2a2a2d",
+        "Lokyr Dark.toml:8",
     ] {
         assert!(all.iter().any(|shown| shown == text), "{text}: {all:?}");
     }
-    // The swatch of each, of its color.
-    let row = find(&tree, "inspector-token:command-header.pill").unwrap();
-    let swatch = &row.children[0].children[0];
-    assert_eq!(swatch.style.background, Some(Token::from("#2a2a2d")));
+    // The values in the swatches' tooltips alone, not written beside.
+    assert!(!all.iter().any(|shown| shown.starts_with('#')), "{all:?}");
+    // The swatch of each, of its color, of its value as its tooltip.
+    let swatch = find(&tree, "inspector-swatch:command-header.pill").unwrap();
+    assert_eq!(swatch.tooltip.as_deref(), Some("#2a2a2d"));
+    assert_eq!(
+        swatch.children[0].style.background,
+        Some(Token::from("#2a2a2d"))
+    );
     // The theme in force's name on its button.
     assert!(find(&tree, THEME).is_some());
 }
@@ -120,9 +141,12 @@ fn the_filter_keeps_the_tokens_of_its_words_and_empties() {
     host.ui_event(&mut plugin, &typed("2a2a2d")).unwrap();
     assert_eq!(rows(&page(&mut host, &mut plugin)), ["command-header.pill"]);
     host.ui_event(&mut plugin, &typed("rule")).unwrap();
-    assert_eq!(rows(&page(&mut host, &mut plugin)), ["focus.ring"]);
+    assert_eq!(
+        rows(&page(&mut host, &mut plugin)),
+        ["cursor", "focus.ring"]
+    );
     host.ui_event(&mut plugin, &click(FILTER_CLEAR)).unwrap();
-    assert_eq!(rows(&page(&mut host, &mut plugin)).len(), 3);
+    assert_eq!(rows(&page(&mut host, &mut plugin)).len(), 6);
 }
 
 #[test]
@@ -138,6 +162,18 @@ fn a_token_of_a_file_opens_at_its_line_and_another_copies_its_line() {
     host.ui_event(&mut plugin, &click("inspector-act:focus.ring"))
         .unwrap();
     assert_eq!(host.clipboard(), Some("\"focus.ring\" = \"accent / 60%\""));
+    // A key of `[terminal]` of a theme of no file, its bare key.
+    host.ui_event(&mut plugin, &click("inspector-act:background"))
+        .unwrap();
+    assert_eq!(host.clipboard(), Some("background = \"#1e1e20\""));
+    // A palette's color of a file, at its line.
+    host.ui_event(&mut plugin, &click("inspector-act:bright-blue"))
+        .unwrap();
+    assert!(
+        host.take_done()
+            .iter()
+            .any(|request| matches!(request, Request::OpenAt { line: 8, .. }))
+    );
     // Within a second of the last notice: copied, of no notice more.
     host.ui_event(&mut plugin, &click("inspector-act:accent"))
         .unwrap();
@@ -161,7 +197,8 @@ fn a_change_of_the_theme_lights_the_tokens_that_it_changed_for_a_while() {
             .is_some()
     };
     assert!(lit(&tree, "accent") && !lit(&tree, "focus.ring"));
-    assert!(texts(&tree).iter().any(|text| text == "#c678dd"));
+    let swatch = find(&tree, "inspector-swatch:accent").unwrap();
+    assert_eq!(swatch.tooltip.as_deref(), Some("#c678dd"));
     // Its light goes as its timer fires.
     host.advance(LIT);
     host.deliver(&mut plugin).unwrap();

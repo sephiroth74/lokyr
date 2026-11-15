@@ -856,6 +856,17 @@ fn each_token_given_tells_its_source_its_file_and_line_or_its_theme() {
     assert_eq!(line("panel.bg"), ("Child.toml".to_owned(), Some(5)));
     assert_eq!(line("accent"), ("Base.toml".to_owned(), Some(11)));
     assert_eq!(resolved.sources.len(), 2);
+    // The terminal's colors of the base's file, each of its line.
+    let terminal = |key: &str| match &resolved.terminal_sources[key] {
+        Source::File(path, position) => (
+            path.file_name().unwrap().to_str().unwrap().to_owned(),
+            position.map(|at| at.line),
+        ),
+        Source::Theme(name) => (name.clone(), None),
+    };
+    assert_eq!(terminal("background"), ("Base.toml".to_owned(), Some(5)));
+    assert_eq!(terminal("palette.0"), ("Base.toml".to_owned(), Some(7)));
+    assert_eq!(terminal("palette.15"), ("Base.toml".to_owned(), Some(8)));
     // A built-in theme's own tokens, of its name.
     let mut built_in = builtin();
     built_in.tokens.insert(

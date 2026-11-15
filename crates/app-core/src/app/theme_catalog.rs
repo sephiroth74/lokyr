@@ -74,45 +74,124 @@ pub(crate) fn theme_tokens(
                 .cloned(),
         )
         .collect();
+    let origin_of = |source: &themes::Source| match source {
+        themes::Source::File(path, position) => TokenOrigin::File {
+            path: path.display().to_string(),
+            line: position.map_or(0, |at| u32::try_from(at.line).unwrap_or(u32::MAX)),
+            theme: path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_owned(),
+        },
+        themes::Source::Theme(theme) => TokenOrigin::Theme {
+            theme: theme.clone(),
+        },
+    };
+    let color_of = |color: &rules::Rgba| themes::ThemeColor {
+        red: byte(color.red),
+        green: byte(color.green),
+        blue: byte(color.blue),
+        alpha: byte(color.alpha),
+    };
     let tokens = names
         .into_iter()
         .filter_map(|token| {
             let color = colors.get(&token)?;
             let origin = match resolved.sources.get(&token) {
-                Some(themes::Source::File(path, position)) => TokenOrigin::File {
-                    path: path.display().to_string(),
-                    line: position.map_or(0, |at| u32::try_from(at.line).unwrap_or(u32::MAX)),
-                    theme: path
-                        .file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .unwrap_or_default()
-                        .to_owned(),
-                },
-                Some(themes::Source::Theme(theme)) => TokenOrigin::Theme {
-                    theme: theme.clone(),
-                },
+                Some(source) => origin_of(source),
                 None => TokenOrigin::Rule {
                     text: rules::rule(&token)?.text(dark).to_owned(),
                 },
             };
             Some(ThemeToken {
                 name: token,
-                color: themes::ThemeColor {
-                    red: byte(color.red),
-                    green: byte(color.green),
-                    blue: byte(color.blue),
-                    alpha: byte(color.alpha),
-                },
+                color: color_of(color),
                 origin,
             })
         })
         .collect();
+    // The terminal's colors, each of its key's source, or of the default
+    // that it takes where the theme leaves it out.
+    let terminal = &theme.terminal;
+    let (fg, bg) = (terminal.foreground, terminal.background);
+    let selection = colors.get("field.selection").map(color_of).unwrap_or(fg);
+    let keys: [(&str, Option<themes::ThemeColor>, (themes::ThemeColor, &str)); 9] = [
+        ("background", Some(bg), (bg, "")),
+        ("foreground", Some(fg), (fg, "")),
+        ("bold", terminal.bold, (fg, "its own color")),
+        ("link", terminal.link, (terminal.palette[4], "blue")),
+        (
+            "selection",
+            terminal.selection,
+            (selection, "field.selection"),
+        ),
+        (
+            "selection-text",
+            terminal.selection_text,
+            (fg, "its own color"),
+        ),
+        ("cursor", terminal.cursor, (fg, "foreground")),
+        ("cursor-text", terminal.cursor_text, (bg, "background")),
+        ("underline", terminal.underline, (fg, "foreground")),
+    ];
+    let source = |key: &str| {
+        resolved.terminal_sources.get(key).map_or_else(
+            || TokenOrigin::Theme {
+                theme: name.to_owned(),
+            },
+            origin_of,
+        )
+    };
+    let mut terminal_colors: Vec<ThemeToken> = keys
+        .into_iter()
+        .map(|(key, given, (default, rule))| match given {
+            Some(color) => ThemeToken {
+                name: key.to_owned(),
+                color,
+                origin: source(key),
+            },
+            None => ThemeToken {
+                name: key.to_owned(),
+                color: default,
+                origin: TokenOrigin::Rule {
+                    text: rule.to_owned(),
+                },
+            },
+        })
+        .collect();
+    terminal_colors.extend(PALETTE.iter().enumerate().map(|(at, palette)| ThemeToken {
+        name: (*palette).to_owned(),
+        color: terminal.palette[at],
+        origin: source(&format!("palette.{at}")),
+    }));
     Some(ThemeTokens {
         theme: name.to_owned(),
         variant: theme.variant,
+        terminal: terminal_colors,
         tokens,
     })
 }
+
+/// The names of the 16 colors, as a theme's expressions write them.
+const PALETTE: [&str; 16] = [
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright-black",
+    "bright-red",
+    "bright-green",
+    "bright-yellow",
+    "bright-blue",
+    "bright-magenta",
+    "bright-cyan",
+    "bright-white",
+];
 
 /// A part of a read of the themes.
 #[derive(Debug)]

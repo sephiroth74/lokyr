@@ -4553,6 +4553,31 @@ pub fn theme_tokens() -> Vec<host::ThemeTokens> {
     vec![host::ThemeTokens {
         theme: "Lokyr Dark".to_owned(),
         variant: crate::theme::ThemeVariant::Dark,
+        terminal: vec![
+            token(
+                "background",
+                0x1e1e20,
+                host::TokenOrigin::Theme {
+                    theme: "Lokyr Dark".to_owned(),
+                },
+            ),
+            token(
+                "cursor",
+                0xe6e6e6,
+                host::TokenOrigin::Rule {
+                    text: "foreground".to_owned(),
+                },
+            ),
+            token(
+                "bright-blue",
+                0x86bcff,
+                host::TokenOrigin::File {
+                    path: "/themes/Lokyr Dark.toml".to_owned(),
+                    line: 8,
+                    theme: "Lokyr Dark".to_owned(),
+                },
+            ),
+        ],
         tokens: vec![
             token(
                 "accent",

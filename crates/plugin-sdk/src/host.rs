@@ -733,15 +733,22 @@ pub struct ThemeToken {
     pub origin: TokenOrigin,
 }
 
-/// Every token of a theme, as a read of them gives them: the theme's
-/// name, its variant, and its tokens, Lokyr's in their rules' order, then
-/// a plugin's.
+/// Every color of a theme, as a read of them gives them: the theme's
+/// name, its variant, its terminal's colors, and its tokens, Lokyr's in
+/// their rules' order, then a plugin's.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThemeTokens {
     /// The theme's name.
     pub theme: String,
     /// Its variant.
     pub variant: crate::theme::ThemeVariant,
+    /// Its terminal's colors, by the names of its `[terminal]` keys:
+    /// `background`, `foreground`, `bold`, `link`, `selection`,
+    /// `selection-text`, `cursor`, `cursor-text` and `underline`, then the
+    /// 16 colors, `black` to `bright-white`; one that the theme leaves out
+    /// of the color that it takes then, its origin a rule's of its default.
+    #[serde(default)]
+    pub terminal: Vec<ThemeToken>,
     /// Its tokens.
     pub tokens: Vec<ThemeToken>,
 }

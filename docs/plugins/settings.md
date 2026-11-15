@@ -42,10 +42,10 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 
 ## The Theme Inspector
 
-- **Inspector**, at the Themes page's sidebar after the appearances and a line, shows every color of the theme in force, its tokens, at its left: by groups, as `text`, `accent`, `tabs` or a plugin's, each of a swatch of its color over the terminal's background, its name, its value, as `#4c9bff99`, and where it comes from: a theme's file and its line, of the theme itself or of one that it extends, a theme of no file, as Lokyr Dark, or its rule, as `accent / 60%`, as [the authors' guide](../themes/authoring.md) tells.
+- **Inspector**, at the Themes page's sidebar after the appearances and a line, shows every color of the theme in force at its left, as iTerm2's colors do: the terminal's, its keys of `[terminal]`, as `background`, `cursor` or `selection`, and its palette's 16, then the interface's tokens by groups, as `text`, `accent`, `tabs` or a plugin's; each of a swatch of its color over the terminal's background, its value, as `#4c9bff99`, as the pointer rests on it, its name and where it comes from: a theme's file and its line, of the theme itself or of one that it extends, a theme of no file, as Lokyr Dark, or its rule, as `accent / 60%`, as [the authors' guide](../themes/authoring.md) tells, or, of a key of `[terminal]` that the theme leaves out, the color that it takes, as the cursor the text's.
 - **The field at its top** filters the tokens as you type, of their names, values and origins.
 - **Saved, a theme's file shows at once**: the tokens that changed are lit for three seconds.
-- **The button at a token's right** opens its theme's file at its line in your editor, or, for a token of no file of yours, copies its line, as `"focus.ring" = "accent / 60%"`, to paste into a theme.
+- **The button at a token's right** opens its theme's file at its line in your editor, or, for a color of no file of yours, copies its line to paste into a theme: a token's, as `"focus.ring" = "accent / 60%"`, a key of `[terminal]`'s, as `cursor = "#e6e6e6"`, or a palette's color.
 - **The theme's button** shows a menu of every theme: the one chosen shows in every window while the Inspector shows, as the palette's picker previews it, and its colors in the page; the theme in force comes back as an appearance's themes show or the page hides.
 - At its right, the specimens of the terminal and of the interface of the theme are to come.
 

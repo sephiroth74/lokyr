@@ -693,8 +693,9 @@ type Cx = {
     -- the built-in ones, which the app reads off its main thread, a read starting where none did lately; the built-in
     -- ones alone, of `loading`, while its first read runs, whose end `themes-changed` tells.
     themes: () -> (Themes?, Error?),
-    -- Every token of the theme of a name, or of the appearance in force's of nil, as it resolves: its color and its
-    -- origin, its file's path and line, a theme of no file's, or its rule's text; nil of a name of no theme.
+    -- Every color of the theme of a name, or of the appearance in force's of nil, as it resolves, its terminal's and
+    -- its tokens: its color and its origin, its file's path and line, a theme of no file's, or its rule's text; nil of
+    -- a name of no theme.
     theme_tokens: (theme: string?) -> (ThemeTokens?, Error?),
     -- Require `appearance-write`: shows a theme in place of the appearance in force's, for a while, as a picker
     -- previews it; nil shows the config's.

@@ -1229,6 +1229,38 @@ fn a_theme_s_tokens_tell_their_colors_and_origins_of_its_file_its_base_and_rules
         token("focus.ring").color,
         ThemeColor::hex(0xc678dd).with_alpha(153)
     );
+    // The terminal's colors: its keys, then the palette's 16, each of its
+    // file's line, of the theme that it extends, or of its default.
+    let terminal = |name: &str| {
+        tokens
+            .terminal
+            .iter()
+            .find(|token| token.name == name)
+            .unwrap()
+    };
+    assert_eq!(tokens.terminal.len(), 9 + 16);
+    assert_eq!(tokens.terminal[0].name, "background");
+    assert_eq!(tokens.terminal[9].name, "black");
+    let line_of = |origin: &TokenOrigin| match origin {
+        TokenOrigin::File { line, .. } => Some(*line),
+        _ => None,
+    };
+    assert_eq!(terminal("background").color, ThemeColor::hex(0x101012));
+    assert_eq!(line_of(&terminal("background").origin), Some(5));
+    assert_eq!(line_of(&terminal("bright-white").origin), Some(8));
+    assert_eq!(
+        terminal("selection").origin,
+        TokenOrigin::Theme {
+            theme: "Lokyr Dark".to_owned()
+        }
+    );
+    assert_eq!(
+        terminal("cursor").origin,
+        TokenOrigin::Rule {
+            text: "foreground".to_owned()
+        }
+    );
+    assert_eq!(terminal("cursor").color, ThemeColor::hex(0xe0e0e0));
     // Lokyr's in their rules' order, then a plugin's.
     assert_eq!(tokens.tokens[0].name, "text");
     assert_eq!(tokens.tokens.last().unwrap().name, "command-header.pill");
