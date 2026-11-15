@@ -37,7 +37,7 @@ use toml_edit::{Document, Item, TableLike, Value};
 mod edit;
 pub mod itermcolors;
 
-pub use edit::{set_value, with_value};
+pub use edit::{removable, set_value, with_value};
 
 /// What does not read in a theme's file: the file, its place in it and
 /// what is wrong, as the app tells a config's errors.

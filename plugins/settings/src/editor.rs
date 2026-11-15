@@ -996,7 +996,8 @@ fn reads(name: &str, text: &str) -> bool {
 /// under its row: the value as the theme gives it, or the text typed, of
 /// its rule or its default as its placeholder; Reset, an underlined link,
 /// where the theme's own file gives it, but a palette's color, which the
-/// palette holds whole; and why the last value written was refused.
+/// palette holds whole, and the background and the text, which a theme
+/// gives; and why the last value written was refused.
 fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> Node {
     let placeholder = match &token.origin {
         TokenOrigin::Rule { text } => text.clone(),
@@ -1019,7 +1020,9 @@ fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> No
         });
     let mut line = vec![field];
     let own = matches!(&token.origin, TokenOrigin::File { theme, .. } if theme == editing.theme);
-    if own && !in_palette(&token.name) {
+    // The background and the text a theme gives, the palette whole.
+    let needed = ["background", "foreground"].contains(&token.name.as_str());
+    if own && !in_palette(&token.name) && !needed {
         let mut reset = Node::button(message(cx, "editor-reset", &[]).as_str())
             .key(format!("{RESET}{}", token.name).as_str());
         if let Kind::Button(button) = &mut reset.kind {

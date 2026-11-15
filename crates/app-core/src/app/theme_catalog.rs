@@ -203,17 +203,20 @@ pub(crate) fn theme_value(
     value: Option<&str>,
 ) -> Result<(), String> {
     use lokyr_kernel::themes::rules;
-    let file = places
+    let Some(file) = places
         .folder
         .as_deref()
-        .map(|folder| folder.join(format!("{theme}.toml")));
-    if !file.is_some_and(|file| file.is_file()) {
+        .map(|folder| folder.join(format!("{theme}.toml")))
+        .filter(|file| file.is_file())
+    else {
         return Err(format!(
             "`{theme}` has no file of Lokyr's format in the themes folder"
         ));
-    }
+    };
+    // Taken away: of a color that another takes the place of.
     let Some(value) = value else {
-        return Ok(());
+        let text = std::fs::read_to_string(&file).map_err(|error| error.to_string())?;
+        return themes::removable(&text, &file, name).map_err(|error| error.message);
     };
     if lokyr_kernel::themes::is_terminal_color(name) {
         return Ok(());

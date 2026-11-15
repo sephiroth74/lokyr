@@ -675,6 +675,12 @@ fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
         other => panic!("{other:?}"),
     }
     assert!(find(&tree, &format!("{RESET}focus.ring")).is_none());
+    // The background, which a theme gives: no Reset.
+    host.ui_event(&mut plugin, &click(&format!("{ROW}background")))
+        .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert!(find(&tree, &format!("{VALUE}background")).is_some());
+    assert!(find(&tree, &format!("{RESET}background")).is_none());
     // A palette's color: no Reset, as the palette holds the 16 whole.
     host.ui_event(&mut plugin, &click(&format!("{ROW}bright-blue")))
         .unwrap();

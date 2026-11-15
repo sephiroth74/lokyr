@@ -36,6 +36,9 @@ pub fn set_value(
         position: None,
         message,
     };
+    if value.is_none() {
+        removable(text, path, name)?;
+    }
     let mut document: DocumentMut = text
         .parse()
         .map_err(|e: toml_edit::TomlError| error(e.message().to_owned()))?;
@@ -99,6 +102,33 @@ pub fn set_value(
     }
     parse(&written, path)?;
     Ok(written)
+}
+
+/// The keys of `[terminal]` that a theme gives, of its own or of the theme
+/// that it extends.
+const NEEDED: [&str; 2] = ["background", "foreground"];
+
+/// Whether the color `name` can be taken away of `text`, the file of
+/// Lokyr's format of a theme at `path`: one of the colors that a theme
+/// gives, its background and its text, of a file that extends no theme,
+/// nor a color of its palette, which holds the 16 whole, never; why not.
+pub fn removable(text: &str, path: &Path, name: &str) -> Result<(), Error> {
+    let error = |message: String| Error {
+        path: path.to_owned(),
+        position: None,
+        message,
+    };
+    if rules::PALETTE.contains(&name) {
+        return Err(error(format!(
+            "`{name}` is a color of the palette, which holds the 16 whole: none is taken away alone"
+        )));
+    }
+    if NEEDED.contains(&name) && parse(text, path)?.extends.is_none() {
+        return Err(error(format!(
+            "`{name}` is a color that a theme gives, of its own or of a theme that it extends, which this one does not: none would take its place"
+        )));
+    }
+    Ok(())
 }
 
 /// The places where a file can write the token `name`: a section and the

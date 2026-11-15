@@ -1584,13 +1584,14 @@ impl plugins::Plugin for Values {
 }
 
 /// The commands of [`Values`]: each a color of Mine and its value, or none.
-const VALUES: [(&str, &str, Option<&str>); 6] = [
+const VALUES: [(&str, &str, Option<&str>); 7] = [
     ("values.background", "background", Some("#202020")),
     ("values.accent", "accent", Some("#00ff00")),
     ("values.unknown", "accent", Some("nowhere / 50%")),
     ("values.ring", "focus.ring", Some("field.focus")),
     ("values.cycle", "field.focus", Some("focus.ring")),
     ("values.reset", "accent", None),
+    ("values.unset", "background", None),
 ];
 
 #[test]
@@ -1653,6 +1654,11 @@ fn a_theme_s_color_set_of_a_plugin_is_written_into_its_file_and_shows_at_once() 
     assert_eq!(run(&mut fake, &mut app, "values.reset"), None);
     let text = std::fs::read_to_string(&file).unwrap();
     assert!(!text.contains("\"accent\""), "{text}");
+    // The background of a theme that extends none: kept, why told.
+    let why = run(&mut fake, &mut app, "values.unset").expect("refused");
+    assert!(why.contains("none would take its place"), "{why}");
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("background = "), "{text}");
     let _ = std::fs::remove_dir_all(&directory);
 }
 

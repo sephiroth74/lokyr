@@ -970,11 +970,18 @@ fn a_value_set_or_taken_away_keeps_the_file_s_comments_order_and_other_keys() {
     assert_eq!(palette[1], ThemeColor::hex(0xff0000));
     assert_eq!(palette[0], theme.terminal.palette[0]);
     // Refused: a color that does not read, an expression that does not
-    // read, a palette's color taken away alone.
+    // read, a palette's color taken away alone, and the background or the
+    // text of a theme that extends none, which none would take the place
+    // of; of one that extends another, taken away.
+    let extending = "[theme]\nextends = \"Lokyr Dark\"\n\n[terminal]\nforeground = \"#e0e0e0\"\n";
+    let edited = set(extending, "foreground", None);
+    assert!(!edited.contains("foreground"), "{edited}");
     for (name, value) in [
         ("background", Some("accent")),
         ("accent", Some("mix(")),
         ("red", None),
+        ("background", None),
+        ("foreground", None),
     ] {
         let error = set_value(&text, path, name, value, &theme).unwrap_err();
         assert_eq!(error.path, path, "{name}");
