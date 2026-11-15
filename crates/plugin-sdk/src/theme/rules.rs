@@ -269,14 +269,14 @@ fn lexemes(text: &str) -> Result<Vec<Lexeme>, ExprError> {
 }
 
 /// How many bytes an expression's text has at most.
-pub const MOST_EXPR_BYTES: usize = 1024;
+pub const MOST_EXPR_BYTES: usize = 512;
 
 /// How deep an expression's functions and opacities nest at most.
-pub const MOST_EXPR_DEPTH: usize = 32;
+pub const MOST_EXPR_DEPTH: usize = 16;
 
 /// How deep tokens that name each other go at most, as a token's color
 /// takes another's that takes another's.
-pub const MOST_CHAIN: usize = 64;
+pub const MOST_CHAIN: usize = 32;
 
 /// An argument of a function, before its function takes it.
 enum Arg {
