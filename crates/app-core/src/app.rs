@@ -529,6 +529,15 @@ impl ThemeFiles {
     }
 }
 
+/// The colors of a theme in force: its terminal's and its tokens, as its
+/// files give them, and those shown before they are written, by their
+/// names.
+type ThemeColors = (
+    themes::TerminalColors,
+    BTreeMap<String, themes::TokenValue>,
+    Vec<(String, String)>,
+);
+
 /// The application, which opens a window when it starts, and quits with its
 /// last window or from its menu.
 #[derive(Debug)]
@@ -547,6 +556,10 @@ pub struct App<B: Backend> {
     /// The theme that a plugin's picker previews in place of the
     /// appearance in force's, if one does.
     theme_preview: Option<String>,
+    /// The colors of the themes in force as they last loaded, of each
+    /// appearance, their files' and those shown before they are written,
+    /// whose change the plugins hear, drawn or not.
+    theme_colors: Option<Vec<ThemeColors>>,
     /// Whether the cursor guide shows, as `[cursor] guide` says until View ›
     /// Show Cursor Guide changes it.
     cursor_guide: bool,
@@ -979,6 +992,7 @@ impl<B: Backend> App<B> {
             theme_catalog: std::cell::RefCell::default(),
             waker: None,
             theme_preview: None,
+            theme_colors: None,
             cursor_guide: config.cursor.guide,
             notice: notice_card::NoticeCard::default(),
             settings: settings_tab::SettingsTab::default(),
@@ -1633,6 +1647,7 @@ impl<B: Backend> App<B> {
         let config = &self.config.theme;
         let mut paths = Vec::new();
         let mut resolved = Vec::new();
+        let mut colors: Vec<ThemeColors> = Vec::new();
         let mut errors = Vec::new();
         let mut notices = Vec::new();
         // A picker's preview in place of the appearance in force's.
@@ -1646,6 +1661,14 @@ impl<B: Backend> App<B> {
         for name in &names {
             match places.resolve(name, &builtins) {
                 Ok(mut theme) => {
+                    colors.push((
+                        theme.theme.terminal.clone(),
+                        theme.theme.tokens.clone(),
+                        self.theme_values
+                            .of(name)
+                            .map(|(color, value)| (color.to_owned(), value.to_owned()))
+                            .collect(),
+                    ));
                     // The colors shown before they are written.
                     for (color, value) in self.theme_values.of(name) {
                         if let Err(why) = themes::with_value(&mut theme.theme, color, value) {
@@ -1713,11 +1736,21 @@ impl<B: Backend> App<B> {
             }
         }
         self.previews_changed(platform, &changed);
+        // The plugins hear a change of the colors once: of the panes' and
+        // the interface's, as the appearance's change tells it, or of those
+        // that nothing draws yet, as `link`, and of a file's value that one
+        // shown before it was written showed already.
+        let recolored = self
+            .theme_colors
+            .replace(colors.clone())
+            .is_some_and(|before| before != colors);
         let theme = Theme::of(&resolved[0], &resolved[1]);
         if theme != self.theme {
             self.theme = theme;
             let appearance = platform.appearance();
             self.appearance_changed(platform, appearance);
+        } else if recolored {
+            self.plugins.post(plugins::Event::ThemeChanged);
         }
     }
 

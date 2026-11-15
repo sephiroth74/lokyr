@@ -2030,6 +2030,51 @@ fn another_s_plugin_s_question_names_it_and_lokyr_s_own_does_not() {
 }
 
 #[test]
+fn the_plugins_hear_one_theme_change_of_a_value_written_and_of_an_outside_save_of_a_link() {
+    let (mut fake, mut app, (panel, _), directory) = panel_and_grab("theme-changed");
+    let file = directory.join("themes/Mine.toml");
+    let run = |fake: &mut Fake, app: &mut App, command: &str| {
+        fake.send_app(app, AppEvent::Command(command.to_owned()));
+    };
+    // The changes heard after some turns of the app, from none.
+    let heard = |fake: &mut Fake, app: &mut App| {
+        let mut turns = 0;
+        run_until(fake, app, |_, _| {
+            turns += 1;
+            turns > 20
+        });
+        let heard = panel
+            .borrow()
+            .iter()
+            .filter(|word| *word == "theme")
+            .count();
+        panel.borrow_mut().clear();
+        heard
+    };
+    heard(&mut fake, &mut app);
+    // A value written, of a color that the panes draw, and of one that
+    // nothing draws yet.
+    run(&mut fake, &mut app, "panel.write");
+    assert_eq!(heard(&mut fake, &mut app), 1);
+    run(&mut fake, &mut app, "panel.link");
+    assert_eq!(heard(&mut fake, &mut app), 1);
+    // A color shown before it is written, then its file's again.
+    run(&mut fake, &mut app, "panel.preview");
+    assert_eq!(heard(&mut fake, &mut app), 1);
+    run(&mut fake, &mut app, "panel.unpreview");
+    assert_eq!(heard(&mut fake, &mut app), 1);
+    // The file saved of another link, then as it is.
+    let text = std::fs::read_to_string(&file).unwrap();
+    assert!(text.contains("link = \"#00ff00\""), "{text}");
+    std::fs::write(&file, text.replace("#00ff00", "#0000ff")).unwrap();
+    changed(&mut fake, &mut app);
+    assert_eq!(heard(&mut fake, &mut app), 1);
+    changed(&mut fake, &mut app);
+    assert_eq!(heard(&mut fake, &mut app), 0);
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+#[test]
 fn a_name_of_both_formats_is_listed_of_lokyr_s_and_its_pair_converts_around_it() {
     let directory =
         std::env::temp_dir().join(format!("lokyr-app-themes-both-{}", std::process::id()));

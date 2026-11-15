@@ -7,8 +7,9 @@ use std::path::Path;
 
 pub use lokyr_themes::{
     Credits, DARK, DIRECTORY, EXTENSIONS, LIGHT, MOST_THEME_BYTES, MOST_THEME_FILES, Resolved,
-    Source, TerminalColors, Theme, ThemeColor, ThemeCredits, ThemeVariant, copy_of, directory,
-    is_name, itermcolors_file, native, new_theme_of, read_file, removable, set_value, with_value,
+    Source, TerminalColors, Theme, ThemeColor, ThemeCredits, ThemeVariant, TokenValue, copy_of,
+    directory, is_name, itermcolors_file, native, new_theme_of, read_file, removable, set_value,
+    with_value,
 };
 
 /// The rules of the interface's tokens, and their arithmetic.
