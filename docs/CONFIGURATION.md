@@ -154,7 +154,7 @@ notify = true                        # true | false: a notification as an agent 
 dock-badge = true                    # true | false: the Dock's icon counts the agents that wait for you
 
 [theme]
-light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
+light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held, built in or installed
 dark = "Nightfall"                   # the dark appearance's theme
 minimum-contrast = 3.0               # 1 to 21: the least contrast of the terminal's text
 
@@ -1287,6 +1287,8 @@ The colors of the terminal and of Lokyr's own interface: a theme for the light a
 
 A theme is a built-in one, `Lokyr Light` or `Lokyr Dark`, one of the themes that Lokyr holds, or a file of the `themes` folder beside the config file, `~/.config/lokyr/themes/`, named by its file without its extension: `Nightfall` is `themes/Nightfall.toml`, in Lokyr's own format below, or `themes/Nightfall.itermcolors`, the format of the largest collections of terminal themes, which Lokyr reads as it is. A file of the folder of a held or built-in theme's name takes its place, and a `.toml` one an `.itermcolors` one of its name. View › Open Themes Folder opens the folder in the Finder, making it first if it is not there.
 
+A theme of a package of themes that Sleip installs, as `sleip add owner/name`, is named by its name too, and listed of its package's name. A theme of the folder, held or built in takes the place of a package's of its name, so that a package installed changes no theme in force; of two packages, the first by its name has it. A package removed leaves its theme in force, as a notice tells, until the config names another.
+
 To make a theme, [Making a theme](themes/authoring.md) tells every key and color of the format, of [a full example](themes/example.toml).
 
 Lokyr holds 278 themes, those of a permissive license of the largest collection of `.itermcolors` themes, by their names there, as `Dracula`, `Catppuccin Mocha`, `Nord`, `Rose Pine Dawn` or `TokyoNight Day`, and `<name> (Light)` and `<name> (Dark)` of those of both appearances: `Lokyr.app/Contents/Resources/licenses/themes/README.md` lists them, with their licenses and sources, and their files are in `Lokyr.app/Contents/Resources/themes`, which a theme of the folder can extend.
@@ -1347,7 +1349,7 @@ The light appearance's theme, by its name.
 |---|---|
 | the name of a theme | `"Lokyr Light"` |
 
-- A name that no file, no held theme and no built-in theme has shows in the bar, and the theme in force stays.
+- A name that no file, no held, built-in or installed theme has shows in the bar, and the theme in force stays.
 
 ### `dark`
 

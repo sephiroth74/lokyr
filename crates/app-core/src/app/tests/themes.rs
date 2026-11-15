@@ -513,15 +513,10 @@ fn a_picker_lists_the_themes_previews_one_and_names_the_chosen_one() {
     // A file of the folder of a held theme's name, the folder's.
     std::fs::write(held.join("Paper.toml"), theme("#eeeeee")).unwrap();
     app.held_themes = Some(held);
-    let folder = directory.join("themes");
     let listed = |app: &App, fake: &Fake| {
         pickers::theme_list(
             &app.theme_catalog,
-            (
-                Some(&folder),
-                app.held_themes.as_deref(),
-                app.waker.as_ref(),
-            ),
+            (&app.theme_places(), app.waker.as_ref()),
             fake.appearance(),
             &app.config.theme,
         )

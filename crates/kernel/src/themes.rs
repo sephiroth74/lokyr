@@ -1,9 +1,9 @@
 //! Lokyr's themes, of `lokyr-themes`, of the config's errors: the native
 //! format's parser and writer, iTerm2's `.itermcolors` files, and the
 //! resolution of a theme's name of the themes' folder, of those that the
-//! app holds and of the built-in ones.
+//! app holds, of the built-in ones and of the installed packages'.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub use lokyr_themes::{
     Credits, DARK, DIRECTORY, EXTENSIONS, LIGHT, MOST_THEME_BYTES, MOST_THEME_FILES, Resolved,
@@ -19,8 +19,9 @@ pub fn resolve(
     directory: Option<&Path>,
     held: Option<&Path>,
     builtins: &[Theme],
+    installed: &[PathBuf],
 ) -> Result<Resolved, Error> {
-    lokyr_themes::resolve(name, directory, held, builtins).map_err(Error::from)
+    lokyr_themes::resolve(name, directory, held, builtins, installed).map_err(Error::from)
 }
 
 /// The themes of the file at `path`, as [`lokyr_themes::themes_of`] reads

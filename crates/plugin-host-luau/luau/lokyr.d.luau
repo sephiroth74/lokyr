@@ -938,12 +938,14 @@ export type ThemeInfo = {
     name: string,
     variant: ThemeVariant,
     origin: ThemeOrigin,
+    package: string?,
 }
 
 export type ThemeOrigin =
     | "folder"
     | "held"
     | "built-in"
+    | "installed"
 
 export type ThemeVariant =
     | "light"

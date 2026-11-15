@@ -34,9 +34,9 @@ pub fn dev(paths: &Paths, out: Out) -> Result<(), String> {
     let text = std::fs::read_to_string(folder.join("plugin.toml"))
         .map_err(|error| format!("plugin.toml cannot be read, as no plugin is in this folder or the file is not there: {error}"))?;
     let manifest = Manifest::parse(&text).map_err(|error| format!("plugin.toml:{error}"))?;
-    if manifest.kind != Kind::Luau {
+    if !matches!(manifest.kind, Kind::Luau | Kind::Themes) {
         return Err(format!(
-            "`{}` is not a plugin of Luau, which `sleip dev` links",
+            "`{}` is neither a plugin of Luau nor a package of themes, which `sleip dev` links",
             manifest.name
         ));
     }
@@ -128,7 +128,7 @@ fn link(
             .version
             .clone()
             .unwrap_or_else(|| "0.0.0".to_owned()),
-        kind: Kind::Luau,
+        kind: manifest.kind,
         source: Source::Dev(folder.display().to_string()),
         checksum: None,
         capabilities: manifest.capabilities.clone(),
@@ -191,6 +191,7 @@ fn fingerprint(folder: &Path) -> Vec<(PathBuf, u64, Option<SystemTime>)> {
         folder.join("src"),
         folder.join("tests"),
         folder.join("locales"),
+        folder.join("themes"),
     ];
     while let Some(at) = left.pop() {
         let Ok(metadata) = std::fs::symlink_metadata(&at) else {

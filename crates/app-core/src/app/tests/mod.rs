@@ -30,6 +30,7 @@ mod frame;
 mod images;
 mod input;
 mod installed;
+mod installed_themes;
 // The registry of the default distribution, and no other.
 #[cfg(all(
     feature = "dist-default",

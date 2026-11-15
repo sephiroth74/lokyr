@@ -129,6 +129,7 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
                 name,
                 variant,
                 origin,
+                package: None,
             });
         }
     }
@@ -136,32 +137,26 @@ pub(super) fn themes_in(directory: &Path, origin: ThemeOrigin) -> Vec<ThemeInfo>
 }
 
 /// The themes that a picker lists, with the appearance in force, as
-/// `appearance` is, and its theme of `config`: those of the themes' folder
-/// `folder` and of `held`, the folder of the themes that the app holds, as
-/// the last read of `catalog` off the main thread listed them, a read woken
-/// of `waker` starting where none did lately, and the built-in ones, by
-/// name, the first of a name alone, in the order of their names; the
-/// built-in ones alone, as loading, while the first read runs.
+/// `appearance` is, and its theme of `config`: those of `places`, the
+/// themes' folder, the held ones and the installed packages', as the last
+/// read of `catalog` off the main thread listed them, a read woken of
+/// `waker` starting where none did lately, and the built-in ones, by name,
+/// the first of a name alone, in the order of their names; the built-in
+/// ones alone, as loading, while the first read runs.
 pub(super) fn theme_list(
     catalog: &RefCell<super::theme_catalog::ThemeCatalog>,
-    (folder, held, waker): (
-        Option<&Path>,
-        Option<&Path>,
+    (places, waker): (
+        &super::theme_catalog::Places,
         Option<&lokyr_platform_core::Waker>,
     ),
     appearance: Appearance,
     config: &ThemeConfig,
 ) -> Themes {
-    // The folder's and the held ones as the last read off the main thread
-    // listed them, a read starting where none did lately; none while the
-    // first runs.
+    // The themes as the last read off the main thread listed them, a read
+    // starting where none did lately; none while the first runs.
     let listed = {
         let mut catalog = catalog.borrow_mut();
-        catalog.refresh(
-            (folder.map(Path::to_path_buf), held.map(Path::to_path_buf)),
-            waker,
-            Instant::now(),
-        );
+        catalog.refresh(places.clone(), waker, Instant::now());
         catalog.listed.clone()
     };
     let loading = listed.is_none();
@@ -173,6 +168,7 @@ pub(super) fn theme_list(
         name: name.to_owned(),
         variant,
         origin: ThemeOrigin::BuiltIn,
+        package: None,
     });
     let mut seen = BTreeSet::new();
     let mut list: Vec<ThemeInfo> = listed

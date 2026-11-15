@@ -2118,13 +2118,14 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
 }
 
 /// The themes of the tests' themes' page: two light ones and four dark
-/// ones, the appearance in force dark.
+/// ones, one of them installed, the appearance in force dark.
 fn many_themes() -> lokyr_plugin_sdk::host::Themes {
     use lokyr_plugin_sdk::host::{ThemeInfo, ThemeOrigin};
     let theme = |name: &str, variant| ThemeInfo {
         name: name.to_owned(),
         variant,
         origin: ThemeOrigin::BuiltIn,
+        package: None,
     };
     lokyr_plugin_sdk::host::Themes {
         appearance: ThemeVariant::Dark,
@@ -2135,7 +2136,11 @@ fn many_themes() -> lokyr_plugin_sdk::host::Themes {
             theme("Lokyr Dark", ThemeVariant::Dark),
             theme("Dracula", ThemeVariant::Dark),
             theme("Nord", ThemeVariant::Dark),
-            theme("Night", ThemeVariant::Dark),
+            ThemeInfo {
+                origin: ThemeOrigin::Installed,
+                package: Some("acme/tides".to_owned()),
+                ..theme("Night", ThemeVariant::Dark)
+            },
         ],
         loading: false,
     }
@@ -2170,6 +2175,10 @@ fn the_themes_page_shows_the_themes_of_an_appearance_of_its_sidebar_the_one_in_f
     // `[theme]` names of the accent's border.
     let card = find_node(&tree, "theme:dark:Dracula").expect("Dracula's card");
     assert!(matches!(&card.children[0].kind, Kind::ThemePreview(name) if name == "Dracula"));
+    // An installed one's of its package's name in its tooltip.
+    assert_eq!(card.tooltip, None);
+    let installed = find_node(&tree, "theme:dark:Night").expect("Night's card");
+    assert_eq!(installed.tooltip.as_deref(), Some("acme/tides"));
     let border = |tree: &Node, key: &str| {
         find_node(tree, key)
             .and_then(|node| node.style.border.as_ref())

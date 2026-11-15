@@ -681,10 +681,13 @@ pub enum ThemeOrigin {
     Held,
     /// One built into the app.
     BuiltIn,
+    /// One of a package of themes that Sleip installed.
+    Installed,
 }
 
 /// A theme that the app can show: its name, as `[theme]` names it, its
-/// variant, and where it comes from.
+/// variant, where it comes from, and the package that holds it, of one
+/// installed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThemeInfo {
     /// Its name.
@@ -693,6 +696,10 @@ pub struct ThemeInfo {
     pub variant: crate::theme::ThemeVariant,
     /// Where it comes from.
     pub origin: ThemeOrigin,
+    /// The installed package that holds it, `owner/name`, of the origin
+    /// `installed` alone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 /// The themes that the app can show, as a read of them gives them: the

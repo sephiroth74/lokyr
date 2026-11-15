@@ -130,7 +130,7 @@ pub(crate) fn write(root: &Path, resources: &Path) -> Result<usize> {
         fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
         // As the app reads it back, the same theme.
         let name = &held.theme.name;
-        let read = themes::resolve(name, None, Some(&folder), &[])
+        let read = themes::resolve(name, None, Some(&folder), &[], &[])
             .with_context(|| format!("reading back {}", path.display()))?;
         ensure!(
             read.theme == held.theme,

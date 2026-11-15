@@ -1112,6 +1112,59 @@ fn dev_takes_away_the_lockfile_that_it_made_as_it_ends() {
     assert!(!lock.exists());
 }
 
+#[test]
+fn dev_links_a_package_of_themes_and_checks_its_themes_at_each_save() {
+    use std::io::BufRead;
+
+    let sandbox = Sandbox::new("dev-themes");
+    let made = sandbox
+        .command(&["new", "--themes", "acme/tides"])
+        .current_dir(&sandbox.home)
+        .output()
+        .unwrap();
+    assert!(made.status.success(), "{made:?}");
+    let folder = sandbox.home.join("tides");
+    let mut dev = sandbox
+        .command(&["--json", "dev"])
+        .current_dir(&folder)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    deadline(dev.id(), std::sync::Arc::clone(&done));
+    let mut lines = std::io::BufReader::new(dev.stdout.take().unwrap()).lines();
+    let mut next = |wanted: &str| loop {
+        let line = lines.next().expect("its output ended").unwrap();
+        let event: Value = serde_json::from_str(&line).unwrap();
+        if event["event"] == wanted {
+            return event;
+        }
+    };
+    assert_eq!(next("checked")["problems"], 0);
+    assert_eq!(next("linked")["name"], "acme/tides");
+    // Of its kind in the lockfile, which the app reads its themes of.
+    let entry = sandbox.locked().packages["acme/tides"].clone();
+    assert_eq!(entry.kind, lokyr_pkg_model::manifest::Kind::Themes);
+    assert!(matches!(entry.source, Source::Dev(_)));
+    // A theme saved of a fault: checked again, the fault told.
+    edit(&folder, "themes/Tides.toml", |text| {
+        text.replace("background = \"#14181f\"", "background = \"teal\"")
+    });
+    loop {
+        if next("checked")["problems"] != 0 {
+            break;
+        }
+    }
+    let killed = Command::new("kill")
+        .args(["-INT", &dev.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    assert_eq!(next("unlinked")["name"], "acme/tides");
+    assert!(dev.wait().unwrap().success());
+    done.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Runs git of `args` in `folder`, of an author of the tests.
 fn git(folder: &Path, args: &[&str]) -> String {
     let output = Command::new("git")

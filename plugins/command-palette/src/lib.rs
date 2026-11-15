@@ -109,28 +109,40 @@ fn message(cx: &mut Cx<'_>, id: &str) -> String {
         .map_or_else(|| id.to_owned(), |(_, text)| (*text).to_owned())
 }
 
-/// The palette's view.
 /// The theme picker's appearance, the one in force, and its entries, of
-/// its themes, the one in force first, selected as the picker opens.
+/// its themes, the one in force first, selected as the picker opens; an
+/// installed theme's of its package's name at its end, which a search
+/// finds it of too.
 fn theme_entries(cx: &mut Cx<'_>) -> Result<(ThemeVariant, Vec<Entry>), Error> {
-    let themes = cx.themes()?;
+    let lokyr_plugin_sdk::host::Themes {
+        appearance,
+        current: in_force,
+        themes,
+        ..
+    } = cx.themes()?;
     let current = message(cx, "palette-current");
     let mut entries: Vec<Entry> = themes
-        .themes
         .into_iter()
-        .filter(|theme| theme.variant == themes.appearance)
-        .map(|theme| Entry {
-            keys: (theme.name == themes.current).then(|| current.clone()),
-            title: theme.name.clone(),
-            name: theme.name,
-            plugin: None,
+        .filter(|theme| theme.variant == appearance)
+        .map(|theme| {
+            let keys = match (theme.name == in_force, &theme.package) {
+                (true, Some(package)) => Some(format!("{current} · {package}")),
+                (true, None) => Some(current.clone()),
+                (false, package) => package.clone(),
+            };
+            Entry {
+                keys,
+                title: theme.name.clone(),
+                name: theme.name,
+                plugin: theme.package,
+            }
         })
         .collect();
-    if let Some(at) = entries.iter().position(|entry| entry.keys.is_some()) {
+    if let Some(at) = entries.iter().position(|entry| entry.name == in_force) {
         let first = entries.remove(at);
         entries.insert(0, first);
     }
-    Ok((themes.appearance, entries))
+    Ok((appearance, entries))
 }
 
 fn panel() -> ViewId {

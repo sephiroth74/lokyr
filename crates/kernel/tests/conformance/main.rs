@@ -686,11 +686,13 @@ fn themes() -> lokyr_plugin_sdk::host::Themes {
                 name: "Lokyr Light".to_owned(),
                 variant: ThemeVariant::Light,
                 origin: ThemeOrigin::BuiltIn,
+                package: None,
             },
             ThemeInfo {
                 name: "Lokyr Dark".to_owned(),
                 variant: ThemeVariant::Dark,
                 origin: ThemeOrigin::BuiltIn,
+                package: None,
             },
         ],
         loading: false,
