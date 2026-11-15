@@ -10,6 +10,8 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub mod builtin;
+
 /// The interface's tokens of the host's, by their names, which a theme can
 /// give, and which the host derives of its terminal's colors where it does
 /// not: a plugin's own tokens, of a section of its name, come beside them.

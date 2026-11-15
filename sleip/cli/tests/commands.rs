@@ -1014,6 +1014,94 @@ fn deadline(pid: u32, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
 }
 
 #[test]
+fn new_themes_from_a_theme_copies_it_whole_wherever_lokyr_finds_it_or_refuses_one_of_none() {
+    let sandbox = Sandbox::new("new-from");
+    let palette = r##"palette = ["#000000", "#110000", "#001100", "#111100", "#000011", "#110011", "#001111", "#111111",
+           "#222222", "#330000", "#003300", "#333300", "#000033", "#330033", "#003333", "#ffffff"]"##;
+    // Lokyr's own themes, beside the app's `api-version`, as in its
+    // bundle's resources.
+    let held = sandbox.home.join("themes");
+    std::fs::create_dir_all(&held).unwrap();
+    std::fs::write(
+        held.join("Held Night.toml"),
+        format!(
+            "[theme]\nauthor = \"Ada\"\nlicense = \"Apache-2.0\"\n[terminal]\nbackground = \"#102030\"\nforeground = \"#e0e0e0\"\n{palette}\n"
+        ),
+    )
+    .unwrap();
+    // A theme of the themes folder, which extends it.
+    let folder_themes = sandbox.config().join("themes");
+    std::fs::create_dir_all(&folder_themes).unwrap();
+    std::fs::write(
+        folder_themes.join("Mine.toml"),
+        "[theme]\nextends = \"Held Night\"\n[terminal]\nforeground = \"#fefefe\"\n",
+    )
+    .unwrap();
+    let new = |name: &str, from: &str| {
+        sandbox
+            .command(&["new", "--themes", name, "--from", from])
+            .current_dir(&sandbox.home)
+            .output()
+            .unwrap()
+    };
+    let read = |path: &str| std::fs::read_to_string(sandbox.home.join(path)).unwrap();
+    // Of a held theme: whole, of its credits and its license, which
+    // `sleip check` takes.
+    let made = new("acme/night-copy", "Held Night");
+    assert!(made.status.success(), "{made:?}");
+    assert!(stdout(&made).contains("a copy of `Held Night`"), "{made:?}");
+    let theme = read("night-copy/themes/Night Copy.toml");
+    for line in [
+        "name = \"Night Copy\"",
+        "author = \"Ada\"",
+        "background = \"#102030\"",
+        "variant = \"dark\"",
+    ] {
+        assert!(theme.contains(line), "{line} in {theme}");
+    }
+    let manifest = read("night-copy/plugin.toml");
+    assert!(manifest.contains("license = \"Apache-2.0\""), "{manifest}");
+    assert!(manifest.contains("made of Held Night"), "{manifest}");
+    let check = checked(&sandbox, &sandbox.home.join("night-copy"), &[]);
+    assert_eq!(stdout(&check), "No problem found.\n", "{check:?}");
+    // Of the folder's, the theme that it extends in it.
+    assert!(new("acme/mine-copy", "Mine").status.success());
+    let theme = read("mine-copy/themes/Mine Copy.toml");
+    assert!(theme.contains("foreground = \"#fefefe\""), "{theme}");
+    assert!(theme.contains("background = \"#102030\""), "{theme}");
+    assert!(!theme.contains("extends"), "{theme}");
+    // Of a built-in one, of the template's license.
+    assert!(new("acme/dark-copy", "Lokyr Dark").status.success());
+    assert!(read("dark-copy/themes/Dark Copy.toml").contains("background = \"#1e1e20\""));
+    assert!(read("dark-copy/plugin.toml").contains("license = \"MIT\""));
+    // Of an installed package's.
+    let added = sandbox
+        .command(&["add", "--path", "."])
+        .current_dir(sandbox.home.join("night-copy"))
+        .output()
+        .unwrap();
+    assert!(added.status.success(), "{added:?}");
+    assert!(new("acme/again", "Night Copy").status.success());
+    assert!(read("again/themes/Again.toml").contains("background = \"#102030\""));
+    // Of a name of no theme: refused, nothing made.
+    let refused = new("acme/none", "Nowhere");
+    assert!(!refused.status.success());
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("there is no theme `Nowhere`"),
+        "{refused:?}"
+    );
+    assert!(!sandbox.home.join("none").exists());
+    // `--from` of `--themes` alone.
+    let wrong = sandbox.sleip(&["new", "--from", "Mine", "acme/plain"]);
+    assert!(!wrong.status.success());
+    assert!(
+        String::from_utf8_lossy(&wrong.stderr)
+            .contains("`--from` is an option of `sleip new --themes` alone"),
+        "{wrong:?}"
+    );
+}
+
+#[test]
 fn dev_links_a_plugin_checks_it_at_each_save_and_gives_the_installed_one_back_as_it_ends() {
     use std::io::BufRead;
 

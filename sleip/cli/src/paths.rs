@@ -109,6 +109,36 @@ pub fn app_api() -> Option<(String, String)> {
     valid(&version).then(|| (version, "`lokyr --api-version`".to_owned()))
 }
 
+/// The folder of the themes that the app holds, its bundle's
+/// `Contents/Resources/themes`: of the app that `SLEIP_LOKYR` names, a
+/// bundle, a file of its resources, as its `api-version`, or its binary,
+/// alone where it names one; else of the bundle that Sleip's binary is in,
+/// or of the app in the Applications folders; none of a folder not there.
+pub fn held_themes() -> Option<PathBuf> {
+    let of = |place: &Path| -> Option<PathBuf> {
+        let themes = if place.is_dir() {
+            place.join("Contents/Resources/themes")
+        } else if place.file_name().is_some_and(|name| name == "api-version") {
+            place.parent()?.join("themes")
+        } else {
+            place.parent()?.parent()?.join("Resources/themes")
+        };
+        themes.is_dir().then_some(themes)
+    };
+    if let Some(named) = std::env::var_os("SLEIP_LOKYR") {
+        return of(Path::new(&named));
+    }
+    let mut places: Vec<PathBuf> = Vec::new();
+    if let Ok(executable) = std::env::current_exe().and_then(std::fs::canonicalize) {
+        places.push(executable);
+    }
+    if let Some(home) = std::env::home_dir() {
+        places.push(home.join("Applications/Lokyr.app"));
+    }
+    places.push(PathBuf::from("/Applications/Lokyr.app"));
+    places.iter().find_map(|place| of(place))
+}
+
 /// The plugin API's version that `place` tells: an `api-version` file, an
 /// app's bundle of one in its resources, or a binary of `--api-version`.
 fn api_of(place: &Path) -> Option<(String, String)> {

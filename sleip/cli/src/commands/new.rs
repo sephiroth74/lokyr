@@ -10,10 +10,12 @@
 
 use std::path::{Path, PathBuf};
 
-use lokyr_pkg_model::manifest::is_plugin_name;
+use lokyr_pkg_model::lock::{Lock, Source};
+use lokyr_pkg_model::manifest::{Kind, is_plugin_name};
 use serde_json::json;
 
 use crate::output::Out;
+use crate::paths::Paths;
 
 /// The template's files, by their paths in a plugin's folder, each whether
 /// the plugin's name takes the place of the template's in it.
@@ -90,8 +92,16 @@ const THEMES_NAME: &str = "acme/harbor";
 const THEME_NAME: &str = "Harbor";
 
 /// Makes the plugin `plugin`, `owner/name`, in the current folder, or a
-/// package of themes of `themes`, as `out` tells.
-pub fn new(out: Out, plugin: &str, themes: bool) -> Result<(), String> {
+/// package of themes of `themes`, its theme a whole copy of the theme
+/// `from` where it names one, as Lokyr finds it of `paths`, as `out`
+/// tells.
+pub fn new(
+    paths: &Paths,
+    out: Out,
+    plugin: &str,
+    themes: bool,
+    from: Option<&str>,
+) -> Result<(), String> {
     if !is_plugin_name(plugin) {
         return Err(format!(
             "`{plugin}` is not a plugin's name, `owner/name`, of lowercase letters, digits and `-`, each from a letter"
@@ -111,6 +121,10 @@ pub fn new(out: Out, plugin: &str, themes: bool) -> Result<(), String> {
             folder.display()
         ));
     }
+    // The theme to copy, found before anything is made.
+    let copied = from
+        .map(|from| resolve_theme(paths, from).map(|resolved| (from, resolved)))
+        .transpose()?;
     if themes {
         // The theme of the package's namespace, each word capitalized, as
         // `harbor-night` makes `Harbor Night`.
@@ -129,17 +143,46 @@ pub fn new(out: Out, plugin: &str, themes: bool) -> Result<(), String> {
         let mut files = Vec::new();
         for (path, text) in THEMES_TEMPLATE {
             let path = path.replace(THEME_NAME, &title);
-            let text = text
+            let mut text = text
                 .replace(THEMES_NAME, plugin)
                 .replace(THEME_NAME, &title);
+            // A copy's theme whole, of the original's license and words.
+            if let Some((from, resolved)) = &copied {
+                if path.starts_with("themes/") {
+                    text = lokyr_themes::copy_of(resolved, &title);
+                } else if path == "plugin.toml" {
+                    if let Some(license) = &resolved.credits.license {
+                        text = text.replace(
+                            "license = \"MIT\"",
+                            &format!("license = {}", toml_string(license)),
+                        );
+                    }
+                    text = text.replace(
+                        "description = \"Themes of Lokyr, made by `sleip new --themes`.\"",
+                        &format!(
+                            "description = {}",
+                            toml_string(&format!("A theme of Lokyr made of {from}."))
+                        ),
+                    );
+                }
+            }
             write(&folder, &path, &text)?;
             files.push(path);
         }
+        let of = copied
+            .as_ref()
+            .map(|(from, _)| format!(", a copy of `{from}`"))
+            .unwrap_or_default();
         out.tell(
             "created",
-            json!({ "name": plugin, "folder": folder.display().to_string(), "files": files }),
+            json!({
+                "name": plugin,
+                "folder": folder.display().to_string(),
+                "files": files,
+                "from": copied.as_ref().map(|(from, _)| *from),
+            }),
             &format!(
-                "Made the package of themes {plugin} in {}: its theme, `{title}`.",
+                "Made the package of themes {plugin} in {}: its theme, `{title}`{of}.",
                 folder.display()
             ),
         );
@@ -213,4 +256,47 @@ fn write(folder: &Path, path: &str, text: &str) -> Result<(), String> {
     }
     std::fs::write(&file, text)
         .map_err(|error| format!("{} cannot be written: {error}", file.display()))
+}
+
+/// The theme `name` as Lokyr finds it of `paths`: of the themes folder
+/// beside the config, of the themes that the app holds, of the built-in
+/// ones, or of an installed package of themes; the error of none, or of a
+/// file that does not read.
+fn resolve_theme(paths: &Paths, name: &str) -> Result<lokyr_themes::Resolved, String> {
+    let directory = paths.config.join(lokyr_themes::DIRECTORY);
+    let held = crate::paths::held_themes();
+    let builtins = [
+        lokyr_plugin_sdk::theme::builtin::light(),
+        lokyr_plugin_sdk::theme::builtin::dark(),
+    ];
+    // The installed packages of themes, in the order of their names.
+    let installed: Vec<PathBuf> = Lock::read(&paths.lock())
+        .ok()
+        .flatten()
+        .map(|lock| {
+            lock.packages
+                .values()
+                .filter(|locked| locked.kind == Kind::Themes)
+                .filter_map(|locked| match (&locked.source, &locked.checksum) {
+                    (Source::Dev(folder), _) => Some(PathBuf::from(folder)),
+                    (_, Some(digest)) => Some(paths.store.folder(digest)),
+                    (_, None) => None,
+                })
+                .map(|folder| folder.join("themes"))
+                .collect()
+        })
+        .unwrap_or_default();
+    lokyr_themes::resolve(
+        name,
+        Some(&directory),
+        held.as_deref(),
+        &builtins,
+        &installed,
+    )
+    .map_err(|error| format!("`--from {name}`: {error}"))
+}
+
+/// `text` as a basic string of TOML, of its escapes.
+fn toml_string(text: &str) -> String {
+    toml_edit::Value::from(text).to_string().trim().to_owned()
 }
