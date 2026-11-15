@@ -88,6 +88,31 @@ fn a_theme_of_the_folder_colors_the_panes_and_its_saved_file_applies_at_once() {
     write(&directory, "Nightfall", &theme("#202024"));
     changed(&mut fake, &mut app);
     assert_eq!(pane_background(&app, window), rgb(0x202024));
+    // Of another accent alone, the chrome's tokens take it.
+    app.windows.get_mut(&window).unwrap().chrome_tokens = Some((
+        (
+            true,
+            lokyr_render_core::Color::BLACK,
+            lokyr_render_core::Color::WHITE,
+            1.0,
+        ),
+        app.theme.dark.tokens.clone(),
+    ));
+    write(
+        &directory,
+        "Nightfall",
+        &format!(
+            "{}[interface]\n\"accent\" = \"#ff79c6\"\n",
+            theme("#202024")
+        ),
+    );
+    changed(&mut fake, &mut app);
+    let kept = app.windows[&window].chrome_tokens.as_ref();
+    assert!(
+        kept.is_none_or(|(_, tokens)| tokens.get("accent")
+            == Some(lokyr_render_core::Color::from_rgb8(0xff, 0x79, 0xc6))),
+        "{kept:?}"
+    );
     let preview = app.previews["Nightfall"].as_ref().unwrap();
     assert_eq!(
         preview.background,

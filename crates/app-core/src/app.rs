@@ -4429,6 +4429,12 @@ impl<B: Backend> App<B> {
             }
             self.rendered_slots = true;
         }
+        // The chrome's tokens anew, of the theme as it is now: a theme of
+        // the same terminal colors whose tokens changed, as its accent,
+        // keeps the windows' looks.
+        for state in self.windows.values_mut() {
+            state.chrome_tokens = None;
+        }
         let windows: Vec<WindowId> = self.windows.keys().copied().collect();
         for window in windows {
             if let Some(size) = platform.window_size(window) {
