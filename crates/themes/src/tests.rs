@@ -327,6 +327,23 @@ fn an_itermcolors_file_of_the_folder_is_a_theme_as_it_is_and_a_native_one_extend
         "{}",
         error.message
     );
+    // The file of a theme, and every theme that it holds, its own first.
+    assert_eq!(
+        itermcolors_file(&directory, "Pair (Dark)"),
+        Some((
+            directory.join("Pair.itermcolors"),
+            vec!["Pair (Dark)".to_owned(), "Pair (Light)".to_owned()]
+        ))
+    );
+    assert_eq!(
+        itermcolors_file(&directory, "Grays"),
+        Some((
+            directory.join("Grays.itermcolors"),
+            vec!["Grays".to_owned()]
+        ))
+    );
+    assert_eq!(itermcolors_file(&directory, "Pair"), None);
+    assert_eq!(itermcolors_file(&directory, "Mine"), None);
     // A native file before an `.itermcolors` one of its name.
     let text =
         format!("[terminal]\nbackground = \"#123456\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n");

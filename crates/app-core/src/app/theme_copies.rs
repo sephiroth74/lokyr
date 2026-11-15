@@ -8,7 +8,9 @@
 //!
 //! And an `.itermcolors` theme of the folder converted to Lokyr's format,
 //! as the Theme Editor asks, the user agreeing: a file of Lokyr's format
-//! of its colors and its name, the `.itermcolors` file moved to the Trash.
+//! of its colors and its name, of each theme that its file holds, of both
+//! appearances where it holds both, the `.itermcolors` file moved to the
+//! Trash.
 
 use std::fs;
 use std::io::Write;
@@ -39,11 +41,14 @@ pub(super) struct NewTheme {
 }
 
 /// An `.itermcolors` theme of the folder whose conversion the user is
-/// asked: its name, the themes' folder, the plugin and its question that
-/// its name answers, and the window that the question shows on.
+/// asked: its name, its file, the names of every theme that the file
+/// holds, its own first, the themes' folder, the plugin and its question
+/// that its name answers, and the window that the question shows on.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ConvertTheme {
     name: String,
+    file: PathBuf,
+    names: Vec<String>,
     folder: PathBuf,
     answer: (String, u64),
     window: Option<WindowId>,
@@ -243,9 +248,10 @@ impl<B: Backend> App<B> {
     }
 
     /// Asks whether to convert the `.itermcolors` theme `name` of the
-    /// themes' folder to Lokyr's format, as `answer`'s plugin asks, its
-    /// name the answer once converted; or tells why it cannot be, none
-    /// answering it: no folder of themes, or no such file.
+    /// themes' folder to Lokyr's format, and every other theme that its
+    /// file holds, as `answer`'s plugin asks, its name the answer once
+    /// converted; or tells why it cannot be, none answering it: no folder
+    /// of themes, or no file that holds it.
     pub(super) fn ask_convert_theme(
         &mut self,
         platform: &mut dyn Platform,
@@ -257,21 +263,38 @@ impl<B: Backend> App<B> {
             let why = self.texts.text("theme-install-no-folder");
             return self.tell_theme_failed(platform, "convert-theme-failed", why);
         };
-        let file = folder.join(format!("{name}.itermcolors"));
-        if let Err(error) = fs::symlink_metadata(&file) {
+        let Some((file, names)) = themes::itermcolors_file(&folder, &name) else {
             self.unanswered(Some(answer));
-            let why = format!("{}: {error}", shown_path(&file));
+            let why = self.texts.text_with(
+                "convert-theme-no-file",
+                &[
+                    ("name", Arg::Text(&name)),
+                    ("folder", Arg::Text(&shown_path(&folder))),
+                ],
+            );
             return self.tell_theme_failed(platform, "convert-theme-failed", why);
-        }
+        };
+        let shown = shown_path(&folder);
+        // A file of both appearances: both converted, as its file goes.
+        let detail = match names.as_slice() {
+            [_, other] => self.texts.text_with(
+                "convert-theme-detail-both",
+                &[
+                    ("name", Arg::Text(&name)),
+                    ("other", Arg::Text(other)),
+                    ("folder", Arg::Text(&shown)),
+                ],
+            ),
+            _ => self
+                .texts
+                .text_with("convert-theme-detail", &[("folder", Arg::Text(&shown))]),
+        };
         let alert = Alert {
             style: AlertStyle::Informational,
             message: self
                 .texts
                 .text_with("convert-theme-message", &[("name", Arg::Text(&name))]),
-            detail: self.texts.text_with(
-                "convert-theme-detail",
-                &[("folder", Arg::Text(&shown_path(&folder)))],
-            ),
+            detail,
             buttons: vec![
                 self.texts.text("convert-theme-convert"),
                 self.texts.text("convert-theme-cancel"),
@@ -283,6 +306,8 @@ impl<B: Backend> App<B> {
         let id = platform.show_alert(window, &alert);
         let ask = ConvertTheme {
             name,
+            file,
+            names,
             folder,
             answer,
             window,
@@ -291,10 +316,10 @@ impl<B: Backend> App<B> {
     }
 
     /// The answer to the question of `ask`, its `button`, from the first:
-    /// converted, the theme is written of Lokyr's format, of its colors and
-    /// its name, its `.itermcolors` file moved to the Trash, the themes read
-    /// anew and its name told to the plugin that asked; else none told, a
-    /// failure in an alert too, the folder as it was.
+    /// converted, each theme of its file is written of Lokyr's format, of
+    /// its colors and its name, the `.itermcolors` file moved to the Trash,
+    /// the themes read anew and its name told to the plugin that asked;
+    /// else none told, a failure in an alert too, the folder as it was.
     pub(super) fn convert_theme_answered(
         &mut self,
         platform: &mut dyn Platform,
@@ -306,29 +331,39 @@ impl<B: Backend> App<B> {
         }
         let places = self.theme_places();
         let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
-        let original = ask.folder.join(format!("{}.itermcolors", ask.name));
-        let path = ask.folder.join(format!("{}.toml", ask.name));
-        let converted = places
-            .resolve(&ask.name, &builtins)
-            .map_err(|error| error.to_string())
-            .and_then(|resolved| {
-                let text = themes::copy_of(&resolved, &ask.name);
-                // A file made new alone, never one written over.
-                fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&path)
-                    .and_then(|mut file| file.write_all(text.as_bytes()))
-                    .map_err(|error| format!("{}: {error}", shown_path(&path)))
-            })
-            .and_then(|()| {
-                // Its `.itermcolors` file gone, or its new file too.
-                platform.trash(&original).map_err(|error| {
-                    let _ = fs::remove_file(&path);
-                    error.to_string()
-                })
-            });
+        // Each theme of the file of Lokyr's format, a file made new alone,
+        // never one written over; those written taken away as one fails.
+        let mut written: Vec<PathBuf> = Vec::new();
+        let mut converted = Ok(());
+        for name in &ask.names {
+            let path = ask.folder.join(format!("{name}.toml"));
+            let wrote = places
+                .resolve(name, &builtins)
+                .map_err(|error| error.to_string())
+                .and_then(|resolved| {
+                    let text = themes::copy_of(&resolved, name);
+                    fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&path)
+                        .and_then(|mut file| file.write_all(text.as_bytes()))
+                        .map_err(|error| format!("{}: {error}", shown_path(&path)))
+                });
+            match wrote {
+                Ok(()) => written.push(path),
+                Err(why) => {
+                    converted = Err(why);
+                    break;
+                }
+            }
+        }
+        // Its `.itermcolors` file gone, or the new files too.
+        let converted =
+            converted.and_then(|()| platform.trash(&ask.file).map_err(|error| error.to_string()));
         if let Err(why) = converted {
+            for path in written {
+                let _ = fs::remove_file(path);
+            }
             self.unanswered(Some(ask.answer));
             return self.tell_theme_failed(platform, "convert-theme-failed", why);
         }

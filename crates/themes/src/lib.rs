@@ -369,6 +369,26 @@ fn load_native(
     Ok(Some(file.partial.over(base)))
 }
 
+/// The `.itermcolors` file of `directory` that holds the theme `name`, as
+/// [`load_itermcolors`] finds it, and the names of every theme that it
+/// holds, its own first: `<name>.itermcolors`, or `<base>.itermcolors` of
+/// both appearances of a name `<base> (Light)` or `<base> (Dark)`; `None`
+/// of no such file, or of one that does not read.
+pub fn itermcolors_file(directory: &Path, name: &str) -> Option<(PathBuf, Vec<String>)> {
+    let base = [" (Light)", " (Dark)"]
+        .into_iter()
+        .find_map(|suffix| name.strip_suffix(suffix));
+    std::iter::once(name).chain(base).find_map(|stem| {
+        let path = directory.join(format!("{stem}.itermcolors"));
+        let bytes = read_file(&path).ok()?;
+        let themes = itermcolors::read(&bytes, stem, &path).ok()?;
+        let mut names: Vec<String> = themes.into_iter().map(|theme| theme.name).collect();
+        let at = names.iter().position(|each| each == name)?;
+        names[..=at].rotate_right(1);
+        Some((path, names))
+    })
+}
+
 /// The theme of `name` of an `.itermcolors` file of `directory`, read as
 /// it is: `<name>.itermcolors`, or the light or the dark variant of
 /// `<base>.itermcolors` of a name `<base> (Light)` or `<base> (Dark)`;
