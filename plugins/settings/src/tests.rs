@@ -2519,8 +2519,8 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             other => panic!("{other:?}"),
         }
     };
-    // Duplicate…: the app's new theme of the card's theme, held, whose
-    // Edit is dimmed.
+    // Duplicate…: a copy of the card's theme, held, whose Edit is dimmed,
+    // its name asked by the app, of no editor opened.
     assert!(opened(&mut host, &mut plugin, "theme:dark:Nord"));
     host.ui_event(
         &mut plugin,
@@ -2529,11 +2529,7 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
     .unwrap();
     let done = host.take_done();
     assert!(
-        done.iter().any(|request| *request
-            == Request::RunCommand {
-                name: NEW_THEME.to_owned(),
-                args: Args::from([("theme".to_owned(), Value::String("Nord".to_owned()))]),
-            }),
+        done.contains(&Request::CopyTheme("Nord".to_owned())),
         "{done:?}"
     );
     assert!(host.panels().get(&PanelId::from(THEME_MENU)).is_none());

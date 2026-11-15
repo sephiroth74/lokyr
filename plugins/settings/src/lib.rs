@@ -62,7 +62,8 @@ const THEME_USE: &str = "theme-use";
 const THEME_EDIT: &str = "theme-edit";
 const THEME_DUPLICATE: &str = "theme-duplicate";
 
-/// The app's command that makes a new theme of an existing one.
+/// The app's command that makes a new theme of Lokyr's own values of an
+/// appearance, as New… asks.
 const NEW_THEME: &str = "app.new-theme";
 
 /// The themes' page's button of the themes imported, and the app's command
@@ -435,8 +436,7 @@ impl Plugin for SettingsPage {
         }
         let key = event.key.0.as_str();
         // An item of a theme's card's context menu: the theme used, shown
-        // in the Editor, or a new theme made of it, as the app asks its
-        // name.
+        // in the Editor, or a copy of it, as the app asks its name.
         if event.view == ViewId::Panel(PanelId::from(THEME_MENU)) {
             if event.kind != UiEventKind::Click {
                 return Ok(());
@@ -448,10 +448,9 @@ impl Plugin for SettingsPage {
             return match key {
                 THEME_USE => cx.set_theme(variant, &name),
                 THEME_EDIT => self.edit_theme(cx, &name),
-                THEME_DUPLICATE => cx.run_command(
-                    NEW_THEME,
-                    Args::from([("theme".to_owned(), Value::String(name))]),
-                ),
+                // A copy, its name asked, used for its appearance, its card
+                // chosen, of no editor opened: Edit shows it in the Editor.
+                THEME_DUPLICATE => cx.copy_theme(&name).map(|_| ()),
                 _ => Ok(()),
             };
         }

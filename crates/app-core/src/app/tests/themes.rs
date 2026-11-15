@@ -1413,13 +1413,13 @@ fn the_theme_editor_s_copy_and_conversion_answer_its_plugin_of_no_editor_opened(
         run_until(fake, app, |_, _| answers.borrow().0.len() == count);
         answers.borrow().0[count - 1].clone()
     };
-    // A copy: its name asked, of the Theme Editor's words; written, named
-    // for its variant, its name answered, no editor opened.
+    // A copy: its name asked, of no editor's words; written, named for
+    // its variant, its name answered, no editor opened.
     fake.send_app(&mut app, AppEvent::Command("editing.copy".to_owned()));
     let asked = fake.alerts().last().cloned().expect("a question");
     assert_eq!(asked.alert.input.as_deref(), Some("Held Dawn Copy"));
     assert!(
-        asked.alert.detail.contains("Theme Editor"),
+        asked.alert.detail.ends_with("and uses it."),
         "{:?}",
         asked.alert
     );

@@ -209,7 +209,7 @@ theme-install-not-copied = Non si può copiare in { $folder }: { $error }
 
 new-theme-message = Nuovo tema da «{ $name }»
 new-theme-detail = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder }, lo usa e lo apre nel tuo editor.
-new-theme-detail-editor = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder }, lo usa e lo mostra nell'Editor dei temi.
+new-theme-detail-used = Il suo nome, con cui la sezione [theme] della configurazione lo nomina. Lokyr scrive tutti i colori del tema in { $folder } e lo usa.
 new-theme-name = { $name } copia
 new-theme-fresh-message = { $variant ->
     [light] Nuovo tema chiaro

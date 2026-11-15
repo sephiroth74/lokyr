@@ -251,7 +251,7 @@ theme-install-not-copied = It cannot be copied into { $folder }: { $error }
 # field's first name, the buttons, and why a name given cannot be one.
 new-theme-message = New theme of “{ $name }”
 new-theme-detail = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder }, uses it and opens it in your editor.
-new-theme-detail-editor = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder }, uses it and shows it in the Theme Editor.
+new-theme-detail-used = Its name, which the config's [theme] names it by. Lokyr writes every color of the theme into { $folder } and uses it.
 new-theme-name = { $name } Copy
 # A new theme of Lokyr's own values of an appearance, light or dark: the
 # question's title and the field's first name.

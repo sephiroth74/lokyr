@@ -130,9 +130,9 @@ impl<B: Backend> App<B> {
         text: &str,
         why: Option<String>,
     ) {
-        // Shown in the Theme Editor that asked, else opened in the editor.
+        // Told to the plugin that asked, else opened in the editor.
         let detail = match ask.answer {
-            Some(_) => "new-theme-detail-editor",
+            Some(_) => "new-theme-detail-used",
             None => "new-theme-detail",
         };
         let mut detail = self
