@@ -115,7 +115,7 @@ pub(crate) fn theme_tokens(
     // that it takes where the theme leaves it out.
     let terminal = &theme.terminal;
     let (fg, bg) = (terminal.foreground, terminal.background);
-    let selection = colors.get("field.selection").map(color_of).unwrap_or(fg);
+    let selection = colors.get("field.selection").map_or(fg, color_of);
     let keys: [(&str, Option<themes::ThemeColor>, (themes::ThemeColor, &str)); 9] = [
         ("background", Some(bg), (bg, "")),
         ("foreground", Some(fg), (fg, "")),
