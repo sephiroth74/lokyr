@@ -994,6 +994,15 @@ fn in_palette(name: &str) -> bool {
     PALETTE.contains(&name)
 }
 
+/// Whether the token `name` is of one of Lokyr's groups, by its name's first
+/// part, and not one of Lokyr's tokens: a typo, or a token that Lokyr no
+/// longer has, which colors nothing.
+fn is_unknown(name: &str) -> bool {
+    let first = group(name);
+    let tokens = lokyr_plugin_sdk::theme::TOKENS;
+    !tokens.contains(&name) && tokens.iter().any(|token| group(token) == first)
+}
+
 /// The group of the token `name`: its name's first part, Lokyr's own by
 /// their groups and a plugin's of its namespace.
 fn group(name: &str) -> &str {
@@ -1014,7 +1023,10 @@ fn token_rows(
     editing: Option<Editing<'_>>,
 ) -> Vec<Node> {
     let mut rows = Vec::new();
-    let mut last: Option<&str> = None;
+    let mut last: Option<String> = None;
+    // The headings shown, whose keys stay unique where a group comes again.
+    let mut headings: BTreeSet<String> = BTreeSet::new();
+    let unknown = message(cx, "editor-unknown", &[]);
     for token in tokens {
         let origin = origin_text(cx, &token.origin);
         let value = token.color.to_string();
@@ -1022,16 +1034,25 @@ fn token_rows(
         if !words.iter().all(|word| haystack.contains(word.as_str())) {
             continue;
         }
+        // A token of one of Lokyr's groups that Lokyr does not know, as a
+        // typo, under a heading of its own rather than its group's again.
         let heading = match (terminal, in_palette(&token.name)) {
-            (true, false) => "[terminal]",
-            (true, true) => "[terminal] palette",
-            (false, _) => group(&token.name),
+            (true, false) => "[terminal]".to_owned(),
+            (true, true) => "[terminal] palette".to_owned(),
+            (false, _) if is_unknown(&token.name) => unknown.clone(),
+            (false, _) => group(&token.name).to_owned(),
         };
-        if last != Some(heading) {
-            last = Some(heading);
+        if last.as_deref() != Some(heading.as_str()) {
+            let mut key = format!("editor-group:{heading}");
+            let mut again = 1;
+            while !headings.insert(key.clone()) {
+                again += 1;
+                key = format!("editor-group:{heading}:{again}");
+            }
+            last = Some(heading.clone());
             rows.push(
-                Node::text(heading)
-                    .key(format!("editor-group:{heading}").as_str())
+                Node::text(heading.as_str())
+                    .key(key.as_str())
                     .role(Role::Heading)
                     .style(Style {
                         font_weight: Some(FontWeight::Bold),

@@ -1049,3 +1049,45 @@ fn values_typed_are_written_as_the_editor_hides_and_left_behind_as_another_theme
     assert!(find(&tree, "editor-refused:accent").is_none());
     assert!(written(&mut host).is_empty());
 }
+
+#[test]
+fn tokens_unknown_to_lokyr_of_its_groups_show_under_a_heading_of_their_own() {
+    let (mut host, mut plugin) = shown();
+    // Lokyr Dark's tokens, then, of no rule, a plugin's and two of Lokyr's
+    // groups that Lokyr does not know, as the read lists them.
+    let mut tokens = theme_tokens();
+    // A token of the tab bar's group among the rules', as the list has them.
+    let mut active = tokens[0].tokens[1].clone();
+    active.name = "tabs.active.bg".to_owned();
+    tokens[0].tokens.insert(2, active);
+    for name in ["panel.bgg", "tabs.activ.bg"] {
+        let mut extra = tokens[0].tokens[0].clone();
+        extra.name = name.to_owned();
+        tokens[0].tokens.push(extra);
+    }
+    host.set_theme_tokens(tokens);
+    host.deliver(&mut plugin).unwrap();
+    let tree = page(&mut host, &mut plugin);
+    // Every key once, as the host refuses a tree of a key twice.
+    let mut keys = Vec::new();
+    let mut walk = vec![&tree];
+    while let Some(node) = walk.pop() {
+        if let Some(key) = &node.key {
+            keys.push(key.0.clone());
+        }
+        walk.extend(node.children.iter());
+    }
+    let mut unique = keys.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), keys.len(), "{keys:?}");
+    // Both under their heading, its own, after the plugin's.
+    let shown = texts(&tree);
+    let at = |text: &str| shown.iter().position(|each| each == text).unwrap();
+    assert!(at("editor-unknown") < at("panel.bgg"));
+    assert!(at("editor-unknown") < at("tabs.activ.bg"));
+    assert!(at("command-header") < at("editor-unknown"));
+    // The tab bar's heading once, of its own token alone.
+    assert_eq!(shown.iter().filter(|each| *each == "tabs").count(), 1);
+    assert!(at("tabs") < at("tabs.active.bg") && at("tabs.active.bg") < at("command-header"));
+}

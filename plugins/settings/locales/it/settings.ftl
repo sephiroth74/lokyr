@@ -9,6 +9,7 @@ editor-read-only = Il tema è di sola lettura, duplicalo prima
 editor-itermcolors = Il tema è un file di iTerm2, convertilo prima nel formato di Lokyr
 editor-reset = Ripristina
 editor-guide = Guida per gli autori di temi
+editor-unknown = Sconosciuti a Lokyr
 editor-filter = Filtra i token
 editor-filter-clear = Svuota il filtro
 editor-rule = regola: { $rule }
