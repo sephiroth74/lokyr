@@ -181,8 +181,18 @@ impl Editor {
             // changed lit.
             Event::ThemeChanged if self.shown => {
                 let tokens = cx.theme_tokens(self.previewed.as_deref())?;
+                // Another theme in force: the panel of the last one's color
+                // closed, its color written, its values as it shows kept.
+                let other = tokens.as_ref().map(|tokens| &tokens.theme)
+                    != self.tokens.as_ref().map(|tokens| &tokens.theme);
+                if other {
+                    self.stop_coloring(cx)?;
+                }
                 let changed = changed(self.tokens.as_ref(), tokens.as_ref());
                 self.tokens = tokens;
+                if other {
+                    self.remember();
+                }
                 if !changed.is_empty() {
                     self.lit = changed;
                     if let Some(timer) = self.lit_timer.take() {
@@ -611,13 +621,17 @@ impl Editor {
     }
 
     /// Previews the theme `chosen`, or the one in force again of none, and
-    /// reads its tokens.
+    /// reads its tokens: of the one in force each time, which may be
+    /// another than the last, a theme previewed once.
     fn preview(&mut self, cx: &mut Cx<'_>, chosen: Option<String>) -> Result<(), Error> {
-        if chosen == self.previewed {
+        if chosen != self.previewed {
+            cx.preview_theme(chosen.as_deref())?;
+            self.previewed = chosen;
+        } else if self.previewed.is_some() {
             return Ok(());
         }
-        cx.preview_theme(chosen.as_deref())?;
-        self.previewed = chosen;
+        // The theme previewed, or the one in force, which a copy named in
+        // `[theme]` may be now, of the same colors and no `theme-changed`.
         self.lit.clear();
         self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
         self.remember();

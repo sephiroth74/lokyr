@@ -929,3 +929,51 @@ fn a_swatch_opens_the_color_panel_whose_colors_show_at_once_and_are_written_at_r
         .unwrap();
     assert!(host.take_done().contains(&Request::CloseColorPanel));
 }
+
+#[test]
+fn the_lock_of_the_theme_in_force_shows_its_copy_of_its_own_values() {
+    use lokyr_plugin_sdk::host::{ThemeFormat, ThemeInfo, ThemeOrigin};
+    let (mut host, mut plugin) = shown();
+    host.set_themes(kinds("Lokyr Dark"));
+    host.deliver(&mut plugin).unwrap();
+    // The theme in force, built in, shown of no preview: its lock.
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(lock(&tree).as_deref(), Some("editor-read-only"));
+    host.ui_event(&mut plugin, &click(LOCK)).unwrap();
+    let id = plugin.editor.copying.unwrap();
+    // The copy named in `[theme]`, of the same colors: no `theme-changed`.
+    let mut named = kinds("Mine");
+    named.themes.push(ThemeInfo {
+        name: "Mine".to_owned(),
+        variant: ThemeVariant::Dark,
+        origin: ThemeOrigin::Folder,
+        format: ThemeFormat::Lokyr,
+    });
+    host.set_themes(named);
+    let mut tokens = theme_tokens();
+    tokens[0].theme = "Mine".to_owned();
+    for token in &mut tokens[0].tokens {
+        if token.name == "accent" {
+            token.origin = TokenOrigin::File {
+                path: "/themes/Mine.toml".to_owned(),
+                line: 3,
+                theme: "Mine".to_owned(),
+            };
+            token.value = Some("#4c9bff".to_owned());
+        }
+    }
+    host.set_theme_tokens(tokens);
+    // The answer alone, of no `theme-changed` before it.
+    host.events(
+        &mut plugin,
+        &[Event::Answered {
+            id,
+            text: Some("Mine".to_owned()),
+        }],
+    )
+    .unwrap();
+    // The copy shown, of no lock, its values as it showed kept for Reset.
+    assert_eq!(plugin.editor.shown_theme(), Some("Mine"));
+    assert_eq!(lock(&page(&mut host, &mut plugin)), None);
+    assert_eq!(plugin.editor.original("accent"), Some(Some("#4c9bff")));
+}
