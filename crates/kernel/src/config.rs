@@ -3692,7 +3692,14 @@ long-command = 0
         assert_eq!(font.len(), 15);
         assert_eq!(
             keys::<TextConfig>(),
-            ["bold", "italic", "ansi-colors", "bold-is-bright", "blink"]
+            [
+                "bold",
+                "italic",
+                "ansi-colors",
+                "bold-is-bright",
+                "blink",
+                "faint-opacity"
+            ]
         );
         assert_eq!(keys::<InterfaceConfig>(), ["font-family", "font-size"]);
         assert!(font.contains(&"bold-italic-style"));

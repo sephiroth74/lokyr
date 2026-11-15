@@ -226,6 +226,18 @@
           "x-guide": "Whether text that programs make blink, with the escape sequences SGR 5 and 6, blinks.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The text blinks on the cursor's clock: shown and hidden for [`blink-interval`](#blink-interval) each, half a second by default, switched even when the cursor fades, and only in the window that has the focus.\n- It stops blinking, and stays shown, [`blink-timeout`](#blink-timeout) after the last key or output, 15 seconds by default, as the cursor stops.\n- `false` shows it steadily.\n- macOS's window server blinks it, on a layer of its own over the rows that hold it, which wakes Lokyr no more than steady text does. The layer takes some memory of the GPU's while blinking text shows, as much as a few rows of the window, and none once it goes.",
           "x-example": "false",
           "x-example-comment": "true | false: text that programs make blink"
+        },
+        "faint-opacity": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0.1,
+          "maximum": 1,
+          "x-step": 0.05,
+          "description": "The opacity of faint text, which programs write dim with the escape sequence SGR 2, over its background.",
+          "x-platforms": ["macos"],
+          "x-guide": "The opacity of faint text, which programs write dim with the escape sequence SGR 2, over its background.\n\n| Values | Default |\n|---|---|\n| from `0.1` to `1` | `0.5` |\n\n- `1` draws faint text as the rest; `0.1`, the least, as faint as it gets.\n- Its color shows at that opacity over the cell's background, as the text's own color and the background's mixed.\n- It applies at once, as you save the file.",
+          "x-example": "0.6",
+          "x-example-comment": "0.1 to 1: faint text's opacity over its background"
         }
       },
       "additionalProperties": false

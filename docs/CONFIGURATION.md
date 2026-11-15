@@ -66,6 +66,7 @@ italic = false                       # true | false: italic text in the italic f
 ansi-colors = false                  # true | false: the colors that programs set
 bold-is-bright = true                # true | false: bold text of the first eight colors in their bright ones
 blink = false                        # true | false: text that programs make blink
+faint-opacity = 0.6                  # 0.1 to 1: faint text's opacity over its background
 
 [cursor]
 shape = "bar"                        # block | bar | underline | hollow
@@ -451,6 +452,20 @@ Whether text that programs make blink, with the escape sequences SGR 5 and 6, bl
 - It stops blinking, and stays shown, [`blink-timeout`](#blink-timeout) after the last key or output, 15 seconds by default, as the cursor stops.
 - `false` shows it steadily.
 - macOS's window server blinks it, on a layer of its own over the rows that hold it, which wakes Lokyr no more than steady text does. The layer takes some memory of the GPU's while blinking text shows, as much as a few rows of the window, and none once it goes.
+
+### `faint-opacity`
+
+<sub>Platforms: macOS</sub>
+
+The opacity of faint text, which programs write dim with the escape sequence SGR 2, over its background.
+
+| Values | Default |
+|---|---|
+| from `0.1` to `1` | `0.5` |
+
+- `1` draws faint text as the rest; `0.1`, the least, as faint as it gets.
+- Its color shows at that opacity over the cell's background, as the text's own color and the background's mixed.
+- It applies at once, as you save the file.
 
 ## `[cursor]`
 

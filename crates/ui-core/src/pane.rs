@@ -305,7 +305,7 @@ pub fn foreground(snapshot: &Snapshot) -> Color {
 /// display list's, [`background`], which can let what is behind the window
 /// show through; one whose background the program colors, or that is
 /// selected, is opaque. Reverse video swaps the default colors; faint text mixes
-/// its color halfway to its background; hidden text shows its background
+/// its color toward its background, of the config's opacity of it; hidden text shows its background
 /// alone. The cursor covers both cells of a wide character, and the text
 /// under a block takes its cell's background.
 pub fn cells(
@@ -640,7 +640,7 @@ fn cells_of(
             let same = (cell_of.style(), chosen.is_some());
             if decorated && !hidden && !decorations.goes_on(row, column, same) {
                 let shade = if style.faint {
-                    mix(foreground, background)
+                    faint(foreground, background, text.config.faint_opacity.value())
                 } else {
                     foreground
                 };
@@ -666,7 +666,7 @@ fn cells_of(
                 continue;
             }
             if style.faint {
-                foreground = mix(foreground, background);
+                foreground = faint(foreground, background, text.config.faint_opacity.value());
             }
             let dark = luma(background) < luma(foreground);
             if !run.takes(&style, dark) {
@@ -1378,14 +1378,15 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
     }
 }
 
-/// The color halfway between `a` and `b`, in the encoded space, where the
-/// text blends.
-fn mix(a: Color, b: Color) -> Color {
+/// Faint text's color `text` at `opacity` over `under`, in the encoded
+/// space, where the text blends, of its own opacity.
+fn faint(text: Color, under: Color, opacity: f32) -> Color {
+    let share = 1.0 - opacity;
     Color {
-        red: (a.red + b.red) / 2.0,
-        green: (a.green + b.green) / 2.0,
-        blue: (a.blue + b.blue) / 2.0,
-        alpha: a.alpha,
+        red: text.red + (under.red - text.red) * share,
+        green: text.green + (under.green - text.green) * share,
+        blue: text.blue + (under.blue - text.blue) * share,
+        alpha: text.alpha,
     }
 }
 
@@ -1701,6 +1702,50 @@ mod tests {
         );
         let plain = looked(text, TextConfig::default(), true);
         assert_eq!(plain.glyphs[0].color, color(colors.palette[1]));
+    }
+
+    #[test]
+    fn faint_text_shows_of_its_opacity_over_the_background_under_it() {
+        let colors = Colors::default();
+        let (fg, bg) = (color(colors.foreground), color(colors.background));
+        let over = |text: Color, under: Color, opacity: f32| Color {
+            red: text.red + (under.red - text.red) * (1.0 - opacity),
+            green: text.green + (under.green - text.green) * (1.0 - opacity),
+            blue: text.blue + (under.blue - text.blue) * (1.0 - opacity),
+            alpha: text.alpha,
+        };
+        // Faint, plain, faint red on blue, faint inverse.
+        let text = "\x1b[2ma\x1b[0mb\x1b[2;31;44mc\x1b[0;2;7md";
+        let found = |config: TextConfig| -> Vec<Color> {
+            looked(text, config, true)
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.color)
+                .collect()
+        };
+        let red_on_blue = over(color(colors.palette[1]), color(colors.palette[4]), 0.5);
+        assert_eq!(
+            found(TextConfig::default()),
+            [over(fg, bg, 0.5), fg, red_on_blue, over(bg, fg, 0.5)]
+        );
+        // Of the config's opacity; 1 as the rest.
+        let config = |opacity: f64| TextConfig {
+            faint_opacity: opacity.try_into().unwrap(),
+            ..TextConfig::default()
+        };
+        assert_eq!(found(config(0.25))[0], over(fg, bg, 0.25));
+        assert_eq!(found(config(1.0)), [fg, fg, color(colors.palette[1]), bg]);
+    }
+
+    #[test]
+    fn a_faint_opacity_is_from_a_tenth_to_one() {
+        use crate::text::FaintOpacity;
+        assert!(FaintOpacity::try_from(0.09).is_err());
+        assert!(FaintOpacity::try_from(1.01).is_err());
+        assert!(FaintOpacity::try_from(f64::NAN).is_err());
+        let opacity = FaintOpacity::try_from(0.3).unwrap();
+        assert_eq!(f64::from(opacity), 0.3);
+        assert_eq!(FaintOpacity::default().value(), 0.5);
     }
 
     #[test]
@@ -2893,7 +2938,7 @@ mod tests {
         );
         assert_eq!(
             batch.lines[0].color,
-            mix(foreground, background.with_alpha(0.0))
+            faint(foreground, background.with_alpha(0.0), 0.5)
         );
         // Shown, the blinking `z` has its strikeout.
         look.blink_shown = true;
