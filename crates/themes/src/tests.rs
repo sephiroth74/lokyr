@@ -1061,3 +1061,98 @@ fn a_theme_file_of_hostile_tokens_reads_of_no_overflow_and_told() {
     }
     let _ = fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn a_token_is_edited_where_the_file_writes_it_of_dotted_and_quoted_keys() {
+    let theme = builtin();
+    let read = |text: &str, name: &str| {
+        parse(text, Path::new("/themes/Mine.toml"))
+            .unwrap()
+            .partial
+            .tokens
+            .get(name)
+            .cloned()
+    };
+    let path = Path::new("/themes/Mine.toml");
+    let color = |hex: u32| Some(TokenValue::Color(ThemeColor::hex(hex)));
+    // The guide's own example: `"mark.current"` quoted in `[scrollbar]`.
+    let example = include_str!("../../../docs/themes/example.toml");
+    let edited = set_value(
+        example,
+        path,
+        "scrollbar.mark.current",
+        Some("#00ff00"),
+        &theme,
+    )
+    .unwrap();
+    assert!(
+        edited.contains("\"mark.current\" = \"#00ff00\"           # quoted"),
+        "{edited}"
+    );
+    assert!(!edited.contains("\"scrollbar.mark.current\""), "{edited}");
+    assert_eq!(read(&edited, "scrollbar.mark.current"), color(0x00ff00));
+    let removed = set_value(&edited, path, "scrollbar.mark.current", None, &theme).unwrap();
+    assert_eq!(read(&removed, "scrollbar.mark.current"), None);
+    assert_eq!(read(&removed, "scrollbar.mark"), color(0xffd60a));
+    // A bare dotted key of `[interface]`, and a quoted one of `[tabs]`:
+    // each where it is, of no other written.
+    let base =
+        format!("[terminal]\nbackground = \"#101010\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n");
+    for (text, written) in [
+        (
+            format!("{base}\n[interface]\ntabs.active.bg = \"#111111\"\n"),
+            "tabs.active.bg = \"#00ff00\"\n",
+        ),
+        (
+            format!("{base}\n[tabs]\n\"active.bg\" = \"#111111\"\n"),
+            "\"active.bg\" = \"#00ff00\"\n",
+        ),
+    ] {
+        let edited = set_value(&text, path, "tabs.active.bg", Some("#00ff00"), &theme).unwrap();
+        assert!(edited.contains(written), "{edited}");
+        assert_eq!(edited.matches("active.bg").count(), 1, "{edited}");
+        assert_eq!(read(&edited, "tabs.active.bg"), color(0x00ff00));
+        let removed = set_value(&edited, path, "tabs.active.bg", None, &theme).unwrap();
+        assert!(!removed.contains("active.bg"), "{removed}");
+    }
+}
+
+#[test]
+fn a_key_taken_away_keeps_the_comments_above_it() {
+    let theme = builtin();
+    let path = Path::new("/themes/Mine.toml");
+    let comments = |text: &str| -> Vec<String> {
+        text.lines()
+            .filter(|line| line.trim_start().starts_with('#'))
+            .map(str::to_owned)
+            .collect()
+    };
+    // A key of a section between others: its comments before the next.
+    let text = format!(
+        "[terminal]\nbackground = \"#101010\"\n# the cursor, of its own color\ncursor = \"#ff0000\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n"
+    );
+    let removed = set_value(&text, path, "cursor", None, &theme).unwrap();
+    assert!(!removed.contains("cursor = "), "{removed}");
+    assert_eq!(comments(&removed), comments(&text), "{removed}");
+    parse(&removed, path).unwrap();
+    // A token uncommented among the rules' comments, as a new theme writes
+    // them: every comment kept, of the last key of `[interface]` too.
+    let new = new_theme_of(&theme, "Mine");
+    let line = "# \"tabs.active.shadow\" = ";
+    let start = new.find(line).expect("the rule's comment");
+    let uncommented = format!("{}{}", &new[..start], &new[start + 2..]);
+    let before = comments(&uncommented);
+    let removed = set_value(&uncommented, path, "tabs.active.shadow", None, &theme).unwrap();
+    assert_eq!(comments(&removed), before, "{removed}");
+    assert!(!removed.contains("\"tabs.active.shadow\" = "), "{removed}");
+    // The last key of a section before another: before the next one.
+    let text = format!(
+        "[terminal]\nbackground = \"#101010\"\nforeground = \"#e0e0e0\"\n{PALETTE}\n\n[interface]\n\"accent\" = \"#4c9bff\"\n# the separators, faint\n\"separator\" = \"#ffffff1a\"\n\n[search]\nmatch = \"#ffd60a4d\"\n"
+    );
+    let removed = set_value(&text, path, "separator", None, &theme).unwrap();
+    assert_eq!(comments(&removed), comments(&text), "{removed}");
+    assert!(
+        removed.contains("# the separators, faint\n\n[search]"),
+        "{removed}"
+    );
+}

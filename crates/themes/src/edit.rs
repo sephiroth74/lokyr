@@ -53,7 +53,7 @@ pub fn set_value(
         match (palette, value) {
             (None, Some(value)) => set(terminal, name, value),
             (None, None) => {
-                terminal.remove(name);
+                remove_keeping(&mut document, "terminal", name);
             }
             (Some(at), Some(value)) => set_palette(terminal, at, value, &theme.terminal.palette),
             (Some(_), None) => {
@@ -71,6 +71,18 @@ pub fn set_value(
         let places = token_places(name);
         let mut found = false;
         for (section, keys) in &places {
+            // A key of the section itself taken away, the comments above it
+            // kept.
+            let joined = keys.join(".");
+            let direct = document
+                .get(section.as_str())
+                .and_then(Item::as_table)
+                .and_then(|table| table.get(&joined))
+                .is_some_and(|item| item.as_value().is_some());
+            if value.is_none() && direct {
+                found |= remove_keeping(&mut document, section, &joined);
+                continue;
+            }
             if let Some(table) = document
                 .get_mut(section.as_str())
                 .and_then(Item::as_table_like_mut)
@@ -132,10 +144,12 @@ pub fn removable(text: &str, path: &Path, name: &str) -> Result<(), Error> {
 }
 
 /// The places where a file can write the token `name`: a section and the
-/// keys within it, `[interface]`'s of its whole name, its own section's of
-/// the rest of its name, and `[search]`'s two.
+/// parts of the name within it, `[interface]`'s of the whole name, its own
+/// section's of the rest of it, and `[search]`'s two; each part a table of
+/// the rest, or the rest one key, as [`set_at`] finds them.
 fn token_places(name: &str) -> Vec<(String, Vec<String>)> {
-    let mut places = vec![("interface".to_owned(), vec![name.to_owned()])];
+    let parts: Vec<String> = name.split('.').map(str::to_owned).collect();
+    let mut places = vec![("interface".to_owned(), parts)];
     let search = match name {
         "search.match" => Some("match"),
         "search.match.current" => Some("current"),
@@ -156,35 +170,100 @@ fn token_places(name: &str) -> Vec<(String, Vec<String>)> {
     places
 }
 
-/// Sets the value at `keys` of `table`, nested tables of each key but the
-/// last, or takes it away of none, the tables that it empties too; whether
-/// the table held it.
+/// Sets the value at `keys` of `table`, or takes it away of none: the keys
+/// joined as one key of `table`, as `"mark.current"`, else the first a table
+/// of the rest, as a dotted key's, the tables that a removal empties gone;
+/// whether the table held it.
 fn set_at(table: &mut dyn TableLike, keys: &[String], value: Option<&str>) -> bool {
-    let Some((last, path)) = keys.split_last() else {
-        return false;
-    };
-    let Some((first, rest)) = path.split_first() else {
-        if table.get(last).is_none_or(|item| item.as_value().is_none()) {
-            return false;
-        }
+    let joined = keys.join(".");
+    if table
+        .get(&joined)
+        .is_some_and(|item| item.as_value().is_some())
+    {
         match value {
-            Some(value) => set_like(table, last, value),
+            Some(value) => set_like(table, &joined, value),
             None => {
-                table.remove(last);
+                table.remove(&joined);
             }
         }
         return true;
+    }
+    let Some((first, rest)) = keys.split_first() else {
+        return false;
     };
+    if rest.is_empty() {
+        return false;
+    }
     let Some(inner) = table.get_mut(first).and_then(Item::as_table_like_mut) else {
         return false;
     };
-    let mut keys = rest.to_vec();
-    keys.push(last.clone());
-    let held = set_at(inner, &keys, value);
+    let held = set_at(inner, rest, value);
     if held && value.is_none() && inner.is_empty() {
         table.remove(first);
     }
     held
+}
+
+/// Takes the key `key` away of the section `section` of `document`, the
+/// lines of comments above it kept: before the next key of the section, or
+/// past the section, before the next one or at the file's end; whether the
+/// section held it.
+fn remove_keeping(document: &mut DocumentMut, section: &str, key: &str) -> bool {
+    let Some(table) = document.get_mut(section).and_then(Item::as_table_mut) else {
+        return false;
+    };
+    if table.get(key).is_none() {
+        return false;
+    }
+    let above = table
+        .key(key)
+        .and_then(|own| own.leaf_decor().prefix())
+        .and_then(|prefix| prefix.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let keys: Vec<String> = table.iter().map(|(own, _)| own.to_owned()).collect();
+    let next = keys
+        .iter()
+        .position(|own| own == key)
+        .and_then(|at| keys.get(at + 1))
+        .cloned();
+    table.remove(key);
+    if !above.contains('#') {
+        return true;
+    }
+    let joined = |before: Option<&toml_edit::RawString>| {
+        format!(
+            "{above}{}",
+            before.and_then(|raw| raw.as_str()).unwrap_or_default()
+        )
+    };
+    if let Some(mut next) = next.and_then(|next| table.key_mut(&next)) {
+        let prefix = joined(next.leaf_decor().prefix());
+        next.leaf_decor_mut().set_prefix(prefix);
+        return true;
+    }
+    // The section's last key: the next section's, by their places.
+    let place = table.position();
+    let following = document
+        .iter()
+        .filter_map(|(name, item)| Some((name.to_owned(), item.as_table()?.position()?)))
+        .filter(|(_, at)| place.is_some_and(|place| *at > place))
+        .min_by_key(|(_, at)| *at)
+        .map(|(name, _)| name);
+    match following.and_then(|name| document.get_mut(&name)?.as_table_mut()) {
+        Some(table) => {
+            let prefix = joined(table.decor().prefix());
+            table.decor_mut().set_prefix(prefix);
+        }
+        None => {
+            let trailing = format!(
+                "{above}{}",
+                document.trailing().as_str().unwrap_or_default()
+            );
+            document.set_trailing(trailing);
+        }
+    }
+    true
 }
 
 /// The table of the section `name` of `document`, made at its end where
