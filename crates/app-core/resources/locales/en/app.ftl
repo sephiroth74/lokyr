@@ -273,6 +273,12 @@ import-themes-failed = { $count ->
     [one] A file is not imported.
    *[other] { $count } files are not imported.
 }
+import-themes-done = { $count ->
+    [one] One theme imported
+   *[other] { $count } themes imported
+}
+import-themes-done-detail = { $names }: in the themes' folder, { $folder }, and on the Themes page.
+import-themes-not-imported = Not imported:
 
 # The notification of a long command's end, under the command as its title:
 # whether it succeeded, or its exit status, or neither as the shell told

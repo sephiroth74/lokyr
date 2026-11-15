@@ -880,12 +880,19 @@ fn themes_imported_of_the_open_panel_are_copied_one_question_for_those_there() {
         theme("#eeeeee")
     );
     assert!(!themes.join("Notes.toml").exists());
+    // One alert of the themes imported, by their names, and of the file
+    // not imported, of why.
     let told = fake.alerts().last().cloned().unwrap();
-    assert_eq!(told.alert.message, "A file is not imported.");
+    assert_eq!(told.alert.message, "2 themes imported");
+    assert_eq!(told.alert.style, lokyr_platform_core::AlertStyle::Warning);
+    let detail = &told.alert.detail;
     assert!(
-        told.alert.detail.starts_with("Notes.toml: "),
-        "{:?}",
-        told.alert
+        detail.starts_with("Grays, Paper: in the themes' folder"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("\n\nNot imported:\nNotes.toml: "),
+        "{detail}"
     );
     // Skip: the one there kept, the new ones copied.
     fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
@@ -899,12 +906,38 @@ fn themes_imported_of_the_open_panel_are_copied_one_question_for_those_there() {
         theme("#eeeeee")
     );
     assert!(themes.join("Night.toml").is_file());
+    let told = fake.alerts().last().cloned().unwrap();
+    assert_eq!(told.alert.message, "One theme imported");
+    assert_eq!(
+        told.alert.style,
+        lokyr_platform_core::AlertStyle::Informational
+    );
+    assert!(told.alert.detail.starts_with("Night: "), "{:?}", told.alert);
+    // Every one skipped, none refused: nothing told.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    let night = directory.join("Downloads/Night.toml");
+    fake.choose(&mut app, vec![night]);
+    let asked = fake.alerts().last().cloned().unwrap();
+    let alerts = fake.alerts().len();
+    answer(&mut fake, &mut app, asked.id, 1);
+    assert_eq!(fake.alerts().len(), alerts);
+    // Files of no theme alone: told as not imported.
+    fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
+    let notes = directory.join("Downloads/Notes.toml");
+    fake.choose(&mut app, vec![notes]);
+    let told = fake.alerts().last().cloned().unwrap();
+    assert_eq!(told.alert.message, "A file is not imported.");
+    assert!(
+        told.alert.detail.starts_with("Notes.toml: "),
+        "{:?}",
+        told.alert
+    );
     // A panel cancelled imports nothing, and asks nothing.
     fake.send_app(&mut app, AppEvent::Command(IMPORT_THEMES.to_owned()));
     let alerts = fake.alerts().len();
     fake.choose(&mut app, Vec::new());
     assert_eq!(fake.alerts().len(), alerts);
-    assert_eq!(fake.open_panels().len(), 3);
+    assert_eq!(fake.open_panels().len(), 5);
     let _ = std::fs::remove_dir_all(&directory);
 }
 
@@ -973,17 +1006,18 @@ fn the_themes_list_and_colors_come_off_the_main_thread_a_part_at_a_time() {
         .clone()
         .unwrap_or_default();
     assert_eq!(listed.len(), 30);
-    assert!((0..30).all(|at| app.previews.contains_key(&format!("Held {at:02}"))));
-    assert_eq!(
-        app.previews["Held 00"].unwrap().background,
-        lokyr_render_core::Color::from_rgb8(0x20, 0x20, 0x20)
-    );
-    // The read ends; its colors drew no window, as none shows a preview.
+    // The read ends, every one colored, of its parts that may come in
+    // turns apart; its colors drew no window, as none shows a preview.
     while !app.theme_catalog.borrow().finished() && std::time::Instant::now() < deadline {
         app.take_themes(&mut fake);
         std::thread::sleep(Duration::from_millis(5));
     }
     assert!(app.theme_catalog.borrow().finished());
+    assert!((0..30).all(|at| app.previews.contains_key(&format!("Held {at:02}"))));
+    assert_eq!(
+        app.previews["Held 00"].unwrap().background,
+        lokyr_render_core::Color::from_rgb8(0x20, 0x20, 0x20)
+    );
     assert_eq!(fake.window(window).unwrap().frames_asked, asked);
     // A name that the read colored not is of no theme, and starts no read
     // again, however often its preview shows, until the list changes.

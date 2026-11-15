@@ -228,6 +228,12 @@ import-themes-failed = { $count ->
     [one] Un file non è stato importato.
    *[other] { $count } file non sono stati importati.
 }
+import-themes-done = { $count ->
+    [one] Un tema importato
+   *[other] { $count } temi importati
+}
+import-themes-done-detail = { $names }: nella cartella dei temi, { $folder }, e nella pagina Temi.
+import-themes-not-imported = Non importati:
 
 command-succeeded = Riuscito dopo { $took }
 command-failed = Fallito con stato { $status } dopo { $took }

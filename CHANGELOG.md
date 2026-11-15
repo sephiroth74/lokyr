@@ -10,7 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
-- View › Import Themes…, and Import… on the Themes page, imports `.itermcolors` and `.toml` themes, several chosen at once in the system's open panel: each is copied into the themes folder as it is, one question asking whether to replace those of a name there already, and a file that holds no theme is told.
+- View › Import Themes…, and Import… on the Themes page, imports `.itermcolors` and `.toml` themes, several chosen at once in the system's open panel: each is copied into the themes folder as it is, one question asking whether to replace those of a name there already; then one alert tells the themes imported, by their names, and the files that were not, as one that holds no theme.
 - `sleip new --themes owner/name --from "<theme>"` makes a package of themes whose theme is a whole copy of an existing one, of your themes folder, an installed package, Lokyr's own or the built-in ones, its author, license and source kept.
 - View › New Theme from Current… makes a new theme of every color of the theme in force: Lokyr asks its name, writes it into the themes folder, uses it and opens it in your editor; a theme's card on the Themes page has Use and Duplicate… in its context menu.
 - Themes of the packages that Sleip installs, as `sleip add owner/name`: the theme picker and the Themes page list them, of their package's name, and `[theme]` names them; a package's theme takes no name of another, so that installing one changes no theme in force.
