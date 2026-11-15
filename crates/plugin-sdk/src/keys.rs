@@ -135,6 +135,25 @@ const WHEELS: [(&str, Direction); 4] = [
 ];
 
 impl Combo {
+    /// This combination as the US layout's keys write it: of a character
+    /// that the US layout types with Shift, and no `shift`, its key with
+    /// Shift, so that `cmd+}` is `cmd+shift+]`; any other as it is.
+    pub fn canonical(self) -> Self {
+        match self.press {
+            Press::Char(character) if !self.mods.shift => match us_unshifted(character) {
+                Some(key) => Self {
+                    mods: Mods {
+                        shift: true,
+                        ..self.mods
+                    },
+                    press: Press::Char(key),
+                },
+                None => self,
+            },
+            _ => self,
+        }
+    }
+
     /// The combination that `text` writes, as `cmd+shift+]` or `ctrl++`.
     pub fn parse(text: &str) -> Result<Self, String> {
         let (mods, key) = if text == "+" {
@@ -394,14 +413,24 @@ const US_SHIFTED: [(char, char); 21] = [
     ('?', '/'),
 ];
 
-/// The character that the US layout types with Shift at the key that
-/// types `key` without it, as `}` of `]`; none of a key of no such
-/// character, as a letter's, whose Shift its case tells.
-pub fn us_shifted(key: char) -> Option<char> {
+/// The character that the US layout types without Shift at the key that
+/// types `shifted` with it, as `]` of `}`; none of a character that it
+/// types without Shift.
+pub fn us_unshifted(shifted: char) -> Option<char> {
     US_SHIFTED
         .iter()
-        .find(|&&(_, unshifted)| unshifted == key)
-        .map(|&(shifted, _)| shifted)
+        .find(|&&(character, _)| character == shifted)
+        .map(|&(_, key)| key)
+}
+
+/// Whether `keys` and `other` are the same keys, of their combinations as
+/// [`Combo::canonical`] writes them: `cmd+}` and `cmd+shift+]` are.
+pub fn same_keys(keys: &[Combo], other: &[Combo]) -> bool {
+    keys.len() == other.len()
+        && keys
+            .iter()
+            .zip(other)
+            .all(|(one, two)| one.canonical() == two.canonical())
 }
 
 /// The combination of the keys of a global binding, `text` after

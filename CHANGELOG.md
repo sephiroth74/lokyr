@@ -24,7 +24,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Fixed
 
 - A ⌘-click on a path of a volume that does not answer, as a network's, no longer holds Lokyr: the path resolves on a thread of its own, and opens as it answers.
-- A binding of a character that the US layout types with Shift, as `cmd+}`, runs as its key with Shift does, ⇧⌘], as `cmd+shift+]`.
+- A binding of a character that the US layout types with Shift, as `cmd+}`, is its key with Shift, ⇧⌘], the same keys as `cmd+shift+]`: it runs as they are pressed, takes the place of a default of them, and `"cmd+}" = false` takes that default away.
 
 ## [1.1.0] - 2026-11-14
 

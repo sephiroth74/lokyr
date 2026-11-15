@@ -10,9 +10,9 @@
 //! left button's click, `click`, alone.
 //! A key matches a binding of its layout's character, or else of the US
 //! layout's character at its place, so that the bindings reach the keys of
-//! any layout; with Shift, a binding of the character that the US layout
-//! types with Shift at its place too, of no Shift, so that `cmd+}` is
-//! ⇧⌘], as `cmd+shift+]`.
+//! any layout. A binding of a character that the US layout types with
+//! Shift, of no `shift`, is that key with Shift: `cmd+}` is `cmd+shift+]`,
+//! which it takes the place of, as ⇧⌘] runs it.
 //!
 //! A binding whose keys start with `global:`, as `global:ctrl+\``, takes
 //! its key from every app, as the system gives it, by its place on the
@@ -25,7 +25,7 @@ use lokyr_vt_core::input::{Key, Wheel};
 
 pub use lokyr_plugin_sdk::keys::{
     CONTEXTS, Combo, Direction, GLOBAL, Mods, Named, Press, When, is_panel_context, macos_text,
-    parse_global, parse_keys, us_shifted,
+    parse_global, parse_keys, same_keys,
 };
 
 use crate::commands::{Args, Value};
@@ -166,9 +166,11 @@ impl Keymap {
         keymap
     }
 
-    /// Takes away the bindings of `keys`, in every context.
+    /// Takes away the bindings of `keys`, in every context, however they
+    /// write them, as `cmd+}` those of `cmd+shift+]`.
     pub fn unbind(&mut self, keys: &[Combo]) {
-        self.bindings.retain(|binding| binding.keys != keys);
+        self.bindings
+            .retain(|binding| !same_keys(&binding.keys, keys));
     }
 
     /// Adds `binding`, which wins over those before it where both hold.
@@ -200,9 +202,12 @@ impl Keymap {
                 && binding.invocation.args == *args
                 && binding.when.is_none()
                 && matches!(combo.press, Press::Char(_) | Press::Named(_));
-            let taken = self.bindings[at + 1..]
-                .iter()
-                .any(|later| later.keys.first() == Some(&combo));
+            let taken = self.bindings[at + 1..].iter().any(|later| {
+                later
+                    .keys
+                    .first()
+                    .is_some_and(|first| first.canonical() == combo.canonical())
+            });
             (ours && !taken).then_some(combo)
         })
     }
@@ -212,7 +217,7 @@ impl Keymap {
         self.bindings
             .iter()
             .rev()
-            .find(|binding| binding.keys == keys && binding.holds(context))
+            .find(|binding| same_keys(&binding.keys, keys) && binding.holds(context))
     }
 
     /// Whether a binding that holds in `context` starts with `keys`, and
@@ -220,7 +225,7 @@ impl Keymap {
     fn continues(&self, keys: &[Combo], context: &Context) -> bool {
         self.bindings.iter().any(|binding| {
             binding.keys.len() > keys.len()
-                && binding.keys.starts_with(keys)
+                && same_keys(&binding.keys[..keys.len()], keys)
                 && binding.holds(context)
         })
     }
@@ -339,28 +344,13 @@ impl Pressed {
         }
     }
 
-    /// The combinations that it makes, its layout's first, then the US
-    /// layout's at its place; and, with Shift, the character that the US
-    /// layout types with Shift at its place, of no Shift, so that a binding
-    /// `cmd+}` runs as ⇧⌘] does, as `cmd+shift+]` does.
+    /// The combinations that it makes, its layout's first.
     fn combos(self) -> impl Iterator<Item = Combo> {
         let combo = |press| Combo {
             mods: self.mods,
             press,
         };
-        let shifted = match self.us.unwrap_or(self.press) {
-            Press::Char(key) if self.mods.shift => us_shifted(key).map(|shifted| Combo {
-                mods: Mods {
-                    shift: false,
-                    ..self.mods
-                },
-                press: Press::Char(shifted),
-            }),
-            _ => None,
-        };
-        std::iter::once(combo(self.press))
-            .chain(self.us.map(combo))
-            .chain(shifted)
+        std::iter::once(combo(self.press)).chain(self.us.map(combo))
     }
 }
 

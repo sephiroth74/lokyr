@@ -2364,10 +2364,9 @@ fn check_bindings(root: &dyn TableLike) -> Result<(), (Span, String)> {
             None => crate::keymap::parse_keys(keys),
         }
         .map_err(|message| (span.clone(), message))?;
-        if let Some((.., other)) = named
-            .iter()
-            .find(|(of_all, named, _)| *of_all == global.is_some() && *named == combos)
-        {
+        if let Some((.., other)) = named.iter().find(|(of_all, named, _)| {
+            *of_all == global.is_some() && crate::keymap::same_keys(named, &combos)
+        }) {
             return Err((
                 span,
                 format!("`{keys}` and `{other}` are the same keys, which one entry binds"),
@@ -3128,6 +3127,11 @@ long-command = 0
             ),
             (
                 "[keys]\n\"cmd+shift+n\" = \"tabs.new\"\n\"shift+cmd+n\" = false\n",
+                3,
+                "the same keys",
+            ),
+            (
+                "[keys]\n\"cmd+shift+]\" = \"tabs.new\"\n\"cmd+}\" = false\n",
                 3,
                 "the same keys",
             ),

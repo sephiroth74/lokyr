@@ -293,6 +293,14 @@ fn a_binding_of_a_shifted_character_runs_as_its_key_with_shift_does() {
     ]);
     let own = Pressed::key(Key::Char('+'), CMD, Some(']')).unwrap();
     assert_eq!(resolver.press(&plus, own, &context), run("font.increase"));
+    // Over a binding of `cmd+shift+]` before it, as the config's over the
+    // defaults; and taking it away.
+    let mut over = Keymap::new(vec![binding("cmd+shift+]", "tabs.next", None)]);
+    over.bind(binding("cmd+}", "window.new", None));
+    assert_eq!(resolver.press(&over, us, &context), run("window.new"));
+    let mut away = Keymap::new(vec![binding("cmd+shift+]", "tabs.next", None)]);
+    away.unbind(&parse_keys("cmd+}").unwrap());
+    assert!(away.bindings().is_empty());
     // Of no Shift, `]` runs no `cmd+}`; a letter's Shift is its case's.
     assert_ne!(
         resolver.press(&braced, key(']', CMD), &context),
