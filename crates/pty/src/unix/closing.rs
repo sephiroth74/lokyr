@@ -99,13 +99,19 @@ mod tests {
 
     /// Whether `fd` has something to read, or the end, without waiting.
     fn ready(fd: &OwnedFd) -> bool {
+        ready_within(fd, 0)
+    }
+
+    /// Whether `fd` has something to read, or the end, within `ms`
+    /// milliseconds.
+    fn ready_within(fd: &OwnedFd, ms: libc::c_int) -> bool {
         let mut poll = libc::pollfd {
             fd: fd.as_raw_fd(),
             events: libc::POLLIN,
             revents: 0,
         };
         // SAFETY: `poll` reads and writes the one entry.
-        let ready = unsafe { libc::poll(&raw mut poll, 1, 0) };
+        let ready = unsafe { libc::poll(&raw mut poll, 1, ms) };
         assert_ne!(ready, -1, "{}", io::Error::last_os_error());
         poll.revents != 0
     }
@@ -115,7 +121,9 @@ mod tests {
         let (closed, closing) = closing().unwrap();
         assert!(!ready(&closed));
         drop(closing);
-        assert!(ready(&closed));
+        // Within a while: on Linux, another test's thread that forks holds
+        // the pipe's end in its child until the child runs its program.
+        assert!(ready_within(&closed, 5000));
         assert!(ready(&closed), "and stays ready");
     }
 
