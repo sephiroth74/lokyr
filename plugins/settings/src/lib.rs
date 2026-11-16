@@ -212,6 +212,14 @@ struct Adding {
     command: Option<String>,
 }
 
+/// The Theme Editor's previews of the theme `theme`, the window's and the
+/// panel's, each in a part of that theme, as the Editor first shows them:
+/// of no part marked, their texts of `words`, the messages of the plugin's
+/// catalogs by their names.
+pub fn theme_previews(theme: &str, words: &dyn Fn(&str) -> String) -> (Node, Node) {
+    editor::previews(theme, words)
+}
+
 /// The plugin: whether its page shows, the part chosen, by its place among
 /// the parts, the search's words, why each key's last write was refused, by
 /// its name, until it is written or another part shows, the binding whose

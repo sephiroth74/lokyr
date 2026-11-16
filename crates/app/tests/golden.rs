@@ -924,15 +924,21 @@ fn check_tree(
         Option<&'static str>,
     ),
 ) {
-    check_tree_of(name, root, look, states, &lokyr_ui_core::paint::NO_PREVIEWS);
+    check_tree_of(
+        name,
+        root,
+        (look.0, look.1, VIEW_WIDTH),
+        states,
+        &lokyr_ui_core::paint::NO_PREVIEWS,
+    );
 }
 
-/// [`check_tree`], of the themes of the tree's parts that name one,
-/// `previews`.
+/// [`check_tree`], in a room `across` points wide, of the themes of the
+/// tree's parts that name one, `previews`.
 fn check_tree_of(
     name: &str,
     root: &Node,
-    (dark, scale): (bool, u32),
+    (dark, scale, across): (bool, u32, f32),
     states: impl Fn(
         &Tree,
     ) -> (
@@ -951,7 +957,7 @@ fn check_tree_of(
     let changes = tree.update(root).unwrap();
     let mut layout = Layout::new(scale as f32);
     layout.update(&tree, &changes);
-    let width = VIEW_WIDTH * scale as f32;
+    let width = across * scale as f32;
     layout.compute(&tree, Some(width), None, &mut drawing.font);
     let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
     let (width, height) = (frame.width as u32, frame.height as u32);
@@ -1565,8 +1571,80 @@ fn a_part_of_a_theme_draws_in_it_beside_the_window_s_as_its_golden_images() {
             check_tree_of(
                 "themed",
                 &themed_tree(),
-                (dark, scale),
+                (dark, scale, VIEW_WIDTH),
                 |tree| (None, Some(find(tree, "part-hovered")), None, None),
+                &previews,
+            );
+        }
+    }
+}
+
+#[test]
+fn the_theme_editor_s_previews_draw_in_the_theme_shown_as_their_golden_images() {
+    use lokyr_ui_core::paint::{Previews, Themed};
+    // The texts of the plugin's English catalog.
+    let catalog = include_str!("../../../plugins/settings/locales/en/settings.ftl");
+    let words = |name: &str| {
+        catalog
+            .lines()
+            .find_map(|line| line.strip_prefix(&format!("{name} = ")))
+            .unwrap_or(name)
+            .to_owned()
+    };
+    for dark in [false, true] {
+        // The settings window of Lokyr's own theme of the appearance, the
+        // previews of the other's, as a theme edited that is not the
+        // window's.
+        let other = Theme::builtin().variant(!dark).clone();
+        let background = other.colors.background;
+        let mut tokens = other.tokens.clone();
+        tokens.set(
+            "terminal.bg",
+            lokyr_render_core::Color::from_rgb8(background.r, background.g, background.b),
+        );
+        let previews = Previews {
+            parts: BTreeMap::from([(
+                "Edited".to_owned(),
+                Themed {
+                    specimen: lokyr_ui_core::specimen::Specimen {
+                        colors: other.colors.clone(),
+                        selection: other.selection,
+                        matches: other.match_colors(),
+                        text: TextLook::default(),
+                        cursor: CursorLook {
+                            shape: CursorShape::Block,
+                            thickness: 2,
+                            length: 1.0,
+                        },
+                    },
+                    tokens,
+                    dark: !dark,
+                },
+            )]),
+            ..Previews::new()
+        };
+        let (window, panel) = lokyr_settings::theme_previews("Edited", &words);
+        let root = Node::container(vec![window, panel]).layout(Box {
+            direction: Direction::Column,
+            gap: 12.0,
+            padding: Edges::all(10.0),
+            ..Box::default()
+        });
+        // In a room as wide as the Editor's for them, of the settings
+        // window's first size.
+        for scale in [1, 2] {
+            check_tree_of(
+                "editor-previews",
+                &root,
+                (dark, scale, 560.0),
+                |tree| {
+                    (
+                        None,
+                        Some(find(tree, "editor-sample:buttons:cancel")),
+                        None,
+                        None,
+                    )
+                },
                 &previews,
             );
         }

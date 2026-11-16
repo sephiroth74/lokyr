@@ -998,6 +998,7 @@ dependencies = [
  "lokyr-render-core",
  "lokyr-render-metal",
  "lokyr-search-plugin",
+ "lokyr-settings",
  "lokyr-splits",
  "lokyr-tabs",
  "lokyr-text-core",

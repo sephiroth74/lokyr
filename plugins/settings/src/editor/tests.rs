@@ -530,19 +530,30 @@ fn part_theme(tree: &Node) -> Option<String> {
 }
 
 #[test]
-fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_parts() {
+fn the_previews_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_parts() {
     let (mut host, mut plugin) = shown();
     let tree = page(&mut host, &mut plugin);
-    // Every part, a card of its title and its sample, beside the
-    // terminal's specimen.
-    for (id, ..) in parts::PARTS {
-        assert!(
-            find(&tree, &format!("{}{id}", parts::PART)).is_some(),
-            "{id}"
-        );
+    // The window's preview and the panel's, each a part of the theme
+    // shown, which hold every part between them, the terminal's specimen
+    // in the window's.
+    let theme = plugin.editor.shown_theme().unwrap().to_owned();
+    for preview in [parts::WINDOW, parts::PANEL] {
+        let part = find(&tree, preview).expect(preview);
+        assert_eq!(part.kind, Kind::Themed(theme.clone()), "{preview}");
     }
+    let within = |preview: &str, id: &str| {
+        find(&tree, preview)
+            .and_then(|part| find(part, &format!("{}{id}", parts::PART)))
+            .is_some()
+    };
+    for (id, ..) in parts::PARTS {
+        let window = ["tabs", "terminal", "scrollbar", "panes"].contains(&id);
+        assert_eq!(within(parts::WINDOW, id), window, "{id}");
+        assert_eq!(within(parts::PANEL, id), !window, "{id}");
+    }
+    let terminal = find(&tree, "editor-part:terminal").unwrap();
     assert!(matches!(
-        find(&tree, "editor-terminal").map(|node| &node.kind),
+        find(terminal, "editor-terminal").map(|node| &node.kind),
         Some(Kind::TerminalSpecimen)
     ));
     let shaded = |tree: &Node, name: &str| {
@@ -578,13 +589,13 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
     );
     assert_eq!(shaded(&tree, "accent"), None);
     assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("accent"));
-    assert_eq!(bordered(&tree, "panel").as_deref(), Some("separator"));
+    assert_eq!(bordered(&tree, "panel").as_deref(), Some("transparent"));
     // A token picked: the parts that take it of the accent's border.
     host.ui_event(&mut plugin, &click("editor-token:accent"))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
-    assert_eq!(bordered(&tree, "panes").as_deref(), Some("accent"));
-    assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("separator"));
+    assert_eq!(bordered(&tree, "buttons").as_deref(), Some("accent"));
+    assert_eq!(bordered(&tree, "tooltip").as_deref(), Some("transparent"));
     assert_eq!(
         shaded(&tree, "accent"),
         Some(Token::from("list.selection.inactive.bg"))
@@ -593,8 +604,87 @@ fn the_interface_s_parts_show_and_a_pick_marks_a_part_s_tokens_or_a_token_s_part
     host.ui_event(&mut plugin, &click("editor-token:accent"))
         .unwrap();
     let tree = page(&mut host, &mut plugin);
-    assert_eq!(bordered(&tree, "panes").as_deref(), Some("separator"));
+    assert_eq!(bordered(&tree, "buttons").as_deref(), Some("transparent"));
     assert_eq!(shaded(&tree, "accent"), None);
+}
+
+#[test]
+fn the_panel_s_controls_take_the_pointer_and_mark_their_parts() {
+    let (mut host, mut plugin) = shown();
+    let of = |key: &str, kind: UiEventKind| UiEvent {
+        view: themes_page(),
+        key: key.into(),
+        kind,
+    };
+    let bordered = |tree: &Node, id: &str| {
+        find(tree, &format!("{}{id}", parts::PART))
+            .and_then(|part| part.style.border.as_ref())
+            .map(|border| border.color.0.clone())
+    };
+    let on = |tree: &Node, key: &str| match find(tree, key).map(|node| &node.kind) {
+        Some(Kind::Toggle(toggle)) => toggle.on,
+        other => panic!("{key}: {other:?}"),
+    };
+    // Its toggles as they start; one turned off stays off, its part marked.
+    let tree = page(&mut host, &mut plugin);
+    assert!(on(&tree, "editor-sample:toggles:compress"));
+    assert!(!on(&tree, "editor-sample:toggles:encrypt"));
+    host.ui_event(
+        &mut plugin,
+        &of(
+            "editor-sample:toggles:compress",
+            UiEventKind::Toggle { on: false },
+        ),
+    )
+    .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert!(!on(&tree, "editor-sample:toggles:compress"));
+    assert_eq!(bordered(&tree, "toggles").as_deref(), Some("accent"));
+    // A segment chosen, kept; a button's click and a field's focus, their
+    // parts, each in place of the last.
+    host.ui_event(
+        &mut plugin,
+        &of(
+            "editor-sample:segments:pages",
+            UiEventKind::Select { item: 2 },
+        ),
+    )
+    .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert!(matches!(
+        find(&tree, "editor-sample:segments:pages").map(|node| &node.kind),
+        Some(Kind::Tabs(tabs)) if tabs.chosen == 2
+    ));
+    assert_eq!(bordered(&tree, "segments").as_deref(), Some("accent"));
+    assert_eq!(bordered(&tree, "toggles").as_deref(), Some("transparent"));
+    for (key, kind, part) in [
+        (
+            "editor-sample:buttons:cancel",
+            UiEventKind::Click,
+            "buttons",
+        ),
+        ("editor-sample:field:folder", UiEventKind::Focus, "field"),
+        (
+            "editor-sample:scrollbar:log",
+            UiEventKind::Click,
+            "scrollbar",
+        ),
+    ] {
+        host.ui_event(&mut plugin, &of(key, kind)).unwrap();
+        let tree = page(&mut host, &mut plugin);
+        assert_eq!(bordered(&tree, part).as_deref(), Some("accent"), "{key}");
+    }
+    // Its click again leaves its part marked, as a control is clicked
+    // again and again.
+    host.ui_event(
+        &mut plugin,
+        &of("editor-sample:scrollbar:log", UiEventKind::Click),
+    )
+    .unwrap();
+    let tree = page(&mut host, &mut plugin);
+    assert_eq!(bordered(&tree, "scrollbar").as_deref(), Some("accent"));
+    // Nothing asked of the app but renders.
+    assert!(!previews(&host.take_done()));
 }
 
 #[test]
@@ -609,6 +699,29 @@ fn every_part_s_tokens_are_tokens_of_lokyr_s() {
     }
     for (_, title, _) in parts::PARTS {
         assert!(parts::WORDS.contains(&title), "{title}");
+    }
+    // Every token of Lokyr's rules in a part, which shows it.
+    for token in lokyr_plugin_sdk::theme::rules::tokens() {
+        assert!(
+            parts::PARTS
+                .iter()
+                .any(|(_, _, tokens)| tokens.contains(&token)),
+            "{token}"
+        );
+    }
+    // Every message of the previews in both catalogs.
+    for (language, catalog) in [
+        ("en", include_str!("../../locales/en/settings.ftl")),
+        ("it", include_str!("../../locales/it/settings.ftl")),
+    ] {
+        for word in parts::WORDS {
+            assert!(
+                catalog
+                    .lines()
+                    .any(|line| line.starts_with(&format!("{word} = "))),
+                "{language}: {word}"
+            );
+        }
     }
 }
 

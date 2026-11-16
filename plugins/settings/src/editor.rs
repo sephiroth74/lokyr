@@ -98,9 +98,12 @@ pub(crate) struct Editor {
     lit: BTreeSet<String>,
     /// The timer that ends their light.
     lit_timer: Option<u64>,
-    /// The part of the interface or the token chosen of a click, which
+    /// The part of the previews or the token chosen of a click, which
     /// marks the tokens of the part, or the parts of the token.
     picked: Option<Pick>,
+    /// What the controls of the panel's preview show, as the pointer left
+    /// them.
+    samples: parts::Samples,
     /// The question of a copy of a read-only theme, whose answer, the
     /// copy's name, it shows.
     copying: Option<u64>,
@@ -143,6 +146,12 @@ enum Locked {
 enum Pick {
     Part(String),
     Token(String),
+}
+
+/// The previews of the theme `theme`, as the Editor first shows them, of
+/// no part marked, their texts of `words`.
+pub(crate) fn previews(theme: &str, words: &dyn Fn(&str) -> String) -> (Node, Node) {
+    parts::previews(theme, &|_| false, words, parts::Samples::default())
 }
 
 impl Editor {
@@ -356,6 +365,27 @@ impl Editor {
                     None => Pick::Token(key[ROW.len()..].to_owned()),
                 };
                 self.picked = (self.picked.as_ref() != Some(&pick)).then_some(pick);
+                self.follow_pick(cx)?;
+                self.ask_render(cx)?;
+            }
+            // A control of the panel's preview: its part chosen, a toggle
+            // and a segment as the pointer leaves them.
+            (
+                UiEventKind::Click
+                | UiEventKind::Focus
+                | UiEventKind::Toggle { .. }
+                | UiEventKind::Select { .. },
+                _,
+            ) if key.starts_with(parts::SAMPLE) => {
+                let Some((id, name)) = parts::sample_of(key) else {
+                    return Ok(true);
+                };
+                match event.kind {
+                    UiEventKind::Toggle { on } => self.samples.toggle(name, on),
+                    UiEventKind::Select { item } => self.samples.segment = item,
+                    _ => {}
+                }
+                self.picked = Some(Pick::Part(id.to_owned()));
                 self.follow_pick(cx)?;
                 self.ask_render(cx)?;
             }
@@ -838,32 +868,23 @@ impl Editor {
             Some(Pick::Token(name)) => parts::tokens_of(id).contains(&name.as_str()),
             None => false,
         };
-        let mut right = vec![
-            heading(cx, "editor-terminal"),
-            // Of its own size, of the terminal's cells.
-            Node::terminal_specimen()
-                .key("editor-terminal")
-                .label(message(cx, "editor-terminal", &[])),
-            heading(cx, "editor-interface"),
-        ];
-        right.extend(parts::cards(&chosen, &word));
-        // Of the theme shown, whatever the window's own.
+        // The previews, each in a part of the theme shown, whatever the
+        // window's own.
         let theme = self.shown_theme().unwrap_or_default();
-        let specimens = Node::scroll(vec![
-            Node::themed(theme, right)
-                .layout(Layout {
-                    direction: Direction::Column,
-                    gap: 12.0,
-                    width: Length::Fraction(1.0),
-                    padding: Edges::all(10.0),
-                    ..Layout::default()
-                })
-                .style(Style {
-                    background: Some(Token::from("terminal.bg")),
-                    radius: 8.0,
-                    ..Style::default()
-                }),
-        ])
+        let (window, panel) = parts::previews(theme, &chosen, &word, self.samples);
+        let right = vec![
+            heading(cx, "editor-window"),
+            window,
+            heading(cx, "editor-panel"),
+            panel,
+        ];
+        let specimens = Node::scroll(vec![Node::container(right).layout(Layout {
+            direction: Direction::Column,
+            gap: 12.0,
+            width: Length::Fraction(1.0),
+            padding: Edges::all(10.0),
+            ..Layout::default()
+        })])
         .key("editor-specimens")
         .layout(Layout {
             direction: Direction::Column,
