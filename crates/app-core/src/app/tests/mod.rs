@@ -564,6 +564,19 @@ fn idle() -> Program {
     shell("echo ready; read line")
 }
 
+/// Whether each pane that `window` laid out holds its room's grid, as a
+/// resize gives it the terminal a while later, of its pace, which a busy
+/// machine's timers put off past a frame or two.
+fn grids_settled(app: &App, window: WindowId) -> bool {
+    let views = &app.windows[&window].views;
+    !views.is_empty()
+        && views.iter().all(|view| {
+            app.workspace
+                .pane(view.pane)
+                .is_some_and(|pane| pane.snapshot().cols() == view.grid.columns)
+        })
+}
+
 /// The app started, its window running `program`, once it shows
 /// `ready`, focused.
 fn started_running(program: Program) -> (Fake, App, WindowId) {

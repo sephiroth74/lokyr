@@ -100,11 +100,13 @@ fn two_panes_of(
         .split(a, Direction::Horizontal, pane, Side::Second)
         .unwrap();
     fake.send(&mut app, window, WindowEvent::Frame);
-    // Both ready, and laid out side by side by a frame.
+    // Both ready, and laid out side by side by a frame, each of its room's
+    // grid.
     run_until(&mut fake, &mut app, |_, app| {
         screen_of(app, a).contains("ready-a")
             && screen_of(app, b).contains("ready-b")
             && app.windows[&window].views.len() == 2
+            && grids_settled(app, window)
     });
     (fake, app, window, a, b)
 }

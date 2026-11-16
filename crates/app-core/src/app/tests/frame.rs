@@ -697,10 +697,13 @@ fn a_frame_with_nothing_new_presents_nothing() {
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    // Ready, its terminal of its room's grid, which a resize gives it a
+    // while after the first frame.
     run_until(&mut fake, &mut app, |_, app| {
         screen(app, window)
             .iter()
             .any(|line| line.contains("ready"))
+            && grids_settled(app, window)
     });
     let drawn = |app: &App| app.windows[&window].drawn_at;
     fake.send(&mut app, window, WindowEvent::Frame);
