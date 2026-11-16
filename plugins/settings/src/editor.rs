@@ -86,9 +86,10 @@ const COLUMN: f32 = 300.0;
 pub(crate) struct Editor {
     /// Whether it shows, in the themes page.
     shown: bool,
-    /// The theme that it previews, of the menu, in place of the one in
-    /// force.
-    previewed: Option<String>,
+    /// The theme that it shows, of the menu or of a card's Edit, in place
+    /// of the one in force, which stays the app's: its previews alone are
+    /// of it.
+    chosen: Option<String>,
     /// The words of its filter.
     filter: String,
     /// The tokens as it read them last.
@@ -162,16 +163,14 @@ impl Editor {
         self.offer_conversion(cx)
     }
 
-    /// Hides it, as the page shows an appearance's themes or hides: a
-    /// theme that it previews goes, the one in force back.
+    /// Hides it, as the page shows an appearance's themes or hides: the
+    /// theme that it shows in place of the one in force is forgotten.
     pub(crate) fn hide(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         // Of no render more, as its page may be gone; what waits written.
         self.shown = false;
         self.leave_theme(cx)?;
         self.originals.clear();
-        if self.previewed.take().is_some() {
-            cx.preview_theme(None)?;
-        }
+        self.chosen = None;
         Ok(())
     }
 
@@ -181,7 +180,7 @@ impl Editor {
             // The theme resolved anew: its tokens read again, those that
             // changed lit.
             Event::ThemeChanged if self.shown => {
-                let tokens = cx.theme_tokens(self.previewed.as_deref())?;
+                let tokens = cx.theme_tokens(self.chosen.as_deref())?;
                 // Another theme in force: the panel of the last one's color
                 // closed, its color written, its values as it shows kept.
                 let other = tokens.as_ref().map(|tokens| &tokens.theme)
@@ -271,7 +270,7 @@ impl Editor {
                 self.converting = None;
                 if let (Some(name), true) = (text, self.shown) {
                     self.originals.remove(name);
-                    self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
+                    self.tokens = cx.theme_tokens(self.chosen.as_deref())?;
                     self.remember();
                     self.ask_render(cx)?;
                 }
@@ -387,8 +386,8 @@ impl Editor {
         self.offer_conversion(cx)
     }
 
-    /// Shows the theme `name`: the one in force as it is, any other
-    /// previewed in its place.
+    /// Shows the theme `name`: the one in force as it is, any other in its
+    /// place, in the Editor alone.
     fn show_theme(&mut self, cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
         let in_force = cx.themes()?.current;
         let chosen = (name != in_force).then(|| name.to_owned());
@@ -650,20 +649,20 @@ impl Editor {
         Ok(())
     }
 
-    /// Previews the theme `chosen`, or the one in force again of none, and
+    /// Shows the theme `chosen`, or the one in force again of none, and
     /// reads its tokens: of the one in force each time, which may be
-    /// another than the last, a theme previewed once.
+    /// another than the last, a theme chosen once. The app's theme stays:
+    /// the Editor's previews draw the theme shown by themselves.
     fn preview(&mut self, cx: &mut Cx<'_>, chosen: Option<String>) -> Result<(), Error> {
-        if chosen != self.previewed {
-            cx.preview_theme(chosen.as_deref())?;
-            self.previewed = chosen;
-        } else if self.previewed.is_some() {
+        if chosen != self.chosen {
+            self.chosen = chosen;
+        } else if self.chosen.is_some() {
             return Ok(());
         }
-        // The theme previewed, or the one in force, which a copy named in
+        // The theme chosen, or the one in force, which a copy named in
         // `[theme]` may be now, of the same colors and no `theme-changed`.
         self.lit.clear();
-        self.tokens = cx.theme_tokens(self.previewed.as_deref())?;
+        self.tokens = cx.theme_tokens(self.chosen.as_deref())?;
         self.remember();
         self.ask_render(cx)
     }
@@ -893,10 +892,10 @@ impl Editor {
         None
     }
 
-    /// The name of the theme that it shows: the one that it previews, or
-    /// the one in force.
+    /// The name of the theme that it shows: the one chosen, or the one in
+    /// force.
     fn shown_theme(&self) -> Option<&str> {
-        self.previewed
+        self.chosen
             .as_deref()
             .or_else(|| self.tokens.as_ref().map(|tokens| tokens.theme.as_str()))
     }

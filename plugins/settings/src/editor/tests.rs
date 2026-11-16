@@ -311,13 +311,10 @@ fn a_read_only_theme_shows_a_lock_that_duplicates_it_and_shows_its_copy() {
     host.ui_event(&mut plugin, &click(LOCK)).unwrap();
     let id = plugin.editor.copying.unwrap();
     answer(&mut host, &mut plugin, id, Some("Dracula Copy"));
-    assert!(
-        host.take_done()
-            .contains(&Request::PreviewTheme(Some("Dracula Copy".to_owned())))
-    );
+    assert!(!previews(&host.take_done()));
     assert_eq!(plugin.editor.shown_theme(), Some("Dracula Copy"));
     // A copy that the config names for the appearance in force shows as
-    // it is, of no preview.
+    // the theme in force.
     choose(&mut host, &mut plugin, "Dracula");
     host.ui_event(&mut plugin, &click(LOCK)).unwrap();
     let id = plugin.editor.copying.unwrap();
@@ -334,7 +331,9 @@ fn a_read_only_theme_shows_a_lock_that_duplicates_it_and_shows_its_copy() {
     tokens[0].theme = "Mine".to_owned();
     host.set_theme_tokens(tokens);
     answer(&mut host, &mut plugin, id, Some("Mine"));
-    assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    assert!(!previews(&host.take_done()));
+    assert_eq!(plugin.editor.chosen, None);
+    assert_eq!(plugin.editor.shown_theme(), Some("Mine"));
     assert_eq!(lock(&page(&mut host, &mut plugin)), None);
 }
 
@@ -480,40 +479,54 @@ fn the_menu_previews_a_theme_and_the_page_hidden_ends_it() {
         key: format!("{THEME_ITEM}{name}").as_str().into(),
         kind: UiEventKind::Toggle { on: true },
     };
-    // The theme in force chosen: shown as it is, of no preview.
+    // The theme in force chosen: shown as it is.
     assert!(find(&menu, &format!("{THEME_ITEM}Lokyr Dark")).is_some());
     host.ui_event(&mut plugin, &item_of("Lokyr Dark")).unwrap();
-    let done = host.take_done();
-    assert!(
-        !done
-            .iter()
-            .any(|request| matches!(request, Request::PreviewTheme(_))),
-        "{done:?}"
-    );
+    assert!(!previews(&host.take_done()));
+    assert_eq!(plugin.editor.chosen, None);
+    // Another: the Editor's previews of it, of a part of its name, the app
+    // previewing none.
     let item = item_of("Lokyr Light");
     host.ui_event(&mut plugin, &item).unwrap();
-    let done = host.take_done();
-    assert!(
-        done.iter().any(|request| matches!(
-            request,
-            Request::PreviewTheme(Some(name)) if name == "Lokyr Light"
-        )),
-        "{done:?}"
-    );
-    // An appearance's themes shown, the preview ends; so it does of the
-    // page hidden.
+    assert!(!previews(&host.take_done()));
+    assert_eq!(plugin.editor.shown_theme(), Some("Lokyr Light"));
+    let shown = page(&mut host, &mut plugin);
+    assert_eq!(part_theme(&shown).as_deref(), Some("Lokyr Light"));
+    // An appearance's themes shown, the theme chosen is forgotten; so it
+    // is of the page hidden.
     host.ui_event(&mut plugin, &click("themes-side:dark"))
         .unwrap();
-    assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    assert!(!previews(&host.take_done()));
+    assert_eq!(plugin.editor.chosen, None);
     host.ui_event(&mut plugin, &click("themes-side:editor"))
         .unwrap();
     host.render(&mut plugin, &themes_page()).unwrap();
     host.ui_event(&mut plugin, &click(THEME)).unwrap();
     host.ui_event(&mut plugin, &item).unwrap();
-    let _ = host.take_done();
+    assert_eq!(plugin.editor.shown_theme(), Some("Lokyr Light"));
     host.hide_page();
     host.deliver(&mut plugin).unwrap();
-    assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+    assert!(!previews(&host.take_done()));
+    assert_eq!(plugin.editor.chosen, None);
+}
+
+/// Whether `done` holds a theme previewed in the app, which the Editor
+/// asks never.
+fn previews(done: &[Request]) -> bool {
+    done.iter()
+        .any(|request| matches!(request, Request::PreviewTheme(_)))
+}
+
+/// The name of the theme of the part that `tree` holds, if it holds one.
+fn part_theme(tree: &Node) -> Option<String> {
+    let mut left = vec![tree];
+    while let Some(node) = left.pop() {
+        if let Kind::Themed(name) = &node.kind {
+            return Some(name.clone());
+        }
+        left.extend(&node.children);
+    }
+    None
 }
 
 #[test]

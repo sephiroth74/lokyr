@@ -293,6 +293,19 @@ fn keys_rendered(host: &mut FakeHost, plugin: &mut SettingsPage) -> Node {
         .expect("the page of the keys")
 }
 
+/// The name of the theme of the part that `tree` holds, if it holds one,
+/// as the Editor's previews are.
+fn themed(tree: &Node) -> Option<String> {
+    let mut left = vec![tree];
+    while let Some(node) = left.pop() {
+        if let Kind::Themed(name) = &node.kind {
+            return Some(name.clone());
+        }
+        left.extend(&node.children);
+    }
+    None
+}
+
 /// The node of `key` in `tree`, if it has one.
 fn find_node<'t>(tree: &'t Node, key: &str) -> Option<&'t Node> {
     if tree.key.as_ref().is_some_and(|own| own.0 == key) {
@@ -2554,8 +2567,12 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
             name: "Dracula".to_owned(),
         }));
     // Edit of a theme of the folder, of either format: the Editor shows,
-    // the theme previewed in it; the appearance's cards again of the
-    // sidebar.
+    // its previews of the theme, which the app does not take; the
+    // appearance's cards again of the sidebar.
+    let previews = |done: &[Request]| {
+        done.iter()
+            .any(|request| matches!(request, Request::PreviewTheme(_)))
+    };
     for (card, name) in [
         ("theme:light:Paper", "Paper"),
         ("theme:dark:Night", "Night"),
@@ -2563,18 +2580,16 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
         assert!(!opened(&mut host, &mut plugin, card));
         host.ui_event(&mut plugin, &event(&menu, THEME_EDIT, UiEventKind::Click))
             .unwrap();
-        assert!(
-            host.take_done()
-                .contains(&Request::PreviewTheme(Some(name.to_owned())))
-        );
+        assert!(!previews(&host.take_done()));
         let tree = host.render(&mut plugin, &themes_page()).unwrap();
         assert!(find_node(&tree, "editor-page").is_some());
+        assert_eq!(themed(&tree).as_deref(), Some(name));
         host.ui_event(
             &mut plugin,
             &event(&themes_page(), "themes-side:dark", UiEventKind::Click),
         )
         .unwrap();
-        assert!(host.take_done().contains(&Request::PreviewTheme(None)));
+        assert!(!previews(&host.take_done()));
     }
     // Import… at the title's row: the app's themes imported.
     let tree = host.render(&mut plugin, &themes_page()).unwrap();
@@ -2609,12 +2624,10 @@ fn a_theme_s_card_s_context_menu_uses_it_or_makes_a_new_theme_of_it_and_import_i
         text: Some("Paper".to_owned()),
     });
     host.deliver(&mut plugin).unwrap();
-    assert!(
-        host.take_done()
-            .contains(&Request::PreviewTheme(Some("Paper".to_owned())))
-    );
+    assert!(!previews(&host.take_done()));
     let shown = host.render(&mut plugin, &themes_page()).unwrap();
     assert!(find_node(&shown, "editor-page").is_some());
+    assert_eq!(themed(&shown).as_deref(), Some("Paper"));
     host.ui_event(
         &mut plugin,
         &event(&themes_page(), "themes-side:light", UiEventKind::Click),
