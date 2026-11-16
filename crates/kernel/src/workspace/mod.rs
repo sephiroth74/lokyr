@@ -404,6 +404,11 @@ pub enum Event {
         /// The event.
         event: terminal::Event,
     },
+    /// A closed tab that it kept came back, of these panes, whose sessions
+    /// told what no look took while they were kept, and whose colors may
+    /// be of a theme or an appearance gone: the app looks at them, and
+    /// gives them the colors of now.
+    Reopened(Vec<PaneId>),
 }
 
 /// The windows, their tabs and panes, and the events that wait.
@@ -1536,8 +1541,8 @@ impl Workspace {
             shown.tabs.insert(index, id);
         }
         self.created(id, &ids);
-        self.activate_tab(id);
-        // Its agents come back to the windows.
+        // Its agents come back to the windows, before its tab shows, which
+        // sees those that are done.
         for &pane in &ids {
             if let Some(agent) = self.panes.get(&pane).and_then(Pane::agent)
                 && let Some(now) = agent.state()
@@ -1552,6 +1557,8 @@ impl Workspace {
                 });
             }
         }
+        self.activate_tab(id);
+        self.events.push(Event::Reopened(ids));
         Some(id)
     }
 
@@ -1562,9 +1569,16 @@ impl Workspace {
 
     /// Whether `pane` is of a closed tab that it keeps.
     pub fn keeps_closed_pane(&self, pane: PaneId) -> bool {
+        self.kept_pane(pane).is_some()
+    }
+
+    /// The pane `pane` of a closed tab that it keeps, whose terminal lives
+    /// on to come back.
+    pub fn kept_pane(&self, pane: PaneId) -> Option<&Pane> {
         self.closed
             .iter()
-            .any(|closed| closed.panes.iter().any(|kept| kept.id() == pane))
+            .flat_map(|closed| &closed.panes)
+            .find(|kept| kept.id() == pane)
     }
 
     /// When the first of the closed tabs that it keeps closes for good.

@@ -67,7 +67,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `tab-created`, `tab-closed`, `tab-activated`, `tab-moved` | A tab opens, closes, shows or moves | — |
 | `tab-changed` | A tab's title, color, place or marks change | Its programs', progress' and agents' fields of `process-read` |
 | `tab-bar-resized` | The tab bar's column is dragged to another width | — |
-| `pane-created`, `pane-closed`, `pane-focused`, `pane-moved` | A pane opens, closes, takes the keyboard or moves | — |
+| `pane-created`, `pane-closed`, `pane-focused`, `pane-moved` | A pane opens, closes, takes the keyboard or moves. A tab closed and kept for Reopen Closed Tab tells `pane-closed` of each pane, whose decorations, gutter marks, cursor shown and searches Lokyr takes away; given back, it tells `tab-created` and `pane-created` as a tab opened anew | — |
 | `pane-changed` | A pane's title or header changes | `process-read` |
 | `layout-changed` | A tab's splits change | — |
 | `viewport-changed` | A pane's view scrolls or resizes, once a frame | — |

@@ -2663,6 +2663,53 @@ impl Plugins {
         self.out.events.push((Some(plugin.to_owned()), event));
     }
 
+    /// Takes away what the plugins left on `pane`, of a closed tab that
+    /// `workspace` keeps to give back, which they take for gone as it
+    /// closed: their decorations, their gutters' marks and the cursors that
+    /// they held leave its terminal, and their searches of it end, their
+    /// matches gone, so that it comes back of none of them.
+    pub fn release_kept_pane(&mut self, workspace: &Workspace, pane: PaneId) {
+        let Some(kept) = workspace.kept_pane(pane) else {
+            return;
+        };
+        let id: host::PaneId = pane.into();
+        for entry in &mut self.entries {
+            let state = &mut entry.state;
+            state.decorations.retain(|&decoration, on| {
+                let stays = *on != id;
+                if !stays {
+                    kept.undecorate(decoration);
+                }
+                stays
+            });
+            state.gutter_marks.retain(|&mark, on| {
+                let stays = *on != id;
+                if !stays {
+                    kept.unmark_gutter(mark);
+                }
+                stays
+            });
+            if state.held_cursors.remove(&id) {
+                kept.hold_cursor(None);
+            }
+            let mut ended = Vec::new();
+            for searches in [
+                &mut state.searches,
+                &mut state.lingering,
+                &mut state.replaced,
+            ] {
+                let (gone, stay): (Vec<_>, Vec<_>) = std::mem::take(searches)
+                    .into_iter()
+                    .partition(|search| search.pane == id);
+                *searches = stay;
+                ended.extend(gone);
+            }
+            for search in ended {
+                search.end(kept.terminal().as_deref_mut());
+            }
+        }
+    }
+
     /// Posts `event`, of the workspace's, for the next delivery.
     pub fn post(&mut self, event: Event) {
         // The views of a window or a pane that closed go with it, and the

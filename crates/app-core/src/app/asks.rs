@@ -785,7 +785,9 @@ impl<B: Backend> App<B> {
             .map(|(&alert, _)| alert)
             .collect();
         for alert in gone {
-            self.part_asks.remove(&alert);
+            if let Some((_, Closing::Tab(tab))) = self.part_asks.remove(&alert) {
+                self.kept_closes.remove(&tab);
+            }
             platform.dismiss_alert(alert);
         }
     }
@@ -801,6 +803,8 @@ impl<B: Backend> App<B> {
         match closing {
             Closing::Pane(pane) => self.close_pane(platform, window, pane),
             Closing::Tab(tab) => {
+                // What a close keeps goes with it, whichever way it closes.
+                let keep = self.kept_closes.remove(&tab);
                 let Some(shown) = self.windows.get(&window).map(|state| state.window) else {
                     return;
                 };
@@ -813,7 +817,7 @@ impl<B: Backend> App<B> {
                     return;
                 }
                 // Kept for its seconds, its panes' wakes kept, to give back.
-                match self.kept_closes.remove(&tab) {
+                match keep {
                     Some(keep) => {
                         let until = Instant::now() + Duration::from_secs(u64::from(keep));
                         self.workspace.close_tab_kept(tab, until);

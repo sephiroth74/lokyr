@@ -1308,6 +1308,17 @@ impl Pane {
         }
     }
 
+    /// Gives the terminal the theme's `colors` where its own are others,
+    /// as of a closed tab's pane given back after the appearance or the
+    /// theme changed; the colors that its program set stay otherwise.
+    pub fn renew_colors(&self, colors: &Colors) {
+        if let Some(session) = &self.session
+            && session.lock().default_colors() != colors
+        {
+            session.set_default_colors(colors.clone());
+        }
+    }
+
     /// What the window does, as `close` says, once the program has ended:
     /// `None` while it runs, once the pane keeps its screen, and while its
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.

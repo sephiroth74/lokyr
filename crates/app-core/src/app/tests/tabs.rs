@@ -1261,3 +1261,144 @@ fn a_closed_tab_is_kept_for_its_seconds_and_none_of_zero() {
     run_until(&mut fake, &mut app, |_, app| count(app) == 2);
     assert!(!app.workspace.keeps_closed_tabs());
 }
+
+#[test]
+fn a_reopened_tab_tells_what_its_program_told_while_it_was_kept() {
+    // Each tab's program gives its title once a line comes.
+    let program = shell("echo ready; read line; printf '\\033]2;told late\\007'; read line");
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 2, program, "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(|pane| pane.line_text(0, 0))
+            .is_some_and(|(line, _)| line.starts_with("ready"))
+    });
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.keeps_closed_tabs()
+    });
+    // Kept, its program tells its title, which no look takes, and prints
+    // nothing more.
+    app.workspace.kept_pane(pane).unwrap().send_text("\r");
+    let start = Instant::now();
+    while app
+        .workspace
+        .kept_pane(pane)
+        .unwrap()
+        .terminal()
+        .unwrap()
+        .title()
+        != "told late"
+    {
+        assert!(start.elapsed() < Duration::from_secs(10), "no title");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    for _ in 0..5 {
+        fake.send_app(&mut app, AppEvent::Wake);
+    }
+    // Given back, its tab takes the title at once.
+    app.run(&mut fake, "tabs.reopen", Args::new());
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .tab(tab)
+            .is_some_and(|tab| tab.title().contains("told late"))
+    });
+}
+
+#[test]
+fn a_kept_close_lets_go_of_the_mouse_that_its_program_held() {
+    // A program that takes the mouse's clicks.
+    let program = shell("printf '\\033[?1000h'; echo ready; read line");
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 2, program, "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(Pane::input_modes)
+            .is_some_and(|modes| {
+                modes.mouse_tracking != lokyr_vt_core::terminal::MouseTracking::None
+            })
+    });
+    // A button down over its pane, then the tab closed and kept.
+    let at = {
+        let size = fake.window_size(window).unwrap();
+        let (x, y) = app.pane_origin(window, pane, size);
+        let grid = app.workspace.pane(pane).unwrap().grid();
+        Point {
+            x: (f64::from(x) + 2.5 * f64::from(grid.cell_width)) / size.scale,
+            y: (f64::from(y) + 2.5 * f64::from(grid.cell_height)) / size.scale,
+        }
+    };
+    fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
+    assert_eq!(app.windows[&window].mouse.holder(), Some(pane));
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.keeps_closed_tabs()
+    });
+    assert_eq!(app.windows[&window].mouse.holder(), None);
+}
+
+#[test]
+fn a_reopened_tab_takes_the_colors_of_an_appearance_that_changed_while_it_was_kept() {
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 2, idle(), "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    let background = |app: &App| {
+        let terminal = app.workspace.pane(pane)?.terminal()?;
+        Some(terminal.default_colors().background)
+    };
+    let light = background(&app).unwrap();
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.keeps_closed_tabs()
+    });
+    // Dark while it is kept: the windows' panes alone change.
+    fake.send_app(&mut app, AppEvent::AppearanceChanged(Appearance::Dark));
+    let dark = app.colors(Appearance::Dark).background;
+    assert_ne!(light, dark);
+    app.run(&mut fake, "tabs.reopen", Args::new());
+    run_until(&mut fake, &mut app, |_, app| background(app) == Some(dark));
+}
+
+#[test]
+fn a_close_s_question_that_goes_unanswered_keeps_nothing() {
+    // Each tab's program waits for a line, then runs a second and ends.
+    let program = shell("echo ready; read line; sleep 1");
+    let (mut fake, mut app, window) = tabs_running(
+        "unified",
+        "top",
+        3,
+        program,
+        "reopen-seconds = 60\n[window]\nclose-on-exit = \"clean\"\n",
+    );
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(|pane| pane.line_text(0, 0))
+            .is_some_and(|(line, _)| line.starts_with("ready"))
+    });
+    // The shown tab's `sleep` runs, so its close asks; the program ends
+    // before the answer, its tab with it, and the question goes, of
+    // nothing kept, the window open still.
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).is_some()
+    });
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    assert_eq!(app.kept_closes.len(), 1, "the close asks");
+    run_until(&mut fake, &mut app, |_, app| app.part_asks.is_empty());
+    assert!(app.kept_closes.is_empty());
+    assert_eq!(app.workspace.window(shown).unwrap().tabs().len(), 2);
+}

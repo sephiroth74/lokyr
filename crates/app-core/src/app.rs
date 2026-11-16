@@ -2937,7 +2937,14 @@ impl<B: Backend> App<B> {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
-            self.part_asks.retain(|_, (asked, _)| *asked != window);
+            let kept = &mut self.kept_closes;
+            self.part_asks.retain(|_, (asked, closing)| {
+                let stays = *asked != window;
+                if let (false, plugins::Closing::Tab(tab)) = (stays, *closing) {
+                    kept.remove(&tab);
+                }
+                stays
+            });
             // A question whose window closed has no answer.
             let unanswered: Vec<AlertId> = self
                 .text_asks
@@ -3087,13 +3094,22 @@ impl<B: Backend> App<B> {
     /// reads of the clipboard and their pastes that the user is asked
     /// about, their wakes, and the mouse's buttons that they held.
     fn forget_panes(&mut self, panes: &[PaneId]) {
-        self.clipboard_asks
-            .retain(|_, (pane, _)| !panes.contains(pane));
-        self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
+        self.forget_input(panes);
         self.forget_agents(panes);
         for &pane in panes {
             self.pane_wakes.remove(&pane);
             self.scripts.remove(&pane);
+        }
+    }
+
+    /// Forgets what the windows' input and questions held of `panes`, which
+    /// left their windows: the mouse that one of them held, its buttons
+    /// down, and the questions of their pastes and their clipboards' reads.
+    fn forget_input(&mut self, panes: &[PaneId]) {
+        self.clipboard_asks
+            .retain(|_, (pane, _)| !panes.contains(pane));
+        self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
+        for &pane in panes {
             for state in self.windows.values_mut() {
                 state.mouse.forget(pane);
             }
@@ -3707,10 +3723,12 @@ impl<B: Backend> App<B> {
                 } => self.open_panel(platform, (plugin, id), window, options),
                 Request::ClosePanel { plugin, id } => self.panel_gone(platform, &plugin, &id),
                 Request::CloseAsked(closing, keep) => {
-                    if let plugins::Closing::Tab(tab) = closing
-                        && keep > 0
-                    {
-                        self.kept_closes.insert(tab, keep);
+                    if let plugins::Closing::Tab(tab) = closing {
+                        if keep > 0 {
+                            self.kept_closes.insert(tab, keep);
+                        } else {
+                            self.kept_closes.remove(&tab);
+                        }
                     }
                     self.ask_close_part(platform, closing);
                 }
@@ -4277,6 +4295,7 @@ impl<B: Backend> App<B> {
                     now,
                     told,
                 } => self.agent_changed(platform, pane, &name, (before, now), told),
+                Event::Reopened(panes) => self.reopened(platform, &panes),
                 Event::Ended(_) | Event::Terminal { .. } => {}
             }
         }
@@ -4321,9 +4340,14 @@ impl<B: Backend> App<B> {
                 return;
             }
             WorkspaceEvent::PaneClosed { pane, tab } => {
-                // A pane of a closed tab kept to give back keeps its wakes.
+                // A pane of a closed tab kept to give back keeps its wakes,
+                // its script and its agent, and leaves the windows' input
+                // and what the plugins left on it.
                 let pane = PaneId::of(pane.0);
-                if !self.workspace.keeps_closed_pane(pane) {
+                if self.workspace.keeps_closed_pane(pane) {
+                    self.forget_input(&[pane]);
+                    self.plugins.release_kept_pane(&self.workspace, pane);
+                } else {
                     self.forget_panes(&[pane]);
                 }
                 self.close_strayed_panels(platform);
@@ -4835,6 +4859,23 @@ impl<B: Backend> App<B> {
 
     /// The app's appearance is `appearance`: the panes take its theme's
     /// variant, every pane of every tab, and the windows draw again.
+    /// Follows a closed tab that came back, of `panes`: what their sessions
+    /// told while they were kept, which no look took, is looked at as their
+    /// wakes come, and they take the theme's colors of now where theirs
+    /// are others.
+    fn reopened(&mut self, platform: &mut dyn Platform, panes: &[PaneId]) {
+        let colors = self.colors(platform.appearance());
+        for &pane in panes {
+            if let Some(shown) = self.workspace.pane(pane) {
+                shown.renew_colors(&colors);
+            }
+            if let Some(wake) = self.pane_wakes.get(&pane) {
+                wake.wake();
+            }
+        }
+        platform.waker().wake();
+    }
+
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
         // The plugins that read the theme's tokens read them anew.
         self.plugins.post(plugins::Event::ThemeChanged);

@@ -2533,6 +2533,44 @@ fn a_pinned_tab_goes_first_and_stays_before_the_tabs_moved_and_opened_later() {
 }
 
 #[test]
+fn a_kept_tab_s_agent_comes_back_before_it_is_seen_and_its_panes_are_told_back() {
+    use lokyr_plugin_sdk::host::AgentState::Done;
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let told = pane(r"printf '\033]7501;state=done\033\\'; sleep 30");
+    let id = told.id();
+    let second = workspace.open_tab(window, told, 1).unwrap();
+    workspace.activate_tab(first);
+    // Done behind another tab, until it shows.
+    collect_marks(&mut workspace, second, |marks| marks.agent == Some(Done));
+    workspace.take_events();
+    let until = Instant::now() + Duration::from_secs(60);
+    assert!(workspace.close_tab_kept(second, until));
+    let agents = |events: &[Event]| {
+        events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Agent {
+                    pane, before, now, ..
+                } if *pane == id => Some((*before, *now)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(agents(&workspace.take_events()), [(Some(Done), None)]);
+    // Given back: it comes back to the windows, then its tab shows, which
+    // sees it, once each; its panes told back last.
+    assert_eq!(workspace.reopen_tab(window), Some(second));
+    let events = workspace.take_events();
+    assert_eq!(agents(&events), [(None, Some(Done)), (Some(Done), None)]);
+    assert!(
+        matches!(events.last(), Some(Event::Reopened(panes)) if panes == &[id]),
+        "{events:?}"
+    );
+}
+
+#[test]
 fn a_closed_tab_kept_reads_its_output_and_comes_back_at_its_place_until_its_time() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane("sleep 10"));

@@ -1223,6 +1223,12 @@ impl Terminal {
         }
     }
 
+    /// The theme's colors that the embedder gave, which a program's own
+    /// changes and a reset go back to.
+    pub fn default_colors(&self) -> &Colors {
+        &self.default_colors
+    }
+
     /// The scheme of the theme's colors, dark or light, as programs learn
     /// of it, whatever colors they set.
     pub fn color_scheme(&self) -> ColorScheme {

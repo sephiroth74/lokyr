@@ -27,7 +27,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.set-color` | | | Gives the tab its `color`, as `"#ff8800"`; an empty one gives the program's back |
 | `tabs.detach` | Shell › Move Tab to New Window | | Moves the tab out to a window of its own |
 | `tabs.toggle-pin` | Shell › Pin Tab | | Pins the tab at the start of the bar, or unpins it. The tab's context menu has the same item |
-| `tabs.reopen` | Shell › Reopen Closed Tab | ⇧⌘T | Brings back the tab you closed last, at its place, as you left it. Press it again for the one before. A closed tab waits `reopen-seconds`, 10 by default |
+| `tabs.reopen` | Shell › Reopen Closed Tab | ⇧⌘T | Brings back the tab you closed last, at its place, as you left it, what its programs printed meanwhile included; its find bar and copy mode stay closed. Press it again for the one before. A closed tab waits `reopen-seconds`, 10 by default |
 
 The commands without keys are there for your own bindings:
 

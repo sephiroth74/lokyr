@@ -4598,6 +4598,100 @@ fn a_search_s_matches_of_rows_that_the_scrollback_s_limit_took_go_and_the_others
 }
 
 #[test]
+fn a_kept_tab_s_pane_comes_back_of_none_of_what_the_plugins_left_on_it() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    // A second tab, which the plugins mark, then closed and kept.
+    let kept = Pane::spawn(
+        &Program::command(
+            "/bin/sh",
+            ["-c", "printf 'a needle\\n'; echo ready; sleep 30"],
+        ),
+        &Environment::default(),
+        &Settings::default(),
+        GRID,
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    );
+    let pane = kept.id();
+    let tab = app.workspace.open_tab(window, kept, 1).unwrap();
+    app.workspace.activate_tab(tab);
+    row_once(&app, pane, 1, "ready");
+    let pins = |app: &App| {
+        let reader = app.workspace.pane(pane).unwrap().reader().unwrap();
+        reader.lock().screen_rows().pins()
+    };
+    let before = pins(&app);
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "leaver",
+            scripted(
+                |cx| cx.register_command(command("leaver.leave")),
+                |cx, _, _| {
+                    let pane = cx.focused_pane().unwrap();
+                    let look = host::DecorationLook {
+                        underline: Some(host::Underline::Curly),
+                        underline_color: None,
+                        background: None,
+                        pointing: false,
+                    };
+                    cx.decorate(pane, (2, 0), (7, 0), look)?;
+                    cx.mark_gutter(pane, 0, (255, 0, 0))?;
+                    cx.show_cursor(pane, Some((2, 0)))
+                },
+            ),
+        )
+        .unwrap();
+    let searched = Rc::new(RefCell::new(Searched::default()));
+    plugins.add("finder", finder(&searched)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    plugins
+        .run("leaver.leave", Args::new(), &mut app.context())
+        .unwrap();
+    plugins
+        .run("finder.needle", Args::new(), &mut app.context())
+        .unwrap();
+    let id = searched.borrow().last.unwrap();
+    let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, id);
+    assert_eq!(count, 1);
+    // What they left: a decoration, a gutter's mark, a cursor held and a
+    // search's match, each of its pins.
+    let left = |app: &mut App| {
+        let shown = app.workspace.pane_mut(pane).unwrap();
+        shown.update();
+        let snapshot = shown.snapshot();
+        let laid = snapshot
+            .gutter()
+            .iter()
+            .filter(|mark| matches!(mark.kind, GutterKind::Laid(_)))
+            .count();
+        let held = shown.terminal().unwrap().held_cursor();
+        (snapshot.decorations().len(), laid, held)
+    };
+    assert_eq!(left(&mut app), (1, 1, Some((2, 0))));
+    assert!(pins(&app) > before);
+    // Closed and kept, then given back: none of it, as for a pane that
+    // closed for good.
+    let until = Instant::now() + Duration::from_secs(60);
+    assert!(app.workspace.close_tab_kept(tab, until));
+    plugins.release_kept_pane(&app.workspace, pane);
+    for event in app.workspace.take_events() {
+        if let crate::workspace::Event::Changed(change) = event {
+            plugins.post(Event::Workspace(change));
+        }
+    }
+    assert!(plugins.deliver(&mut app.context()).is_empty());
+    assert_eq!(app.workspace.reopen_tab(window), Some(tab));
+    assert_eq!(left(&mut app), (0, 0, None));
+    assert_eq!(pins(&app), before);
+    // The search ended: a read of it is refused.
+    let refused = plugins.run("finder.read", Args::new(), &mut app.context());
+    assert_eq!(refused.unwrap_err().code, Code::NotFound);
+}
+
+#[test]
 fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
     let mut app = App::default();
     // Of five parts, which the scrollback holds.
