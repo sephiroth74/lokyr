@@ -60,6 +60,20 @@
       "x-guide": "The width of the bar's column, on the left or the right, in points.\n\n| Values | Default |\n|---|---|\n| from `60` to `600` | `200` |\n\n- A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place, at once or at the next start, as the file changes while Lokyr is closed too.\n- It applies at once, as you save the file.",
       "x-example": "200",
       "x-example-comment": "points, 60 to 600: the bar's column on the left or the right"
+    },
+    "control-tab": {
+      "description": "What Control-Tab and Control-Shift-Tab step through: the tabs in the order of their use, or in their own.",
+      "enum": [
+        "recent",
+        "order"
+      ],
+      "default": "recent",
+      "x-platforms": [
+        "macos"
+      ],
+      "x-guide": "What Control-Tab and Control-Shift-Tab step through: the tabs in the order of their use, or in their own.\n\n| Values | Default |\n|---|---|\n| `\"recent\"`, `\"order\"` | `\"recent\"` |\n\n- `\"recent\"` brings forward the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control becomes the one used last. Control-Shift-Tab goes the other way, from the tab used longest ago.\n- `\"order\"` brings forward the next tab of the bar, and Control-Shift-Tab the previous one, as Command-Shift-] and Command-Shift-[ do whatever this says.\n- It applies at once, as you save the file.",
+      "x-example": "\"recent\"",
+      "x-example-comment": "recent | order: what Control-Tab steps through"
     }
   },
   "x-guide": "<sub>Platforms: macOS</sub>\n\nThe tab bar of the built-in plugin `lokyr/tabs`: each window's tabs, each of its title, its color, the keys that select it and its close button, and a button of a new tab. A click on a tab shows it, on its close button closes it, asking you first while a program other than a shell runs there. A tab's title is the one that you give it with Shell › Rename Tab…, or its program's, or its folder and the program in its foreground, as `src — vim`."

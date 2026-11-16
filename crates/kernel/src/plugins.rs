@@ -5128,6 +5128,26 @@ impl Host<'_, '_> {
             .ok_or_else(|| Error::new(Code::NotFound, format!("there is no pane {}", pane.0)))
     }
 
+    /// What a read of a window's tabs tells of `tabs`, in their order: of
+    /// their folders and programs to a plugin that reads the processes;
+    /// what it learns of each, to one that does not.
+    fn tabs_read(&mut self, tabs: Vec<crate::workspace::TabId>) -> Response {
+        let reads = self.state.reads_processes();
+        let workspace = &*self.context.workspace;
+        let infos: Vec<host::TabInfo> = tabs
+            .into_iter()
+            .filter_map(|tab| any_tab_info(workspace, tab, reads))
+            .collect();
+        // What it learns of each tab, of which a change that it cannot read
+        // tells it nothing.
+        if !reads {
+            for info in &infos {
+                self.state.told_tabs.insert(info.id, info.clone());
+            }
+        }
+        Response::Tabs(infos)
+    }
+
     /// The window of `window`'s handle; `not-found` once it closed.
     fn window(&self, window: host::WindowId) -> Result<&crate::workspace::Window, Error> {
         self.context
@@ -5635,20 +5655,16 @@ impl Host<'_, '_> {
             }
             Asked::Tabs(window) => {
                 let tabs = self.window(window)?.tabs().to_vec();
-                let reads = self.state.reads_processes();
-                let workspace = &*self.context.workspace;
-                let infos: Vec<host::TabInfo> = tabs
-                    .into_iter()
-                    .filter_map(|tab| any_tab_info(workspace, tab, reads))
-                    .collect();
-                // What it learns of each tab, of which a change that it
-                // cannot read tells it nothing.
-                if !self.state.reads_processes() {
-                    for info in &infos {
-                        self.state.told_tabs.insert(info.id, info.clone());
-                    }
-                }
-                Response::Tabs(infos)
+                self.tabs_read(tabs)
+            }
+            Asked::RecentTabs(window) => {
+                self.window(window)?;
+                let tabs = self
+                    .context
+                    .workspace
+                    .recent_tabs(WindowId::of(window.0))
+                    .unwrap_or_default();
+                self.tabs_read(tabs)
             }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             Asked::CommandLine { pane, command } => {

@@ -212,6 +212,9 @@ pub struct Tab {
     zoomed: Option<PaneId>,
     /// What a tab bar marks it of.
     marks: Marks,
+    /// When it last showed, of the workspace's count of uses, which orders
+    /// a window's tabs by their use; 0 of a tab that never showed.
+    used: u64,
 }
 
 /// What a tab bar marks a tab of: what came in it while it did not show,
@@ -422,6 +425,11 @@ pub struct Workspace {
     settings_window: bool,
     /// The settings tab's title, in the language that the app shows.
     settings_title: String,
+    /// The count of the tabs' uses, the last tab's that showed.
+    uses: u64,
+    /// Whether the order of the tabs' use holds, as Control is held while
+    /// Control-Tab steps through it.
+    order_held: bool,
 }
 
 impl Workspace {
@@ -1155,6 +1163,7 @@ impl Workspace {
                 active: pane,
                 zoomed: None,
                 marks: Marks::default(),
+                used: 0,
             },
         );
         self.take_active_look(tab);
@@ -1377,6 +1386,35 @@ impl Workspace {
         true
     }
 
+    /// The tabs of `window`, in the order of their use, the one that showed
+    /// last first, of the tabs' own order among those that never showed;
+    /// none of a window that is not there.
+    pub fn recent_tabs(&self, window: WindowId) -> Option<Vec<TabId>> {
+        let mut tabs = self.windows.get(&window)?.tabs.clone();
+        tabs.sort_by_key(|tab| std::cmp::Reverse(self.tabs.get(tab).map_or(0, |shown| shown.used)));
+        Some(tabs)
+    }
+
+    /// Holds the order of the tabs' use, as Control is held while
+    /// Control-Tab steps through it, or lets it go, as Control is released:
+    /// the tab that each window shows then is its tab used last.
+    pub fn hold_tab_order(&mut self, held: bool) {
+        if std::mem::replace(&mut self.order_held, held) && !held {
+            let shown: Vec<TabId> = self.windows.values().map(|window| window.active).collect();
+            for tab in shown {
+                self.used(tab);
+            }
+        }
+    }
+
+    /// Marks `tab` its window's tab used last.
+    fn used(&mut self, tab: TabId) {
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            self.uses += 1;
+            shown.used = self.uses;
+        }
+    }
+
     /// Shows `tab` in its window; whether it is open.
     pub fn activate_tab(&mut self, tab: TabId) -> bool {
         let Some(window) = self.window_of_tab(tab) else {
@@ -1467,8 +1505,12 @@ impl Workspace {
     }
 
     /// `tab` shows in its window: the output and the bell that came while
-    /// it did not show are seen, and what its agents did.
+    /// it did not show are seen, and what its agents did; it is its
+    /// window's tab used last, unless the order of use holds.
     fn tab_shown(&mut self, tab: TabId) {
+        if !self.order_held {
+            self.used(tab);
+        }
         let panes = self
             .tabs
             .get(&tab)

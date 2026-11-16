@@ -77,8 +77,8 @@ pub const BINDINGS: [(&str, &str); 46] = [
     ("cmd+w", "tabs.close"),
     ("cmd+shift+]", "tabs.next"),
     ("cmd+shift+[", "tabs.prev"),
-    ("ctrl+tab", "tabs.next"),
-    ("ctrl+shift+tab", "tabs.prev"),
+    ("ctrl+tab", "tabs.switch"),
+    ("ctrl+shift+tab", "tabs.switch-back"),
     // The splits'.
     ("cmd+]", "splits.focus-next"),
     ("cmd+[", "splits.focus-prev"),

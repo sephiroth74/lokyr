@@ -106,6 +106,7 @@ export type Cx = {
     quit: () -> (true?, string?, number?),
     windows: () -> ({ WindowInfo }?, string?, number?),
     tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
+    recent_tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
     layout: (tab: TabId) -> (Layout?, string?, number?),
     new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, string?, number?),

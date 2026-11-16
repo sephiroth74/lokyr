@@ -83,6 +83,9 @@ pub(crate) struct Settings {
     pub(crate) close_button: CloseButton,
     /// The column's width, in points, on the left or the right.
     pub(crate) column_width: f32,
+    /// Whether Control-Tab steps through the tabs in the order of their
+    /// use, rather than in their own.
+    pub(crate) control_tab_recent: bool,
 }
 
 impl Default for Settings {
@@ -94,6 +97,7 @@ impl Default for Settings {
             show_index: true,
             close_button: CloseButton::Hover,
             column_width: 200.0,
+            control_tab_recent: true,
         }
     }
 }
@@ -130,6 +134,7 @@ impl Settings {
             Some("never") => CloseButton::Never,
             _ => CloseButton::Hover,
         };
+        settings.control_tab_recent = text("control-tab") != Some("order");
         settings.hide_when_single = flag("hide-when-single", true);
         settings.show_index = flag("show-index", true);
         settings.column_width = match config.get("column-width") {

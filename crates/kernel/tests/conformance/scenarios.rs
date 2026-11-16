@@ -2907,6 +2907,14 @@ fn workspace(world: &World) -> Scenario {
                             info(tab(0), true, pane(0), vec![pane(0), pane(1)], Some(pane(0))),
                         ]),
                     ),
+                    // In the order of their use: the tab shown last first.
+                    (
+                        Request::RecentTabs(w),
+                        Response::Tabs(vec![
+                            info(tab(0), true, pane(0), vec![pane(0), pane(1)], Some(pane(0))),
+                            info(t, false, p, vec![p], None),
+                        ]),
+                    ),
                     (Request::Layout(tab(0)), Response::Layout(split(None))),
                     (Request::FocusedPane, Response::Pane(Some(pane(0)))),
                     (

@@ -52,6 +52,10 @@ impl<B: Backend> App<B> {
             self.tell_pointer(platform, window, position, key.mods);
             platform.request_frame(window);
         }
+        // Control held holds the order of the tabs' use, as Control-Tab
+        // steps through it, and its release lets it go, the tab shown then
+        // the last used.
+        self.workspace.hold_tab_order(key.mods.control);
         // The key's own prompt, which no output told, as after a
         // silent `stty -echo`, is secure from the next key.
         self.settle_secure_input(platform);

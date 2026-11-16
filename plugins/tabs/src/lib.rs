@@ -41,6 +41,15 @@ const NEXT: &str = "tabs.next";
 /// Shows the previous tab, the last before the first.
 const PREV: &str = "tabs.prev";
 
+/// Shows the tab used before the one that shows, and, as Control stays held,
+/// the one before that, as `control-tab` says; or the next tab, of its
+/// `order`.
+const SWITCH: &str = "tabs.switch";
+
+/// Shows the tab used longest ago, the other way through the order of use;
+/// or the previous tab, of `control-tab`'s `order`.
+const SWITCH_BACK: &str = "tabs.switch-back";
+
 /// Shows the tab of its `index`, from 1.
 const GOTO: &str = "tabs.goto";
 
@@ -120,13 +129,15 @@ type Spec = (
 );
 
 /// The commands, in the order of the menus.
-fn commands() -> [Spec; 9] {
+fn commands() -> [Spec; 11] {
     let empty = || Some(Value::String(String::new()));
     [
         (NEW, "New Tab", None),
         (CLOSE, "Close Tab", None),
         (NEXT, "Select Next Tab", None),
         (PREV, "Select Previous Tab", None),
+        (SWITCH, "Switch Tab", None),
+        (SWITCH_BACK, "Switch Tab Back", None),
         (GOTO, "Select Tab", Some(("index", Kind::Integer, None))),
         (MOVE, "Move Tab", Some(("delta", Kind::Integer, None))),
         (
@@ -361,6 +372,21 @@ impl Plugin for Tabs {
             CLOSE => cx.close_tab(tab.id, true),
             NEXT => cx.activate_tab(tabs[(at + 1) % tabs.len()].id),
             PREV => cx.activate_tab(tabs[(at + tabs.len() - 1) % tabs.len()].id),
+            // Through the order of use, which holds while Control is held,
+            // from the tab that shows; or through the tabs' own.
+            SWITCH | SWITCH_BACK => {
+                let back = name == SWITCH_BACK;
+                let order = if self.settings.control_tab_recent {
+                    cx.recent_tabs(window)?
+                } else {
+                    tabs.clone()
+                };
+                let Some(at) = order.iter().position(|shown| shown.id == tab.id) else {
+                    return Ok(());
+                };
+                let step = if back { order.len() - 1 } else { 1 };
+                cx.activate_tab(order[(at + step) % order.len()].id)
+            }
             GOTO => {
                 let index = integer(&args, "index");
                 match index

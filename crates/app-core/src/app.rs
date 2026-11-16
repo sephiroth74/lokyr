@@ -5278,9 +5278,11 @@ impl<B: Backend> App<B> {
             // took, whose releases go elsewhere.
             // A window that takes the focus loses its bell's mark.
             WindowEvent::Focused(focused) => {
-                // Command's release, out of the window, comes to another.
+                // Command's release, out of the window, comes to another,
+                // and Control's, which lets the order of the tabs' use go.
                 if !focused {
                     self.command_held = false;
+                    self.workspace.hold_tab_order(false);
                     self.tell_pointer(platform, window, None, lokyr_platform_core::Modifiers::NONE);
                     self.surface_cancel(platform, window);
                 }

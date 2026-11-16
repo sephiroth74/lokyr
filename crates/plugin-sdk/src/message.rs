@@ -672,6 +672,11 @@ pub enum Request {
     Windows,
     /// A window's tabs, in their order.
     Tabs(WindowId),
+    /// A window's tabs, in the order of their use, the one that showed last
+    /// first: an order that holds while Control is held, as Control-Tab
+    /// steps through it, and takes the tab that shows first as Control is
+    /// released.
+    RecentTabs(WindowId),
     /// A tab's layout.
     Layout(TabId),
     /// Opens a tab in a window, at `index` of its tabs, or at their end
@@ -1178,6 +1183,7 @@ impl Request {
             | Self::FontSize
             | Self::Windows
             | Self::Tabs(_)
+            | Self::RecentTabs(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1243,6 +1249,7 @@ impl Request {
             | Self::FontSize
             | Self::Windows
             | Self::Tabs(_)
+            | Self::RecentTabs(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1937,7 +1944,7 @@ impl Request {
             Self::Opens { .. } | Self::NoticeShows | Self::KeepsState => "boolean",
             Self::FontSize { .. } => "font-size",
             Self::Windows { .. } => "windows",
-            Self::Tabs { .. } => "tabs",
+            Self::Tabs { .. } | Self::RecentTabs { .. } => "tabs",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",

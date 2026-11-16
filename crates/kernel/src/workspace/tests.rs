@@ -2474,3 +2474,28 @@ fn a_tab_goes_into_a_pane_of_another_whole_in_the_half_at_its_edge() {
     assert!(!workspace.tab_into_pane(pair, c, Edge::Right));
     assert_eq!(workspace.panes_of(second).len(), 4);
 }
+
+#[test]
+fn a_window_s_tabs_go_in_the_order_of_their_use_which_holds_while_control_is_held() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 10"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let second = workspace.open_tab(window, pane("sleep 10"), 1).unwrap();
+    let third = workspace.open_tab(window, pane("sleep 10"), 2).unwrap();
+    workspace.activate_tab(second);
+    workspace.activate_tab(third);
+    let recent = |workspace: &Workspace| workspace.recent_tabs(window).unwrap();
+    assert_eq!(recent(&workspace), [third, second, first]);
+    // Held, as Control-Tab steps: the order stays, whatever shows.
+    workspace.hold_tab_order(true);
+    workspace.activate_tab(second);
+    workspace.activate_tab(first);
+    assert_eq!(recent(&workspace), [third, second, first]);
+    // Let go: the tab that shows is the one used last.
+    workspace.hold_tab_order(false);
+    assert_eq!(recent(&workspace), [first, third, second]);
+    // A closed tab leaves the order; a window not there has none.
+    workspace.close_tab(third);
+    assert_eq!(recent(&workspace), [first, second]);
+    assert_eq!(workspace.recent_tabs(WindowId::of(999_999)), None);
+}

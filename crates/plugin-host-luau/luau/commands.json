@@ -906,6 +906,24 @@
   },
   {
     "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.switch",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Switch Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.switch-back",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Switch Tab Back",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "windows",
     "name": "window.close",
     "params": [],

@@ -294,6 +294,54 @@ fn a_question_of_buttons_that_a_plugin_asks_tells_it_the_button_or_none() {
 }
 
 #[test]
+fn control_tab_steps_through_the_tabs_used_while_control_is_held() {
+    let (mut fake, mut app, window, ..) = with_parts(idle());
+    let active = |app: &App| {
+        let shown = app.workspace.window(app.windows[&window].window).unwrap();
+        shown
+            .tabs()
+            .iter()
+            .position(|&tab| tab == shown.active_tab())
+    };
+    let key = |fake: &mut Fake, app: &mut App, code, text: &str, mods, pressed| {
+        fake.send(app, window, key_event(code, text, mods, pressed));
+    };
+    // Three tabs, the third shown last, then the second.
+    key(&mut fake, &mut app, KeyCode::KeyT, "t", CMD, true);
+    key(&mut fake, &mut app, KeyCode::KeyT, "t", CMD, true);
+    key(&mut fake, &mut app, KeyCode::Digit2, "2", CMD, true);
+    assert_eq!(active(&app), Some(1));
+    // Control held, Tab twice: the third, used before the second, then
+    // the first, used before the third.
+    key(&mut fake, &mut app, KeyCode::ControlLeft, "", CTRL, true);
+    key(&mut fake, &mut app, KeyCode::Tab, "\t", CTRL, true);
+    assert_eq!(active(&app), Some(2));
+    key(&mut fake, &mut app, KeyCode::Tab, "\t", CTRL, true);
+    assert_eq!(active(&app), Some(0));
+    // Control released: the first is the tab used last, the second before
+    // it, which Control-Tab brings back.
+    key(
+        &mut fake,
+        &mut app,
+        KeyCode::ControlLeft,
+        "",
+        Modifiers::NONE,
+        false,
+    );
+    key(&mut fake, &mut app, KeyCode::ControlLeft, "", CTRL, true);
+    key(&mut fake, &mut app, KeyCode::Tab, "\t", CTRL, true);
+    key(
+        &mut fake,
+        &mut app,
+        KeyCode::ControlLeft,
+        "",
+        Modifiers::NONE,
+        false,
+    );
+    assert_eq!(active(&app), Some(1));
+}
+
+#[test]
 fn the_tabs_keys_open_select_move_and_close_tabs() {
     let (mut fake, mut app, window, ..) = with_parts(idle());
     let active = |app: &App| {

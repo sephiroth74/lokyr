@@ -22,6 +22,7 @@ tip-goto-tab = Press { $keys } and the next numbers to go straight to a tab by i
 tip-quick-terminal = Press { $keys } from any app to slide the quick terminal down.
 tip-clear = Press { $keys } to clear the scrollback and the screen, the prompt kept.
 tip-font-size = Press { $keys } to make the text bigger, in every window.
+tip-switch-tab = Press { $keys } to go back to the tab you used before. Keep Control held and press Tab again to go further back.
 tip-next-agent = Press { $keys } to go to the next AI agent that waits for you, in any window.
 tip-cycle-windows = Press { $keys } to go to your next window, the settings window too, as Window › Cycle Through Windows does.
 tip-claude-code = Lokyr › Install Claude Code Integration… lets Claude Code tell its tab exactly when it works, waits for you or is done.

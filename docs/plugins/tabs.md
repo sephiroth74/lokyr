@@ -18,7 +18,8 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 |---|---|---|---|
 | `tabs.new` | Shell › New Tab | ⌘T | Opens a tab after the others, its shell in the folder of the pane that has the keyboard |
 | `tabs.close` | Shell › Close Tab | ⌘W | Closes the tab, or its pane while it has splits, asking you first while a program other than a shell runs there |
-| `tabs.next`, `tabs.prev` | Shell › Select Next Tab, Select Previous Tab | ⇧⌘], ⇧⌘[, ⌃Tab, ⌃⇧Tab | Shows the next or the previous tab, around the ends |
+| `tabs.next`, `tabs.prev` | Shell › Select Next Tab, Select Previous Tab | ⇧⌘], ⇧⌘[ | Shows the next or the previous tab, around the ends |
+| `tabs.switch`, `tabs.switch-back` | Shell › Switch Tab, Switch Tab Back | ⌃Tab, ⌃⇧Tab | Shows the tab you used before. Press Tab again while you hold Control to go further back; the tab that shows when you release Control becomes the most recent. ⌃⇧Tab goes the other way. With `control-tab = "order"`, they show the next and the previous tab instead |
 | `tabs.goto` | | ⌘1 to ⌘9 | Shows the tab of that `index`, from 1 at the left |
 | `tabs.move` | | ⇧⌘←, ⇧⌘→ | Moves the tab a place, `delta` of -1 or 1 |
 | `tabs.rename` | Shell › Rename Tab… | | Gives the tab its `title`; without one, it asks you for it, and an empty one gives the tab its own back |
@@ -45,6 +46,7 @@ Its keys go in [`[plugins.tabs]`](../CONFIGURATION.md#pluginstabs), each applied
 | `show-index` | `true`, `false` | `true` | Whether each of the first nine tabs shows the keys that select it |
 | `close-button` | `"always"`, `"hover"`, `"never"` | `"hover"` | When a tab shows its close button |
 | `column-width` | from `60` to `600` | `200` | The column's width in points, on the left or the right, which a drag of its edge changes too |
+| `control-tab` | `"recent"`, `"order"` | `"recent"` | What ⌃Tab and ⌃⇧Tab step through: the tabs in the order you used them, or in the bar's order |
 
 ```toml
 [plugins.tabs]

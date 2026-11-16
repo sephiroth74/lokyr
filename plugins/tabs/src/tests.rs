@@ -81,6 +81,8 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             (CLOSE, vec![]),
             (NEXT, vec![]),
             (PREV, vec![]),
+            (SWITCH, vec![]),
+            (SWITCH_BACK, vec![]),
             (GOTO, vec![("index", Kind::Integer, false)]),
             (MOVE, vec![("delta", Kind::Integer, false)]),
             (RENAME, vec![("title", Kind::String, true)]),
@@ -917,7 +919,8 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "hide-when-single",
             "show-index",
             "close-button",
-            "column-width"
+            "column-width",
+            "control-tab"
         ]
     );
     let example = guide
@@ -944,4 +947,54 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "`{key}` in the section"
         );
     }
+}
+
+#[test]
+fn control_tab_steps_through_the_order_of_use_while_control_is_held() {
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    // Used: the first, the second, then the third.
+    run(&mut host, &mut plugin, GOTO, number("index", 2));
+    run(&mut host, &mut plugin, GOTO, number("index", 3));
+    // Control held: the tab used before, then the one before that, the
+    // order held.
+    host.hold_tab_order(true);
+    let switch = |host: &mut FakeHost, plugin: &mut Tabs, name: &str| {
+        run(host, plugin, name, Args::new())
+            .into_iter()
+            .filter(|request| !matches!(request, Request::RecentTabs(_)))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH),
+        [Request::ActivateTab(TabId(2))]
+    );
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH),
+        [Request::ActivateTab(TabId(1))]
+    );
+    // Released: the first is the tab used last, then the third.
+    host.hold_tab_order(false);
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH),
+        [Request::ActivateTab(TabId(3))]
+    );
+    // The other way, from the tab used longest ago: the second.
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH_BACK),
+        [Request::ActivateTab(TabId(2))]
+    );
+    // Of `control-tab = "order"`, the tabs' own order, as before.
+    host.set_config(Data::Map(BTreeMap::from([(
+        "control-tab".to_owned(),
+        Data::Text("order".to_owned()),
+    )])));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH),
+        [Request::ActivateTab(TabId(3))]
+    );
+    assert_eq!(
+        switch(&mut host, &mut plugin, SWITCH_BACK),
+        [Request::ActivateTab(TabId(2))]
+    );
 }

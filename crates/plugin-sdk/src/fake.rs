@@ -532,6 +532,13 @@ pub struct FakeHost {
     /// as it activated, read the tabs or heard their changes, which a
     /// change that it cannot read tells it nothing of.
     told_tabs: BTreeMap<TabId, TabInfo>,
+    /// When each tab last showed, of the count of uses, as the app orders a
+    /// window's tabs by their use.
+    tab_uses: BTreeMap<TabId, u64>,
+    /// The count of the tabs' uses.
+    tab_use_count: u64,
+    /// Whether the order of the tabs' use holds, as Control is held.
+    order_held: bool,
     /// Of a plugin that does not read the processes, the title that it last
     /// learnt of each pane, its program's, of none at first, which a change
     /// of the pane's folder or program, that it cannot read, leaves.
@@ -634,6 +641,9 @@ impl FakeHost {
             renders: Vec::new(),
             owed: Vec::new(),
             told_tabs: BTreeMap::new(),
+            tab_uses: BTreeMap::new(),
+            tab_use_count: 0,
+            order_held: false,
             told_panes: BTreeMap::new(),
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
@@ -782,6 +792,20 @@ impl FakeHost {
         let (tab, pane) = (TabId(self.next_id()), PaneId(self.next_id()));
         self.open_tab(window, usize::MAX, tab, pane);
         (tab, pane)
+    }
+
+    /// Holds the order of the tabs' use, as the app does while Control is
+    /// held, or lets it go, as Control is released: the tab that each window
+    /// shows then is its tab used last.
+    pub fn hold_tab_order(&mut self, held: bool) -> &mut Self {
+        self.settle();
+        if std::mem::replace(&mut self.order_held, held) && !held {
+            let shown: Vec<TabId> = self.windows.values().map(|window| window.active).collect();
+            for tab in shown {
+                self.shown(tab);
+            }
+        }
+        self
     }
 
     /// The layout of `tab`, as the plugin's writes left it.
@@ -2232,7 +2256,10 @@ impl FakeHost {
     fn tell_left(&mut self, left: Left) {
         match left {
             Left::Kept => {}
-            Left::Shows(window, tab) => self.changed(WorkspaceEvent::TabActivated { tab, window }),
+            Left::Shows(window, tab) => {
+                self.shown(tab);
+                self.changed(WorkspaceEvent::TabActivated { tab, window });
+            }
             Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed { window }),
         }
     }
@@ -2366,6 +2393,7 @@ impl FakeHost {
             && shown.active != tab
         {
             shown.active = tab;
+            self.shown(tab);
             self.changed(WorkspaceEvent::TabActivated { tab, window });
             // Shown, it loses its activity and its bell, as the app's.
             let before = self.look(tab);
@@ -2375,6 +2403,23 @@ impl FakeHost {
             }
             self.looked(tab, &before);
         }
+    }
+
+    /// `tab` shows in its window: its window's tab used last, unless the
+    /// order of use holds.
+    fn shown(&mut self, tab: TabId) {
+        if !self.order_held {
+            self.tab_use_count += 1;
+            self.tab_uses.insert(tab, self.tab_use_count);
+        }
+    }
+
+    /// The tabs of `window`, in the order of their use, the one that showed
+    /// last first, of their own order among those that never showed.
+    fn recent_tabs(&self, window: WindowId) -> Option<Vec<TabId>> {
+        let mut tabs = self.windows.get(&window)?.tabs.clone();
+        tabs.sort_by_key(|tab| std::cmp::Reverse(self.tab_uses.get(tab).copied().unwrap_or(0)));
+        Some(tabs)
     }
 
     /// Gives `pane` its tab's keyboard.
@@ -3451,6 +3496,27 @@ impl Calling<'_> {
                     .tabs
                     .iter()
                     .filter_map(|&id| host.tab_info(id, reads))
+                    .collect();
+                // What it learns of each tab, of which a change that it
+                // cannot read tells it nothing.
+                if !reads {
+                    for info in &infos {
+                        self.host.told_tabs.insert(info.id, info.clone());
+                    }
+                }
+                Response::Tabs(infos)
+            }
+            Request::RecentTabs(window) => {
+                let Some(recent) = host.recent_tabs(*window) else {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ));
+                };
+                let reads = host.reads_processes();
+                let infos: Vec<TabInfo> = recent
+                    .into_iter()
+                    .filter_map(|id| host.tab_info(id, reads))
                     .collect();
                 // What it learns of each tab, of which a change that it
                 // cannot read tells it nothing.

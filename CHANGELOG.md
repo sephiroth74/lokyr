@@ -17,9 +17,12 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The plugin API reads the status that a program tells of its session, `status` of a tab, of its text, its colors and its detail.
 - A click in the command line moves the shell's cursor there, as in a text field, in zsh, bash and fish of Lokyr's shell integration, and in any shell that announces it, as Nushell: Lokyr hands the click to the shell, or sends the arrow keys to the clicked character; a drag still selects, and a click on the prompt, or past the command's end, moves it no further than the end.
 - Backspace, Delete or a typed character over a selection of the command line takes its place, in those shells, as in a text field; `[cursor] click-to-move` turns both off.
+- ⌃Tab shows the tab you used before. Press Tab again while you hold Control to go further back; the tab that shows when you release Control becomes the most recent. ⌃⇧Tab goes the other way. Set `[plugins.tabs] control-tab = "order"` to step through the bar's order instead.
+- The plugin API reads a window's tabs in the order they were used, `cx.recent_tabs`.
 
 ### Changed
 
+- ⌃Tab and ⌃⇧Tab follow the order you used the tabs in, not the bar's order. ⇧⌘] and ⇧⌘[ still follow the bar.
 - An agent's notification tells the message that it told, as "claude: Claude needs your permission to use Bash", or, of none, what it asks for while it waits, as "codex asks for your permission".
 
 ### Fixed

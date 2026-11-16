@@ -1111,11 +1111,12 @@ fn kind(request: &Request) -> usize {
         Request::ShowColorPanel { .. } => 125,
         Request::CloseColorPanel => 126,
         Request::AskChoice { .. } => 127,
+        Request::RecentTabs(_) => 128,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 128;
+const KINDS: usize = 129;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

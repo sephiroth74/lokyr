@@ -197,6 +197,7 @@ hide-when-single = true              # true | false: no bar for a single tab
 show-index = true                    # true | false: ⌘1 to ⌘9 on the first nine tabs
 close-button = "hover"               # always | hover | never: a tab's close button
 column-width = 200                   # points, 60 to 600: the bar's column on the left or the right
+control-tab = "recent"               # recent | order: what Control-Tab steps through
 
 [plugins.splits]
 dim-inactive = 0.15                  # 0 to 1: how much the panes without the keyboard fade
@@ -1707,8 +1708,10 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `o`, `y`, `enter`, `shift+y`, `escape`, `q`, `ctrl+c` | `copy-mode.act` | Its `action`: `o` swaps the selection's ends, `swap`; `y` and `enter` copy the selection, or the cursor's line without one, and end the mode, the selection staying, `copy`; `shift+y` copies the cursor's line and ends, `copy-line`; `escape` takes the count away, or else the selection, or else ends, `back`; `q` and `ctrl+c` end, the selection taken away, `exit`. A line's copy leaves the blanks at its end out |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
 | `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
-| `cmd+shift+]`, `ctrl+tab` | `tabs.next` | Shows the next tab, the first after the last |
-| `cmd+shift+[`, `ctrl+shift+tab` | `tabs.prev` | Shows the previous tab, the last before the first |
+| `cmd+shift+]` | `tabs.next` | Shows the next tab, the first after the last |
+| `cmd+shift+[` | `tabs.prev` | Shows the previous tab, the last before the first |
+| `ctrl+tab` | `tabs.switch` | Shows the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control is the one used last; or the next tab, as [`control-tab`](#control-tab) says |
+| `ctrl+shift+tab` | `tabs.switch-back` | The other way: the tab used longest ago, then the one used after it; or the previous tab |
 | `cmd+1`, `cmd+2`, `cmd+3`, `cmd+4`, `cmd+5`, `cmd+6`, `cmd+7`, `cmd+8`, `cmd+9` | `tabs.goto` | Shows the tab of that number, `index`, from 1 at the left; a number of no tab does nothing |
 | `cmd+shift+left`, `cmd+shift+right` | `tabs.move` | Moves the tab a place to the left or to the right, `delta` of -1 or 1, as far as the bar's ends |
 | `cmd+d`, `cmd+shift+d` | `splits.split` | Splits the pane, `direction` `right` or `down`: the new pane, beside it or below it, takes the keyboard |
@@ -1847,6 +1850,20 @@ The width of the bar's column, on the left or the right, in points.
 | from `60` to `600` | `200` |
 
 - A drag of the column's edge changes its width, which Lokyr keeps for its next start; a new value in the file takes the drag's place, at once or at the next start, as the file changes while Lokyr is closed too.
+- It applies at once, as you save the file.
+
+### `control-tab`
+
+<sub>Platforms: macOS</sub>
+
+What Control-Tab and Control-Shift-Tab step through: the tabs in the order of their use, or in their own.
+
+| Values | Default |
+|---|---|
+| `"recent"`, `"order"` | `"recent"` |
+
+- `"recent"` brings forward the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control becomes the one used last. Control-Shift-Tab goes the other way, from the tab used longest ago.
+- `"order"` brings forward the next tab of the bar, and Control-Shift-Tab the previous one, as Command-Shift-] and Command-Shift-[ do whatever this says.
 - It applies at once, as you save the file.
 
 ## `[plugins.splits]`

@@ -1156,6 +1156,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The tabs of `window`, in the order of their use, the one that showed
+    /// last first, an order that holds while Control is held.
+    pub fn recent_tabs(&mut self, window: WindowId) -> Result<Vec<TabInfo>, Error> {
+        match self.request(Request::RecentTabs(window)) {
+            Response::Tabs(tabs) => Ok(tabs),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The layout of `tab`.
     pub fn layout(&mut self, tab: TabId) -> Result<Layout, Error> {
         match self.request(Request::Layout(tab)) {
