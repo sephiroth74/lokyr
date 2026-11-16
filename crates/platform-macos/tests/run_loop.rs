@@ -51,6 +51,15 @@ mod probe {
         Duration::from_secs(1) / 120 / 4
     }
 
+    /// What the first frame after a wake takes at most, which builds what
+    /// the first frame needs once besides: half a refresh at 60 Hz, as a
+    /// slow machine's virtual one takes a few milliseconds of it. The five
+    /// wakes after it, of nothing more to build, hold [`at_once`], which a
+    /// display link that still ran would meet rarely.
+    fn first_at_once() -> Duration {
+        Duration::from_secs(1) / 60 / 2
+    }
+
     /// What the handler saw.
     #[derive(Debug, Default)]
     struct Seen {
@@ -254,7 +263,7 @@ mod probe {
         // that follow keep to the display's pace: 60 Hz or 120 Hz, and at
         // worst half of it.
         assert!(
-            seen.first_frame.is_some_and(|wait| wait < at_once()),
+            seen.first_frame.is_some_and(|wait| wait < first_at_once()),
             "{seen:?}"
         );
         let paced = seen.paced.expect("the frames were drawn");
