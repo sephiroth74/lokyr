@@ -99,6 +99,11 @@ impl Plugin for Conformer {
                 (0, vec![ListItem::default(), ListItem::default()]),
             )
             .key("results"),
+            // A part of a theme of a name, of a terminal's specimen.
+            Node::themed(
+                "Lokyr Dark",
+                vec![Node::text("part"), Node::terminal_specimen()],
+            ),
         ]))
     }
 }

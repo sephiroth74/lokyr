@@ -2013,3 +2013,174 @@ fn the_themes_page_previews_each_theme_of_its_colors_and_a_card_names_it_in_the_
     assert_eq!(menu.dimmed, ["theme-edit"]);
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// The manifest of [`Part`], of its page.
+const PART: &str = concat!(
+    "[plugin]\nname = \"lokyr/part\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[contributes]\npages = [{ id = \"part\", icon = \"settings\" }]\n",
+);
+
+/// A plugin of a page of a part of the theme Other: a box of its terminal's
+/// background round a text and a terminal's specimen; its command shows
+/// Other's background of another color before it is written; it counts the
+/// changes of the themes that it hears.
+struct Part(Rc<RefCell<u32>>);
+
+impl plugins::Plugin for Part {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.subscribe(&["theme-changed"])?;
+        cx.register_command(Command {
+            name: "part.preview".to_owned(),
+            title: "Preview".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.preview_theme_value("Other", "background", Some("#303030"))
+    }
+
+    fn on_event(
+        &mut self,
+        cx: &mut plugins::Cx<'_>,
+        events: &[plugins::Event],
+    ) -> Result<(), Error> {
+        for event in events {
+            match event {
+                plugins::Event::PageShown(page) => {
+                    cx.request_render(ViewId::Page(page.clone()))?;
+                }
+                plugins::Event::ThemeChanged => *self.0.borrow_mut() += 1,
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, _: &ViewId) -> Option<plugins::view::Node> {
+        use plugins::view::{Node, Style, Token};
+        let part = Node::themed("Other", vec![Node::text("part"), Node::terminal_specimen()])
+            .style(Style {
+                background: Some(Token::from("terminal.bg")),
+                ..Style::default()
+            });
+        Some(part)
+    }
+}
+
+#[test]
+fn the_settings_window_draws_of_lokyr_s_own_theme_and_a_view_s_part_of_the_theme_that_it_names() {
+    let theme = |background: &str| {
+        format!(
+            "[terminal]\nbackground = \"{background}\"\nforeground = \"#e0e0e0\"\npalette = [{}]\n",
+            ["\"#000000\""; 16].join(", ")
+        )
+    };
+    let directory =
+        std::env::temp_dir().join(format!("lokyr-app-settings-part-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(directory.join("themes")).unwrap();
+    std::fs::write(directory.join("themes/Mine.toml"), theme("#102030")).unwrap();
+    let other = directory.join("themes/Other.toml");
+    std::fs::write(&other, theme("#405060")).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        concat!(
+            "[theme]\nlight = \"Mine\"\ndark = \"Mine\"\n\n",
+            "[plugins.plugin-manager]\nenabled = false\n\n[plugins.settings]\nenabled = false\n",
+        ),
+    )
+    .unwrap();
+    let heard = Rc::new(RefCell::new(0));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    app.plugins
+        .add_builtin(PART, Box::new(Part(Rc::clone(&heard))))
+        .unwrap();
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, window);
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let rgb = |hex: u32| Color::from_rgb8((hex >> 16) as u8, (hex >> 8) as u8, hex as u8);
+    let fills = |app: &App| -> Vec<Color> {
+        let shown = app.windows[&own].shown.as_ref().expect("a frame");
+        shown
+            .items
+            .iter()
+            .flat_map(|item| match item {
+                Item::Shapes(shapes) => shapes.iter().map(|shape| shape.fill).collect(),
+                _ => Vec::new(),
+            })
+            .collect()
+    };
+    // The terminal's window of the theme in force; the settings' of Lokyr's
+    // own of the appearance, its background and its tokens.
+    let terminal = app.windows[&window].shown.as_ref().expect("a frame");
+    assert_eq!(terminal.background, rgb(0x102030));
+    let built_in = lokyr_ui_core::theme::Theme::builtin();
+    let lokyr = built_in.variant(fake.appearance() == Appearance::Dark);
+    let background = lokyr.colors.background;
+    let state = &app.windows[&own];
+    assert_eq!(
+        state.shown.as_ref().expect("a frame").background,
+        Color::from_rgb8(background.r, background.g, background.b)
+    );
+    let tokens = &state.chrome_tokens.as_ref().expect("its tokens").1;
+    for token in ["panel.bg", "text", "accent"] {
+        assert_eq!(tokens.get(token), lokyr.tokens.get(token), "{token}");
+    }
+    // The part of the theme that it names: its box of that theme's
+    // background, its specimen that theme's, and its file watched.
+    assert!(fills(&app).contains(&rgb(0x405060)));
+    assert!(!fills(&app).contains(&rgb(0x102030)));
+    let shown = app.windows[&own].shown.as_ref().expect("a frame");
+    assert!(
+        shown
+            .items
+            .iter()
+            .any(|item| matches!(item, Item::Cells(_)))
+    );
+    assert!(app.theme_files.paths.contains(&other));
+    // Its file saved: the part of its new color, which the plugins hear
+    // once.
+    *heard.borrow_mut() = 0;
+    std::fs::write(&other, theme("#506070")).unwrap();
+    super::themes::changed(&mut fake, &mut app);
+    frames(&mut fake, &mut app, own);
+    assert!(fills(&app).contains(&rgb(0x506070)));
+    assert_eq!(*heard.borrow(), 1);
+    // A value shown before it is written, of the themes' list read, which
+    // the request is checked against.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.theme_catalog.borrow().listed.is_none() && Instant::now() < deadline {
+        pickers::theme_list(
+            &app.theme_catalog,
+            (&app.theme_places(), app.waker.as_ref()),
+            fake.appearance(),
+            &app.config.theme,
+        );
+        app.take_themes(&mut fake);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    fake.send_app(&mut app, AppEvent::Command("part.preview".to_owned()));
+    frames(&mut fake, &mut app, own);
+    assert!(fills(&app).contains(&rgb(0x303030)));
+    assert_eq!(*heard.borrow(), 2);
+    // The terminal's window as it was.
+    frames(&mut fake, &mut app, window);
+    let terminal = app.windows[&window].shown.as_ref().expect("a frame");
+    assert_eq!(terminal.background, rgb(0x102030));
+    let _ = std::fs::remove_dir_all(&directory);
+}

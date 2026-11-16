@@ -101,7 +101,7 @@ A theme's file is TOML of sections, of 1 MiB at most, as an `.itermcolors` file 
 
 ### The interface's colors
 
-The interface's colors are **tokens**, each by its name, as `panel.bg` or `tabs.active.fg`. A theme gives a token in the section of its name's first part, of the rest of its name, or in `[interface]` by its whole name:
+The interface's colors are **tokens**, each by its name, as `panel.bg` or `tabs.active.fg`. They color the terminals' windows: the tab bar, the panels, the find bar and the plugins' views in them. The settings window takes no theme: it is of Lokyr Light or Lokyr Dark, by the appearance, so that a theme being edited never colors the page that edits it. A theme gives a token in the section of its name's first part, of the rest of its name, or in `[interface]` by its whole name:
 
 ```toml
 [tabs]

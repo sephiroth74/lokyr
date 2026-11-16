@@ -262,8 +262,16 @@ pub enum Kind {
     /// that its layout gives it: prompts and commands of the gutter's
     /// states, the 16 colors as text and as backgrounds, every style, a
     /// selection, the find's matches, and a cursor on the cursor guide's
-    /// row.
+    /// row. Within a part of a theme of a name, [`Kind::Themed`], that
+    /// theme's.
     TerminalSpecimen,
+    /// A container whose box and children the host draws in the theme of a
+    /// name, as the theme resolves, of its tokens and its terminal's
+    /// colors, whatever the window's theme: a hover's and a press's colors,
+    /// a field's, a list's, a progress's and a terminal's specimen's among
+    /// them; of the window's own of a name that names no theme. A tooltip
+    /// of a node within it is the window's.
+    Themed(String),
 }
 
 /// A view of tabs' own properties.
@@ -508,7 +516,8 @@ impl Kind {
             | Self::Progress(_)
             | Self::Image(_)
             | Self::ThemePreview(_)
-            | Self::TerminalSpecimen => false,
+            | Self::TerminalSpecimen
+            | Self::Themed(_) => false,
             Self::Field(_)
             | Self::Button(_)
             | Self::Toggle(_)
@@ -552,7 +561,10 @@ impl Kind {
 
     /// Whether a node of the kind has children.
     pub fn has_children(&self) -> bool {
-        matches!(self, Self::Container | Self::Scroll | Self::Tabs(_))
+        matches!(
+            self,
+            Self::Container | Self::Scroll | Self::Tabs(_) | Self::Themed(_)
+        )
     }
 }
 
@@ -1329,10 +1341,20 @@ impl Node {
         Self::new(Kind::ThemePreview(name.into()))
     }
 
-    /// A terminal's specimen of the theme in force, within the room that
-    /// its layout gives it.
+    /// A terminal's specimen of the theme in force, or of the theme of the
+    /// part that it is within, [`Node::themed`], within the room that its
+    /// layout gives it.
     pub fn terminal_specimen() -> Self {
         Self::new(Kind::TerminalSpecimen)
+    }
+
+    /// A container of `children` that the host draws in the theme `name`,
+    /// whatever the window's theme.
+    pub fn themed(name: impl Into<String>, children: Vec<Node>) -> Self {
+        Self {
+            children,
+            ..Self::new(Kind::Themed(name.into()))
+        }
     }
 
     /// A list of `count` items, of rows of `row`'s template, which gives

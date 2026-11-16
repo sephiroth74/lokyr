@@ -117,6 +117,11 @@ fn every() -> Node {
         tabs,
         tab,
         Node::image(1001),
+        Node::theme_preview("Lokyr Dark"),
+        Node::themed(
+            "Lokyr Light",
+            vec![Node::text("part"), Node::terminal_specimen()],
+        ),
     ];
     root
 }
@@ -146,6 +151,9 @@ const EVERY: &str = r#"{
           chosen = 1, distribution = "fill-equally", children = { { kind = "text", text = "page" } } },
         { kind = "text", key = "tab-3", text = "src", reorderable = true, carries = 3 },
         { kind = "image", image = 1001 },
+        { kind = "theme-preview", theme = "Lokyr Dark" },
+        { kind = "themed", theme = "Lokyr Light",
+          children = { { kind = "text", text = "part" }, { kind = "terminal-specimen" } } },
     },
 }"#;
 
@@ -169,6 +177,9 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         assert(view.children[8].row.children[2].icon == "file")
         assert(view.children[11].children[1].text == "page")
         assert(view.children[13].kind == "image" and view.children[13].image == 1001)
+        local part = view.children[15]
+        assert(part.kind == "themed" and part.theme == "Lokyr Light")
+        assert(part.children[2].kind == "terminal-specimen")
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

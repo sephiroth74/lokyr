@@ -848,13 +848,23 @@ impl Editor {
             heading(cx, "editor-interface"),
         ];
         right.extend(parts::cards(&chosen, &word));
-        let specimens = Node::scroll(vec![Node::container(right).layout(Layout {
-            direction: Direction::Column,
-            gap: 12.0,
-            width: Length::Fraction(1.0),
-            padding: Edges::all(10.0),
-            ..Layout::default()
-        })])
+        // Of the theme shown, whatever the window's own.
+        let theme = self.shown_theme().unwrap_or_default();
+        let specimens = Node::scroll(vec![
+            Node::themed(theme, right)
+                .layout(Layout {
+                    direction: Direction::Column,
+                    gap: 12.0,
+                    width: Length::Fraction(1.0),
+                    padding: Edges::all(10.0),
+                    ..Layout::default()
+                })
+                .style(Style {
+                    background: Some(Token::from("terminal.bg")),
+                    radius: 8.0,
+                    ..Style::default()
+                }),
+        ])
         .key("editor-specimens")
         .layout(Layout {
             direction: Direction::Column,

@@ -38,7 +38,7 @@ fn with_themes(test: &str, config: &str, files: &[(&str, &str)]) -> (Fake, App, 
 
 /// Tells the app that a theme's file changed, as its watch does, and fires
 /// the loading's timer.
-fn changed(fake: &mut Fake, app: &mut App) {
+pub(super) fn changed(fake: &mut Fake, app: &mut App) {
     app.theme_files.changed.store(true, Ordering::Release);
     fake.send_app(app, AppEvent::Wake);
     let reading = app.theme_files.reading.expect("a loading");

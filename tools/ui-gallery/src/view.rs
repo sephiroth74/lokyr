@@ -1035,7 +1035,7 @@ impl View {
         for (_, surface, frame) in self.placed() {
             sweeps.extend(
                 surface
-                    .sweeps(tokens, now)
+                    .sweeps((tokens, &lokyr_ui_core::paint::NO_PREVIEWS), now)
                     .into_iter()
                     .map(|sweep| moved(sweep, (frame.x, frame.y))),
             );
@@ -1048,7 +1048,7 @@ impl View {
             };
             sweeps.extend(
                 surface
-                    .sweeps(tokens, now)
+                    .sweeps((tokens, &lokyr_ui_core::paint::NO_PREVIEWS), now)
                     .into_iter()
                     .map(|sweep| moved(sweep, (frame.x, frame.y)))
                     .filter(|sweep| !self.panels.covers(sweep.visible, Some(panel))),
@@ -1087,7 +1087,7 @@ impl View {
         for (number, surface, frame) in self.placed() {
             fills.extend(
                 surface
-                    .fills(tokens, now)
+                    .fills((tokens, &lokyr_ui_core::paint::NO_PREVIEWS), now)
                     .into_iter()
                     .map(|fill| (id(number, &fill), moved(fill, (frame.x, frame.y))))
                     .filter(|(_, fill)| !self.panels.covers(fill.visible, None)),
@@ -1100,7 +1100,7 @@ impl View {
             };
             fills.extend(
                 surface
-                    .fills(tokens, now)
+                    .fills((tokens, &lokyr_ui_core::paint::NO_PREVIEWS), now)
                     .into_iter()
                     .map(|fill| (id(panel, &fill), moved(fill, (frame.x, frame.y))))
                     .filter(|(_, fill)| !self.panels.covers(fill.visible, Some(panel))),

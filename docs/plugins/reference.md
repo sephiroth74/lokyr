@@ -89,7 +89,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes; or the installed plugins are taken anew, whatever their list holds, as of a package that Lokyr refused | `packages` |
 | `settings-changed` | The config applies anew, of other values, or a plugin of a config schema is installed, updated or removed | `config` |
 | `themes-changed` | The themes' list read, as Lokyr reads it off its main thread, or a theme added, removed or changed | — |
-| `theme-changed` | The theme in force resolves anew, of other colors: another theme named, its file saved, the appearance changed; `theme_tokens` reads its tokens | — |
+| `theme-changed` | The theme in force resolves anew, of other colors: another theme named, its file saved, the appearance changed; or the theme that a view's `themed` node names does; `theme_tokens` reads its tokens | — |
 | `<namespace>.<name>` | A plugin's own event, which it emits of its namespace alone | — |
 
 The views' events, as `click`, `submit` or `toggle`, come to the plugin's `on_view_event` of the view that it rendered, of no subscription.

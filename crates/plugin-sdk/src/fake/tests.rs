@@ -681,6 +681,10 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             1,
             Node::scroll(vec![Node::text("page")]),
         ),
+        Node::themed(
+            "Lokyr Light",
+            vec![Node::text("part"), Node::terminal_specimen()],
+        ),
     ]));
     let view = ViewId::StatusBar(WindowId(1));
     let tree = host.render(&mut probe, &view).unwrap();
@@ -707,6 +711,9 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  tabs \"One\" | \"Two\" chosen 1\n",
             "    scroll\n",
             "      text \"page\"\n",
+            "  themed \"Lokyr Light\"\n",
+            "    text \"part\"\n",
+            "    terminal-specimen\n",
         )
     );
 }

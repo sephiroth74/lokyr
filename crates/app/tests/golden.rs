@@ -704,6 +704,88 @@ fn widgets_tree() -> Node {
     })
 }
 
+/// A panel of the window's theme over the same within a part of the theme
+/// Other: a title, a secondary text, a button, one under the pointer, a
+/// toggle on, a link, a line and a progress's bar.
+fn themed_tree() -> Node {
+    use lokyr_plugin_sdk::view::{Progress, ProgressState};
+    let panel = |prefix: &str, title: &str| {
+        let key = |name: &str| format!("{prefix}-{name}");
+        let button = |name: &str, label: &str, link: bool| {
+            Node::new(Kind::Button(view::Button {
+                label: label.to_owned(),
+                icon: String::new(),
+                disabled: false,
+                link,
+            }))
+            .key(key(name).as_str())
+        };
+        let controls = Node::container(vec![
+            button("apply", "Apply", false),
+            button("hovered", "Cancel", false),
+            Node::new(Kind::Toggle(view::Toggle {
+                label: "Wrap Around".to_owned(),
+                icon: String::new(),
+                on: true,
+                disabled: false,
+            }))
+            .key(key("toggle").as_str()),
+            button("link", "More Info", true),
+        ])
+        .layout(Box {
+            gap: 8.0,
+            align: Align::Center,
+            ..Box::default()
+        });
+        let progress = Node::new(Kind::Progress(Progress {
+            state: ProgressState::Normal,
+            value: 0.6,
+            ..Progress::default()
+        }))
+        .layout(Box {
+            width: Length::Points(200.0),
+            ..Box::default()
+        });
+        vec![
+            Node::text(title),
+            Node::text("Of its own theme's colors").style(Style {
+                color: Some("text.secondary".into()),
+                ..Style::default()
+            }),
+            controls,
+            Node::separator(),
+            progress,
+        ]
+    };
+    let boxed = |node: Node| {
+        node.layout(Box {
+            direction: Direction::Column,
+            gap: 10.0,
+            padding: Edges::all(12.0),
+            ..Box::default()
+        })
+        .style(Style {
+            background: Some("panel.bg".into()),
+            border: Some(Border {
+                color: "panel.border".into(),
+                width: 1.0,
+            }),
+            radius: 8.0,
+            ..Style::default()
+        })
+    };
+    Node::container(vec![
+        boxed(Node::container(panel("window", "The Window's"))),
+        boxed(Node::themed("Other", panel("part", "A Part's"))),
+    ])
+    .layout(Box {
+        direction: Direction::Column,
+        gap: 12.0,
+        padding: Edges::all(16.0),
+        ..Box::default()
+    })
+}
+
 /// The progresses of the images, of the states that the GPU draws, the
 /// indeterminate one's moving part the window server's: bars normal, in
 /// error and paused, of their pills, and one of its own colors, square and
@@ -832,6 +914,24 @@ fn check_widgets(dark: bool, scale: u32) {
 fn check_tree(
     name: &str,
     root: &Node,
+    look: (bool, u32),
+    states: impl Fn(
+        &Tree,
+    ) -> (
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<NodeId>,
+        Option<&'static str>,
+    ),
+) {
+    check_tree_of(name, root, look, states, &lokyr_ui_core::paint::NO_PREVIEWS);
+}
+
+/// [`check_tree`], of the themes of the tree's parts that name one,
+/// `previews`.
+fn check_tree_of(
+    name: &str,
+    root: &Node,
     (dark, scale): (bool, u32),
     states: impl Fn(
         &Tree,
@@ -841,6 +941,7 @@ fn check_tree(
         Option<NodeId>,
         Option<&'static str>,
     ),
+    previews: &lokyr_ui_core::paint::Previews,
 ) {
     let Some(mut drawing) = Drawing::new(scale as f32) else {
         return;
@@ -872,7 +973,7 @@ fn check_tree(
             motion: None,
             fills: Fills::All,
             pictures: &lokyr_ui_core::paint::NO_PICTURES,
-            previews: &lokyr_ui_core::paint::NO_PREVIEWS,
+            previews,
         },
     );
     // The tooltip, as the pointer rested at the middle of the node under
@@ -1429,6 +1530,45 @@ fn buttons_toggles_separators_and_a_tooltip_draw_as_their_golden_images() {
     for dark in [false, true] {
         for scale in [1, 2] {
             check_widgets(dark, scale);
+        }
+    }
+}
+
+#[test]
+fn a_part_of_a_theme_draws_in_it_beside_the_window_s_as_its_golden_images() {
+    use lokyr_ui_core::paint::{Previews, Themed};
+    for dark in [false, true] {
+        // The part of the other appearance's theme.
+        let other = Theme::builtin().variant(!dark).clone();
+        let previews = Previews {
+            parts: BTreeMap::from([(
+                "Other".to_owned(),
+                Themed {
+                    specimen: lokyr_ui_core::specimen::Specimen {
+                        colors: other.colors.clone(),
+                        selection: other.selection,
+                        matches: other.match_colors(),
+                        text: TextLook::default(),
+                        cursor: CursorLook {
+                            shape: CursorShape::Block,
+                            thickness: 2,
+                            length: 1.0,
+                        },
+                    },
+                    tokens: other.tokens,
+                    dark: !dark,
+                },
+            )]),
+            ..Previews::new()
+        };
+        for scale in [1, 2] {
+            check_tree_of(
+                "themed",
+                &themed_tree(),
+                (dark, scale),
+                |tree| (None, Some(find(tree, "part-hovered")), None, None),
+                &previews,
+            );
         }
     }
 }

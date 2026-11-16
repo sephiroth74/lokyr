@@ -82,22 +82,49 @@ pub struct PreviewColors {
 
 /// The colors of themes, by their names, which their previews draw: `None`
 /// of a name of no theme, whose preview draws nothing; a name not there
-/// yet, a placeholder; and the theme in force's specimen, which a
-/// terminal's specimen draws, none drawing nothing.
+/// yet, a placeholder; the theme in force's specimen, which a terminal's
+/// specimen draws, none drawing nothing; and the themes of the views'
+/// parts that name one, by their names, a part of a name not there drawn
+/// of its window's own.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Previews {
     /// The themes' colors, by their names.
     pub themes: BTreeMap<String, Option<PreviewColors>>,
     /// The theme in force's specimen.
     pub specimen: Option<crate::specimen::Specimen>,
+    /// The themes that the views' parts are drawn in, by their names.
+    pub parts: BTreeMap<String, Themed>,
+}
+
+/// A theme that a view's part is drawn in: its tokens, whether it is a
+/// dark one, and its terminal's specimen.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Themed {
+    /// Its tokens.
+    pub tokens: Tokens,
+    /// Whether it is dark, as its terminal's background is.
+    pub dark: bool,
+    /// What a terminal's specimen draws of it.
+    pub specimen: crate::specimen::Specimen,
 }
 
 impl Previews {
-    /// No theme's colors, and no specimen.
+    /// No theme's colors, no specimen, and no part's theme.
     pub const fn new() -> Self {
         Self {
             themes: BTreeMap::new(),
             specimen: None,
+            parts: BTreeMap::new(),
+        }
+    }
+
+    /// The tokens that the node `id` of `tree` and its children draw of:
+    /// those of the theme that it names, if it is a part of one that is
+    /// here, `tokens` otherwise, as those around it draw.
+    pub fn tokens_of<'a>(&'a self, tree: &Tree, id: NodeId, tokens: &'a Tokens) -> &'a Tokens {
+        match tree.kind(id) {
+            Some(Kind::Themed(name)) => self.parts.get(name).map_or(tokens, |part| &part.tokens),
+            _ => tokens,
         }
     }
 }
@@ -203,6 +230,7 @@ fn paint_of<B: FontBackend>(
         fills: shown.fills,
         pictures: shown.pictures,
         previews: shown.previews,
+        specimen: shown.previews.specimen.as_ref(),
         group: 0.0,
         clip: None,
         ring: None,
@@ -341,6 +369,9 @@ struct Painter<'a, B> {
     fills: Fills<'a>,
     pictures: &'a Pictures,
     previews: &'a Previews,
+    /// What a terminal's specimen draws: the theme in force's, or that of
+    /// the part of a theme around the node painted.
+    specimen: Option<&'a crate::specimen::Specimen>,
     /// How far the hover of the nearest node of a key around the node
     /// painted shows, from 0 to 1, which its parent's hover takes.
     group: f32,
@@ -397,7 +428,27 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         }
     }
 
+    /// Paints `id` and its children where they are: a part of a theme of a
+    /// name in that theme's tokens, of its text's color for those of its
+    /// children that name none, and of its terminal's specimen.
     fn node_itself(&mut self, id: NodeId, inherited: Color) {
+        let part = match self.tree.kind(id) {
+            Some(Kind::Themed(name)) => self.previews.parts.get(name),
+            _ => None,
+        };
+        let Some(part) = part else {
+            return self.node_within(id, inherited);
+        };
+        let around = (self.tokens, self.dark, self.specimen);
+        self.tokens = &part.tokens;
+        self.dark = part.dark;
+        self.specimen = Some(&part.specimen);
+        let text = part.tokens.get("text").unwrap_or(inherited);
+        self.node_within(id, text);
+        (self.tokens, self.dark, self.specimen) = around;
+    }
+
+    fn node_within(&mut self, id: NodeId, inherited: Color) {
         let tree = self.tree;
         let (Some(frame), Some(kind), Some(style)) =
             (self.layout.frame(tree, id), tree.kind(id), tree.style(id))
@@ -514,7 +565,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Image(image) => self.image(*image, frame),
             Kind::ThemePreview(name) => self.theme_preview(name, frame),
             Kind::TerminalSpecimen => self.terminal_specimen(frame),
-            Kind::Container | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
+            Kind::Container | Kind::Themed(_) | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
         if children.is_empty() {
@@ -1143,7 +1194,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// corner, past its padding, as the panes draw theirs, the gutter's
     /// bars in the padding, clipped to the frame; nothing of no specimen.
     fn terminal_specimen(&mut self, frame: Frame) {
-        let Some(specimen) = self.previews.specimen.as_ref() else {
+        let Some(specimen) = self.specimen else {
             return;
         };
         let scale = self.layout.scale();
@@ -1907,6 +1958,123 @@ mod tests {
     }
 
     #[test]
+    fn a_part_of_a_theme_draws_its_box_its_texts_and_its_specimen_of_that_theme_alone() {
+        use lokyr_plugin_sdk::view::{Layout as Box, Length};
+        let sized = |node: Node| {
+            node.layout(Box {
+                width: Length::Points(200.0),
+                height: Length::Points(40.0),
+                ..Box::default()
+            })
+        };
+        let boxed = |node: Node| {
+            sized(node).style(view::Style {
+                background: Some(Token::from("panel.bg")),
+                ..view::Style::default()
+            })
+        };
+        // A box and a text of the window's; the same within a part of the
+        // light theme, of a specimen; and within a part of no theme.
+        let root = Node::container(vec![
+            boxed(Node::container(vec![Node::text("window")])),
+            boxed(Node::themed(
+                "Light",
+                vec![Node::text("part"), sized(Node::terminal_specimen())],
+            )),
+            Node::themed(
+                "Nothing",
+                vec![sized(Node::container(Vec::new())).style(view::Style {
+                    background: Some(Token::from("accent")),
+                    ..view::Style::default()
+                })],
+            ),
+        ]);
+        let mut font = Font::new(Blocks, FontConfig::default(), 2.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(800.0), None, &mut font);
+        let theme = Theme::builtin();
+        let (dark, light) = (&theme.dark, &theme.light);
+        let previews = Previews {
+            themes: BTreeMap::new(),
+            specimen: None,
+            parts: BTreeMap::from([(
+                "Light".to_owned(),
+                Themed {
+                    tokens: light.tokens.clone(),
+                    dark: false,
+                    specimen: crate::specimen::Specimen {
+                        colors: light.colors.clone(),
+                        selection: light.selection,
+                        matches: light.match_colors(),
+                        text: crate::pane::TextLook::default(),
+                        cursor: crate::pane::CursorLook {
+                            shape: lokyr_render_core::CursorShape::Block,
+                            thickness: 2,
+                            length: 1.0,
+                        },
+                    },
+                },
+            )]),
+        };
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                previews: &previews,
+                ..shown(true, None)
+            },
+        );
+        let fills: Vec<Color> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter().map(|shape| shape.fill)),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let of = |variant: &crate::theme::Variant, token: &str| variant.tokens.get(token).unwrap();
+        assert_ne!(of(dark, "panel.bg"), of(light, "panel.bg"));
+        // Each box of its own theme's panel; the part of no theme of the
+        // window's accent.
+        assert_eq!(
+            fills
+                .iter()
+                .filter(|&&fill| fill == of(dark, "panel.bg"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            fills
+                .iter()
+                .filter(|&&fill| fill == of(light, "panel.bg"))
+                .count(),
+            1
+        );
+        assert!(fills.contains(&of(dark, "accent")));
+        // The texts, each of its theme's text.
+        let texts: Vec<Color> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(glyphs) => glyphs.first().map(|glyph| glyph.color),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.contains(&of(dark, "text")));
+        assert!(texts.contains(&of(light, "text")));
+        // The part's specimen, of its theme's background, where the window
+        // has none.
+        let background = light.colors.background;
+        assert!(fills.contains(&Color::from_rgb8(background.r, background.g, background.b)));
+        assert!(items.iter().any(|item| matches!(item, Item::Cells(_))));
+    }
+
+    #[test]
     fn a_terminal_s_specimen_draws_its_cells_and_bars_in_its_clip_and_nothing_of_none() {
         use lokyr_plugin_sdk::view::{Layout as Box, Length};
         let root = Node::container(vec![Node::terminal_specimen().layout(Box {
@@ -1940,6 +2108,7 @@ mod tests {
         assert!(!items.iter().any(|item| matches!(item, Item::Cells(_))));
         let previews = Previews {
             themes: BTreeMap::new(),
+            parts: BTreeMap::new(),
             specimen: Some(crate::specimen::Specimen {
                 colors: variant.colors.clone(),
                 selection: variant.selection,
@@ -2013,6 +2182,7 @@ mod tests {
                 ("Nothing".to_owned(), None),
             ]),
             specimen: None,
+            parts: BTreeMap::new(),
         };
         let items = paint(
             &tree,

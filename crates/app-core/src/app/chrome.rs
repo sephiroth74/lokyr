@@ -402,8 +402,10 @@ impl<B: Backend> App<B> {
             return;
         };
         let before = state.focus.target();
-        // The themes that the new trees' previews show.
+        // The themes that the new trees' previews show, and those that
+        // their parts name.
         let mut previewed = Vec::new();
+        let mut themed = Vec::new();
         let kept = std::mem::take(&mut state.chrome);
         let mut kept: Vec<Option<SlotView>> = kept.into_iter().map(Some).collect();
         for (plugin, view) in views {
@@ -472,6 +474,7 @@ impl<B: Backend> App<B> {
                 match tree {
                     Some(tree) => {
                         self::previewed(&tree, &mut previewed);
+                        self::themed(&tree, &mut themed);
                         if let Err(error) = slot.surface.update(&tree) {
                             eprintln!(
                                 "lokyr: the view {view:?} of `{plugin}` keeps its last tree, as its new one is not one: {error:?}"
@@ -579,6 +582,7 @@ impl<B: Backend> App<B> {
             _ => state.focus.set_chain(&[]),
         }
         self.keep_previews(previewed);
+        self.keep_parts(themed);
     }
 
     /// Lays out `window`'s slots' views in a window of `size`, as `ui-core`'s
@@ -890,6 +894,39 @@ pub(super) fn previewed(node: &Node, names: &mut Vec<String>) {
     }
 }
 
+/// The names of the themes that the parts of `node` and of its subtree
+/// name, into `names`.
+pub(super) fn themed(node: &Node, names: &mut Vec<String>) {
+    let mut left = vec![node];
+    while let Some(node) = left.pop() {
+        if let lokyr_kernel::plugins::view::Kind::Themed(name) = &node.kind
+            && !names.contains(name)
+        {
+            names.push(name.clone());
+        }
+        left.extend(&node.children);
+    }
+}
+
+/// The names of the themes that the parts of `views`, as a window shows
+/// them, name.
+pub(super) fn parts_shown(views: &[SlotView]) -> Vec<String> {
+    let mut names = Vec::new();
+    for view in views {
+        let tree = &view.surface.tree;
+        let mut left: Vec<_> = tree.root().into_iter().collect();
+        while let Some(node) = left.pop() {
+            if let Some(lokyr_kernel::plugins::view::Kind::Themed(name)) = tree.kind(node)
+                && !names.contains(name)
+            {
+                names.push(name.clone());
+            }
+            left.extend(tree.children(node).iter().copied());
+        }
+    }
+    names
+}
+
 /// The names of the themes that the previews of `views`, as a window
 /// shows them, draw.
 pub(super) fn previews_shown(views: &[SlotView]) -> Vec<String> {
@@ -920,7 +957,7 @@ pub(super) fn covered(
     view: &SlotView,
     panels: &Panels<u32>,
     tooltips: &[Rect],
-    tokens: &Tokens,
+    tokens: (&Tokens, &Previews),
     now: Instant,
 ) -> BTreeSet<NodeId> {
     let Some(frame) = view.frame else {
@@ -1004,7 +1041,7 @@ fn overlaps(a: Rect, b: Rect) -> bool {
 /// draws.
 pub(super) fn sweeps(
     chrome: &[SlotView],
-    tokens: &Tokens,
+    tokens: (&Tokens, &Previews),
     (now, start): (Instant, Instant),
     scale: f64,
 ) -> Vec<Sweep> {
@@ -1077,7 +1114,12 @@ pub(super) fn sweeps(
 /// drawn over them covers, as each view's `covered` says, which its frame
 /// draws: each of an id of its view and its node, which stays as their
 /// renders keep the node.
-pub(super) fn fills(chrome: &[SlotView], tokens: &Tokens, now: Instant, scale: f64) -> Vec<Fill> {
+pub(super) fn fills(
+    chrome: &[SlotView],
+    tokens: (&Tokens, &Previews),
+    now: Instant,
+    scale: f64,
+) -> Vec<Fill> {
     let points = |pixels: f32| f64::from(pixels) / scale;
     let place = |rect: Rect, (x, y): (f32, f32)| {
         (

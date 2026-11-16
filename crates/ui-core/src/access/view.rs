@@ -207,21 +207,25 @@ impl WindowTree {
         // icon that closes it, is a button, which accessibility presses,
         // of its texts where it has no label.
         let presses = crate::chrome::takes_press(tree, id)
-            && matches!(kind, Kind::Container | Kind::Text(_) | Kind::Icon(_));
+            && matches!(
+                kind,
+                Kind::Container | Kind::Themed(_) | Kind::Text(_) | Kind::Icon(_)
+            );
         let label = label(tree, id, kind).or_else(|| presses.then(|| texts(tree, id)).flatten());
         let role = match (kind, tree.role(id)) {
             (Kind::Spacer | Kind::Separator, _) => return None,
             (_, None) if presses => Role::Button,
             (Kind::Icon(_), None) if label.is_none() => return None,
-            (Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Scroll, Some(role)) => {
-                role_of(role)
-            }
+            (
+                Kind::Container | Kind::Themed(_) | Kind::Text(_) | Kind::Icon(_) | Kind::Scroll,
+                Some(role),
+            ) => role_of(role),
             (Kind::Container, None) if root => match access.panel {
                 Some(panel::Role::Tooltip) => Role::Tooltip,
                 Some(_) => Role::Group,
                 None => Role::GenericContainer,
             },
-            (Kind::Container, None) => Role::GenericContainer,
+            (Kind::Container | Kind::Themed(_), None) => Role::GenericContainer,
             (Kind::Text(_), None) => Role::Label,
             (Kind::Icon(_), None) => Role::Image,
             // macOS's adapter gives a scroll view no role, which VoiceOver

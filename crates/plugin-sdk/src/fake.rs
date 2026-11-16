@@ -4449,6 +4449,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         }
         Kind::Spacer => out.push_str("spacer"),
         Kind::TerminalSpecimen => out.push_str("terminal-specimen"),
+        Kind::Themed(name) => {
+            let _ = write!(out, "themed {}", quoted(name));
+        }
         Kind::Field(field) => {
             let _ = write!(out, "field {}", quoted(&field.placeholder));
             if let Some(text) = &field.text {

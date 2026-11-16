@@ -1701,8 +1701,10 @@ pub enum Event {
     /// added, removed or changed, to a plugin that subscribes to it.
     ThemesChanged,
     /// The theme in force resolved anew, of other colors: another theme
-    /// named, its file saved, the appearance changed, to a plugin that
-    /// subscribes to it, whose read of a theme's tokens tells the new ones.
+    /// named, its file saved, the appearance changed; or the theme that a
+    /// view's part names did, [`Kind::Themed`](crate::view::Kind::Themed);
+    /// to a plugin that subscribes to it, whose read of a theme's tokens
+    /// tells the new ones.
     ThemeChanged,
     /// The plugin's config changed, as the config file reloaded, to it
     /// alone: its request of [`Request::Config`] reads the new one.

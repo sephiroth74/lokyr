@@ -558,8 +558,14 @@ pub struct App<B: Backend> {
     theme_preview: Option<String>,
     /// The colors of the themes in force as they last loaded, of each
     /// appearance, their files' and those shown before they are written,
-    /// whose change the plugins hear, drawn or not.
-    theme_colors: Option<Vec<ThemeColors>>,
+    /// and of the themes that the views' parts name, by their names, whose
+    /// change the plugins hear, drawn or not.
+    theme_colors: Option<(Vec<ThemeColors>, BTreeMap<String, ThemeColors>)>,
+    /// The names of the themes that the views' parts name, as they last
+    /// loaded, a name of no theme among them, and whether a render named
+    /// one since, whose files are to watch.
+    theme_parts: BTreeSet<String>,
+    theme_parts_new: bool,
     /// Whether the cursor guide shows, as `[cursor] guide` says until View ›
     /// Show Cursor Guide changes it.
     cursor_guide: bool,
@@ -993,6 +999,8 @@ impl<B: Backend> App<B> {
             waker: None,
             theme_preview: None,
             theme_colors: None,
+            theme_parts: BTreeSet::new(),
+            theme_parts_new: false,
             cursor_guide: config.cursor.guide,
             notice: notice_card::NoticeCard::default(),
             settings: settings_tab::SettingsTab::default(),
@@ -1699,10 +1707,75 @@ impl<B: Backend> App<B> {
                 }
             }
         }
+        // The themes that the views' parts name, as they resolve now: their
+        // files watched too, a name of no theme's in the folder among them,
+        // and the windows that show them drawn anew as they change.
+        let shown: BTreeSet<String> = self
+            .windows
+            .values()
+            .flat_map(|state| chrome::parts_shown(&state.chrome))
+            .collect();
+        let mut parts = BTreeMap::new();
+        let mut part_colors = BTreeMap::new();
+        for name in &shown {
+            match places.resolve(name, &builtins) {
+                Ok(mut theme) => {
+                    part_colors.insert(
+                        name.clone(),
+                        (
+                            theme.theme.terminal.clone(),
+                            theme.theme.tokens.clone(),
+                            self.theme_values
+                                .of(name)
+                                .map(|(color, value)| (color.to_owned(), value.to_owned()))
+                                .collect(),
+                        ),
+                    );
+                    for (color, value) in self.theme_values.of(name) {
+                        let _ = themes::with_value(&mut theme.theme, color, value);
+                    }
+                    paths.extend(theme.files);
+                    parts.insert(name.clone(), self.themed(&theme.theme));
+                }
+                Err(_) => {
+                    if let Some(directory) = directory.as_ref().filter(|_| themes::is_name(name)) {
+                        paths.push(directory.join(format!("{name}.toml")));
+                        paths.push(directory.join(format!("{name}.itermcolors")));
+                    }
+                }
+            }
+        }
+        self.theme_parts = shown;
+        self.theme_parts_new = false;
+        if parts != self.previews.parts {
+            let before = std::mem::replace(&mut self.previews.parts, parts);
+            for (&window, state) in &mut self.windows {
+                if chrome::parts_shown(&state.chrome)
+                    .iter()
+                    .any(|name| before.get(name) != self.previews.parts.get(name))
+                {
+                    state.views_changed = true;
+                    platform.request_frame(window);
+                }
+            }
+        }
+        // A part's theme whose colors changed, which the plugins hear, as
+        // one of those in force; one that a part newly names tells nothing.
+        let parts_recolored = self.theme_colors.as_ref().is_some_and(|(_, before)| {
+            part_colors
+                .iter()
+                .any(|(name, colors)| before.get(name).is_some_and(|before| before != colors))
+        });
         paths.sort();
         paths.dedup();
         self.theme_files.watch(platform, paths);
         if let Some(error) = errors.into_iter().next() {
+            if let Some((_, kept)) = &mut self.theme_colors {
+                *kept = part_colors;
+            }
+            if parts_recolored {
+                self.plugins.post(plugins::Event::ThemeChanged);
+            }
             let text = format!("{error}; the themes in force stay");
             let diagnostic = Diagnostic::new(Code::InvalidConfig, text, About::Theme);
             self.report(platform, diagnostic);
@@ -1742,8 +1815,9 @@ impl<B: Backend> App<B> {
         // shown before it was written showed already.
         let recolored = self
             .theme_colors
-            .replace(colors.clone())
-            .is_some_and(|before| before != colors);
+            .replace((colors.clone(), part_colors))
+            .is_some_and(|(before, _)| before != colors)
+            || parts_recolored;
         let theme = Theme::of(&resolved[0], &resolved[1]);
         if theme != self.theme {
             self.theme = theme;
@@ -1751,6 +1825,73 @@ impl<B: Backend> App<B> {
             self.appearance_changed(platform, appearance);
         } else if recolored {
             self.plugins.post(plugins::Event::ThemeChanged);
+        }
+    }
+
+    /// What a view's part draws of the theme `theme`: its tokens, of its
+    /// terminal's background and foreground, opaque, and its terminal's
+    /// specimen.
+    fn themed(&self, theme: &themes::Theme) -> lokyr_ui_core::paint::Themed {
+        let variant = lokyr_ui_core::theme::Variant::of(theme);
+        let (bg, fg) = (variant.colors.background, variant.colors.foreground);
+        let mut tokens = variant.tokens.clone();
+        tokens.set(
+            "terminal.bg",
+            lokyr_render_core::Color::from_rgb8(bg.r, bg.g, bg.b),
+        );
+        tokens.set(
+            "terminal.fg",
+            lokyr_render_core::Color::from_rgb8(fg.r, fg.g, fg.b),
+        );
+        lokyr_ui_core::paint::Themed {
+            tokens,
+            dark: themes::rules::is_dark(&theme.terminal),
+            specimen: self.specimen(&variant),
+        }
+    }
+
+    /// The terminal's specimen of `variant`, of the config's text.
+    pub(super) fn specimen(
+        &self,
+        variant: &lokyr_ui_core::theme::Variant,
+    ) -> lokyr_ui_core::specimen::Specimen {
+        lokyr_ui_core::specimen::Specimen {
+            colors: variant.colors.clone(),
+            selection: variant.selection,
+            matches: variant.match_colors(),
+            text: TextLook {
+                config: self.config.text,
+                blink_shown: true,
+                minimum_contrast: self.config.theme.minimum_contrast.value(),
+                cursor_guide: variant.tokens.get("cursor.guide"),
+            },
+            cursor: lokyr_ui_core::pane::CursorLook {
+                shape: lokyr_render_core::CursorShape::Block,
+                thickness: 2,
+                length: 1.0,
+            },
+        }
+    }
+
+    /// Keeps the themes of `names` that the parts of the views that a
+    /// render gave name, as they resolve now, of the values shown before
+    /// they are written: one that the app does not keep yet, whose files
+    /// the next frame watches.
+    pub(super) fn keep_parts(&mut self, names: Vec<String>) {
+        for name in names {
+            if self.theme_parts.contains(&name) {
+                continue;
+            }
+            let builtins = [ui_theme::light_spec(), ui_theme::dark_spec()];
+            if let Ok(mut theme) = self.theme_places().resolve(&name, &builtins) {
+                for (color, value) in self.theme_values.of(&name) {
+                    let _ = themes::with_value(&mut theme.theme, color, value);
+                }
+                let themed = self.themed(&theme.theme);
+                self.previews.parts.insert(name.clone(), themed);
+            }
+            self.theme_parts.insert(name);
+            self.theme_parts_new = true;
         }
     }
 

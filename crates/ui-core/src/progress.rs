@@ -11,7 +11,7 @@ use lokyr_render_core::{Color, Rect};
 
 use crate::animation::Animations;
 use crate::layout::{Frame, Layout};
-use crate::paint::{inside_border, intersection, is_empty, rect};
+use crate::paint::{Previews, inside_border, intersection, is_empty, rect};
 use crate::theme::Tokens;
 use crate::tree::{NodeId, Tree};
 
@@ -198,17 +198,18 @@ pub fn outline_radius(tree: &Tree, id: NodeId, progress: &Progress, scale: f32) 
 }
 
 /// The sweeps of the indeterminate progresses of `tree`, laid out in
-/// `layout`, of `tokens`' colors, in the tree's order, as `paint` draws
-/// their nodes: of the opacity of their nodes and of those around them,
-/// and where the transitions of `motion` at its time slide and fade them;
-/// those that their clips hide, or of no opacity, are left out.
+/// `layout`, of `tokens`' colors, or of those of the theme of the part
+/// that they are within, of `previews`, in the tree's order, as `paint`
+/// draws their nodes: of the opacity of their nodes and of those around
+/// them, and where the transitions of `motion` at its time slide and fade
+/// them; those that their clips hide, or of no opacity, are left out.
 pub fn sweeps(
     tree: &Tree,
     layout: &Layout,
-    tokens: &Tokens,
+    (tokens, previews): (&Tokens, &Previews),
     motion: Option<(&Animations, Instant)>,
 ) -> Vec<SweepArea> {
-    parts(tree, layout, tokens, motion).sweeps
+    parts(tree, layout, (tokens, previews), motion).sweeps
 }
 
 /// The fills of the progresses of `tree` that are not indeterminate, laid
@@ -218,10 +219,10 @@ pub fn sweeps(
 pub fn fills(
     tree: &Tree,
     layout: &Layout,
-    tokens: &Tokens,
+    (tokens, previews): (&Tokens, &Previews),
     motion: Option<(&Animations, Instant)>,
 ) -> Vec<FillArea> {
-    parts(tree, layout, tokens, motion).fills
+    parts(tree, layout, (tokens, previews), motion).fills
 }
 
 /// The parts of the progresses of `tree` that the window server draws.
@@ -234,7 +235,7 @@ struct Parts {
 fn parts(
     tree: &Tree,
     layout: &Layout,
-    tokens: &Tokens,
+    (tokens, previews): (&Tokens, &Previews),
     motion: Option<(&Animations, Instant)>,
 ) -> Parts {
     let mut parts = Parts::default();
@@ -244,7 +245,14 @@ fn parts(
             offset: (0, 0),
             opacity: 1.0,
         };
-        walk((tree, layout, tokens, motion), root, shown, &mut parts);
+        let drawn = Drawn {
+            tree,
+            layout,
+            tokens,
+            previews,
+            motion,
+        };
+        walk(drawn, root, shown, &mut parts);
     }
     parts
 }
@@ -259,12 +267,31 @@ struct Shown {
     opacity: f32,
 }
 
-fn walk(
-    (tree, layout, tokens, motion): (&Tree, &Layout, &Tokens, Option<(&Animations, Instant)>),
-    id: NodeId,
-    around: Shown,
-    parts: &mut Parts,
-) {
+/// What a walk of a tree's progresses draws them of: the tree and its
+/// layout, the tokens of the nodes walked, the themes of the parts that
+/// name one, and the transitions.
+#[derive(Clone, Copy)]
+struct Drawn<'a> {
+    tree: &'a Tree,
+    layout: &'a Layout,
+    tokens: &'a Tokens,
+    previews: &'a Previews,
+    motion: Option<(&'a Animations, Instant)>,
+}
+
+fn walk(drawn: Drawn<'_>, id: NodeId, around: Shown, parts: &mut Parts) {
+    // A part of a theme of a name, of that theme's tokens.
+    let drawn = Drawn {
+        tokens: drawn.previews.tokens_of(drawn.tree, id, drawn.tokens),
+        ..drawn
+    };
+    let Drawn {
+        tree,
+        layout,
+        tokens,
+        motion,
+        ..
+    } = drawn;
     let (Some(kind), Some(style), Some(frame)) =
         (tree.kind(id), tree.style(id), layout.frame(tree, id))
     else {
@@ -427,7 +454,7 @@ fn walk(
     };
     for &child in tree.children(id) {
         walk(
-            (tree, layout, tokens, motion),
+            drawn,
             child,
             Shown {
                 clip: inner,
@@ -479,6 +506,69 @@ mod tests {
 
     fn token(name: &str) -> Color {
         Theme::builtin().dark.tokens.get(name).unwrap()
+    }
+
+    #[test]
+    fn a_progress_within_a_part_of_a_theme_takes_that_theme_s_colors() {
+        use crate::paint::{Previews, Themed};
+        let bar = |state| {
+            of(Progress {
+                state,
+                value: 0.5,
+                ..Progress::default()
+            })
+        };
+        let (tree, layout) = laid(
+            vec![
+                bar(ProgressState::Normal),
+                Node::themed(
+                    "Light",
+                    vec![
+                        bar(ProgressState::Normal),
+                        bar(ProgressState::Indeterminate),
+                    ],
+                ),
+                Node::themed("Nothing", vec![bar(ProgressState::Normal)]),
+            ],
+            1.0,
+        );
+        let theme = Theme::builtin();
+        let light = &theme.light;
+        let previews = Previews {
+            parts: std::collections::BTreeMap::from([(
+                "Light".to_owned(),
+                Themed {
+                    tokens: light.tokens.clone(),
+                    dark: false,
+                    specimen: crate::specimen::Specimen {
+                        colors: light.colors.clone(),
+                        selection: light.selection,
+                        matches: light.match_colors(),
+                        text: crate::pane::TextLook::default(),
+                        cursor: crate::pane::CursorLook {
+                            shape: lokyr_render_core::CursorShape::Block,
+                            thickness: 2,
+                            length: 1.0,
+                        },
+                    },
+                },
+            )]),
+            ..Previews::new()
+        };
+        let own = light.tokens.get("progress.normal").unwrap();
+        assert_ne!(own, token("progress.normal"));
+        let tokens = &theme.dark.tokens;
+        // The window's, the part's, and the window's again of a part of no
+        // theme; the part's sweep of the part's too.
+        let fills = fills(&tree, &layout, (tokens, &previews), None);
+        let colors: Vec<Color> = fills.iter().map(|fill| fill.color).collect();
+        assert_eq!(
+            colors,
+            [token("progress.normal"), own, token("progress.normal")]
+        );
+        let sweeps = sweeps(&tree, &layout, (tokens, &previews), None);
+        assert_eq!(sweeps.len(), 1);
+        assert_eq!(sweeps[0].color, own);
     }
 
     #[test]
@@ -579,7 +669,7 @@ mod tests {
         });
         let (tree, layout) = laid(vec![bar, ring, normal, hidden], 2.0);
         let tokens = &Theme::builtin().dark.tokens;
-        let sweeps = sweeps(&tree, &layout, tokens, None);
+        let sweeps = sweeps(&tree, &layout, (tokens, &crate::paint::NO_PREVIEWS), None);
         assert_eq!(sweeps.len(), 3);
         // The bar: of the style's color, a quarter of its 400 pixels, a
         // pill's corners, the bar's period.
@@ -661,7 +751,7 @@ mod tests {
             1.0,
         );
         let tokens = &Theme::builtin().dark.tokens;
-        let shown = sweeps(&tree, &layout, tokens, None);
+        let shown = sweeps(&tree, &layout, (tokens, &crate::paint::NO_PREVIEWS), None);
         assert_eq!(shown.len(), 1);
         let normal = token("progress.normal");
         assert_eq!(
@@ -705,7 +795,12 @@ mod tests {
             animations.laid_out(&tree, &layout, start, false);
         }
         let half = start + Duration::from_millis(100);
-        let shown = sweeps(&tree, &layout, tokens, Some((&animations, half)));
+        let shown = sweeps(
+            &tree,
+            &layout,
+            (tokens, &crate::paint::NO_PREVIEWS),
+            Some((&animations, half)),
+        );
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].rect.y, 10);
         assert!(
@@ -766,7 +861,7 @@ mod tests {
             2.0,
         );
         let tokens = Theme::builtin().dark.tokens;
-        let swept = sweeps(&tree, &layout, &tokens, None);
+        let swept = sweeps(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None);
         let [sweep] = swept[..] else {
             panic!("one sweep: {swept:?}");
         };
@@ -798,8 +893,11 @@ mod tests {
             })],
             2.0,
         );
-        assert_eq!(sweeps(&tree, &layout, &tokens, None)[0].radius, 4.0);
-        assert!(fills(&tree, &layout, &tokens, None).is_empty());
+        assert_eq!(
+            sweeps(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None)[0].radius,
+            4.0
+        );
+        assert!(fills(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None).is_empty());
     }
 
     #[test]
@@ -843,7 +941,7 @@ mod tests {
         });
         let (tree, layout) = laid(vec![spinning, valued], 2.0);
         let tokens = Theme::builtin().dark.tokens;
-        let swept = sweeps(&tree, &layout, &tokens, None);
+        let swept = sweeps(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None);
         let [sweep] = swept[..] else {
             panic!("one sweep: {swept:?}");
         };
@@ -861,7 +959,7 @@ mod tests {
         assert_eq!(sweep.period, DOTS_PERIOD);
         assert_eq!(sweep.radius, 0.0);
         assert_eq!(sweep.color, token("progress.normal"));
-        assert!(fills(&tree, &layout, &tokens, None).is_empty());
+        assert!(fills(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None).is_empty());
     }
 
     #[test]
@@ -892,7 +990,7 @@ mod tests {
         });
         let (tree, layout) = laid(vec![bar, ring, outline, spinning], 2.0);
         let tokens = Theme::builtin().dark.tokens;
-        let fills = super::fills(&tree, &layout, &tokens, None);
+        let fills = super::fills(&tree, &layout, (&tokens, &crate::paint::NO_PREVIEWS), None);
         let root = tree.root().unwrap();
         let children = tree.children(root);
         assert_eq!(fills.len(), 3, "{fills:?}");

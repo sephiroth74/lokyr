@@ -40,7 +40,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 15] = [
+pub(crate) const KINDS: [&str; 16] = [
     "container",
     "text",
     "icon",
@@ -56,6 +56,7 @@ pub(crate) const KINDS: [&str; 15] = [
     "image",
     "theme-preview",
     "terminal-specimen",
+    "themed",
 ];
 
 /// The fields of a node of `kind`'s own, by their names in Luau, if it is
@@ -72,7 +73,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "progress" => &["progress"],
         "tabs" => &["tabs", "chosen", "distribution"],
         "image" => &["image"],
-        "theme-preview" => &["theme"],
+        "theme-preview" | "themed" => &["theme"],
         _ => return None,
     })
 }
@@ -319,6 +320,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         "image" => Kind::Image(field(take("image"), "image", budget)?),
         "theme-preview" => Kind::ThemePreview(field(take("theme"), "theme", budget)?),
         "terminal-specimen" => Kind::TerminalSpecimen,
+        "themed" => Kind::Themed(field(take("theme"), "theme", budget)?),
         // A container, the kind left, as `own` took it.
         _ => Kind::Container,
     };
@@ -382,6 +384,7 @@ mod giving {
             Kind::Image(_) => "image",
             Kind::ThemePreview(_) => "theme-preview",
             Kind::TerminalSpecimen => "terminal-specimen",
+            Kind::Themed(_) => "themed",
         }
     }
 
@@ -479,7 +482,9 @@ mod giving {
                 }
                 Kind::Progress(progress) => set(lua, &table, "progress", progress)?,
                 Kind::Image(id) => table.raw_set("image", *id)?,
-                Kind::ThemePreview(name) => table.raw_set("theme", name.as_str())?,
+                Kind::ThemePreview(name) | Kind::Themed(name) => {
+                    table.raw_set("theme", name.as_str())?;
+                }
                 Kind::Tabs(Tabs {
                     tabs,
                     chosen,

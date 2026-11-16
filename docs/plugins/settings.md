@@ -2,7 +2,7 @@
 
 <sub>`lokyr/settings` · bundled · [source](../../plugins/settings)</sub>
 
-The Settings, Keys and Themes pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; every theme, of a preview of its colors; and every color of the theme in force, of where it comes from.
+The Settings, Keys and Themes pages of the settings window: every key of your config, Lokyr's own and the bundled plugins', by its section, of what it does, the platforms where it applies and its value in force, which you change there, Lokyr writing it into your config file; every binding of keys; every theme, of a preview of its colors; and every color of the theme in force, of where it comes from. The settings window itself is of Lokyr Light or Lokyr Dark, by the appearance, whatever theme your terminals use.
 
 ## The page
 

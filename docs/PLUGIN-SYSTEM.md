@@ -338,7 +338,7 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
-        | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen",
+        | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
     text: string?, -- for text nodes; a button's and a toggle's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle nodes, the plugin's state
@@ -374,7 +374,12 @@ type Node = {
     theme: string?, -- for theme-preview nodes, a theme's name, of which the host draws a sample terminal in its colors within the room that the node's layout gives it: its background, a prompt, an `ls` of colors and the sixteen colors; nothing of a name that names no theme, nor out of its view's room, as of a card scrolled away; the node has no size of its own
     -- A terminal-specimen node: a terminal of the theme in force, drawn as the panes draw theirs from its top left
     -- corner within the room that its layout gives it, of every combination that a theme colors; it has no size of
-    -- its own, and is drawn in the settings window alone.
+    -- its own, and is drawn in the settings window alone; within a themed node, of that node's theme, in any window.
+    -- A themed node: a container whose box and children are drawn in the theme that `theme` names, as it resolves, of
+    -- its tokens and its terminal's colors, whatever the window's theme: the texts, the controls of their hover and
+    -- press, a field, a list, a progress and a terminal-specimen among them; of the window's own of a name that names
+    -- no theme. A tooltip of a node within it is the window's. Its theme's file is followed as the themes in force
+    -- are, and its change tells `theme-changed`.
     image: number?, -- for image nodes, the id of an image that the host keeps, as `render_image` of `keep` answers it: drawn whole within the room that the node's layout gives it, in the middle, of its own proportions, and nothing of an id let go; the node has no size of its own
     layout: NodeLayout?,
     style: Style?,
@@ -552,7 +557,8 @@ type Event =
     -- thread, or a theme added, removed or changed; of no capability.
     | { kind: "themes-changed" }
     -- The theme in force resolved anew, of other colors: another theme named, its file saved, the appearance
-    -- changed, which `theme_tokens` reads; of no capability.
+    -- changed, which `theme_tokens` reads; or the theme of a themed node that a view shows, of other colors; of no
+    -- capability.
     | { kind: "theme-changed" }
     -- A drag of the edge of the plugin's tab bar's column ended, to it alone: its width since, in points,
     -- which the plugin keeps, as for its next start.

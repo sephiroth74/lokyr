@@ -558,11 +558,15 @@ impl Surface {
 
     /// The sweeps of its indeterminate progresses, in pixels from the
     /// tree's corner, of their nodes' transitions at `now`.
-    pub fn sweeps(&self, tokens: &Tokens, now: Instant) -> Vec<SweepArea> {
+    pub fn sweeps(
+        &self,
+        (tokens, previews): (&Tokens, &paint::Previews),
+        now: Instant,
+    ) -> Vec<SweepArea> {
         progress::sweeps(
             &self.tree,
             &self.layout,
-            tokens,
+            (tokens, previews),
             Some((&self.animations, now)),
         )
     }
@@ -571,11 +575,15 @@ impl Surface {
     /// `tokens`' colors, as its nodes' transitions show them at `now`,
     /// which the platform's window server draws where `fills_apart` says
     /// so.
-    pub fn fills(&self, tokens: &Tokens, now: Instant) -> Vec<FillArea> {
+    pub fn fills(
+        &self,
+        (tokens, previews): (&Tokens, &paint::Previews),
+        now: Instant,
+    ) -> Vec<FillArea> {
         progress::fills(
             &self.tree,
             &self.layout,
-            tokens,
+            (tokens, previews),
             Some((&self.animations, now)),
         )
     }
@@ -961,7 +969,10 @@ mod tests {
         }
         let tokens = &Theme::builtin().dark.tokens;
         let normal = tokens.get("progress.normal").unwrap();
-        let half = surface.sweeps(tokens, start + Duration::from_millis(100));
+        let half = surface.sweeps(
+            (tokens, &paint::NO_PREVIEWS),
+            start + Duration::from_millis(100),
+        );
         assert_eq!(half.len(), 1);
         assert!(
             (half[0].color.alpha - normal.alpha * 0.5).abs() < 1e-3,

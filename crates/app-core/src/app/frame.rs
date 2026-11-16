@@ -571,6 +571,11 @@ impl<B: Backend> App<B> {
         // The settings tab's view, as the window shows the tab or not.
         self.settle_settings(platform, window);
         let views = self.lay_out_panes(window, size);
+        // The theme that a view's part newly names: its files watched with
+        // those of the themes in force.
+        if self.theme_parts_new {
+            self.load_themes(platform);
+        }
         self.keys_from_hidden(platform, window);
         self.show_native(platform, window, size);
         // The titlebar first, whose kind the window's keys follow.
@@ -1147,7 +1152,13 @@ impl<B: Backend> App<B> {
             view.surface.animate(now, reduced);
             view.surface.fills_apart = fills_apart;
             view.surface.covered = if fills_apart {
-                chrome::covered(view, &state.panels, &tooltips, tokens, now)
+                chrome::covered(
+                    view,
+                    &state.panels,
+                    &tooltips,
+                    (tokens, &self.previews),
+                    now,
+                )
             } else {
                 std::collections::BTreeSet::new()
             };
@@ -1286,13 +1297,18 @@ impl<B: Backend> App<B> {
             state.titlebar_areas = own;
         }
         // The slots' indeterminate progresses, which the window server moves.
-        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
+        let sweeps = chrome::sweeps(
+            &state.chrome,
+            (tokens, &self.previews),
+            (now, state.sweeps.1),
+            size.scale,
+        );
         if sweeps != state.sweeps.0 {
             platform.set_sweeps(window, &sweeps);
             state.sweeps.0 = sweeps;
         }
         if fills_apart {
-            let fills = chrome::fills(&state.chrome, tokens, now, size.scale);
+            let fills = chrome::fills(&state.chrome, (tokens, &self.previews), now, size.scale);
             if fills != state.fills {
                 platform.set_fills(window, &fills);
                 state.fills = fills;
@@ -1947,12 +1963,11 @@ pub(super) fn appearance_over(background: Color, appearance: Appearance) -> Opti
     (own != appearance).then_some(own)
 }
 
-/// Shows `shown` in `layer` of `window`, which `state` keeps: cells, which
-/// `drawing` draws into the layer's surface as they change, as large as
-/// they are and as their margin on each side, their batch's corner, at a
-/// corner in pixels of the content, of `scale`, blinking as `blink` says,
-/// and sliding there as `slide` says, from where it showed, of its size.
-/// `None` hides the layer.
+/// Lokyr's own themes, Lokyr Light and Lokyr Dark, which the settings
+/// window draws of.
+static BUILT_IN: std::sync::LazyLock<lokyr_ui_core::theme::Theme> =
+    std::sync::LazyLock::new(lokyr_ui_core::theme::Theme::builtin);
+
 /// The chrome's tokens of `theme` in the window's look `look`: its
 /// appearance, the terminal's background and foreground, and the window's
 /// opacity, of which the chrome's backgrounds are as translucent, knocked
@@ -1992,7 +2007,17 @@ impl<B: Backend> App<B> {
         size: WindowSize,
         now: Instant,
     ) {
-        let colors = self.colors(platform.appearance());
+        // The settings window of Lokyr's own theme of the appearance,
+        // whatever the theme in force.
+        let own_theme = self.shows_settings(window);
+        let colors = if own_theme {
+            BUILT_IN
+                .variant(platform.appearance() == Appearance::Dark)
+                .colors
+                .clone()
+        } else {
+            self.colors(platform.appearance())
+        };
         let (bg, fg) = (colors.background, colors.foreground);
         let background = Color::from_rgb8(bg.r, bg.g, bg.b);
         let foreground = Color::from_rgb8(fg.r, fg.g, fg.b);
@@ -2029,23 +2054,7 @@ impl<B: Backend> App<B> {
         // The theme in force's specimen, which a view's terminal specimen
         // draws, as the panes would: a window of no panes, as the settings
         // window, alone takes it.
-        let variant = self.theme.variant(dark);
-        self.previews.specimen = Some(lokyr_ui_core::specimen::Specimen {
-            colors: variant.colors.clone(),
-            selection: variant.selection,
-            matches: variant.match_colors(),
-            text: TextLook {
-                config: self.config.text,
-                blink_shown: true,
-                minimum_contrast: self.config.theme.minimum_contrast.value(),
-                cursor_guide: variant.tokens.get("cursor.guide"),
-            },
-            cursor: CursorLook {
-                shape: CursorShape::Block,
-                thickness: 2,
-                length: 1.0,
-            },
-        });
+        self.previews.specimen = Some(self.specimen(self.theme.variant(dark)));
         let (Some(drawing), Some(state)) = (self.drawing.as_mut(), self.windows.get_mut(&window))
         else {
             return;
@@ -2058,7 +2067,8 @@ impl<B: Backend> App<B> {
             .as_ref()
             .is_none_or(|(kept, _)| *kept != chrome_look)
         {
-            state.chrome_tokens = Some((chrome_look, chrome_tokens(&self.theme, chrome_look)));
+            let theme = if own_theme { &*BUILT_IN } else { &self.theme };
+            state.chrome_tokens = Some((chrome_look, chrome_tokens(theme, chrome_look)));
         }
         // The window's accessibility tree goes within its rate as its views
         // or its focus change, once a client asked.
@@ -2088,7 +2098,13 @@ impl<B: Backend> App<B> {
             view.surface.animate(now, reduced);
             view.surface.fills_apart = fills_apart;
             view.surface.covered = if fills_apart {
-                chrome::covered(view, &state.panels, &tooltips, tokens, now)
+                chrome::covered(
+                    view,
+                    &state.panels,
+                    &tooltips,
+                    (tokens, &self.previews),
+                    now,
+                )
             } else {
                 std::collections::BTreeSet::new()
             };
@@ -2165,13 +2181,18 @@ impl<B: Backend> App<B> {
             platform.set_titlebar_areas(window, &own);
             state.titlebar_areas = own;
         }
-        let sweeps = chrome::sweeps(&state.chrome, tokens, (now, state.sweeps.1), size.scale);
+        let sweeps = chrome::sweeps(
+            &state.chrome,
+            (tokens, &self.previews),
+            (now, state.sweeps.1),
+            size.scale,
+        );
         if sweeps != state.sweeps.0 {
             platform.set_sweeps(window, &sweeps);
             state.sweeps.0 = sweeps;
         }
         if fills_apart {
-            let fills = chrome::fills(&state.chrome, tokens, now, size.scale);
+            let fills = chrome::fills(&state.chrome, (tokens, &self.previews), now, size.scale);
             if fills != state.fills {
                 platform.set_fills(window, &fills);
                 state.fills = fills;
@@ -2248,6 +2269,12 @@ impl<B: Backend> App<B> {
     }
 }
 
+/// Shows `shown` in `layer` of `window`, which `state` keeps: cells, which
+/// `drawing` draws into the layer's surface as they change, as large as
+/// they are and as their margin on each side, their batch's corner, at a
+/// corner in pixels of the content, of `scale`, blinking as `blink` says,
+/// and sliding there as `slide` says, from where it showed, of its size.
+/// `None` hides the layer.
 fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
     drawing: &mut Drawing<B>,
