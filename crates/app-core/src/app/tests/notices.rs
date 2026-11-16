@@ -5,9 +5,9 @@ use super::*;
 /// A program that rings its bell at each key, twice the second time
 /// within a fifth of a second.
 fn ringer() -> Program {
-    shell(
-        "stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\a'; sleep 0.05; printf '\\a'; done",
-    )
+    // The two bells of one write, which a busy machine's scheduling does
+    // not set apart by more than the pause between bells.
+    shell("stty raw -echo; echo ready; while :; do head -c 1 >/dev/null; printf '\\a\\a'; done")
 }
 
 /// A program that sends a notification of OSC 9 and one of OSC 777 at

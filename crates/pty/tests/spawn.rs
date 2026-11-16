@@ -434,13 +434,24 @@ fn the_programs_in_the_foreground_go_by_their_links_and_their_scripts_names() {
     let folder = std::env::temp_dir().join(format!("lokyr-names-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&folder);
     std::fs::create_dir_all(&folder).unwrap();
-    // A link of another name, and a script of an interpreter's.
-    std::os::unix::fs::symlink("/bin/sleep", folder.join("agentish")).unwrap();
+    // A link of another name, and a script of an interpreter's. The link
+    // is bash's, as a multi-call binary, as uutils' coreutils, refuses a
+    // name that is none of its own.
+    std::os::unix::fs::symlink("/bin/bash", folder.join("agentish")).unwrap();
     let script = folder.join("scripted");
     std::fs::write(&script, "#!/usr/bin/perl\nsleep 30;\n").unwrap();
     std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    for (command, name) in [("agentish 30", "agentish"), ("scripted", "scripted")] {
-        let line = format!("PATH={}:$PATH; set -m; {command}", folder.display());
+    for (command, name) in [
+        ("agentish -c 'sleep 30; :'", "agentish"),
+        ("scripted", "scripted"),
+    ] {
+        // Run again a few times while Linux refuses the script just written
+        // as busy, as another test's thread forked a child that holds it
+        // open for writing until the child runs its own program.
+        let line = format!(
+            "PATH={}:$PATH; set -m; for try in 1 2 3 4 5 6 7 8 9 10; do {command} && break; sleep 0.2; done",
+            folder.display()
+        );
         let bash = Program::command("/bin/bash", ["-c", line.as_str()]);
         let pty = spawn(&Options::new(bash, "xterm-256color")).unwrap();
         let _idle = pty.reader().unwrap();
@@ -448,8 +459,9 @@ fn the_programs_in_the_foreground_go_by_their_links_and_their_scripts_names() {
         while !pty.foreground_names().iter().any(|known| known == name) {
             assert!(
                 start.elapsed() < Duration::from_secs(10),
-                "{:?}",
-                pty.foreground_names()
+                "{command}: {:?}, of the programs {:?}",
+                pty.foreground_names(),
+                pty.programs()
             );
             std::thread::sleep(Duration::from_millis(20));
         }

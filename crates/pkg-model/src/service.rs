@@ -174,6 +174,25 @@ pub fn error(message: &str) -> Value {
 mod tests {
     use super::*;
 
+    /// [`Job::start`] of a Sleip that a test just wrote: started again
+    /// while Linux tells it busy, as another test's thread forked a child
+    /// that holds its file open for writing until the child runs its own
+    /// program.
+    fn start(sleip: &Path, call: &Packages, env: &[(String, String)]) -> std::io::Result<Job> {
+        let mut tries = 0;
+        loop {
+            match Job::start(sleip, call, env) {
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 =>
+                {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                started => return started,
+            }
+        }
+    }
+
     /// A Sleip of a shell's `script`, in a folder of the test's `name`.
     fn script(name: &str, script: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt as _;
@@ -204,7 +223,7 @@ exit 0"#,
             "SLEIP_LOKYR".to_owned(),
             "/Applications/Lokyr.app".to_owned(),
         )];
-        let mut job = Job::start(&sleip, &call, &env).unwrap();
+        let mut job = start(&sleip, &call, &env).unwrap();
         let first = job.next_line().unwrap();
         assert_eq!(first["event"], "args");
         assert_eq!(first["args"], "add --json acme/hello@^0.2");
@@ -225,7 +244,7 @@ exit 0"#,
             "failing",
             r#"echo '{"event":"error","message":"no"}'; exit 2"#,
         );
-        let mut job = Job::start(&failing, &Packages::List, &[]).unwrap();
+        let mut job = start(&failing, &Packages::List, &[]).unwrap();
         assert_eq!(job.next_line().unwrap()["message"], "no");
         assert_eq!(job.next_line(), None);
         assert_eq!(job.finish(), (false, None));
@@ -235,7 +254,7 @@ exit 0"#,
             "silent",
             "echo 'first' >&2; echo 'the store is locked' >&2; exit 3",
         );
-        let mut job = Job::start(&silent, &Packages::List, &[]).unwrap();
+        let mut job = start(&silent, &Packages::List, &[]).unwrap();
         assert_eq!(job.next_line(), None);
         let (ok, told) = job.finish();
         assert!(!ok);
@@ -244,7 +263,7 @@ exit 0"#,
             "Sleip failed: first the store is locked"
         );
         let mute = script("mute", "exit 4");
-        let job = Job::start(&mute, &Packages::List, &[]).unwrap();
+        let job = start(&mute, &Packages::List, &[]).unwrap();
         assert_eq!(
             job.finish().1.unwrap()["message"],
             "Sleip ended of the exit code 4, telling no error"
@@ -253,7 +272,7 @@ exit 0"#,
         // Of `exec`, so that the process stopped is the one that holds the
         // output, as no shell's child is left holding it.
         let waiting = script("waiting", "exec sleep 30");
-        let mut job = Job::start(&waiting, &Packages::List, &[]).unwrap();
+        let mut job = start(&waiting, &Packages::List, &[]).unwrap();
         let stop = job.stopper();
         let stopping = std::thread::spawn(move || stop.stop());
         assert_eq!(job.next_line(), None);
@@ -273,7 +292,7 @@ exit 0"#,
                 LONGEST_LINE + 10
             ),
         );
-        let mut job = Job::start(&long, &Packages::List, &[]).unwrap();
+        let mut job = start(&long, &Packages::List, &[]).unwrap();
         let wrong = job.next_line().unwrap();
         assert_eq!(wrong["event"], "error");
         assert_eq!(job.next_line().unwrap()["event"], "done");

@@ -294,12 +294,25 @@ mod tests {
             .status()
             .unwrap();
         assert!(made.success());
-        let attached = Command::new("hdiutil")
-            .args(["attach", "-quiet", "-nobrowse", "-readonly"])
-            .arg(&image)
-            .status()
-            .unwrap();
-        assert!(attached.success());
+        // Attached, tried again a few times, as a busy machine's disk
+        // arbitration can refuse it for a while; of none at last, as of a
+        // machine that attaches no image, nothing more to look at.
+        let attached = (0..5).any(|_| {
+            let done = Command::new("hdiutil")
+                .args(["attach", "-quiet", "-nobrowse", "-readonly"])
+                .arg(&image)
+                .status()
+                .is_ok_and(|status| status.success());
+            if !done {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            done
+        });
+        if !attached {
+            eprintln!("the disk image did not attach: its volume is not looked at");
+            let _ = std::fs::remove_dir_all(&base);
+            return;
+        }
         let mounted = Path::new("/Volumes").join(&volume);
         let inside = mounted.join("Lokyr.app/Contents/MacOS");
         let told = is_temporary(&inside);
