@@ -14,6 +14,9 @@ import charts
 
 BENCH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "bench")
 DATA = os.path.join(BENCH, "releases.json")
+# How many releases the summary and the charts show, the last ones, of no
+# build between two.
+SHOWN = 8
 PAGE = os.path.join(BENCH, "RELEASES.md")
 START = "<!-- The summary and the charts, which tools/bench/releases.py writes from releases.json: edit those, not this. -->"
 END = "<!-- The end of what tools/bench/releases.py writes. -->"
@@ -108,8 +111,7 @@ def summary(data):
               "are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of "
               "Ghostty and Alacritty less 10 %, of [the comparison of 13 November 2026](compare-F3-268.md): Ghostty's 328 MiB/s.",
               "", "## Over the releases", "",
-              "Each measure over the releases, a dot of each release and a ring of a build between "
-              "two, its budget a dashed line, and the best of the other terminals a dotted one, of "
+              "Each measure over the last eight releases, a dot of each release, its budget a dashed line, and the best of the other terminals a dotted one, of "
               "[the comparison of 13 November 2026](compare-F3-268.md), and of [the window's motion](motion-F3-152.md) for the window's motion, "
               "measured once of their versions then, Lokyr's own value of that session beside it where "
               "its conditions differ from the releases' sessions, the latency's by Typometer, of the "
@@ -186,10 +188,16 @@ def page(text, block):
     return text[:start] + "\n\n" + block + "\n" + text[end:]
 
 
+def recent(data):
+    """`data` of its last [`SHOWN`] releases alone, of no build."""
+    releases = [r for r in data["releases"] if not r.get("build")]
+    return {**data, "releases": releases[-SHOWN:]}
+
+
 def main(argv):
     check = "--check" in argv
     with open(DATA) as file:
-        data = json.load(file)
+        data = recent(json.load(file))
     outputs = {os.path.join(BENCH, path): svg for path, svg in chart_files(data).items()}
     with open(PAGE) as file:
         outputs[PAGE] = page(file.read(), summary(data))
