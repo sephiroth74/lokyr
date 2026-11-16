@@ -280,7 +280,10 @@ fn a_link_asks_first_and_the_config_keeps_the_answer() {
         "Don't ask again for files".to_owned(),
     );
     assert_eq!(shown(&fake), file);
+    // Its answer's target resolved again, off the main thread, before the
+    // next link's, so that the two show in their order.
     fake.answer_alert(&mut app, fake.alerts()[0].id, 1);
+    resolved(&mut fake, &mut app);
     // A program shows in the Finder, and a directory opens, without a
     // question, each at the place that its links lead to.
     cmd_click(&mut fake, &mut app, window, 33);
