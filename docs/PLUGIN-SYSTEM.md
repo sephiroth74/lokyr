@@ -1237,7 +1237,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | Plugin | Role | Phase |
 |---|---|---|
 | `core-actions` | Copy, paste, select all, scrolling, font size, new windows | F2 |
-| `links` | ⌘-click opens a link, a URL or a path of the text; later hints, `file:line` in the editor and smart selection | F2, F5c |
+| `links` | ⌘-click opens a link, a URL or a path of the text, `file:line` in the editor; later hints and smart selection | F2, F5a, F5c |
 | `tabs` | iTerm2-style tab bar and tab commands | F3 |
 | `splits` | Split commands, dividers and interaction | F3 |
 | `search` | Find bar and search commands | F3 |

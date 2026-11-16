@@ -55,9 +55,9 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | ✔ |
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F3b | The settings window, then themes made in the app and the Keys page | ✔ |
-| F5a | Blocks of commands, ssh integration | |
-| F5b | iTerm2's power features: tmux -CC, triggers, profiles, broadcast | |
-| F5c | Graphics and kitty's protocols: kitty graphics, sixel, hints | |
+| F5a | The programs' and agents' status of OSC 7501, a click at the prompt, the tabs' groups, hints; blocks of commands, ssh integration | |
+| F5b | Sessions and iTerm2's power features: the scrollback restored, named sessions, broadcast, floating panes; tmux -CC, triggers, profiles | |
+| F5c | Graphics and feel: kitty graphics, sixel, smooth scrolling, the cursor's trail | |
 | F6 | Plugin API 1.0 and hardening | |
 | F7 | After 1.0: Linux, a mux daemon, Windows | |
 
