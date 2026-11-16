@@ -422,6 +422,11 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
     );
     assert!(matches!(submenu.children[8].kind, view::Kind::Separator));
     // A color, chosen, colors the tab that the menu opened over.
+    // The pointer's moves over the platform's menu choose nothing: its
+    // items' hovers, the menu open still.
+    for kind in [UiEventKind::HoverEnter, UiEventKind::HoverLeave] {
+        assert!(on(&mut host, &mut plugin, menu.clone(), "menu-close", kind).is_empty());
+    }
     let colored = on(
         &mut host,
         &mut plugin,
@@ -1031,9 +1036,17 @@ fn a_pinned_tab_goes_first_narrow_and_its_key_closes_its_pane_alone() {
     );
     assert_eq!(
         found[0].layout.width,
-        lokyr_plugin_sdk::view::Length::Points(44.0)
+        lokyr_plugin_sdk::view::Length::Points(56.0)
     );
     assert!(found[0].tooltip.is_some());
+    // Of its pin, which accessibility tells.
+    let mut labels = Vec::new();
+    let mut walk = vec![&found[0]];
+    while let Some(node) = walk.pop() {
+        labels.extend(node.label.clone());
+        walk.extend(node.children.iter());
+    }
+    assert!(labels.contains(&"Pinned".to_owned()), "{labels:?}");
     assert_eq!(
         found[1].layout.width,
         lokyr_plugin_sdk::view::Length::Points(0.0)

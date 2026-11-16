@@ -302,7 +302,13 @@ impl Plugin for Tabs {
     /// the place where it fell.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
         let key = event.key.0.as_str();
+        // A context menu's item chosen, of its click or a color's toggle;
+        // the pointer's moves over the platform's menu tell hovers, which
+        // choose nothing.
         if event.view == ViewId::Panel(PanelId::from(MENU)) {
+            if !matches!(event.kind, UiEventKind::Click | UiEventKind::Toggle { .. }) {
+                return Ok(());
+            }
             return self.chosen(cx, key);
         }
         let ViewId::TabBar(window) = &event.view else {

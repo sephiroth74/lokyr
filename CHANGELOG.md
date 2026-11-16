@@ -19,7 +19,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Backspace, Delete or a typed character over a selection of the command line takes its place, in those shells, as in a text field; `[cursor] click-to-move` turns both off.
 - ⌃Tab shows the tab you used before. Press Tab again while you hold Control to go further back; the tab that shows when you release Control becomes the most recent. ⌃⇧Tab goes the other way. Set `[plugins.tabs] control-tab = "order"` to step through the bar's order instead.
 - The plugin API reads a window's tabs in the order they were used, `cx.recent_tabs`.
-- Pinned tabs: right-click a tab and choose Pin Tab, or run `tabs.toggle-pin`. A pinned tab stays at the start of the bar, narrow, with its full title in its tooltip. ⌘W doesn't close it, but it still closes one of its panes when it has several. Restored windows keep their pinned tabs.
+- Pinned tabs: right-click a tab and choose Pin Tab, or run `tabs.toggle-pin`. A pinned tab stays at the start of the bar, narrow, with a pin and its full title in its tooltip. ⌘W doesn't close it, but it still closes one of its panes when it has several. Restored windows keep their pinned tabs.
 - The plugin API pins and unpins tabs, `cx.set_tab_pinned`, and tells whether a tab is pinned, `pinned` of a tab.
 
 ### Changed
@@ -29,6 +29,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A tab's context menu no longer runs the item that the pointer moves over, such as Rename Tab…: it waits for you to click an item.
 - The cursor no longer shows, as it blinks, the character of another cell, as a few moves at once, of a click in the command line or of quick output, find its drawing busy: it stays where it was drawn until its next frame draws it in its new cell.
 
 ## [1.2.0] - 2026-11-16

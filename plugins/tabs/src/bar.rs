@@ -204,8 +204,9 @@ const FADE: f32 = 0.15;
 /// unified look.
 const PILL: f32 = 24.0;
 
-/// The width of a pinned tab in a bar across the window, in points.
-const PINNED: f32 = 44.0;
+/// The width of a pinned tab in a bar across the window, in points: its
+/// pin and its title's first letters.
+const PINNED: f32 = 56.0;
 
 /// The thickness of a tab's outline of its program's progress, in points.
 const OUTLINE: f32 = 2.0;
@@ -530,7 +531,9 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
 fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let pinned = tab.tab.pinned;
     let mut middle = Vec::new();
-    if !pinned {
+    if pinned {
+        middle.push(pin(texts));
+    } else {
         middle.extend(dot(tab.tab.color));
     }
     middle.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
@@ -598,6 +601,11 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
             .style(tab_style(style, PILL / 2.0, active)),
         tab,
     )
+}
+
+/// A pinned tab's pin, of `texts`' label to accessibility.
+fn pin(texts: &BarTexts) -> Node {
+    Node::icon("pinned").label(texts.pinned.as_str())
 }
 
 /// The title that `tab` shows: its whole title, or of a pinned tab, the
@@ -746,7 +754,9 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
             ..Style::default()
         });
     let mut children = Vec::new();
-    if settings.close_button != CloseButton::Never && !pinned {
+    if pinned {
+        children.push(pin(texts));
+    } else if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
     children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
@@ -953,7 +963,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let mut children = Vec::new();
     // A pinned tab's pin in place of its close button.
     if tab.tab.pinned {
-        children.push(Node::icon("pinned").label(texts.pinned.as_str()));
+        children.push(pin(texts));
     } else if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
