@@ -1,0 +1,47 @@
+08:38:31 more starts v110
+08:38:39 more starts v120
+08:38:50 startup v110 1
+08:39:07 startup v120 1
+08:39:25 startup floor 1
+08:39:40 load { 4.04 2.45 2.52 }
+08:39:42 startup v120 2
+08:39:59 startup v110 2
+08:40:16 startup floor 2
+08:40:31 load { 2.78 2.39 2.49 }
+08:40:33 startup v120 3
+08:40:51 startup v110 3
+08:41:08 startup floor 3
+08:41:23 load { 3.60 2.74 2.62 }
+08:41:25 startup v110 4
+08:41:42 startup v120 4
+08:42:00 startup floor 4
+08:42:14 load { 5.73 3.48 2.90 }
+08:42:16 startup v110 5
+08:42:34 startup v120 5
+08:42:51 startup floor 5
+08:43:06 load { 3.54 3.23 2.84 }
+08:43:08 startup v120 6
+08:43:25 startup v110 6
+08:43:43 startup floor 6
+08:43:57 load { 3.05 3.10 2.81 }
+08:43:59 startup v120 7
+08:44:17 startup v110 7
+08:44:34 startup floor 7
+08:44:49 load { 2.87 3.03 2.80 }
+08:44:51 startup v110 8
+08:45:08 startup v120 8
+08:45:26 startup floor 8
+08:45:41 load { 2.71 2.98 2.79 }
+08:45:41 memory v110-1
+08:46:14 memory v120-1
+08:46:48 load { 2.93 2.92 2.78 }
+08:46:48 memory v120-2
+08:47:21 memory v110-2
+08:47:55 load { 2.32 2.75 2.72 }
+08:47:55 memory v120-3
+08:48:28 memory v110-3
+08:49:02 load { 2.17 2.61 2.67 }
+08:49:02 memory v110-4
+08:49:35 memory v120-4
+08:50:09 load { 2.12 2.58 2.66 }
+08:50:09 done

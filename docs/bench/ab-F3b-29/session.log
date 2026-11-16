@@ -1,0 +1,80 @@
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	87%; AC attached; not charging present: true
+ 8:16  up 3 days, 20:54, 180 users, load averages: 5.84 4.06 3.00
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+08:16:59 first starts v110
+08:17:08 first starts v120
+08:17:19 startup v110 1
+08:17:37 startup v120 1
+08:17:54 startup floor 1
+08:18:09 load { 4.41 4.08 3.10 }
+08:18:11 startup v120 2
+08:18:29 startup v110 2
+08:18:46 startup floor 2
+08:19:01 load { 8.03 5.15 3.55 }
+08:19:03 startup v120 3
+08:19:20 startup v110 3
+08:19:37 startup floor 3
+08:19:52 load { 6.39 5.17 3.65 }
+08:19:54 startup v110 4
+08:20:12 startup v120 4
+08:20:29 startup floor 4
+08:20:44 load { 4.69 4.92 3.65 }
+08:20:44 latency warm-up v110
+08:20:47 latency warm-up v120
+08:20:51 latency v110 1 place 1
+08:21:06 latency v120 1 place 2
+08:21:18 load { 3.45 4.60 3.58 }
+08:21:20 latency v120 2 place 1
+08:21:34 latency v110 2 place 2
+08:21:47 load { 2.54 4.27 3.49 }
+08:21:49 latency v120 3 place 1
+08:22:03 latency v110 3 place 2
+08:22:15 load { 2.10 4.01 3.42 }
+08:22:17 latency v110 4 place 1
+08:22:32 latency v120 4 place 2
+08:22:44 load { 1.89 3.77 3.36 }
+08:22:46 latency v110 5 place 1
+08:23:01 latency v120 5 place 2
+08:23:13 load { 1.97 3.64 3.32 }
+08:23:15 latency v120 6 place 1
+08:23:29 latency v110 6 place 2
+08:23:42 load { 2.02 3.48 3.27 }
+08:23:44 latency v120 7 place 1
+08:23:58 latency v110 7 place 2
+08:24:10 load { 2.25 3.41 3.26 }
+08:24:13 latency v110 8 place 1
+08:24:27 latency v120 8 place 2
+08:24:39 load { 1.97 3.25 3.20 }
+08:24:39 idle v110-1
+08:26:17 idle v120-1
+08:27:54 load { 1.81 2.60 2.94 }
+08:27:54 idle v120-2
+08:29:32 idle v110-2
+08:31:09 load { 1.77 2.22 2.69 }
+08:31:09 throughput ascii v110 1
+08:31:17 throughput ascii v120 1
+08:31:24 throughput ascii v120 2
+08:31:31 throughput ascii v110 2
+08:31:37 load { 1.97 2.23 2.68 }
+08:31:37 throughput seq v110 1
+08:31:39 throughput seq v120 1
+08:31:40 throughput seq v120 2
+08:31:41 throughput seq v110 2
+08:31:42 load { 2.13 2.26 2.69 }
+08:31:42 throughput sgr v110 1
+08:31:44 throughput sgr v120 1
+08:31:45 throughput sgr v120 2
+08:31:46 throughput sgr v110 2
+08:31:48 load { 2.68 2.37 2.73 }
+08:31:48 throughput cjk v110 1
+08:31:49 throughput cjk v120 1
+08:31:51 throughput cjk v120 2
+08:31:53 throughput cjk v110 2
+08:31:54 load { 2.73 2.39 2.73 }
+08:31:54 done

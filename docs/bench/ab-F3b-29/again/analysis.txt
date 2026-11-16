@@ -1,0 +1,31 @@
+## Startup of copies started 60 times each, warm, first frame (ms): median, spread; floor; gap
+round 1 v110: 253.4 ms, spread 7.3%; floor 209.5; gap 43.9
+round 1 v120: 268.6 ms, spread 11.9%; floor 209.5; gap 59.1
+round 2 v120: 252.7 ms, spread 7.0%; floor 178.6; gap 74.1
+round 2 v110: 245.4 ms, spread 13.6%; floor 178.6; gap 66.8
+round 3 v120: 244.7 ms, spread 21.7%; floor 207.9; gap 36.7
+round 3 v110: 253.3 ms, spread 13.3%; floor 207.9; gap 45.4
+round 4 v110: 245.5 ms, spread 20.2%; floor 185.3; gap 60.2
+round 4 v120: 262.0 ms, spread 20.1%; floor 185.3; gap 76.7
+round 5 v110: 252.3 ms, spread 14.9%; floor 203.2; gap 49.2
+round 5 v120: 251.8 ms, spread 12.6%; floor 203.2; gap 48.6
+round 6 v120: 249.2 ms, spread 15.6%; floor 182.8; gap 66.3
+round 6 v110: 240.4 ms, spread 16.2%; floor 182.8; gap 57.6
+round 7 v120: 248.8 ms, spread 13.8%; floor 206.2; gap 42.5
+round 7 v110: 248.8 ms, spread 11.3%; floor 206.2; gap 42.6
+round 8 v110: 252.1 ms, spread 12.8%; floor 192.5; gap 59.6
+round 8 v120: 256.4 ms, spread 13.9%; floor 192.5; gap 63.9
+v110: mean 248.9 (sd 4.4); gap mean 53.2
+v120: mean 254.3 (sd 7.3); gap mean 58.5
+v120 - v110 by round: +15.2, +7.2, -8.7, +16.5, -0.5, +8.7, -0.1, +4.3; mean +5.3, sd 8.4
+## Memory at rest, 20 s after a start, over 10 s (MB)
+v110-1: footprint w/o GPU 27.8 MB, GPU 30.6 MB
+v120-1: footprint w/o GPU 28.5 MB, GPU 30.6 MB
+v120-2: footprint w/o GPU 28.3 MB, GPU 30.6 MB
+v110-2: footprint w/o GPU 28.0 MB, GPU 30.6 MB
+v120-3: footprint w/o GPU 28.4 MB, GPU 30.6 MB
+v110-3: footprint w/o GPU 28.0 MB, GPU 30.6 MB
+v110-4: footprint w/o GPU 28.0 MB, GPU 30.6 MB
+v120-4: footprint w/o GPU 28.4 MB, GPU 30.6 MB
+v110: mean 27.9, from 27.8 to 28.0
+v120: mean 28.4, from 28.3 to 28.5
