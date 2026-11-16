@@ -860,6 +860,30 @@ fn a_value_typed_is_written_as_typing_pauses_on_return_and_as_its_field_is_left(
     host.advance(PAUSE);
     host.deliver(&mut plugin).unwrap();
     assert!(written(&mut host).is_empty());
+    let refused = |host: &mut FakeHost, plugin: &mut SettingsPage| {
+        find(&page(host, plugin), "editor-refused:accent").map(texts)
+    };
+    assert_eq!(refused(&mut host, &mut plugin), None);
+    // Left as it is a while more: why told, of no Return; gone as the
+    // typing goes on, and of none told of a value that is written.
+    host.advance(TELL);
+    host.deliver(&mut plugin).unwrap();
+    let why = refused(&mut host, &mut plugin).expect("why");
+    assert!(why[0].contains("is left out"), "{why:?}");
+    host.ui_event(&mut plugin, &typed("accent", changed("mix(text")))
+        .unwrap();
+    assert_eq!(refused(&mut host, &mut plugin), None);
+    host.ui_event(&mut plugin, &typed("accent", changed("#00aa00")))
+        .unwrap();
+    host.advance(PAUSE);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(written(&mut host), [set_paper("accent", Some("#00aa00"))]);
+    host.advance(TELL);
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    assert_eq!(refused(&mut host, &mut plugin), None);
+    host.ui_event(&mut plugin, &typed("accent", changed("mix(")))
+        .unwrap();
     host.ui_event(
         &mut plugin,
         &typed(

@@ -75,6 +75,12 @@ const COLOR_PAUSE: Duration = Duration::from_millis(300);
 /// settings' fields wait.
 const PAUSE: Duration = Duration::from_millis(600);
 
+/// How long after the pause that wrote nothing, as its value does not read
+/// or its names resolve to no color, the Editor tells why under the field:
+/// a value half typed is left alone at first, and one that stays as it is
+/// is no longer waited for.
+const TELL: Duration = Duration::from_millis(1200);
+
 /// How long the tokens that a change of the theme changed stay lit.
 const LIT: Duration = Duration::from_secs(3);
 
@@ -117,6 +123,9 @@ pub(crate) struct Editor {
     typed: BTreeMap<String, String>,
     /// The timer of typing's pause, which writes them.
     pause: Option<u64>,
+    /// The timer after a pause that left a value unwritten, which tells
+    /// why.
+    telling: Option<u64>,
     /// Why a value written was refused, by the colors' names, under their
     /// fields.
     refused: BTreeMap<String, String>,
@@ -247,12 +256,25 @@ impl Editor {
                 self.coloring = None;
                 Ok(true)
             }
-            // Typing paused: the values whole written, of no reason told.
+            // Typing paused: the values whole written, of no reason told
+            // yet of one that is not written, which may be half typed.
             Event::Timer { id } if self.pause == Some(*id) => {
                 self.pause = None;
                 let names: Vec<String> = self.typed.keys().cloned().collect();
                 for name in names {
                     self.write(cx, &name, false)?;
+                }
+                if !self.typed.is_empty() {
+                    self.telling = Some(cx.start_timer(TELL, false)?);
+                }
+                Ok(true)
+            }
+            // Still as it was: why it is not written, told under its field.
+            Event::Timer { id } if self.telling == Some(*id) => {
+                self.telling = None;
+                let names: Vec<String> = self.typed.keys().cloned().collect();
+                for name in names {
+                    self.write(cx, &name, true)?;
                 }
                 Ok(true)
             }
@@ -322,12 +344,19 @@ impl Editor {
             // A color's value typed: written as typing pauses, on Return,
             // and as its field is left.
             (UiEventKind::InputChanged { text, .. }, _) if key.starts_with(VALUE) => {
-                self.typed
-                    .insert(key[VALUE.len()..].to_owned(), text.clone());
-                if let Some(pause) = self.pause.take() {
-                    cx.cancel_timer(pause)?;
+                let name = &key[VALUE.len()..];
+                self.typed.insert(name.to_owned(), text.clone());
+                for timer in [self.pause.take(), self.telling.take()]
+                    .into_iter()
+                    .flatten()
+                {
+                    cx.cancel_timer(timer)?;
                 }
                 self.pause = Some(cx.start_timer(PAUSE, false)?);
+                // What was told of the last value goes as it changes.
+                if self.refused.remove(name).is_some() {
+                    self.ask_render(cx)?;
+                }
             }
             (UiEventKind::Submit { text, .. }, _) if key.starts_with(VALUE) => {
                 let name = key[VALUE.len()..].to_owned();
@@ -425,10 +454,11 @@ impl Editor {
     }
 
     /// Writes the value typed for the color `name` into the theme shown's
-    /// file, where it differs from its value: of `tell`, as Return or the
-    /// field's leaving, why the host refuses it told under its field; else,
-    /// as typing pauses, a value that does not read yet, half typed, left
-    /// for later, of no reason told. An empty field writes nothing.
+    /// file, where it differs from its value: of `tell`, as Return, the
+    /// field's leaving or a while after typing paused, why the host refuses
+    /// it told under its field; else, as typing pauses, a value that does
+    /// not read yet, half typed, left for later, of no reason told yet. An
+    /// empty field writes nothing.
     fn write(&mut self, cx: &mut Cx<'_>, name: &str, tell: bool) -> Result<(), Error> {
         let (Some(theme), Some(text)) = (
             self.shown_theme().map(str::to_owned),
@@ -484,8 +514,11 @@ impl Editor {
         for name in names {
             self.write(cx, &name, false)?;
         }
-        if let Some(pause) = self.pause.take() {
-            cx.cancel_timer(pause)?;
+        for timer in [self.pause.take(), self.telling.take()]
+            .into_iter()
+            .flatten()
+        {
+            cx.cancel_timer(timer)?;
         }
         self.typed.clear();
         self.refused.clear();
