@@ -209,6 +209,10 @@ impl Terminal {
         if self.tab_color.is_some() {
             events.push(Event::TabColor(None));
         }
+        // The programs' statuses go, as the proposal of OSC 7501 has it.
+        if !self.statuses.is_empty() {
+            events.push(Event::StatusChanged);
+        }
         if self.colors != self.default_colors {
             events.push(Event::ColorsChanged);
         }

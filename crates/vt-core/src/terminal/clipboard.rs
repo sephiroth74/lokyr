@@ -187,7 +187,7 @@ fn encode(data: &[u8]) -> String {
 /// it ends at the padding, or at the first byte that is not of base64, as
 /// xterm reads it, and a digit alone at its end stands for nothing. A text
 /// that stands for no byte, but for the empty one, is not base64.
-fn decode(text: &[u8]) -> Option<Vec<u8>> {
+pub(super) fn decode(text: &[u8]) -> Option<Vec<u8>> {
     let digits = text
         .iter()
         .position(|byte| !ALPHABET.contains(byte))

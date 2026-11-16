@@ -26,6 +26,7 @@ mod reports;
 mod selection;
 mod sgr;
 mod snapshot;
+mod status;
 mod terminfo;
 mod viewport;
 mod window;
@@ -47,6 +48,7 @@ pub use selection::{
     CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
 };
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use status::{MOST_REPORT, MOST_STATUSES, Status, StatusKind, StatusState};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;
 
@@ -487,6 +489,9 @@ pub struct Terminal {
     working_directory: Option<WorkingDirectory>,
     /// The tab's color, from OSC 6;1.
     tab_color: Option<Rgb>,
+    /// The programs' statuses that OSC 7501 told, from the least recently
+    /// updated.
+    statuses: Vec<Status>,
     /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
     query: Option<reports::Query>,
     query_bytes: Vec<u8>,
@@ -623,6 +628,7 @@ impl Terminal {
             events: events::Events::default(),
             working_directory: None,
             tab_color: None,
+            statuses: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,
             last_printed: None,

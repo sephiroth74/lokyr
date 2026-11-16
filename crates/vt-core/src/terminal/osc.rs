@@ -46,6 +46,10 @@ pub enum Event {
     },
     /// The progress of a task (OSC 9;4).
     Progress(Progress),
+    /// The programs' statuses changed (OSC 7501), which
+    /// [`Terminal::statuses`] tells: a record kept, cleared, or dropped at a
+    /// prompt or a reset.
+    StatusChanged,
     /// The tab's color changed, or went back to the default (OSC 6;1).
     TabColor(Option<Rgb>),
     /// A program changed the colors (OSC 4, 10 to 12, and their resets).
@@ -163,6 +167,7 @@ impl Terminal {
                 _ => self.notify(String::new(), text(rest)),
             },
             b"1337" => self.osc_1337(rest),
+            b"7501" => self.report_status(rest, end),
             b"777" => {
                 let mut fields = rest.splitn(3, |&byte| byte == b';');
                 if fields.next() == Some(b"notify") {
@@ -258,6 +263,11 @@ impl Terminal {
         }
         if let Some(line) = line {
             self.tell_command_line(line);
+        }
+        // A new prompt drops the statuses of programs that worked or
+        // waited (OSC 7501).
+        if kind == b"A" {
+            self.drop_statuses_at_prompt();
         }
         self.zone = match kind {
             b"A" => {
