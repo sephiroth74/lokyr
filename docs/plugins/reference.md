@@ -80,8 +80,8 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `answered` | A question, `ask_text`, `copy_theme`, `new_theme` or `convert_theme`, is answered or cancelled | — |
 | `saved` | A file given to the save panel, `save_file`, is written, or not | — |
 | `chosen` | A question of buttons, `ask_choice`, is answered, or its window closes | — |
-| `color-picked` | The user chooses a color in the color panel that the plugin showed, `show_color_panel`, as it moves | — |
-| `color-panel-closed` | The user closes the color panel that the plugin showed | — |
+| `color-picked` | A color is chosen in the color panel that the plugin showed, `show_color_panel`, as it moves | — |
+| `color-panel-closed` | The color panel that the plugin showed closes | — |
 | `panel-closed` | One of the plugin's panels closes | — |
 | `page-shown`, `page-hidden` | One of the plugin's pages of the settings window shows, or hides as another shows or the window closes; Lokyr's own plugins alone have pages | — |
 | `timer` | One of the plugin's timers fires | — |
