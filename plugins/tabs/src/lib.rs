@@ -66,6 +66,9 @@ const SET_COLOR: &str = "tabs.set-color";
 /// Moves the focused tab out to a window of its own.
 const DETACH: &str = "tabs.detach";
 
+/// Pins the focused tab, at its window's start, narrow, or unpins it.
+const TOGGLE_PIN: &str = "tabs.toggle-pin";
+
 /// The plugin's catalogs, of its commands' titles and its question's
 /// texts.
 /// A tab's context menu, a panel, and its items' keys; and the message of
@@ -73,6 +76,7 @@ const DETACH: &str = "tabs.detach";
 const MENU: &str = "tab-menu";
 const MENU_RENAME: &str = "menu-rename";
 const MENU_DETACH: &str = "menu-detach";
+const MENU_PIN: &str = "menu-pin";
 const MENU_CLOSE: &str = "menu-close";
 const MENU_CLOSE_OTHERS: &str = "menu-close-others";
 /// The context menu's submenu of the tab's color: its title's message, its
@@ -97,11 +101,15 @@ const COLORS: [MenuColor; 7] = [
 ];
 const CLOSE_OTHERS: &str = "bar-close-others";
 
+/// The context menu's item that unpins a pinned tab.
+const MENU_UNPIN: &str = "menu-unpin";
+
 /// The messages of the bar's own texts: the button of a new tab's, a
 /// tab's close button's, and the title of a tab of none, of its number.
 const NEW_TAB: &str = "bar-new-tab";
 const CLOSE_TAB: &str = "bar-close-tab";
 const UNTITLED: &str = "bar-untitled";
+const PINNED: &str = "bar-pinned";
 
 /// The messages of what accessibility calls a tab's marks.
 const MARKS: [&str; 8] = [
@@ -129,7 +137,7 @@ type Spec = (
 );
 
 /// The commands, in the order of the menus.
-fn commands() -> [Spec; 11] {
+fn commands() -> [Spec; 12] {
     let empty = || Some(Value::String(String::new()));
     [
         (NEW, "New Tab", None),
@@ -151,6 +159,7 @@ fn commands() -> [Spec; 11] {
             Some(("color", Kind::String, None)),
         ),
         (DETACH, "Move Tab to New Window", None),
+        (TOGGLE_PIN, "Pin Tab", None),
     ]
 }
 
@@ -369,7 +378,10 @@ impl Plugin for Tabs {
         let tab = &tabs[at];
         match name {
             CLOSE if tab.panes.len() > 1 => cx.close_pane(tab.focused, true),
+            // A pinned tab stays, as its key closes no pinned tab.
+            CLOSE if tab.pinned => Ok(()),
             CLOSE => cx.close_tab(tab.id, true),
+            TOGGLE_PIN => cx.set_tab_pinned(tab.id, !tab.pinned),
             NEXT => cx.activate_tab(tabs[(at + 1) % tabs.len()].id),
             PREV => cx.activate_tab(tabs[(at + tabs.len() - 1) % tabs.len()].id),
             // Through the order of use, which holds while Control is held,
@@ -587,6 +599,7 @@ impl Tabs {
             marks,
             new_tab: message(cx, NEW_TAB, &[]).unwrap_or(english.new_tab),
             close_tab: message(cx, CLOSE_TAB, &[]).unwrap_or(english.close_tab),
+            pinned: message(cx, PINNED, &[]).unwrap_or(english.pinned),
             untitled: (1..)
                 .zip(&tabs)
                 .filter(|(_, tab)| tab.title.is_empty())
@@ -616,6 +629,7 @@ impl Tabs {
                 .into_iter()
                 .find(|shown| shown.id == tab)
         });
+        let pinned = current.as_ref().is_some_and(|shown| shown.pinned);
         let current = current.and_then(|shown| shown.color);
         let mut title = |id: &str, english: &str| {
             cx.message(id, &[])
@@ -641,7 +655,13 @@ impl Tabs {
         colors.push(Node::separator());
         let none = title(MENU_COLOR_NONE, "No Color");
         colors.push(ticked(none, current.is_none(), MENU_COLOR_NONE));
+        let pin = if pinned {
+            title(MENU_UNPIN, "Unpin Tab")
+        } else {
+            title("command-tabs-toggle-pin", "Pin Tab")
+        };
         Node::container(vec![
+            Node::button(pin).key(MENU_PIN),
             Node::button(title("command-tabs-rename", "Rename Tab…")).key(MENU_RENAME),
             Node::container(colors),
             Node::button(title("command-tabs-detach", "Move Tab to New Window")).key(MENU_DETACH),
@@ -665,6 +685,7 @@ impl Tabs {
             return Ok(());
         };
         match key {
+            MENU_PIN => cx.set_tab_pinned(tab, !shown.pinned),
             MENU_RENAME => self.rename(cx, window, shown, &Args::new()),
             MENU_DETACH if tabs.len() > 1 => cx.tab_to_new_window(tab),
             MENU_CLOSE => cx.close_tab(tab, true),

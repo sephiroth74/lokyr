@@ -268,6 +268,9 @@ pub struct TabInfo {
     /// plugin of `process-read`; `None` to the others.
     #[serde(default)]
     pub status: Option<TabStatus>,
+    /// Whether it is pinned, at its window's start.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// The status that a program tells of its session, as iTerm2's OSC 21337

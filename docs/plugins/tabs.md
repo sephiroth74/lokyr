@@ -9,6 +9,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 - **A tab** shows its title, the keys that select it, as ⌘1, its color, and its close button. Its title is the one that you give it with Shell › Rename Tab…, or its program's, or its folder and the program in its foreground, as `src — vim`. A title that a program other than the shell sets, as the remote shell under `ssh` does, goes as the shell has the foreground again, the title from before back, while a title that the shell sets as it comes back, at its prompt, stays.
 - **Its marks** tell you what happens in it while you look elsewhere: new output, a bell, a program that runs, the protected input of Secure Keyboard Entry, an AI agent's state, at work, waiting for you, done or failed, as [`[agents]`](../CONFIGURATION.md#agents) tells, the tab's tooltip telling what an agent that waits asked for, a dot of the color that a program gives the status of its session, as OSC 21337 tells it, the status's text and detail in the tooltip, and a program's progress, which OSC 9;4 reports, round the tab's outline. A program that prints of its own shows a spinner. The [README](../../README.md#programs-progress) tells how to have Gradle, Claude Code and cargo report their progress.
 - **With the mouse**: a click shows a tab, a middle click closes it, a double click renames it, and its context menu renames it, colors it, of macOS's system colors or none, moves it to a window of its own, closes it, or closes the others. The pane's context menu renames its tab too. A drag reorders the tabs, moves a tab to another window's bar, drops it on a pane to split that pane, or takes it out to a window of its own; Escape puts it back.
+- **A pinned tab** stays at the start of the bar. In a bar across the window it is narrow and shows the first letters of its title; hover over it to see the whole title. In a column it shows a pin instead of its close button. ⌘W doesn't close a pinned tab, but closes one of its panes when it has several. Restored windows keep their pinned tabs.
 - **A single tab** hides the bar by default, its title and its marks shown in the titlebar.
 - **The looks**: `"standard"`, a strip below the titlebar; `"unified"`, the tabs in the titlebar, the default; and `"seamless"`, cells of the titlebar's height, the one shown opening onto its terminal.
 
@@ -25,6 +26,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.rename` | Shell › Rename Tab… | | Gives the tab its `title`; without one, it asks you for it, and an empty one gives the tab its own back |
 | `tabs.set-color` | | | Gives the tab its `color`, as `"#ff8800"`; an empty one gives the program's back |
 | `tabs.detach` | Shell › Move Tab to New Window | | Moves the tab out to a window of its own |
+| `tabs.toggle-pin` | Shell › Pin Tab | | Pins the tab at the start of the bar, or unpins it. The tab's context menu has the same item |
 
 The commands without keys are there for your own bindings:
 

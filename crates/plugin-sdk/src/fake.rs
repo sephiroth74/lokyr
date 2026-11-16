@@ -352,6 +352,8 @@ pub struct TabMarks {
     pub agent_message: Option<String>,
     /// The status that a program of its panes tells of its session.
     pub status: Option<host::TabStatus>,
+    /// Whether it is pinned, at its window's start.
+    pub pinned: bool,
 }
 
 /// What a tab's leaving did to its window, which is told after the tab's
@@ -1956,6 +1958,7 @@ impl FakeHost {
                 }
                 self.looked(*id, &before);
             }
+            Request::SetTabPinned { tab, pinned } => self.set_tab_pinned(*tab, *pinned),
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
             Request::MoveTab { tab, window, index } => self.move_tab(*tab, *window, *index),
@@ -2090,6 +2093,7 @@ impl FakeHost {
             agent: marks.agent.filter(|_| reads),
             agent_message: marks.agent_message.clone().filter(|_| reads),
             status: marks.status.clone().filter(|_| reads),
+            pinned: marks.pinned,
         })
     }
 
@@ -2480,9 +2484,16 @@ impl FakeHost {
             self.detach_tab(tab)
         };
         self.place_tab(tab, window);
+        // A pinned tab among the pinned ones, the others after them.
+        let pinned = self.pinned_in(window);
+        let held = self.tabs.get(&tab).is_some_and(|shown| shown.marks.pinned);
         let mut placed = 0;
         if let Some(shown) = self.windows.get_mut(&window) {
-            placed = index.min(shown.tabs.len());
+            placed = if held {
+                index.min(pinned)
+            } else {
+                index.clamp(pinned, shown.tabs.len())
+            };
             shown.tabs.insert(placed, tab);
         }
         if from != window || was != Some(placed) {
@@ -2494,6 +2505,39 @@ impl FakeHost {
             });
         }
         self.tell_left(left);
+    }
+
+    /// How many of `window`'s tabs are pinned, which its first tabs are.
+    fn pinned_in(&self, window: WindowId) -> usize {
+        self.windows.get(&window).map_or(0, |shown| {
+            shown
+                .tabs
+                .iter()
+                .take_while(|tab| self.tabs.get(tab).is_some_and(|tab| tab.marks.pinned))
+                .count()
+        })
+    }
+
+    /// Pins `tab`, at its window's start after the tabs pinned before it,
+    /// or unpins it, right after them, as the app does.
+    fn set_tab_pinned(&mut self, tab: TabId, pinned: bool) {
+        let Some(window) = self.tabs.get(&tab).map(|shown| shown.window) else {
+            return;
+        };
+        if self
+            .tabs
+            .get(&tab)
+            .is_none_or(|shown| shown.marks.pinned == pinned)
+        {
+            return;
+        }
+        let others = self.pinned_in(window) - usize::from(!pinned);
+        let before = self.look(tab);
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            shown.marks.pinned = pinned;
+        }
+        self.looked(tab, &before);
+        self.move_tab(tab, window, others);
     }
 
     /// Opens a window whose one tab, which it shows, is `tab`, and returns
@@ -3627,6 +3671,10 @@ impl Calling<'_> {
                         .check()
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                Response::Done
+            }
+            Request::SetTabPinned { tab, .. } => {
+                self.known_tab(*tab)?;
                 Response::Done
             }
             Request::SetTabColor { tab, color } => {

@@ -12,6 +12,7 @@ command-tabs-move = Move Tab
 command-tabs-rename = Rename Tab…
 command-tabs-set-color = Set Tab Color
 command-tabs-detach = Move Tab to New Window
+command-tabs-toggle-pin = Pin Tab
 
 # The question of a tab's title.
 rename-message = The tab's title
@@ -22,8 +23,10 @@ rename-detail = Leave it empty for the tab's own: its program's title, or its fo
 # number among its window's tabs.
 bar-new-tab = New Tab
 bar-close-tab = Close Tab
+bar-pinned = Pinned
 bar-untitled = Tab { $index }
 bar-close-others = Close Other Tabs
+menu-unpin = Unpin Tab
 
 # The context menu's submenu of the tab's color, macOS's system colors,
 # and of none.

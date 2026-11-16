@@ -1165,6 +1165,11 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Pins `tab`, at its window's start, or unpins it.
+    pub fn set_tab_pinned(&mut self, tab: TabId, pinned: bool) -> Result<(), Error> {
+        self.done(Request::SetTabPinned { tab, pinned })
+    }
+
     /// The layout of `tab`.
     pub fn layout(&mut self, tab: TabId) -> Result<Layout, Error> {
         match self.request(Request::Layout(tab)) {

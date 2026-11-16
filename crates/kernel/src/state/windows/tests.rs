@@ -70,6 +70,7 @@ fn sample() -> Kept {
                         },
                         active: 2,
                         zoomed: None,
+                        pinned: true,
                     },
                     Tab {
                         title: Some("logs".to_owned()),
@@ -77,6 +78,7 @@ fn sample() -> Kept {
                         layout: pane("/d"),
                         active: 0,
                         zoomed: None,
+                        pinned: false,
                     },
                 ],
                 active: 1,
@@ -94,6 +96,7 @@ fn sample() -> Kept {
                     },
                     active: 0,
                     zoomed: Some(0),
+                    pinned: false,
                 }],
                 active: 0,
             },
@@ -170,6 +173,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             layout: Layout::Pane { directory: None },
             active: 0,
             zoomed: None,
+            pinned: false,
         })
         .collect();
     write(&state, &kept).unwrap();
@@ -233,7 +237,10 @@ fn a_workspace_kept_opens_again_as_it_was() {
         **second,
         workspace::Layout::Split { ratio: None, .. }
     ));
+    // The first pinned, the second not.
+    assert!(workspace.tab(window.tabs()[0]).unwrap().marks().pinned);
     let tab = workspace.tab(window.tabs()[1]).unwrap();
+    assert!(!tab.marks().pinned);
     assert_eq!(tab.title(), "logs");
     assert_eq!(
         tab.color(),

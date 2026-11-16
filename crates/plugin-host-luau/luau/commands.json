@@ -924,6 +924,15 @@
   },
   {
     "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.toggle-pin",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Pin Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "windows",
     "name": "window.close",
     "params": [],

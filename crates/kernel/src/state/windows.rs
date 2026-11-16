@@ -96,6 +96,9 @@ pub struct Tab {
     /// The index of the one that takes the tab's whole room, if one does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub zoomed: Option<usize>,
+    /// Whether it is pinned, at its window's start.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pinned: bool,
 }
 
 /// A tab's layout that the app keeps: a tree of splits whose leaves are
@@ -312,13 +315,14 @@ impl Tab {
             layout: Layout::of(workspace, tab.layout(), directory),
             active: index(tab.active_pane()).unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
+            pinned: tab.marks().pinned,
         }
     }
 
     /// Lays `tab`, a tab of `workspace` whose one pane is its layout's
     /// first, out as it is kept: its splits, of the other panes, of
     /// `spawn`, their ratios, the pane that has the keyboard and the one
-    /// zoomed, its title and its color.
+    /// zoomed, its title, its color and its pin.
     fn lay_out(
         &self,
         workspace: &mut Workspace,
@@ -345,6 +349,9 @@ impl Tab {
         }
         if let Some(color) = self.color.as_deref().and_then(rgb) {
             workspace.set_tab_color(tab, Some(color));
+        }
+        if self.pinned {
+            workspace.set_tab_pinned(tab, true);
         }
     }
 }

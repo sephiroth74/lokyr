@@ -4550,6 +4550,9 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 };
                 context.workspace.set_tab_color(TabId::of(tab.0), color);
             }
+            Asked::SetTabPinned { tab, pinned } => {
+                context.workspace.set_tab_pinned(TabId::of(tab.0), pinned);
+            }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
             }
@@ -5996,6 +5999,7 @@ impl Host<'_, '_> {
             }
             Asked::CloseTab { tab, .. }
             | Asked::ActivateTab(tab)
+            | Asked::SetTabPinned { tab, .. }
             | Asked::TabToNewWindow { tab, .. } => {
                 self.known_tab_not_settings(*tab)?;
             }
@@ -7047,6 +7051,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         secure: marks.secure,
         agent: marks.agent.filter(|_| reads),
         agent_message: marks.agent_message.filter(|_| reads),
+        pinned: marks.pinned,
         status: marks
             .status
             .filter(|_| reads)
@@ -7104,6 +7109,7 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         agent: None,
         agent_message: None,
         status: None,
+        pinned: false,
     })
 }
 

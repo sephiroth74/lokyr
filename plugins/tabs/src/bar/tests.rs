@@ -29,6 +29,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         agent: None,
         agent_message: None,
         status: None,
+        pinned: false,
     }
 }
 

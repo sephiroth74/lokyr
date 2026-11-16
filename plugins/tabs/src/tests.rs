@@ -88,6 +88,7 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             (RENAME, vec![("title", Kind::String, true)]),
             (SET_COLOR, vec![("color", Kind::String, false)]),
             (DETACH, vec![]),
+            (TOGGLE_PIN, vec![]),
         ]
     );
     // Each title of its own catalogs, English's and Italian's alike.
@@ -378,15 +379,17 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
     assert_eq!(
         keys,
         [
+            "menu-pin",
             "menu-rename",
             "menu-detach",
             "menu-close",
             "menu-close-others"
         ]
     );
-    // Its submenu of the tab's color, after its rename: its title, the
-    // colors, each of its dot, and none, ticked of a tab of no color.
-    let submenu = &tree.children[1];
+    // Its submenu of the tab's color, after its pin and its rename: its
+    // title, the colors, each of its dot, and none, ticked of a tab of no
+    // color.
+    let submenu = &tree.children[2];
     let view::Kind::Text(heading) = &submenu.children[0].kind else {
         panic!("{submenu:?}");
     };
@@ -442,7 +445,7 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
         UiEventKind::ContextMenu,
     );
     let tree = host.render(&mut plugin, &menu).expect("the menu's items");
-    let ticked: Vec<&str> = tree.children[1]
+    let ticked: Vec<&str> = tree.children[2]
         .children
         .iter()
         .filter(|item| matches!(&item.kind, view::Kind::Toggle(toggle) if toggle.on))
@@ -996,5 +999,63 @@ fn control_tab_steps_through_the_order_of_use_while_control_is_held() {
     assert_eq!(
         switch(&mut host, &mut plugin, SWITCH_BACK),
         [Request::ActivateTab(TabId(2))]
+    );
+}
+
+#[test]
+fn a_pinned_tab_goes_first_narrow_and_its_key_closes_its_pane_alone() {
+    let (mut host, mut plugin) = host(&[1, 1], 2);
+    assert_eq!(
+        run(&mut host, &mut plugin, TOGGLE_PIN, Args::new()),
+        [Request::SetTabPinned {
+            tab: TabId(2),
+            pinned: true
+        }]
+    );
+    // First in the bar, narrow, of its whole title in its tooltip.
+    host.deliver(&mut plugin).unwrap();
+    let bar = host
+        .render(&mut plugin, &ViewId::TabBar(WINDOW))
+        .expect("a bar of two tabs");
+    let mut found = Vec::new();
+    let mut walk = vec![&bar];
+    while let Some(node) = walk.pop() {
+        if node.carries.is_some() {
+            found.push(node.clone());
+        }
+        walk.extend(node.children.iter().rev());
+    }
+    assert_eq!(
+        found.iter().map(|node| node.carries).collect::<Vec<_>>(),
+        [Some(TabId(2)), Some(TabId(1))]
+    );
+    assert_eq!(
+        found[0].layout.width,
+        lokyr_plugin_sdk::view::Length::Points(44.0)
+    );
+    assert!(found[0].tooltip.is_some());
+    assert_eq!(
+        found[1].layout.width,
+        lokyr_plugin_sdk::view::Length::Points(0.0)
+    );
+    // Its key closes no pinned tab of a single pane.
+    assert!(run(&mut host, &mut plugin, CLOSE, Args::new()).is_empty());
+    // Unpinned, the same command.
+    assert_eq!(
+        run(&mut host, &mut plugin, TOGGLE_PIN, Args::new()),
+        [Request::SetTabPinned {
+            tab: TabId(2),
+            pinned: false
+        }]
+    );
+    // Of splits, its focused pane.
+    let (mut host, mut plugin) = self::host(&[2], 2);
+    run(&mut host, &mut plugin, TOGGLE_PIN, Args::new());
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::ClosePane {
+            pane: PaneId(2),
+            ask: true
+        }]
     );
 }

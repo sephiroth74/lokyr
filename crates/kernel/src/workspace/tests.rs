@@ -2499,3 +2499,35 @@ fn a_window_s_tabs_go_in_the_order_of_their_use_which_holds_while_control_is_hel
     assert_eq!(recent(&workspace), [first, second]);
     assert_eq!(workspace.recent_tabs(WindowId::of(999_999)), None);
 }
+
+#[test]
+fn a_pinned_tab_goes_first_and_stays_before_the_tabs_moved_and_opened_later() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 10"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let second = workspace.open_tab(window, pane("sleep 10"), 1).unwrap();
+    let third = workspace.open_tab(window, pane("sleep 10"), 2).unwrap();
+    let tabs = |workspace: &Workspace| workspace.window(window).unwrap().tabs().to_vec();
+    // Pinned: the third first, then the second after it.
+    workspace.take_events();
+    assert!(workspace.set_tab_pinned(third, true));
+    assert_eq!(tabs(&workspace), [third, first, second]);
+    assert!(workspace.tab(third).unwrap().marks().pinned);
+    assert!(changes(&mut workspace).contains(&Change::TabChanged { tab: third.into() }));
+    assert!(workspace.set_tab_pinned(second, true));
+    assert_eq!(tabs(&workspace), [third, second, first]);
+    // A tab opened or moved before them goes after them.
+    let fourth = workspace.open_tab(window, pane("sleep 10"), 0).unwrap();
+    assert_eq!(tabs(&workspace), [third, second, fourth, first]);
+    assert!(workspace.move_tab(first, window, 0));
+    assert_eq!(tabs(&workspace), [third, second, first, fourth]);
+    // A pinned tab moves among the pinned ones alone.
+    assert!(workspace.move_tab(third, window, 3));
+    assert_eq!(tabs(&workspace), [second, third, first, fourth]);
+    // Unpinned: right after the pinned ones.
+    assert!(workspace.set_tab_pinned(second, false));
+    assert_eq!(tabs(&workspace), [third, second, first, fourth]);
+    assert!(!workspace.tab(second).unwrap().marks().pinned);
+    // Of a tab not there, nothing.
+    assert!(!workspace.set_tab_pinned(TabId::of(999_999), true));
+}

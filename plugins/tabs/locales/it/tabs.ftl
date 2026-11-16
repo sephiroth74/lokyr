@@ -11,14 +11,17 @@ command-tabs-move = Sposta tab
 command-tabs-rename = Rinomina tab…
 command-tabs-set-color = Imposta colore del tab
 command-tabs-detach = Sposta tab in una nuova finestra
+command-tabs-toggle-pin = Fissa tab
 
 rename-message = Il titolo del tab
 rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, o la sua cartella.
 
 bar-new-tab = Nuovo tab
 bar-close-tab = Chiudi tab
+bar-pinned = Fissato
 bar-untitled = Tab { $index }
 bar-close-others = Chiudi gli altri tab
+menu-unpin = Sblocca tab
 
 menu-color = Colore
 menu-color-red = Rosso

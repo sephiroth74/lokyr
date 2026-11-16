@@ -114,6 +114,7 @@ export type Cx = {
     close_pane: (pane: PaneId, ask: boolean?) -> (true?, string?, number?),
     set_tab_title: (tab: TabId, title: string?) -> (true?, string?, number?),
     set_tab_color: (tab: TabId, color: Color?) -> (true?, string?, number?),
+    set_tab_pinned: (tab: TabId, pinned: boolean) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
     set_focus_follows_mouse: (on: boolean) -> (true?, string?, number?),
@@ -925,6 +926,7 @@ export type TabInfo = {
     agent: AgentState?,
     agent_message: string?,
     status: TabStatus?,
+    pinned: boolean?,
 }
 
 export type TabKind =

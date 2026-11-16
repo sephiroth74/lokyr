@@ -32,6 +32,7 @@ tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senz
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
+tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. ⌘W non lo chiude.
 tip-themes = Vista › Scegli tema… mostra in anteprima ogni tema mentre scorri l'elenco.
 tip-themes-folder = Metti un tema .toml o .itermcolors nella cartella che Vista › Apri la cartella dei temi mostra nel Finder, e Scegli tema… lo elenca.
 tip-new-theme = Nuovo… nella pagina Temi crea un tema con tutte le chiavi di quelli di Lokyr; Vista › Nuovo tema dall'attuale… uno dal tema in uso, e il menu contestuale di una scheda duplica qualsiasi tema.

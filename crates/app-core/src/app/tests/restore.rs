@@ -220,6 +220,7 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                     layout: windows::Layout::Pane { directory: None },
                     active: 0,
                     zoomed: None,
+                    pinned: false,
                 }],
                 active: 0,
             })

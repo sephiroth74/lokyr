@@ -250,6 +250,9 @@ pub struct Marks {
     /// The status that a program of its panes tells of its session, OSC
     /// 21337's: its active pane's, or another's.
     pub status: Option<terminal::SessionStatus>,
+    /// Whether it is pinned: kept at its bar's start, of no close by the
+    /// key that closes tabs.
+    pub pinned: bool,
 }
 
 impl Tab {
@@ -1132,11 +1135,43 @@ impl Workspace {
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
+        let pinned = self.pinned_in(window);
         if let Some(window) = self.windows.get_mut(&window) {
-            let index = index.min(window.tabs.len());
+            let index = index.clamp(pinned, window.tabs.len());
             window.tabs.insert(index, tab);
         }
         tab
+    }
+
+    /// How many of `window`'s tabs are pinned, which its first tabs are.
+    fn pinned_in(&self, window: WindowId) -> usize {
+        self.windows.get(&window).map_or(0, |window| {
+            window
+                .tabs
+                .iter()
+                .take_while(|tab| self.tabs.get(tab).is_some_and(|shown| shown.marks.pinned))
+                .count()
+        })
+    }
+
+    /// Pins `tab`, which goes to its window's start, after the tabs pinned
+    /// before it, or unpins it, which goes right after them; whether it is
+    /// open.
+    pub fn set_tab_pinned(&mut self, tab: TabId, pinned: bool) -> bool {
+        let Some(window) = self.window_of_tab(tab) else {
+            return false;
+        };
+        if self
+            .tabs
+            .get(&tab)
+            .is_none_or(|shown| shown.marks.pinned == pinned)
+        {
+            return self.tabs.contains_key(&tab);
+        }
+        // Its place among the others, of the pinned ones but itself.
+        let others = self.pinned_in(window) - usize::from(!pinned);
+        self.mark(tab, |marks| marks.pinned = pinned);
+        self.move_tab(tab, window, others)
     }
 
     /// Makes a tab whose layout is `pane`, which the workspace holds, and
@@ -1800,9 +1835,16 @@ impl Workspace {
         {
             *of = window;
         }
+        // A pinned tab among the pinned ones, the others after them.
+        let pinned = self.pinned_in(window);
+        let held = self.tabs.get(&tab).is_some_and(|shown| shown.marks.pinned);
         let mut placed = 0;
         if let Some(window) = self.windows.get_mut(&window) {
-            placed = index.min(window.tabs.len());
+            placed = if held {
+                index.min(pinned)
+            } else {
+                index.clamp(pinned, window.tabs.len())
+            };
             window.tabs.insert(placed, tab);
         }
         if from != window || was != Some(placed) {

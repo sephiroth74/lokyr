@@ -745,6 +745,15 @@ pub enum Request {
         /// Its color.
         color: Option<Color>,
     },
+    /// Pins a tab, which goes to its window's start, after the tabs pinned
+    /// before it, where the tabs moved and opened later leave it; or
+    /// unpins it, which goes right after them.
+    SetTabPinned {
+        /// The tab.
+        tab: TabId,
+        /// Whether it is pinned.
+        pinned: bool,
+    },
     /// Puts the plugin's tab bar at `place` in the windows that show it, a
     /// column's width from [`COLUMN_WIDTHS`](crate::host::COLUMN_WIDTHS)'s
     /// narrowest to its widest, in
@@ -1147,7 +1156,8 @@ impl Request {
             | Self::SetRatio { .. }
             | Self::Equalize(_)
             | Self::SwapPanes { .. }
-            | Self::Zoom { .. } => Some(Capability::WorkspaceWrite),
+            | Self::Zoom { .. }
+            | Self::SetTabPinned { .. } => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1297,6 +1307,7 @@ impl Request {
             | Self::ClosePane { .. }
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
+            | Self::SetTabPinned { .. }
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
@@ -1885,6 +1896,7 @@ impl Request {
             | Self::ClosePane { .. }
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
+            | Self::SetTabPinned { .. }
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }

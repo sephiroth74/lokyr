@@ -204,6 +204,9 @@ const FADE: f32 = 0.15;
 /// unified look.
 const PILL: f32 = 24.0;
 
+/// The width of a pinned tab in a bar across the window, in points.
+const PINNED: f32 = 44.0;
+
 /// The thickness of a tab's outline of its program's progress, in points.
 const OUTLINE: f32 = 2.0;
 
@@ -260,6 +263,8 @@ pub(crate) struct BarTexts {
     pub(crate) close_tab: String,
     pub(crate) untitled: BTreeMap<usize, String>,
     pub(crate) marks: MarkTexts,
+    /// What accessibility calls a pinned tab's pin.
+    pub(crate) pinned: String,
 }
 
 impl Default for BarTexts {
@@ -269,6 +274,7 @@ impl Default for BarTexts {
             close_tab: "Close Tab".to_owned(),
             untitled: BTreeMap::new(),
             marks: MarkTexts::default(),
+            pinned: "Pinned".to_owned(),
         }
     }
 }
@@ -522,11 +528,16 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
 /// The pill of `tab`: its title and its keys in its middle, its close
 /// button at its start; the active one raised over the track.
 fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
+    let pinned = tab.tab.pinned;
     let mut middle = Vec::new();
-    middle.extend(dot(tab.tab.color));
+    if !pinned {
+        middle.extend(dot(tab.tab.color));
+    }
     middle.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
-    middle.push(Node::text(tab.title.as_str()));
-    middle.extend(tab.keys.map(keys));
+    middle.push(Node::text(short_title(tab).as_str()));
+    if !pinned {
+        middle.extend(tab.keys.map(keys));
+    }
     let middle = Node::container(middle)
         .layout(Layout {
             gap: 6.0,
@@ -549,7 +560,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
             ..Style::default()
         }
     };
-    let ends = settings.close_button != CloseButton::Never;
+    let ends = settings.close_button != CloseButton::Never && !pinned;
     let mut children = if ends {
         vec![
             close_button(tab.tab.id.0, settings.close_button, texts),
@@ -560,25 +571,65 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         vec![middle]
     };
     children.extend(outline(tab.tab));
-    Node::container(children)
-        .key(tab_key(tab.tab.id.0).as_str())
-        .carries(tab.tab.id)
-        .layout(Layout {
-            gap: 4.0,
-            align: Align::Center,
-            padding: Edges {
-                top: 0.0,
-                right: 6.0,
-                bottom: 0.0,
-                left: 6.0,
-            },
-            width: Length::Points(0.0),
-            min_width: Length::Points(LEAST_PILL),
-            height: Length::Points(PILL),
-            grow: 1.0,
-            ..Layout::default()
-        })
-        .style(tab_style(style, PILL / 2.0, active))
+    let (width, least, grow) = if pinned {
+        (PINNED, PINNED, 0.0)
+    } else {
+        (0.0, LEAST_PILL, 1.0)
+    };
+    pinned_tip(
+        Node::container(children)
+            .key(tab_key(tab.tab.id.0).as_str())
+            .carries(tab.tab.id)
+            .layout(Layout {
+                gap: 4.0,
+                align: Align::Center,
+                padding: Edges {
+                    top: 0.0,
+                    right: 6.0,
+                    bottom: 0.0,
+                    left: 6.0,
+                },
+                width: Length::Points(width),
+                min_width: Length::Points(least),
+                height: Length::Points(PILL),
+                grow,
+                ..Layout::default()
+            })
+            .style(tab_style(style, PILL / 2.0, active)),
+        tab,
+    )
+}
+
+/// The title that `tab` shows: its whole title, or of a pinned tab, the
+/// first letters of its title's first two words, or a word's first two.
+fn short_title(tab: &Shown<'_>) -> String {
+    if !tab.tab.pinned {
+        return tab.title.clone();
+    }
+    let words: Vec<&str> = tab
+        .title
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    match words.as_slice() {
+        [] => tab.title.chars().take(2).collect(),
+        [word] => word.chars().take(2).collect(),
+        [first, second, ..] => first
+            .chars()
+            .take(1)
+            .chain(second.chars().take(1))
+            .collect(),
+    }
+}
+
+/// `node`, of a pinned `tab`, of its whole title as its tooltip, which an
+/// agent's message takes the place of.
+fn pinned_tip(node: Node, tab: &Shown<'_>) -> Node {
+    if tab.tab.pinned {
+        node.tooltip(tab.title.as_str())
+    } else {
+        node
+    }
 }
 
 /// A bar of the seamless look: its cells of the bar's height, a line
@@ -681,7 +732,8 @@ fn veiled() -> Style {
 /// end.
 fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     let active = tab.tab.active;
-    let title = Node::container(vec![Node::text(tab.title.as_str())])
+    let pinned = tab.tab.pinned;
+    let title = Node::container(vec![Node::text(short_title(tab).as_str())])
         .layout(Layout {
             align: Align::Center,
             justify: Justify::Center,
@@ -694,13 +746,15 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
             ..Style::default()
         });
     let mut children = Vec::new();
-    if settings.close_button != CloseButton::Never {
+    if settings.close_button != CloseButton::Never && !pinned {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
     children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
     children.push(title);
-    children.extend(dot(tab.tab.color));
-    children.extend(tab.keys.map(keys));
+    if !pinned {
+        children.extend(dot(tab.tab.color));
+        children.extend(tab.keys.map(keys));
+    }
     children.extend(outline(tab.tab));
     let content = Node::container(children).layout(Layout {
         gap: 6.0,
@@ -719,28 +773,36 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     } else {
         (Some(Token::from(VEIL)), "tabs.inactive.fg")
     };
-    lined(
-        content,
-        top,
-        !active,
-        Layout {
-            width: Length::Points(0.0),
-            min_width: Length::Points(LEAST_CELL),
-            grow: 1.0,
-            ..Layout::default()
-        },
+    let (width, least, grow) = if pinned {
+        (PINNED, PINNED, 0.0)
+    } else {
+        (0.0, LEAST_CELL, 1.0)
+    };
+    pinned_tip(
+        lined(
+            content,
+            top,
+            !active,
+            Layout {
+                width: Length::Points(width),
+                min_width: Length::Points(least),
+                grow,
+                ..Layout::default()
+            },
+        )
+        .key(tab_key(tab.tab.id.0).as_str())
+        .carries(tab.tab.id)
+        .style(tab_style(
+            Style {
+                background,
+                color: Some(Token::from(color)),
+                ..Style::default()
+            },
+            0.0,
+            active,
+        )),
+        tab,
     )
-    .key(tab_key(tab.tab.id.0).as_str())
-    .carries(tab.tab.id)
-    .style(tab_style(
-        Style {
-            background,
-            color: Some(Token::from(color)),
-            ..Style::default()
-        },
-        0.0,
-        active,
-    ))
 }
 
 /// `content` over a line at its bottom, or under one at its top where
@@ -889,7 +951,10 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     let seamless = settings.look == Look::Seamless;
     let active = tab.tab.active;
     let mut children = Vec::new();
-    if settings.close_button != CloseButton::Never {
+    // A pinned tab's pin in place of its close button.
+    if tab.tab.pinned {
+        children.push(Node::icon("pinned").label(texts.pinned.as_str()));
+    } else if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
     children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));

@@ -888,6 +888,7 @@ fn tabs(world: &World) -> Scenario {
         agent: None,
         agent_message: None,
         status: None,
+        pinned: false,
     };
     let red = Color::Rgb(200, 30, 40);
     let answer = Event::Answered {
@@ -996,6 +997,44 @@ fn tabs(world: &World) -> Scenario {
                     Request::SetTabColor {
                         tab: t,
                         color: None,
+                    },
+                    Response::Done,
+                ),
+            ]),
+            ask(vec![(
+                Request::Tabs(w),
+                Response::Tabs(vec![info("", None)]),
+            )]),
+            // Pinned, which a read of the tabs gives, and back; a tab not
+            // there refused.
+            ask(vec![
+                (
+                    Request::SetTabPinned {
+                        tab: t,
+                        pinned: true,
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SetTabPinned {
+                        tab: NO_TAB,
+                        pinned: true,
+                    },
+                    failed(Code::NotFound, "there is no tab 999999"),
+                ),
+            ]),
+            ask(vec![
+                (
+                    Request::Tabs(w),
+                    Response::Tabs(vec![TabInfo {
+                        pinned: true,
+                        ..info("", None)
+                    }]),
+                ),
+                (
+                    Request::SetTabPinned {
+                        tab: t,
+                        pinned: false,
                     },
                     Response::Done,
                 ),
@@ -2732,6 +2771,7 @@ fn workspace(world: &World) -> Scenario {
         agent: None,
         agent_message: None,
         status: None,
+        pinned: false,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

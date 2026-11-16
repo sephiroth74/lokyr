@@ -1164,7 +1164,7 @@ fn a_tab_s_context_menu_colors_it_from_its_submenu() {
     // The platform's menu, of a submenu of the colors, each of its dot,
     // and none, ticked.
     let (_, _, menu) = fake.context_menus().last().unwrap().clone();
-    let Some(lokyr_platform_core::MenuItem::Submenu(colors)) = menu.items.get(1) else {
+    let Some(lokyr_platform_core::MenuItem::Submenu(colors)) = menu.items.get(2) else {
         panic!("{:?}", menu.items);
     };
     assert_eq!(colors.title, "Color");

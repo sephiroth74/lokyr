@@ -37,6 +37,7 @@ tip-copy-output = Press { $keys } to copy the output of the last command, withou
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
+tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. ⌘W won't close it.
 tip-themes = View › Choose Theme… previews each theme as you move through the list.
 tip-themes-folder = Put a .toml or .itermcolors theme in the folder that View › Open Themes Folder shows in the Finder, and Choose Theme… lists it.
 tip-new-theme = New… on the Themes page makes a theme of every key of Lokyr's own; View › New Theme from Current… one of the theme in force, and a card's context menu duplicates any theme.
