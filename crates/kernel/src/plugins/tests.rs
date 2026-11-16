@@ -3398,6 +3398,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 secure: false,
                 agent: None,
                 agent_message: None,
+                status: None,
             },
             host::TabInfo {
                 id: tab,
@@ -3418,6 +3419,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 secure: false,
                 agent: None,
                 agent_message: None,
+                status: None,
             },
         ]
     );

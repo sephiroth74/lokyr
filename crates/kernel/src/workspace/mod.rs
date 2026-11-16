@@ -244,6 +244,9 @@ pub struct Marks {
     /// The message of the notification by which an agent of it that waits
     /// asked for the user, as "Claude needs your permission to use Bash".
     pub agent_message: Option<String>,
+    /// The status that a program of its panes tells of its session, OSC
+    /// 21337's: its active pane's, or another's.
+    pub status: Option<terminal::SessionStatus>,
 }
 
 impl Tab {
@@ -513,8 +516,9 @@ impl Workspace {
 
     /// Records `event`, for the embedder.
     fn changed(&mut self, event: WorkspaceEvent) {
-        // A tab's progress is its panes', which a change of its layout or
-        // of its active pane changes, or its panes that came from another.
+        // A tab's progress and status are its panes', which a change of its
+        // layout or of its active pane changes, or its panes that came from
+        // another.
         let progressed = match &event {
             WorkspaceEvent::LayoutChanged { tab }
             | WorkspaceEvent::PaneFocused { tab, .. }
@@ -524,9 +528,11 @@ impl Workspace {
         self.events.push(Event::Changed(event));
         if let Some(tab) = progressed {
             let progress = self.tab_progress(tab);
+            let status = self.tab_status(tab);
             let (agent, message) = self.tab_agent(tab);
             self.mark(tab, |marks| {
                 marks.progress = progress;
+                marks.status = status;
                 marks.agent = agent;
                 marks.agent_message = message;
             });
@@ -778,6 +784,11 @@ impl Workspace {
             }) {
                 pane.tab_color = color;
             }
+            // The pane keeps its program's session's status, which its tab
+            // shows.
+            if let Some(status) = happened.session {
+                pane.session_status = (!status.is_empty()).then_some(status);
+            }
             // The pane keeps its program's progress, which its tab shows.
             if let Some(progress) = happened.events.iter().rev().find_map(|event| match event {
                 terminal::Event::Progress(progress) => Some(*progress),
@@ -899,11 +910,13 @@ impl Workspace {
                     // An agent's hooks' notification, which tells its state,
                     // or one of a state that this version does not know, and
                     // shows nothing; and a change of its status, which its
-                    // agent takes.
+                    // agent takes, or of its session's, which its tab does.
                     terminal::Event::Notification { title, .. } if title.starts_with(HOOKED) => {
                         continue;
                     }
-                    terminal::Event::StatusChanged => continue,
+                    terminal::Event::StatusChanged | terminal::Event::SessionStatusChanged => {
+                        continue;
+                    }
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
@@ -951,14 +964,17 @@ impl Workspace {
                 }
                 by_status(agent);
             });
-            // Its tab's marks: its progress, whether its program prints,
+            // Its tab's marks: its progress and status, whether its program
+            // prints,
             // and the output and the bell that came while it did not show.
             if let Some(owner) = self.tab_of.get(&id).copied() {
                 let shown = self.is_shown(owner);
                 let progress = self.tab_progress(owner);
+                let status = self.tab_status(owner);
                 let printing = self.tab_printing(owner);
                 self.mark(owner, |marks| {
                     marks.progress = progress;
+                    marks.status = status;
                     marks.printing = printing;
                     if !shown {
                         marks.activity |= happened.output;
@@ -1396,6 +1412,14 @@ impl Workspace {
         of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
     }
 
+    /// The status that `tab`'s panes tell of their sessions: its active
+    /// pane's, or the first of the others' in its layout's order.
+    fn tab_status(&self, tab: TabId) -> Option<terminal::SessionStatus> {
+        let tab = self.tabs.get(&tab)?;
+        let of = |pane: PaneId| self.panes.get(&pane)?.session_status().cloned();
+        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+    }
+
     /// Whether the program of `tab`'s active pane prints of its own, while
     /// it is marked of one that runs, other than a shell: a shell's prompt
     /// tells nothing.
@@ -1672,9 +1696,15 @@ impl Workspace {
             return false;
         };
         shown.set_running(running);
+        // A program's session's status goes with it.
+        let left = shown.program.0 && !running && shown.forget_session_status();
         shown.program = (running, alternate);
         if let Some(tab) = self.tab_of.get(&pane).copied() {
             self.look_at_programs(tab);
+            if left {
+                let status = self.tab_status(tab);
+                self.mark(tab, |marks| marks.status = status);
+            }
         }
         true
     }

@@ -887,6 +887,7 @@ fn tabs(world: &World) -> Scenario {
         secure: false,
         agent: None,
         agent_message: None,
+        status: None,
     };
     let red = Color::Rgb(200, 30, 40);
     let answer = Event::Answered {
@@ -2730,6 +2731,7 @@ fn workspace(world: &World) -> Scenario {
         secure: false,
         agent: None,
         agent_message: None,
+        status: None,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

@@ -7031,6 +7031,15 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         secure: marks.secure,
         agent: marks.agent.filter(|_| reads),
         agent_message: marks.agent_message.filter(|_| reads),
+        status: marks
+            .status
+            .filter(|_| reads)
+            .map(|status| host::TabStatus {
+                text: status.status,
+                indicator: host_color(status.indicator),
+                color: host_color(status.status_color),
+                detail: status.detail,
+            }),
     }
 }
 
@@ -7078,6 +7087,7 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         secure: false,
         agent: None,
         agent_message: None,
+        status: None,
     })
 }
 

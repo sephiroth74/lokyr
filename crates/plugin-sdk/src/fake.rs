@@ -350,6 +350,8 @@ pub struct TabMarks {
     pub agent: Option<host::AgentState>,
     /// The message by which an agent of it that waits asked for the user.
     pub agent_message: Option<String>,
+    /// The status that a program of its panes tells of its session.
+    pub status: Option<host::TabStatus>,
 }
 
 /// What a tab's leaving did to its window, which is told after the tab's
@@ -2063,6 +2065,7 @@ impl FakeHost {
             secure: marks.secure,
             agent: marks.agent.filter(|_| reads),
             agent_message: marks.agent_message.clone().filter(|_| reads),
+            status: marks.status.clone().filter(|_| reads),
         })
     }
 

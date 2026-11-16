@@ -213,6 +213,9 @@ impl Terminal {
         if !self.statuses.is_empty() {
             events.push(Event::StatusChanged);
         }
+        if !self.session_status.is_empty() {
+            events.push(Event::SessionStatusChanged);
+        }
         if self.colors != self.default_colors {
             events.push(Event::ColorsChanged);
         }

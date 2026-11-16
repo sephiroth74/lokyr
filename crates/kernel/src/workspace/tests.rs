@@ -2209,6 +2209,67 @@ fn no_program_is_an_agent_while_the_agents_are_off_whatever_it_tells() {
 }
 
 #[test]
+fn a_program_s_session_status_marks_its_tab_and_goes_with_it() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(concat!(
+        r"read l; printf '\033]21337;status=Working;indicator=#ff9500;detail=Running the tests\007'; ",
+        r"read l; printf '\033]21337;status=Waiting\007'; read l",
+    )));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    // As the app finds a program other than a shell in its foreground.
+    assert!(workspace.set_pane_running(id, true, false));
+    workspace.pane(id).unwrap().text("\n");
+    collect_marks(&mut workspace, tab, |marks| marks.status.is_some());
+    let status = workspace.tab(tab).unwrap().marks().status.unwrap();
+    assert_eq!(
+        (
+            status.status.as_deref(),
+            status.indicator,
+            status.detail.as_deref()
+        ),
+        (
+            Some("Working"),
+            Some(Rgb::new(0xff, 0x95, 0x00)),
+            Some("Running the tests")
+        )
+    );
+    // A report of one key keeps the others.
+    workspace.pane(id).unwrap().text("\n");
+    collect_marks(&mut workspace, tab, |marks| {
+        marks
+            .status
+            .as_ref()
+            .and_then(|status| status.status.as_deref())
+            == Some("Waiting")
+    });
+    assert!(
+        workspace
+            .tab(tab)
+            .unwrap()
+            .marks()
+            .status
+            .unwrap()
+            .indicator
+            .is_some()
+    );
+    // The program left: its status goes, the terminal's too.
+    workspace.take_events();
+    assert!(workspace.set_pane_running(id, false, false));
+    assert_eq!(workspace.tab(tab).unwrap().marks().status, None);
+    assert!(changes(&mut workspace).contains(&Change::TabChanged { tab: tab.into() }));
+    assert!(
+        workspace
+            .pane(id)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .session_status()
+            .is_empty()
+    );
+}
+
+#[test]
 fn a_told_program_that_left_the_foreground_keeps_what_it_did_until_seen() {
     use sdk::AgentState::{Done, Working};
     let mut workspace = Workspace::new();

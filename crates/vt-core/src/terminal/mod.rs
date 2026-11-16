@@ -8,6 +8,7 @@ mod control;
 mod csi;
 mod cursor;
 mod decorations;
+mod desktop_notifications;
 mod edit;
 mod erase;
 mod escape;
@@ -24,6 +25,7 @@ mod print;
 mod rectangles;
 mod reports;
 mod selection;
+mod session_status;
 mod sgr;
 mod snapshot;
 mod status;
@@ -47,6 +49,7 @@ pub use osc::{Event, Progress, WorkingDirectory};
 pub use selection::{
     CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
 };
+pub use session_status::SessionStatus;
 pub use snapshot::{Line, Snapshot, SnapshotCursor};
 pub use status::{MOST_REPORT, MOST_STATUSES, Status, StatusKind, StatusState};
 pub use viewport::{Origin, Scroll};
@@ -492,6 +495,10 @@ pub struct Terminal {
     /// The programs' statuses that OSC 7501 told, from the least recently
     /// updated.
     statuses: Vec<Status>,
+    /// The session's status that OSC 21337 told.
+    session_status: SessionStatus,
+    /// The notifications of OSC 99 whose last part has not come.
+    held_notifications: Vec<desktop_notifications::Held>,
     /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
     query: Option<reports::Query>,
     query_bytes: Vec<u8>,
@@ -629,6 +636,8 @@ impl Terminal {
             working_directory: None,
             tab_color: None,
             statuses: Vec::new(),
+            session_status: SessionStatus::default(),
+            held_notifications: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,
             last_printed: None,

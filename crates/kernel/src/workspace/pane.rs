@@ -241,6 +241,8 @@ pub struct Pane {
     /// The AI agent that runs in its foreground, as the app finds it, and
     /// its state.
     pub(super) agent: Option<Agent>,
+    /// The status that its program told of its session, OSC 21337's.
+    pub(super) session_status: Option<terminal::SessionStatus>,
 }
 
 impl std::fmt::Debug for Pane {
@@ -314,6 +316,8 @@ pub(super) struct Happened {
     /// What the program's records of OSC 7501 tell, if they changed: none
     /// of no record left.
     pub(super) told: Option<Option<Told>>,
+    /// The session's status that OSC 21337 tells, if it changed.
+    pub(super) session: Option<terminal::SessionStatus>,
 }
 
 impl Pane {
@@ -387,6 +391,7 @@ impl Pane {
             command_started: None,
             commands_told: false,
             agent: None,
+            session_status: None,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -503,7 +508,7 @@ impl Pane {
     pub(super) fn happened(&mut self, now: Instant) -> Option<Happened> {
         let session = self.session.as_ref()?;
         self.told_at = Some(now);
-        let (events, title, bells, told) = {
+        let (events, title, bells, (told, session_status)) = {
             let mut terminal = session.lock();
             // What the terminal tells from now on wakes the main thread
             // again, whether the pane is drawn or not.
@@ -514,7 +519,10 @@ impl Pane {
             let told = events
                 .contains(&terminal::Event::StatusChanged)
                 .then(|| Told::of(&terminal));
-            (events, title, terminal.bells(), told)
+            let session_status = events
+                .contains(&terminal::Event::SessionStatusChanged)
+                .then(|| terminal.session_status().clone());
+            (events, title, terminal.bells(), (told, session_status))
         };
         let bell = bells != self.bells;
         self.bells = bells;
@@ -530,6 +538,7 @@ impl Pane {
             ended,
             output,
             told,
+            session: session_status,
         })
     }
 
@@ -1382,6 +1391,21 @@ impl Pane {
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept
+    }
+
+    /// The status that its program tells of its session, OSC 21337's, if
+    /// it tells one.
+    pub fn session_status(&self) -> Option<&terminal::SessionStatus> {
+        self.session_status.as_ref()
+    }
+
+    /// Forgets the status that its program told of its session, as the
+    /// program left: whether it told one.
+    pub(super) fn forget_session_status(&mut self) -> bool {
+        if let Some(mut terminal) = self.terminal() {
+            terminal.clear_session_status();
+        }
+        self.session_status.take().is_some()
     }
 
     /// The progress that its program tells last, OSC 9;4's, if it tells

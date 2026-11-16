@@ -1015,17 +1015,33 @@ fn waiting_message(tab: &TabInfo) -> Option<&str> {
         .filter(|_| matches!(tab.agent, Some(AgentState::Waiting | AgentState::Error)))
 }
 
+/// The status that a program of `tab` tells of its session, its text and
+/// its detail, as "Working — Running the tests".
+fn status_text(tab: &TabInfo) -> Option<String> {
+    let status = tab.status.as_ref()?;
+    match (status.text.as_deref(), status.detail.as_deref()) {
+        (Some(text), Some(detail)) => Some(format!("{text} — {detail}")),
+        (Some(text), None) | (None, Some(text)) => Some(text.to_owned()),
+        (None, None) => None,
+    }
+}
+
 /// `node`, of `tab`, of the message of its agent that waits as its
-/// tooltip, as the tab tells no more than its mark.
+/// tooltip, or of the status that its program tells of its session, as
+/// the tab tells no more than its mark.
 fn told(node: Node, tab: &TabInfo) -> Node {
-    match waiting_message(tab) {
+    match waiting_message(tab)
+        .map(str::to_owned)
+        .or_else(|| status_text(tab))
+    {
         Some(message) => node.tooltip(message),
         None => node,
     }
 }
 
 /// The marks of `tab` before its title, of `texts` to accessibility: the
-/// protected input's lock, its agent's state, its bell, and its program's
+/// protected input's lock, its agent's state, or the dot of the status
+/// that its program tells of its session, its bell, and its program's
 /// progress in a ring, where it shows `at` a ring; or a spinner of a
 /// program that runs, prints of its own and tells no progress, but a
 /// full-screen one; or a dot of the output that came while it did not
@@ -1050,6 +1066,30 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
             color: Some(Token::from(color)),
             ..Style::default()
         }));
+    } else if let Some(Color::Rgb(red, green, blue)) = tab
+        .status
+        .as_ref()
+        .and_then(|status| status.indicator.or(status.color))
+    {
+        // The status that its program tells of its session, of its dot's
+        // color, or of its text's of none, as iTerm2's.
+        marks.push(
+            Node::container(vec![])
+                .label(status_text(tab).unwrap_or_else(|| texts.running.clone()))
+                .style(Style {
+                    background: Some(Token::from(
+                        format!("#{red:02x}{green:02x}{blue:02x}").as_str(),
+                    )),
+                    radius: 3.5,
+                    ..Style::default()
+                })
+                .layout(Layout {
+                    width: Length::Points(7.0),
+                    min_width: Length::Points(7.0),
+                    height: Length::Points(7.0),
+                    ..Layout::default()
+                }),
+        );
     }
     if tab.bell {
         marks.push(Node::icon("bell").label(texts.bell.as_str()));

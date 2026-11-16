@@ -28,6 +28,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         secure: false,
         agent: None,
         agent_message: None,
+        status: None,
     }
 }
 
@@ -565,6 +566,65 @@ fn an_agent_that_waits_tells_its_message_in_its_tab_s_tooltip() {
     // A single tab's title too.
     let title = bar(&[waiting], &[], None, &Settings::default()).expect("a title");
     assert_eq!(title.tooltip.as_deref(), Some(message));
+}
+
+#[test]
+fn a_program_s_session_status_shows_its_dot_and_its_tooltip_unless_an_agent_s_mark() {
+    use lokyr_plugin_sdk::host::TabStatus;
+    let working = TabInfo {
+        status: Some(TabStatus {
+            text: Some("Working".to_owned()),
+            indicator: Some(Color::Rgb(0xff, 0x95, 0x00)),
+            color: Some(Color::Rgb(0xff, 0xff, 0xff)),
+            detail: Some("Running the tests".to_owned()),
+        }),
+        ..tab(1, "codex", false)
+    };
+    // Of its text's color alone, and of no text.
+    let colored = TabInfo {
+        status: Some(TabStatus {
+            color: Some(Color::Rgb(0x00, 0xd7, 0x5f)),
+            detail: Some("Idle".to_owned()),
+            ..TabStatus::default()
+        }),
+        ..tab(2, "codex", true)
+    };
+    // An agent's mark before it, its text in the tooltip still.
+    let agent = TabInfo {
+        agent: Some(AgentState::Working),
+        ..TabInfo {
+            id: lokyr_plugin_sdk::host::TabId(3),
+            ..working.clone()
+        }
+    };
+    let tabs = [working, colored, agent];
+    let never = Data::Text("never".to_owned());
+    let settings = Settings::of(&config(&[("close-button", never)]));
+    let bar = bar(&tabs, &[], None, &settings).expect("a bar");
+    let of = |id: u64| keyed(&bar, &tab_key(id)).expect("the tab");
+    let dot = |node: &Node| {
+        fn find<'a>(node: &'a Node, label: &str) -> Option<&'a Node> {
+            if node.label.as_deref() == Some(label) {
+                return Some(node);
+            }
+            node.children.iter().find_map(|child| find(child, label))
+        }
+        let label = node.tooltip.clone().unwrap_or_default();
+        find(node, &label).and_then(|dot| dot.style.background.clone())
+    };
+    assert_eq!(
+        of(1).tooltip.as_deref(),
+        Some("Working — Running the tests")
+    );
+    assert_eq!(marked(of(1)), ["Working — Running the tests"]);
+    assert_eq!(dot(of(1)), Some(Token::from("#ff9500")));
+    assert_eq!(of(2).tooltip.as_deref(), Some("Idle"));
+    assert_eq!(dot(of(2)), Some(Token::from("#00d75f")));
+    assert_eq!(marked(of(3)), ["Agent Working"]);
+    assert_eq!(
+        of(3).tooltip.as_deref(),
+        Some("Working — Running the tests")
+    );
 }
 
 #[test]

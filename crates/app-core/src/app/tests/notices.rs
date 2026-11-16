@@ -472,6 +472,29 @@ fn a_command_s_time_tells_seconds_minutes_and_hours() {
 }
 
 #[test]
+fn a_notification_of_osc_99_shows_once_its_last_part_comes() {
+    // A title in two parts and a body in base64, as kitty's protocol sends
+    // them, then nothing more.
+    let program = shell(concat!(
+        "stty raw -echo; echo ready; head -c 1 >/dev/null; ",
+        "printf '\\033]99;i=build:d=0;Build \\033\\\\'; ",
+        "printf '\\033]99;i=build:d=0;finished\\033\\\\'; ",
+        "printf '\\033]99;i=build:p=body:e=1;YWxsIHRlc3RzIHBhc3M=\\033\\\\'; sleep 10",
+    ));
+    let (mut fake, mut app, window) = configured("", program);
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.notifications().is_empty()
+    });
+    let shown = fake.notifications();
+    assert_eq!(
+        (shown[0].title.as_str(), shown[0].body.as_str()),
+        ("Build finished", "all tests pass")
+    );
+}
+
+#[test]
 fn a_notification_without_a_title_takes_the_user_s() {
     let (mut fake, mut app, window) = configured("", notifier());
     app.windows.get_mut(&window).unwrap().user_title = Some("build".to_owned());

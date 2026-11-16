@@ -263,6 +263,29 @@ pub struct TabInfo {
     /// `None` to the others, and of an agent that rang its bell alone.
     #[serde(default)]
     pub agent_message: Option<String>,
+    /// The status that a program of its panes tells of its session, as
+    /// iTerm2's OSC 21337 does: its active pane's, or another's, to a
+    /// plugin of `process-read`; `None` to the others.
+    #[serde(default)]
+    pub status: Option<TabStatus>,
+}
+
+/// The status that a program tells of its session, as iTerm2's OSC 21337
+/// does: each part none until it tells it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabStatus {
+    /// A short text of it, as "Working" or "Waiting", 256 bytes at most.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// The color of the dot that marks it, an RGB one.
+    #[serde(default)]
+    pub indicator: Option<Color>,
+    /// The color of its text, an RGB one.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// A line of what the program does, 1024 bytes at most.
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 /// What a tab holds.

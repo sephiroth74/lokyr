@@ -923,6 +923,7 @@ export type TabInfo = {
     secure: boolean?,
     agent: AgentState?,
     agent_message: string?,
+    status: TabStatus?,
 }
 
 export type TabKind =
@@ -932,6 +933,13 @@ export type TabKind =
 export type TabProgress = {
     state: ProgressState,
     value: number?,
+}
+
+export type TabStatus = {
+    text: string?,
+    indicator: Color?,
+    color: Color?,
+    detail: string?,
 }
 
 export type TextSize =

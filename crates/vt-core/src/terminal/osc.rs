@@ -1,6 +1,6 @@
 //! The OSC strings: what programs tell the terminal, and through it the
 //! embedder, besides text: titles, the working directory, notifications,
-//! progress and the tab's color.
+//! progress, statuses and the tab's color.
 
 use super::marks::Mark;
 use super::{ClipboardRequest, ClipboardTarget, Redraw, Terminal};
@@ -37,7 +37,7 @@ pub enum Event {
     TitleChanged,
     /// The working directory changed (OSC 7).
     WorkingDirectory(WorkingDirectory),
-    /// A notification (OSC 9 and 777), whose title can be empty.
+    /// A notification (OSC 9, 777 and 99), whose title can be empty.
     Notification {
         /// Its title.
         title: String,
@@ -50,6 +50,9 @@ pub enum Event {
     /// [`Terminal::statuses`] tells: a record kept, cleared, or dropped at a
     /// prompt or a reset.
     StatusChanged,
+    /// The session's status changed (OSC 21337), which
+    /// [`Terminal::session_status`] tells.
+    SessionStatusChanged,
     /// The tab's color changed, or went back to the default (OSC 6;1).
     TabColor(Option<Rgb>),
     /// A program changed the colors (OSC 4, 10 to 12, and their resets).
@@ -168,6 +171,8 @@ impl Terminal {
             },
             b"1337" => self.osc_1337(rest),
             b"7501" => self.report_status(rest, end),
+            b"21337" => self.set_session_status(rest),
+            b"99" => self.desktop_notification(rest, end),
             b"777" => {
                 let mut fields = rest.splitn(3, |&byte| byte == b';');
                 if fields.next() == Some(b"notify") {
