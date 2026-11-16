@@ -1982,11 +1982,20 @@ fn a_color_shown_before_it_is_written_goes_of_none_of_a_failed_write_and_of_its_
     run(&mut fake, &mut app, "panel.unpreview");
     assert_eq!(app.theme.light.colors.background, rgb(0x101010));
     assert!(app.theme_values.is_empty());
-    // Of a write that fails, its file's again, why told.
+    // Of a write that fails, its file's again, why told: of a folder that
+    // refuses new files, unless the tests run as a user whom no folder
+    // refuses, as root in a container.
     run(&mut fake, &mut app, "panel.preview");
     let themes = directory.join("themes");
     std::fs::set_permissions(&themes, std::fs::Permissions::from_mode(0o555)).unwrap();
-    run(&mut fake, &mut app, "panel.write");
+    let refuses = std::fs::write(themes.join("probe"), "").is_err();
+    if refuses {
+        run(&mut fake, &mut app, "panel.write");
+    } else {
+        eprintln!("the themes folder takes new files whatever its mode: no write fails");
+        let _ = std::fs::remove_file(themes.join("probe"));
+        run(&mut fake, &mut app, "panel.unpreview");
+    }
     std::fs::set_permissions(&themes, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(
         std::fs::read_to_string(themes.join("Mine.toml"))
