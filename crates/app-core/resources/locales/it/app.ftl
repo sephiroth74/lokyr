@@ -264,6 +264,11 @@ command-took-hours = { $hours } h { $minutes } min
 agent-waiting = { $agent } ti aspetta
 agent-done = { $agent } ha finito
 agent-failed = { $agent } si è fermato per un errore
+agent-told = { $agent }: { $message }
+agent-failed-told = { $agent } si è fermato per un errore: { $message }
+agent-permission = { $agent } ti chiede un permesso
+agent-question = { $agent } ha una domanda per te
+agent-auth = { $agent } ti chiede di accedere
 
 claude-code-ask = Aggiungere gli hook di Lokyr a { $path }?
 claude-code-ask-detail = Claude Code dirà a Lokyr con esattezza quando lavora, ti aspetta, ha finito o si ferma per un errore, mentre gira in Lokyr; in un altro terminale non fanno nulla. Il resto del file resta com'è, e una sua copia resta accanto, come settings.json.lokyr-backup.

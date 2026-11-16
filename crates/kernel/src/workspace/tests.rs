@@ -1975,6 +1975,283 @@ fn a_hooked_agent_asks_by_its_hooks_alone_and_an_unknown_hook_shows_nothing() {
     );
 }
 
+/// Collects the sessions' events until `done` holds of the agent of
+/// `pane`, for ten seconds at most, and returns them.
+fn collect_agent(
+    workspace: &mut Workspace,
+    pane: PaneId,
+    done: impl Fn(Option<&Agent>) -> bool,
+) -> Vec<Event> {
+    let start = Instant::now();
+    let mut events = Vec::new();
+    loop {
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
+        events.extend(workspace.take_events());
+        let agent = workspace.pane(pane).unwrap().agent();
+        if done(agent) {
+            return events;
+        }
+        assert!(start.elapsed() < Duration::from_secs(10), "{agent:?}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// The reports of OSC 7501 that Claude Code 2.1.325 writes through a turn,
+/// as its own code builds them once the terminal answers its query: idle
+/// as it starts; its turn's prompt mark, then at work, of a task of a
+/// subagent; a permission asked, its bell rung; at work again; the turn's
+/// end, of its marks, done; and every record cleared as it exits.
+const CLAUDE_CODE: &str = concat!(
+    r"read l; printf '\033]7501;state=idle:app=claude-code\033\\'; ",
+    r"read l; printf '\033]133;A;redraw=0\033\\\033]7501;state=working:app=claude-code:progress=0:msg=UmVhZGluZyBmaWxlcw==\033\\'; ",
+    r"printf '\033]7501;state=working:app=claude-code:id=a1:title=RXhwbG9yZSB0aGUgcGFyc2Vy\033\\'; ",
+    r"read l; printf '\033]7501;state=clear:id=a1\033\\\033]7501;state=blocked:app=claude-code:kind=permission:progress=50:msg=QWxsb3cgQmFzaDogbnBtIHRlc3Q/\033\\\a'; ",
+    r"read l; printf '\033]7501;state=working:app=claude-code:progress=50\033\\'; ",
+    r"read l; printf '\033]133;C\033\\\033]133;D\033\\\033]7501;state=done:app=claude-code:msg=VGVzdHMgcGFzcw==\033\\'; ",
+    r"read l; printf '\033]777;notify;lokyr-agent:working;\007\033]7501;state=working:app=claude-code\033\\\033]777;notify;lokyr-agent:done;\007'; ",
+    r"read l; printf '\033]7501;state=clear\033\\'; read l",
+);
+
+#[test]
+fn claude_code_s_status_tells_its_agent_every_state_of_no_guess() {
+    use sdk::AgentState::{Done, Waiting, Working};
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(CLAUDE_CODE));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    // As the app finds `claude` in its foreground; idle as it starts, of
+    // the name that it tells.
+    assert!(workspace.set_pane_agent(id, Some("claude")));
+    workspace.pane(id).unwrap().text("\n");
+    collect_agent(&mut workspace, id, |agent| {
+        agent.is_some_and(Agent::is_told)
+    });
+    let agent = workspace.pane(id).unwrap().agent().unwrap();
+    assert_eq!((agent.name(), agent.state()), ("claude-code", None));
+    // At work: of its turn's progress and detail, rather than its
+    // subagent's, the root before its tasks.
+    workspace.typed(id);
+    workspace.pane(id).unwrap().text("go\n");
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent { pane, name, before: None, now: Some(Working), told: false }
+                if *pane == id && name == "claude-code"
+        )),
+        "{events:?}"
+    );
+    let marks = workspace.tab(tab).unwrap().marks();
+    assert_eq!(marks.progress, Some(terminal::Progress::Set(0)));
+    assert_eq!(
+        workspace.pane(id).unwrap().agent().unwrap().message(),
+        Some("Reading files")
+    );
+    // A permission asked: waiting, of its kind and message, its bell
+    // telling nothing more, its progress paused.
+    workspace.pane(id).unwrap().text("x\n");
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent {
+                now: Some(Waiting),
+                told: false,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
+    let marks = workspace.tab(tab).unwrap().marks();
+    assert_eq!(
+        marks.agent_message.as_deref(),
+        Some("Allow Bash: npm test?")
+    );
+    assert_eq!(marks.progress, Some(terminal::Progress::Paused(Some(50))));
+    assert_eq!(
+        workspace.pane(id).unwrap().agent().unwrap().kind(),
+        Some(sdk::AgentKind::Permission)
+    );
+    assert_eq!(workspace.agents_waiting(), 1);
+    // The user's keys answer nothing that it does not tell.
+    workspace.typed(id);
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Waiting));
+    // At work again, past any time that a guess would end.
+    workspace.pane(id).unwrap().text("y\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    workspace.collect(&[], Instant::now() + Duration::from_secs(60));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Working));
+    assert_eq!(
+        workspace.tab(tab).unwrap().marks().progress,
+        Some(terminal::Progress::Set(50))
+    );
+    // Done, of its turn's end, its progress gone.
+    workspace.pane(id).unwrap().text("z\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Done));
+    assert_eq!(workspace.tab(tab).unwrap().marks().progress, None);
+    assert_eq!(
+        workspace.pane(id).unwrap().agent().unwrap().message(),
+        Some("Tests pass")
+    );
+    // Seen as its tab shows anew: its record goes, and it keeps telling
+    // its status, of no state.
+    let other = workspace.open_tab(window, pane("sleep 10"), 1).unwrap();
+    workspace.activate_tab(other);
+    workspace.activate_tab(tab);
+    let agent = workspace.pane(id).unwrap().agent().unwrap();
+    assert_eq!((agent.state(), agent.is_told()), (None, true));
+    assert!(
+        workspace
+            .pane(id)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .statuses()
+            .is_empty()
+    );
+    // Its hooks and its status both: the newer holds.
+    workspace.pane(id).unwrap().text("h\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Done));
+    // Every record cleared as it exits: its guesses back, of no state.
+    workspace.typed(id);
+    workspace.pane(id).unwrap().text("q\n");
+    collect_agent(&mut workspace, id, |agent| {
+        agent.is_some_and(|agent| !agent.is_told())
+    });
+    let agent = workspace.pane(id).unwrap().agent().unwrap();
+    assert_eq!((agent.name(), agent.state()), ("claude", None));
+}
+
+/// The reports of OSC 7501 that Codex 0.169.0 writes, as its own code
+/// builds them: at work, a permission asked, of no message, and every
+/// record cleared as it exits.
+const CODEX: &str = concat!(
+    r"read l; printf '\033]7501;state=working:app=codex\033\\'; ",
+    r"read l; printf '\033]7501;state=blocked:app=codex:kind=permission\033\\'; ",
+    r"read l; printf '\033]7501;state=working:app=codex\033\\'; ",
+    r"read l; printf '\033]7501;state=clear\033\\'; read l",
+);
+
+#[test]
+fn a_program_that_tells_its_status_is_an_agent_whether_the_config_lists_it_or_not() {
+    use sdk::AgentState::{Waiting, Working};
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(CODEX));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    workspace.pane(id).unwrap().text("\n");
+    let events = collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent { name, now: Some(Working), .. } if name == "codex"
+        )),
+        "{events:?}"
+    );
+    // The app's look finds no agent of the config's while it holds the
+    // foreground: it stays.
+    assert!(workspace.set_pane_agent(id, None));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Working));
+    workspace.pane(id).unwrap().text("x\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Waiting));
+    let marks = workspace.tab(tab).unwrap().marks();
+    assert_eq!((marks.agent_message, marks.progress), (None, None));
+    let agent = workspace.pane(id).unwrap().agent().unwrap();
+    assert_eq!(agent.kind(), Some(sdk::AgentKind::Permission));
+    workspace.pane(id).unwrap().text("y\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    // Its records cleared as it exits: the agent goes.
+    workspace.take_events();
+    workspace.pane(id).unwrap().text("z\n");
+    let events = collect_agent(&mut workspace, id, |agent| agent.is_none());
+    assert!(
+        events.iter().any(|event| matches!(
+            event,
+            Event::Agent {
+                before: Some(Working),
+                now: None,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+}
+
+#[test]
+fn no_program_is_an_agent_while_the_agents_are_off_whatever_it_tells() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane(CODEX));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    workspace.pane(id).unwrap().text("\n");
+    collect_agent(&mut workspace, id, |agent| agent.is_some());
+    // Off, as the config lists no agent's program: the agent goes, and
+    // none comes of what its program tells next.
+    workspace.set_agent_settings(AgentSettings {
+        on: false,
+        ..AgentSettings::default()
+    });
+    assert!(workspace.set_pane_agent(id, None));
+    assert!(workspace.pane(id).unwrap().agent().is_none());
+    workspace.pane(id).unwrap().text("x\n");
+    let start = Instant::now();
+    while workspace.pane(id).unwrap().terminal().unwrap().statuses()[0].state
+        != terminal::StatusState::Blocked
+    {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    workspace.collect(&workspace.pane_ids(), Instant::now());
+    assert!(workspace.pane(id).unwrap().agent().is_none());
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, None);
+}
+
+#[test]
+fn a_told_program_that_left_the_foreground_keeps_what_it_did_until_seen() {
+    use sdk::AgentState::{Done, Working};
+    let mut workspace = Workspace::new();
+    // A program of a job of its own, as a shell of job control runs it,
+    // which tells its work, then its end, and exits.
+    let window = workspace.open_window(pane(concat!(
+        "set -m; ",
+        r#"sh -c 'read l; printf "\033]7501;state=working:app=make\033\\\\"; "#,
+        r#"read l; printf "\033]7501;state=done:app=make\033\\\\"'; "#,
+        "read l",
+    )));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let id = workspace.tab(tab).unwrap().active_pane();
+    workspace.pane(id).unwrap().text("\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Working));
+    let group = workspace.pane(id).unwrap().foreground_group();
+    workspace.pane(id).unwrap().text("x\n");
+    collect_marks(&mut workspace, tab, |marks| marks.agent == Some(Done));
+    // The shell's group takes the foreground back, which the app's look
+    // finds: done stays.
+    let start = Instant::now();
+    while workspace.pane(id).unwrap().foreground_group() == group {
+        assert!(start.elapsed() < Duration::from_secs(10), "{group:?}");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(workspace.set_pane_agent(id, None));
+    assert_eq!(workspace.tab(tab).unwrap().marks().agent, Some(Done));
+    // Seen as its tab shows anew: the agent goes.
+    let other = workspace.open_tab(window, pane("sleep 10"), 1).unwrap();
+    workspace.activate_tab(other);
+    workspace.take_events();
+    workspace.activate_tab(tab);
+    assert!(workspace.pane(id).unwrap().agent().is_none());
+    assert!(workspace.take_events().iter().any(|event| matches!(
+        event,
+        Event::Agent {
+            before: Some(Done),
+            now: None,
+            ..
+        }
+    )));
+}
+
 #[test]
 fn a_tab_is_marked_of_the_printing_of_its_active_pane_alone() {
     let mut workspace = Workspace::new();

@@ -20,7 +20,7 @@ use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 use lokyr_plugin_sdk::host::{ShellCommand, Viewport};
 
 use super::PaneId;
-use super::agent::Agent;
+use super::agent::{Agent, Told};
 use crate::config::CloseOnExit;
 use crate::l10n::{Arg, Texts};
 
@@ -311,6 +311,9 @@ pub(super) struct Happened {
     pub(super) ended: bool,
     /// Whether output came.
     pub(super) output: bool,
+    /// What the program's records of OSC 7501 tell, if they changed: none
+    /// of no record left.
+    pub(super) told: Option<Option<Told>>,
 }
 
 impl Pane {
@@ -500,7 +503,7 @@ impl Pane {
     pub(super) fn happened(&mut self, now: Instant) -> Option<Happened> {
         let session = self.session.as_ref()?;
         self.told_at = Some(now);
-        let (events, title, bells) = {
+        let (events, title, bells, told) = {
             let mut terminal = session.lock();
             // What the terminal tells from now on wakes the main thread
             // again, whether the pane is drawn or not.
@@ -508,7 +511,10 @@ impl Pane {
             let events = terminal.take_events();
             let titled = events.contains(&terminal::Event::TitleChanged);
             let title = titled.then(|| terminal.title().to_owned());
-            (events, title, terminal.bells())
+            let told = events
+                .contains(&terminal::Event::StatusChanged)
+                .then(|| Told::of(&terminal));
+            (events, title, terminal.bells(), told)
         };
         let bell = bells != self.bells;
         self.bells = bells;
@@ -523,6 +529,7 @@ impl Pane {
             bell,
             ended,
             output,
+            told,
         })
     }
 
@@ -1378,9 +1385,10 @@ impl Pane {
     }
 
     /// The progress that its program tells last, OSC 9;4's, if it tells
-    /// one.
+    /// one, or of none, its status's of OSC 7501.
     pub fn progress(&self) -> Option<terminal::Progress> {
         self.progress
+            .or_else(|| self.agent.as_ref().and_then(Agent::progress))
     }
 
     /// What closing the pane would end, by its name, as `vim`, or empty

@@ -313,10 +313,17 @@ command-took-minutes = { $minutes } min { $seconds } s
 command-took-hours = { $hours } h { $minutes } min
 
 # The notification of an AI agent, under its tab's title: its program's
-# name, as `claude`, waits for the user, or is done with what it was asked.
+# name, as `claude`, waits for the user, or is done with what it was asked;
+# of the message that it told, as "Allow Bash: npm test?"; or of what it
+# asks for, a permission, an answer or a login.
 agent-waiting = { $agent } is waiting for you
 agent-done = { $agent } is done
 agent-failed = { $agent } stopped on an error
+agent-told = { $agent }: { $message }
+agent-failed-told = { $agent } stopped on an error: { $message }
+agent-permission = { $agent } asks for your permission
+agent-question = { $agent } has a question for you
+agent-auth = { $agent } asks you to log in
 
 # Claude Code's integration: the question of each of its configurations,
 # the file that does not read or write, and what was done.

@@ -5729,6 +5729,7 @@ impl Host<'_, '_> {
                             name: agent.name().to_owned(),
                             state: agent.state(),
                             message: agent.message().map(str::to_owned),
+                            kind: agent.kind(),
                             since: u64::try_from(
                                 now.saturating_duration_since(agent.since()).as_millis(),
                             )

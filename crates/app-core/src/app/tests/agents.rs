@@ -1,7 +1,7 @@
 //! The tests of the AI agents in the panes: found by their programs'
 //! names, their notifications and the Dock's badge.
 
-use super::super::INSTALL_CLAUDE_CODE;
+use super::super::{INSTALL_CLAUDE_CODE, agents};
 use super::*;
 
 /// An agent of the program `perl`, in raw mode: ready; at a key, it works a
@@ -350,5 +350,52 @@ fn an_agent_s_hooks_tell_its_state_and_show_no_notification() {
         .iter()
         .map(|told| told.body.as_str())
         .collect();
-    assert!(bodies.contains(&"perl is waiting for you"), "{bodies:?}");
+    assert!(
+        bodies.contains(&"perl: Claude needs your permission"),
+        "{bodies:?}"
+    );
+}
+
+#[test]
+fn a_program_s_status_tells_its_agent_and_notifications_of_its_kind_and_message() {
+    use lokyr_kernel::plugins::host::AgentState::{Done, Error, Waiting};
+    // A program that the config does not list, which tells a question of
+    // no message, then its end and its error of a message, of OSC 7501.
+    let agent = shell(concat!(
+        "exec perl -e '$| = 1; system(\"stty raw -echo\"); print \"ready\\n\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]7501;state=blocked:app=codex:kind=question\\e\\\\\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]7501;state=done:app=codex:msg=VGVzdHMgcGFzcw==\\e\\\\\"; ",
+        "sysread(STDIN, $c, 1); print \"\\e]7501;state=error:app=codex:msg=UmF0ZSBsaW1pdGVk\\e\\\\\"; sleep 30'",
+    ));
+    let (mut fake, mut app, window) = configured("[agents]\nprograms = [\"claude\"]\n", agent);
+    fake.send(&mut app, window, WindowEvent::Focused(false));
+    let state = |app: &App| agent_of(app, window).and_then(|(_, state)| state);
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Waiting));
+    assert_eq!(agent_of(&app, window).unwrap().0, "codex");
+    let bodies: Vec<&str> = fake
+        .notifications()
+        .iter()
+        .map(|told| told.body.as_str())
+        .collect();
+    assert_eq!(bodies, ["codex has a question for you"]);
+    // The next notifications, which the window's pause holds, of the
+    // agent's message.
+    let notice = |app: &App| {
+        let shown = app.windows.get(&window).unwrap().window;
+        let agent = app.workspace.focused(shown).unwrap().agent().unwrap();
+        agents::agent_notice(
+            &app.texts,
+            agent.name(),
+            agent.state(),
+            agent.message(),
+            agent.kind(),
+        )
+    };
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Done));
+    assert_eq!(notice(&app), "codex: Tests pass");
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| state(app) == Some(Error));
+    assert_eq!(notice(&app), "codex stopped on an error: Rate limited");
 }

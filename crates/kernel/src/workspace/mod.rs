@@ -31,10 +31,10 @@ use std::time::{Duration, Instant};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host as sdk;
 use lokyr_vt_core::page::Rgb;
-use lokyr_vt_core::terminal::{self, ClipboardTarget};
+use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
-use agent::HOOKED;
 pub use agent::{Agent, AgentSettings, Hooked};
+use agent::{HOOKED, Told};
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
     ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
@@ -743,6 +743,18 @@ impl Workspace {
                 continue;
             };
             pane.look_at_printing(now);
+            // A program that tells its status is an agent, whether the
+            // config lists it or not, of the foreground's group as it
+            // tells it.
+            let group = happened
+                .told
+                .is_some()
+                .then(|| pane.foreground_group())
+                .flatten();
+            if matches!(happened.told, Some(Some(_))) && pane.agent.is_none() && self.agents.on {
+                let program = pane.foreground_program().unwrap_or_default();
+                pane.agent = Some(Agent::unlisted(&program));
+            }
             // A title whose spinner turned, which its agent's work tells.
             let spun = happened
                 .title
@@ -790,14 +802,32 @@ impl Workspace {
                 }
                 _ => None,
             });
-            let hooked = happened.events.iter().rev().find_map(|event| match event {
-                terminal::Event::Notification { title, body } => Hooked::of(title).map(|state| {
-                    (
-                        state,
-                        Some(body.trim().to_owned()).filter(|body| !body.is_empty()),
-                    )
-                }),
-                _ => None,
+            let hooked =
+                happened
+                    .events
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find_map(|(at, event)| match event {
+                        terminal::Event::Notification { title, body } => {
+                            Hooked::of(title).map(|state| {
+                                (
+                                    at,
+                                    state,
+                                    Some(body.trim().to_owned()).filter(|body| !body.is_empty()),
+                                )
+                            })
+                        }
+                        _ => None,
+                    });
+            // What its status tells, if it changed, and where in the batch,
+            // the newer of it and its hooks' state holding.
+            let status = happened.told.map(|told| {
+                let at = happened
+                    .events
+                    .iter()
+                    .rposition(|event| *event == terminal::Event::StatusChanged);
+                (at, told)
             });
             let asked = happened.bell || told.is_some();
             let told = told.map(|message| message.trim().to_owned());
@@ -868,10 +898,12 @@ impl Workspace {
                     },
                     // An agent's hooks' notification, which tells its state,
                     // or one of a state that this version does not know, and
-                    // shows nothing.
+                    // shows nothing; and a change of its status, which its
+                    // agent takes.
                     terminal::Event::Notification { title, .. } if title.starts_with(HOOKED) => {
                         continue;
                     }
+                    terminal::Event::StatusChanged => continue,
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
@@ -897,15 +929,27 @@ impl Workspace {
                 if spun || busy {
                     agent.worked(now);
                 }
-                // An agent whose hooks tell its state asks by them alone:
-                // its bell and plain notifications, as its idle prompt's,
-                // tell nothing, whatever their order in the batch.
-                if asked && hooked.is_none() && !agent.is_hooked() {
+                // An agent whose hooks or status tell its state asks by
+                // them alone: its bell and plain notifications, as its idle
+                // prompt's, tell nothing, whatever their order in the batch.
+                if asked && hooked.is_none() && !agent.is_hooked() && !agent.is_told() {
                     agent.asked_for_user(told.as_deref());
                 }
-                if let Some((state, message)) = &hooked {
+                let hooked_at = hooked.as_ref().map(|&(at, ..)| at);
+                let (status_at, mut status) =
+                    status.map_or((None, None), |(at, told)| (at, Some(told)));
+                let mut by_status = |agent: &mut Agent| {
+                    if let Some(told) = status.take() {
+                        agent.told(told, group);
+                    }
+                };
+                if hooked_at > status_at {
+                    by_status(agent);
+                }
+                if let Some((_, state, message)) = &hooked {
                     agent.hooked(*state, message.as_deref());
                 }
+                by_status(agent);
             });
             // Its tab's marks: its progress, whether its program prints,
             // and the output and the bell that came while it did not show.
@@ -1451,37 +1495,56 @@ impl Workspace {
     /// Changes the agent of `pane`, if it has one, as `change` does: a
     /// change of its state is told, of whether it asked for the user by a
     /// notification of its own, `told`, and its tab takes it.
+    ///
+    /// What its status told that it did or failed, once seen, goes from
+    /// its terminal's records, the rest telling its state; an agent spent,
+    /// of no state nor status, whose program left or that the config does
+    /// not list, goes from its pane.
     fn change_agent(&mut self, pane: PaneId, told: bool, change: impl FnOnce(&mut Agent)) {
-        let Some(agent) = self
-            .panes
-            .get_mut(&pane)
-            .and_then(|pane| pane.agent.as_mut())
-        else {
+        let Some(shown) = self.panes.get_mut(&pane) else {
+            return;
+        };
+        let Some(mut agent) = shown.agent.take() else {
             return;
         };
         let before = agent.state();
-        let message = agent.message().map(str::to_owned);
-        change(agent);
-        let now = agent.state();
-        if before == now {
-            if agent.message() != message.as_deref()
-                && let Some(tab) = self.tab_of.get(&pane).copied()
-            {
-                self.mark_agent(tab);
-            }
-            return;
+        let looked = (agent.message().map(str::to_owned), agent.progress());
+        change(&mut agent);
+        if agent.is_told()
+            && matches!(before, Some(sdk::AgentState::Done | sdk::AgentState::Error))
+            && agent.state().is_none()
+        {
+            // Of no record left, an agent of the config's program keeps
+            // telling its status, of no guess, and another is spent.
+            let rest = shown
+                .terminal()
+                .map_or_else(Told::default, |mut terminal| forget_finished(&mut terminal));
+            let keeps = agent.is_listed() || rest != Told::default();
+            agent.told(keeps.then_some(rest), None);
         }
-        agent.changed_at(Instant::now());
+        let now = agent.state();
+        let relooked = looked != (agent.message().map(str::to_owned), agent.progress());
+        if before != now {
+            agent.changed_at(Instant::now());
+        }
         let name = agent.name().to_owned();
-        self.events.push(Event::Agent {
-            pane,
-            name,
-            before,
-            now,
-            told: told && now == Some(sdk::AgentState::Waiting),
-        });
-        if let Some(tab) = self.tab_of.get(&pane).copied() {
+        if !agent.is_spent() {
+            shown.agent = Some(agent);
+        }
+        let tab = self.tab_of.get(&pane).copied();
+        if before != now {
+            self.events.push(Event::Agent {
+                pane,
+                name,
+                before,
+                now,
+                told: told && now == Some(sdk::AgentState::Waiting),
+            });
+        }
+        if let Some(tab) = tab.filter(|_| before != now || relooked) {
             self.mark_agent(tab);
+            let progress = self.tab_progress(tab);
+            self.mark(tab, |marks| marks.progress = progress);
         }
     }
 
@@ -1510,11 +1573,49 @@ impl Workspace {
     /// Marks `pane` of the AI agent of the program `name` that runs in its
     /// foreground, as the app finds it, or of none: an agent of another
     /// name starts anew, of no state; whether the pane is open.
+    ///
+    /// A program that tells its status keeps its states while its group
+    /// holds the foreground, whether the config lists it or not; once
+    /// another holds it, as its program exited, its records of work, of
+    /// waiting and of idle go, and what it did or failed stays until seen,
+    /// unless an agent of the config's comes.
     pub fn set_pane_agent(&mut self, pane: PaneId, name: Option<&str>) -> bool {
         let Some(shown) = self.panes.get_mut(&pane) else {
             return false;
         };
-        if shown.agent.as_ref().map(Agent::name) == name {
+        let group = shown.foreground_group();
+        if let Some(agent) = shown
+            .agent
+            .as_mut()
+            .filter(|agent| agent.is_told() && self.agents.on)
+        {
+            if agent.told_group() == group {
+                if let Some(name) = name {
+                    agent.listed_as(name);
+                }
+                return true;
+            }
+            let rest = shown.terminal().and_then(|mut terminal| {
+                terminal.forget_statuses(|status| {
+                    matches!(status.state, StatusState::Done | StatusState::Error)
+                });
+                Told::of(&terminal)
+            });
+            self.change_agent(pane, false, |agent| {
+                agent.leave();
+                agent.told(rest, None);
+            });
+        }
+        let Some(shown) = self.panes.get_mut(&pane) else {
+            return false;
+        };
+        let current = shown.agent.as_ref();
+        if current
+            .filter(|agent| !agent.has_left())
+            .map(Agent::program)
+            == name
+            || (name.is_none() && current.is_some_and(Agent::has_left))
+        {
             return true;
         }
         let before = shown.agent.as_ref().and_then(Agent::state);
@@ -1953,4 +2054,13 @@ impl Workspace {
         });
         Some(window)
     }
+}
+
+/// Takes away the records of `terminal` of what its programs did or
+/// failed, as seen: what the rest tell, nothing of none, its program
+/// telling its status still.
+fn forget_finished(terminal: &mut Terminal) -> Told {
+    terminal
+        .forget_statuses(|status| !matches!(status.state, StatusState::Done | StatusState::Error));
+    Told::of(terminal).unwrap_or_default()
 }

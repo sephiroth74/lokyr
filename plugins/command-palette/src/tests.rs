@@ -482,6 +482,7 @@ fn agent(
         name: name.to_owned(),
         state,
         message: message.map(str::to_owned),
+        kind: None,
         since,
     }
 }

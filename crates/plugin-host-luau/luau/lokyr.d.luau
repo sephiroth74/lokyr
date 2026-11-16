@@ -345,8 +345,14 @@ export type AgentInfo = {
     name: string,
     state: AgentState?,
     message: string?,
+    kind: AgentKind?,
     since: number?,
 }
+
+export type AgentKind =
+    | "permission"
+    | "question"
+    | "auth"
 
 export type AgentState =
     | "working"

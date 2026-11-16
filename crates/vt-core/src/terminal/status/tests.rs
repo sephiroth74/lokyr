@@ -225,7 +225,7 @@ fn the_embedder_forgets_the_records_that_it_no_longer_shows() {
     fed(&mut terminal, "\x1b]7501;state=done:id=a\x1b\\");
     fed(&mut terminal, "\x1b]7501;state=error:id=b\x1b\\");
     assert!(terminal.forget_statuses(|status| status.id != "a"));
-    assert_eq!(terminal.take_events(), [Event::StatusChanged]);
+    assert_eq!(terminal.take_events(), []);
     assert!(!terminal.forget_statuses(|_| true));
     assert_eq!(terminal.take_events(), []);
     assert_eq!(terminal.statuses().len(), 1);

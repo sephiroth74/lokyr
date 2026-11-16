@@ -301,6 +301,19 @@ pub enum AgentState {
     Error,
 }
 
+/// What an AI agent that waits for the user asks for, as its program tells
+/// it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentKind {
+    /// A permission, as to run a command.
+    Permission,
+    /// An answer to a question.
+    Question,
+    /// A login.
+    Auth,
+}
+
 /// An AI agent that runs in a pane, as a read of the agents tells it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AgentInfo {
@@ -310,16 +323,21 @@ pub struct AgentInfo {
     pub tab: TabId,
     /// Its tab's window.
     pub window: WindowId,
-    /// Its program's name, as `[agents] programs` lists it.
+    /// Its program's name, as `[agents] programs` lists it, or as the
+    /// program tells it of its status.
     pub name: String,
     /// Its state, none before it works or asks, and once what it did or
     /// asked was seen.
     #[serde(default)]
     pub state: Option<AgentState>,
     /// The message of the notification by which it asked for the user,
-    /// while it waits, 200 characters at most.
+    /// while it waits, or the line that its status tells of what it does,
+    /// waits for or ended with, 200 characters at most.
     #[serde(default)]
     pub message: Option<String>,
+    /// What it asks for while it waits, if its status tells it.
+    #[serde(default)]
+    pub kind: Option<AgentKind>,
     /// How long it has been in its state, in milliseconds.
     #[serde(default)]
     pub since: u64,

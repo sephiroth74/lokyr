@@ -15,6 +15,7 @@ tip-cycle-windows = Premi { $keys } per passare alla finestra successiva, anche 
 tip-claude-code = Lokyr › Installa l'integrazione con Claude Code… fa dire a Claude Code alla sua scheda esattamente quando lavora, ti aspetta o ha finito.
 tip-agents-list = Premi { $keys } per vedere tutti gli agenti AI di tutte le finestre, prima quelli che ti aspettano.
 tip-agents = Una scheda segna l'agente AI che contiene, come Claude Code: una scintilla mentre lavora, un punto mentre ti aspetta, con la sua richiesta nel tooltip della scheda, una spunta quando ha finito.
+tip-agent-status = Gli agenti che dichiarano il loro stato, come Claude Code e Codex, lo mostrano esatto sulla loro scheda: che cosa chiedono, il loro messaggio e il loro avanzamento, che la configurazione li elenchi o no.
 tip-prompts = Premi { $keys } per tornare al prompt del comando precedente.
 tip-copy-mode = Premi { $keys } per la modalità copia: i tasti di vi spostano e selezionano, senza il mouse.
 tip-zoom = Premi { $keys } per ingrandire il pannello a tutto il tab, e di nuovo per rimetterlo a posto.

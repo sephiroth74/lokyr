@@ -1300,7 +1300,8 @@ The names of the agents' programs, as the processes in a pane's foreground go by
 | a list of names | `["claude", "codex", "gemini", "opencode", "aider", "cursor-agent", "copilot", "amp", "goose", "qwen", "crush", "droid"]` |
 
 - A program goes by its executable's name, by the name that started it, as a link's, and, run by `node`, `python`, `bun`, `deno`, `ruby` or `perl`, by its script's or its module's, as `node /opt/homebrew/bin/gemini` goes by `gemini` and `python3 -m aider` by `aider`; each process of the foreground's group counts, as a launcher's program.
-- An empty list turns the agents off: no tab marks one, and no notification nor badge comes.
+- A program that tells its status, of OSC 7501, as Claude Code and Codex do, is an agent too, whether the list names it or not, which shows what it tells rather than what its output suggests.
+- An empty list turns the agents off: no tab marks one, of those that tell their status neither, and no notification nor badge comes.
 - It applies to the programs that start after you save the file, and to those that run as their pane shows output again.
 
 ### `done-after`
@@ -1326,7 +1327,7 @@ Whether an agent tells, in a notification of the system's, that it waits for you
 |---|---|
 | `true`, `false` | `true` |
 
-- The notification tells the agent's program and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's iTerm2 and Ghostty channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells "is waiting for you" of an agent that rings its bell.
+- The notification tells the agent's program, the message that it told, if any, and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's iTerm2 and Ghostty channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells "is waiting for you" of an agent that rings its bell.
 - It applies as you save the file.
 
 ### `dock-badge`

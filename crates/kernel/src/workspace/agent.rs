@@ -23,11 +23,22 @@
 //! plain notifications its asking. But a key typed into it while it works
 //! or waits, as an Escape that interrupts it, which its hooks do not tell,
 //! lets its output and its quiet tell its state again until its next hook.
+//!
+//! A program that tells its status, of OSC 7501, the Program Status
+//! Protocol, is an agent whether the config lists it or not, its state the
+//! most urgent of its tasks': `working` at work, `blocked` waiting, of what
+//! it asks for and its message, `done` and `error` until seen, `idle` of no
+//! state. It takes the states that it tells alone, of no guess, until its
+//! program clears its records, a new prompt drops those of work, of
+//! waiting and of idle, or its program leaves the foreground, what it did
+//! or failed staying until seen; its hooks' states and its status's both
+//! apply, the newer holding.
 
 use std::time::{Duration, Instant};
 
-use lokyr_plugin_sdk::host::AgentState;
+use lokyr_plugin_sdk::host::{AgentKind, AgentState};
 use lokyr_plugin_sdk::text::is_hidden;
+use lokyr_vt_core::terminal::{Progress, StatusKind, StatusState, Terminal};
 
 /// How long after its last sign of work an agent that asked for nothing
 /// is done, unless the config gives another.
@@ -68,17 +79,114 @@ impl Hooked {
 /// The characters of an agent's message that it keeps, its start.
 pub const MESSAGE: usize = 200;
 
+/// What a program's records of OSC 7501 tell of its agent: the most urgent
+/// of its tasks, blocked before failed, failed before at work, at work
+/// before done and done before idle, of each state the nearest to the
+/// root, then the latest; of none, as the records that it was seen of
+/// went, nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Told {
+    /// Its state, none of an idle program.
+    pub state: Option<AgentState>,
+    /// What it asks for, while it waits.
+    pub kind: Option<AgentKind>,
+    /// Its message, of what it does, waits for or ended with, or of none
+    /// its task's title, its start, of no control character.
+    pub message: Option<String>,
+    /// The program's own name, as `claude`, if it tells one.
+    pub name: Option<String>,
+    /// The progress that its tab shows: of a value, running while it works
+    /// and paused while it waits.
+    pub progress: Option<Progress>,
+}
+
+impl Told {
+    /// What the records of `terminal` tell, none of no record.
+    pub fn of(terminal: &Terminal) -> Option<Self> {
+        let rank = |state: StatusState| match state {
+            StatusState::Blocked => 4,
+            StatusState::Error => 3,
+            StatusState::Working => 2,
+            StatusState::Done => 1,
+            StatusState::Idle => 0,
+        };
+        let records = terminal.statuses();
+        // The last of the most urgent and nearest to the root, as the
+        // records go from the least recently updated.
+        let depth = |id: &str| {
+            if id.is_empty() {
+                0
+            } else {
+                1 + id.matches('/').count()
+            }
+        };
+        let status = records
+            .iter()
+            .max_by_key(|status| (rank(status.state), std::cmp::Reverse(depth(&status.id))))?;
+        let name = terminal
+            .status_app(status)
+            .or_else(|| {
+                records
+                    .iter()
+                    .rev()
+                    .find_map(|record| record.app.as_deref())
+            })
+            .map(str::to_owned);
+        let progress = match status.state {
+            StatusState::Working => status.progress.map(Progress::Set),
+            StatusState::Blocked => status.progress.map(|value| Progress::Paused(Some(value))),
+            _ => None,
+        };
+        Some(Self {
+            state: match status.state {
+                StatusState::Idle => None,
+                StatusState::Working => Some(AgentState::Working),
+                StatusState::Blocked => Some(AgentState::Waiting),
+                StatusState::Done => Some(AgentState::Done),
+                StatusState::Error => Some(AgentState::Error),
+            },
+            kind: status.kind.map(|kind| match kind {
+                StatusKind::Permission => AgentKind::Permission,
+                StatusKind::Question => AgentKind::Question,
+                StatusKind::Auth => AgentKind::Auth,
+            }),
+            message: status
+                .msg
+                .as_deref()
+                .or(status.title.as_deref())
+                .map(kept)
+                .filter(|message| !message.is_empty()),
+            name,
+            progress,
+        })
+    }
+}
+
+/// The start of `message` that an agent keeps, of no control nor hidden
+/// character.
+fn kept(message: &str) -> String {
+    message
+        .chars()
+        .filter(|&character| !character.is_control() && !is_hidden(character))
+        .take(MESSAGE)
+        .collect()
+}
+
 /// The agents' settings, as the config gives them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AgentSettings {
     /// How long after its last sign of work an agent is done.
     pub done_after: Duration,
+    /// Whether the panes have agents at all, those that tell their status
+    /// too, as the config lists agents' programs or none.
+    pub on: bool,
 }
 
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
             done_after: DONE_AFTER,
+            on: true,
         }
     }
 }
@@ -103,6 +211,19 @@ pub struct Agent {
     /// Whether its output and its quiet tell its state meanwhile, after a
     /// key typed into it while its hooks told it at work or waiting.
     guessing: bool,
+    /// What its program's records of OSC 7501 told last, while it keeps
+    /// some.
+    told: Option<Told>,
+    /// Whether its state is its status's, rather than its hooks'.
+    of_status: bool,
+    /// The terminal's foreground's group as its program told its status.
+    told_group: Option<u32>,
+    /// Whether the config lists its program, rather than its status alone
+    /// telling it.
+    listed: bool,
+    /// Whether its program left the foreground while what it did or failed
+    /// was not seen yet.
+    left: bool,
 }
 
 impl Agent {
@@ -118,12 +239,88 @@ impl Agent {
             since: Instant::now(),
             hooked: false,
             guessing: false,
+            told: None,
+            of_status: false,
+            told_group: None,
+            listed: true,
+            left: false,
         }
     }
 
-    /// Its program's name, as the config lists it.
+    /// The agent of a program that the config does not list, as `name`
+    /// runs in the foreground, which tells its status.
+    pub fn unlisted(name: &str) -> Self {
+        Self {
+            listed: false,
+            ..Self::new(name)
+        }
+    }
+
+    /// Its program's name, as its status tells it, or as the config lists
+    /// it.
     pub fn name(&self) -> &str {
+        self.told
+            .as_ref()
+            .and_then(|told| told.name.as_deref())
+            .unwrap_or(&self.name)
+    }
+
+    /// Its program's name as the config lists it, or as it runs in the
+    /// foreground.
+    pub(super) fn program(&self) -> &str {
         &self.name
+    }
+
+    /// What it asks for while it waits, if its status tells it.
+    pub fn kind(&self) -> Option<AgentKind> {
+        self.told
+            .as_ref()
+            .filter(|_| self.of_status && self.state == Some(AgentState::Waiting))
+            .and_then(|told| told.kind)
+    }
+
+    /// The progress that its status tells, while it tells one.
+    pub fn progress(&self) -> Option<Progress> {
+        self.told.as_ref().and_then(|told| told.progress)
+    }
+
+    /// Whether its program tells its status, of OSC 7501.
+    pub fn is_told(&self) -> bool {
+        self.told.is_some()
+    }
+
+    /// The terminal's foreground's group as its program told its status.
+    pub(super) fn told_group(&self) -> Option<u32> {
+        self.told_group
+    }
+
+    /// The config lists its program, as the app found it in the
+    /// foreground after its status.
+    pub(super) fn listed_as(&mut self, name: &str) {
+        name.clone_into(&mut self.name);
+        self.listed = true;
+    }
+
+    /// Whether the config lists its program.
+    pub(super) fn is_listed(&self) -> bool {
+        self.listed
+    }
+
+    /// Its program left the foreground, what it did or failed waiting to
+    /// be seen.
+    pub(super) fn leave(&mut self) {
+        self.left = true;
+    }
+
+    /// Whether its program left the foreground.
+    pub(super) fn has_left(&self) -> bool {
+        self.left
+    }
+
+    /// Whether it is spent: of no state nor status, its program gone from
+    /// the foreground or never listed.
+    pub(super) fn is_spent(&self) -> bool {
+        self.state.is_none() && self.told.is_none() && (self.left || !self.listed)
     }
 
     /// Its state, none before it works or asks, and once what it did or
@@ -153,7 +350,8 @@ impl Agent {
     /// runs, its title's spinner; one no later than the latest tells
     /// nothing new. Waiting holds until the user answers.
     pub fn worked(&mut self, at: Instant) {
-        if (self.hooked && !self.guessing)
+        if self.told.is_some()
+            || (self.hooked && !self.guessing)
             || self.state == Some(AgentState::Waiting)
             || self.latest.is_some_and(|latest| at <= latest)
         {
@@ -168,12 +366,46 @@ impl Agent {
     pub fn asked_for_user(&mut self, message: Option<&str>) {
         self.state = Some(AgentState::Waiting);
         if let Some(message) = message.filter(|message| !message.is_empty()) {
-            let kept: String = message
-                .chars()
-                .filter(|&character| !character.is_control() && !is_hidden(character))
-                .take(MESSAGE)
-                .collect();
-            self.message = Some(kept);
+            self.message = Some(kept(message));
+        }
+    }
+
+    /// Its program's records of OSC 7501 tell `told`, of the terminal's
+    /// foreground's `group`, or, of none, no longer tell anything: its
+    /// status alone tells its state while it keeps records, its output,
+    /// its quiet and its bell telling nothing; once they go, its state goes
+    /// with them, unless its hooks told it since. What tells nothing new of
+    /// the last that its records told changes nothing, as the records that
+    /// the workspace forgets itself.
+    pub fn told(&mut self, told: Option<Told>, group: Option<u32>) {
+        if told == self.told {
+            return;
+        }
+        match told {
+            Some(told) => {
+                self.of_status = true;
+                self.guessing = false;
+                self.latest = None;
+                self.asked = false;
+                // The group of the program that first tells it, or of
+                // the next after it left, which holds the foreground.
+                if self.told.is_none() || self.left {
+                    self.told_group = group.or(self.told_group);
+                    self.left = false;
+                }
+                self.state = told.state;
+                self.message.clone_from(&told.message);
+                self.told = Some(told);
+            }
+            None => {
+                self.told = None;
+                self.told_group = None;
+                if self.of_status {
+                    self.of_status = false;
+                    self.state = None;
+                    self.message = None;
+                }
+            }
         }
     }
 
@@ -181,6 +413,7 @@ impl Agent {
     /// from now on they alone tell its work and its end.
     pub fn hooked(&mut self, state: Hooked, message: Option<&str>) {
         self.hooked = true;
+        self.of_status = false;
         self.guessing = false;
         self.latest = None;
         match state {
@@ -210,6 +443,15 @@ impl Agent {
     /// The user typed into its pane at `at`: what it waited for is
     /// answered, and what it did is seen; it works on.
     pub fn typed(&mut self, at: Instant) {
+        // Its status tells its own work and waiting: what it did or failed
+        // alone is seen.
+        if self.told.is_some() {
+            if matches!(self.state, Some(AgentState::Done | AgentState::Error)) {
+                self.state = None;
+                self.message = None;
+            }
+            return;
+        }
         self.asked = true;
         self.message = None;
         self.state = match self.state {
@@ -226,10 +468,16 @@ impl Agent {
         };
     }
 
-    /// Its tab showed anew: what it did is seen.
+    /// Its tab showed anew: what it did is seen, and what its status told
+    /// that it failed.
     pub fn seen(&mut self) {
-        if self.state == Some(AgentState::Done) {
+        if self.state == Some(AgentState::Done)
+            || (self.of_status && self.state == Some(AgentState::Error))
+        {
             self.state = None;
+            if self.of_status {
+                self.message = None;
+            }
         }
     }
 
@@ -237,7 +485,9 @@ impl Agent {
     /// while it does not work.
     pub fn due(&self, settings: AgentSettings) -> Option<Instant> {
         let latest = self.latest.filter(|_| {
-            (!self.hooked || self.guessing) && self.state == Some(AgentState::Working)
+            self.told.is_none()
+                && (!self.hooked || self.guessing)
+                && self.state == Some(AgentState::Working)
         })?;
         Some(latest + settings.done_after)
     }
@@ -307,6 +557,7 @@ mod tests {
 
     const SETTINGS: AgentSettings = AgentSettings {
         done_after: DONE_AFTER,
+        on: true,
     };
 
     #[test]
@@ -508,6 +759,7 @@ mod tests {
         // Of the config's time.
         let slow = AgentSettings {
             done_after: Duration::from_secs(10),
+            ..SETTINGS
         };
         agent.typed(start + Duration::from_secs(19));
         agent.worked(start + Duration::from_secs(20));
@@ -547,5 +799,190 @@ mod tests {
             Some(AgentState::Error)
         );
         assert_eq!(most_urgent([None, None]), None);
+    }
+
+    /// A terminal fed `reports` of OSC 7501, each its fields.
+    fn reported(reports: &[&str]) -> Terminal {
+        let mut terminal = Terminal::new(40, 5, lokyr_vt_core::terminal::Options::default());
+        let mut parser = lokyr_vt_core::parser::Parser::new();
+        for report in reports {
+            parser.advance(
+                &mut terminal,
+                format!("\x1b]7501;{report}\x1b\\").as_bytes(),
+            );
+        }
+        terminal
+    }
+
+    #[test]
+    fn a_status_tells_the_most_urgent_of_its_tasks_its_name_message_and_progress() {
+        assert_eq!(Told::of(&reported(&[])), None);
+        // Idle: told, of no state.
+        let told = Told::of(&reported(&["state=idle:app=claude"])).unwrap();
+        assert_eq!((told.state, told.name.as_deref()), (None, Some("claude")));
+        // A task under the root that waits, of its kind and message, its
+        // name its root's.
+        let told = Told::of(&reported(&[
+            "state=working:app=claude:progress=30",
+            "state=done:id=a",
+            "state=blocked:id=b:kind=permission:progress=40:msg=QWxsb3cgQmFzaDogbnBtIHRlc3Q/",
+        ]))
+        .unwrap();
+        assert_eq!(
+            told,
+            Told {
+                state: Some(AgentState::Waiting),
+                kind: Some(AgentKind::Permission),
+                message: Some("Allow Bash: npm test?".to_owned()),
+                name: Some("claude".to_owned()),
+                progress: Some(Progress::Paused(Some(40))),
+            }
+        );
+        // An error before work, work before done, its title of no message.
+        let told = Told::of(&reported(&[
+            "state=done:id=a",
+            "state=working:id=b:progress=70:title=Rml4IHRoZSBidWlsZA",
+        ]))
+        .unwrap();
+        assert_eq!(
+            (told.state, told.message.as_deref(), told.progress),
+            (
+                Some(AgentState::Working),
+                Some("Fix the build"),
+                Some(Progress::Set(70))
+            )
+        );
+        let told = Told::of(&reported(&["state=working:id=a", "state=error:id=b"])).unwrap();
+        assert_eq!((told.state, told.name), (Some(AgentState::Error), None));
+        // Of two that work, the later; the root before its tasks.
+        let told = Told::of(&reported(&[
+            "state=working:id=a:progress=10",
+            "state=working:id=b:progress=20",
+        ]))
+        .unwrap();
+        assert_eq!(told.progress, Some(Progress::Set(20)));
+        let told = Told::of(&reported(&[
+            "state=working:progress=10",
+            "state=working:id=a/b:progress=20",
+            "state=working:id=c:progress=30",
+        ]))
+        .unwrap();
+        assert_eq!(told.progress, Some(Progress::Set(10)));
+    }
+
+    /// What a status of `state` tells, of `message`.
+    fn status(state: Option<AgentState>, message: Option<&str>) -> Told {
+        Told {
+            state,
+            kind: None,
+            message: message.map(str::to_owned),
+            name: Some("codex".to_owned()),
+            progress: None,
+        }
+    }
+
+    #[test]
+    fn a_told_agent_takes_its_states_alone_until_its_records_go() {
+        let start = Instant::now();
+        let mut agent = Agent::new("node");
+        agent.told(Some(status(Some(AgentState::Working), None)), Some(7));
+        assert_eq!(
+            (agent.name(), agent.state()),
+            ("codex", Some(AgentState::Working))
+        );
+        assert!(agent.is_told());
+        // No guess: no time to be done, nor work of its output.
+        assert_eq!(agent.due(SETTINGS), None);
+        agent.look(start + Duration::from_secs(60), SETTINGS, false);
+        assert_eq!(agent.state(), Some(AgentState::Working));
+        // Blocked: waiting, of its kind and message, which the user's keys
+        // do not answer, nor its output.
+        agent.told(
+            Some(Told {
+                kind: Some(AgentKind::Question),
+                ..status(Some(AgentState::Waiting), Some("Which branch?"))
+            }),
+            Some(7),
+        );
+        agent.typed(start);
+        agent.worked(start + Duration::from_secs(61));
+        assert_eq!(agent.state(), Some(AgentState::Waiting));
+        assert_eq!(agent.message(), Some("Which branch?"));
+        assert_eq!(agent.kind(), Some(AgentKind::Question));
+        // Done, then seen as its tab shows.
+        agent.told(
+            Some(status(Some(AgentState::Done), Some("Tests pass"))),
+            Some(7),
+        );
+        assert_eq!(
+            (agent.state(), agent.kind()),
+            (Some(AgentState::Done), None)
+        );
+        agent.seen();
+        assert_eq!((agent.state(), agent.message()), (None, None));
+        // Failed: seen as its tab shows too, or as the user types.
+        agent.told(
+            Some(status(Some(AgentState::Error), Some("Rate limited"))),
+            Some(7),
+        );
+        assert_eq!(agent.message(), Some("Rate limited"));
+        agent.typed(start);
+        assert_eq!(agent.state(), None);
+        // Its records gone: its output tells its work again.
+        agent.told(Some(status(Some(AgentState::Working), None)), Some(7));
+        agent.told(None, None);
+        assert_eq!((agent.state(), agent.name()), (None, "node"));
+        assert!(!agent.is_told());
+        agent.typed(start);
+        agent.worked(start + Duration::from_secs(62));
+        assert_eq!(agent.state(), Some(AgentState::Working));
+    }
+
+    #[test]
+    fn a_told_agents_hooks_and_status_both_tell_the_newer_holding() {
+        let mut agent = Agent::new("claude");
+        let working = status(Some(AgentState::Working), None);
+        agent.told(Some(working.clone()), Some(7));
+        agent.hooked(Hooked::Done, None);
+        assert_eq!(agent.state(), Some(AgentState::Done));
+        // What tells nothing new of its records changes nothing.
+        agent.told(Some(working.clone()), Some(7));
+        assert_eq!(agent.state(), Some(AgentState::Done));
+        // Its records gone keep its hooks' state.
+        agent.told(None, None);
+        assert_eq!(agent.state(), Some(AgentState::Done));
+        // A new status holds over the hooks' state before it.
+        agent.told(Some(status(Some(AgentState::Waiting), None)), Some(7));
+        assert_eq!(agent.state(), Some(AgentState::Waiting));
+        agent.hooked(Hooked::Working, None);
+        assert_eq!(agent.state(), Some(AgentState::Working));
+    }
+
+    #[test]
+    fn a_told_agent_is_spent_of_no_status_once_its_program_left_or_unlisted() {
+        let mut unlisted = Agent::unlisted("make");
+        unlisted.told(Some(status(None, None)), Some(7));
+        assert!(!unlisted.is_spent());
+        unlisted.told(None, None);
+        assert!(unlisted.is_spent());
+        let mut listed = Agent::new("claude");
+        listed.told(Some(status(Some(AgentState::Done), None)), Some(7));
+        listed.leave();
+        assert!(!listed.is_spent());
+        listed.seen();
+        listed.told(None, None);
+        assert!(listed.is_spent());
+        // The group of the program that first tells it holds, whatever
+        // the foreground as it tells more, until it leaves.
+        let mut again = Agent::new("claude");
+        again.told(Some(status(Some(AgentState::Working), None)), Some(7));
+        again.told(Some(status(Some(AgentState::Done), None)), Some(9));
+        assert_eq!(again.told_group(), Some(7));
+        again.leave();
+        again.told(Some(status(Some(AgentState::Working), None)), Some(8));
+        assert_eq!(again.told_group(), Some(8));
+        again.told(None, None);
+        assert!(!again.is_spent());
+        assert!(Agent::new("claude").state().is_none() && !Agent::new("claude").is_spent());
     }
 }

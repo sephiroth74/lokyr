@@ -159,15 +159,12 @@ impl Terminal {
     }
 
     /// Takes away the records that `keep` refuses, as the embedder no
-    /// longer shows them or their program exited: whether one went.
+    /// longer shows them or their program exited: whether one went, of no
+    /// event, as the embedder knows what it took away.
     pub fn forget_statuses(&mut self, keep: impl Fn(&Status) -> bool) -> bool {
         let before = self.statuses.len();
         self.statuses.retain(keep);
-        let gone = self.statuses.len() != before;
-        if gone {
-            self.events.push(Event::StatusChanged);
-        }
-        gone
+        self.statuses.len() != before
     }
 }
 

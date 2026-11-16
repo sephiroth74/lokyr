@@ -1,14 +1,15 @@
 //! The AI agents in the panes: the app finds each pane's agent by the
 //! names that its foreground's programs go by, as `[agents] programs`
-//! lists them, once a look finds another group in its foreground; tells
+//! lists them, once a look finds another group in its foreground, as the
+//! workspace finds those that tell their status; tells
 //! the workspace of the keys typed into a pane, which answer an agent that
 //! waits; and tells what an agent's state brings, a notification while its
 //! window has no focus, unless the agent's own told it, and the Dock's
 //! badge of the agents that wait.
 
 use lokyr_kernel::config::AgentsConfig;
-use lokyr_kernel::l10n::Arg;
-use lokyr_kernel::plugins::host::AgentState;
+use lokyr_kernel::l10n::{Arg, Texts};
+use lokyr_kernel::plugins::host::{AgentKind, AgentState};
 use lokyr_kernel::workspace::{self, AgentSettings, PaneId};
 use lokyr_platform_core::{Platform, WindowId};
 
@@ -100,14 +101,13 @@ impl<B: Backend> App<B> {
         if !self.config.agents.notify {
             return;
         }
-        let message = match now {
-            Some(AgentState::Waiting) if before != Some(AgentState::Waiting) && !told => {
-                "agent-waiting"
-            }
-            Some(AgentState::Done) => "agent-done",
-            Some(AgentState::Error) => "agent-failed",
-            _ => return,
-        };
+        if !matches!(
+            now,
+            Some(AgentState::Waiting) if before != Some(AgentState::Waiting) && !told
+        ) && !matches!(now, Some(AgentState::Done | AgentState::Error))
+        {
+            return;
+        }
         let Some(window) = self.window_of(pane) else {
             return;
         };
@@ -120,7 +120,14 @@ impl<B: Backend> App<B> {
             .and_then(|tab| self.workspace.tab(tab))
             .map(|tab| unspun(tab.title()).to_owned())
             .unwrap_or_default();
-        let body = self.texts.text_with(message, &[("agent", Arg::Text(name))]);
+        let agent = self.workspace.pane(pane).and_then(workspace::Pane::agent);
+        let body = agent_notice(
+            &self.texts,
+            name,
+            now,
+            agent.and_then(workspace::Agent::message),
+            agent.and_then(workspace::Agent::kind),
+        );
         self.notify(platform, pane, &title, &body);
     }
 
@@ -217,6 +224,7 @@ impl<B: Backend> App<B> {
         let agents = &self.config.agents;
         self.workspace.set_agent_settings(AgentSettings {
             done_after: agents.done_after.duration(),
+            on: !agents.programs.is_empty(),
         });
         if agents.programs != before.programs {
             self.look_at_agents_again();
@@ -235,6 +243,37 @@ fn unspun(title: &str) -> &str {
         }
         _ => title,
     }
+}
+
+/// The text of the notification of the agent `name` that is `now`, in
+/// `texts`: of the message that it told, or, of none, of what it asks for
+/// while it waits.
+pub(super) fn agent_notice(
+    texts: &Texts,
+    name: &str,
+    now: Option<AgentState>,
+    message: Option<&str>,
+    kind: Option<AgentKind>,
+) -> String {
+    let agent = ("agent", Arg::Text(name));
+    let id = match (now, message, kind) {
+        (Some(AgentState::Error), Some(message), _) => {
+            return texts.text_with(
+                "agent-failed-told",
+                &[agent, ("message", Arg::Text(message))],
+            );
+        }
+        (_, Some(message), _) => {
+            return texts.text_with("agent-told", &[agent, ("message", Arg::Text(message))]);
+        }
+        (Some(AgentState::Waiting), None, Some(AgentKind::Permission)) => "agent-permission",
+        (Some(AgentState::Waiting), None, Some(AgentKind::Question)) => "agent-question",
+        (Some(AgentState::Waiting), None, Some(AgentKind::Auth)) => "agent-auth",
+        (Some(AgentState::Waiting), ..) => "agent-waiting",
+        (Some(AgentState::Error), ..) => "agent-failed",
+        _ => "agent-done",
+    };
+    texts.text_with(id, &[agent])
 }
 
 #[cfg(test)]

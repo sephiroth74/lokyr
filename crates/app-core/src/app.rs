@@ -952,6 +952,7 @@ impl<B: Backend> App<B> {
         let mut workspace = Workspace::new();
         workspace.set_agent_settings(workspace::AgentSettings {
             done_after: config.agents.done_after.duration(),
+            on: !config.agents.programs.is_empty(),
         });
         let mut plugins = Plugins::new();
         // The distribution's plugins, whose manifests read, as the build
