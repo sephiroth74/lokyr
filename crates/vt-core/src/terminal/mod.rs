@@ -502,6 +502,9 @@ pub struct Terminal {
     /// How the shell's line editor takes a click in its command line, as
     /// its last prompt announced it.
     prompt_clicks: Option<PromptClicks>,
+    /// The right prompt that the shell draws, from its start (OSC 133
+    /// `P;k=r`) until the input goes on, `B`, or the line's end.
+    right_prompt: Option<prompt_click::RightPrompt>,
     /// The notifications of OSC 99 whose last part has not come.
     held_notifications: Vec<desktop_notifications::Held>,
     /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
@@ -643,6 +646,7 @@ impl Terminal {
             statuses: Vec::new(),
             session_status: SessionStatus::default(),
             prompt_clicks: None,
+            right_prompt: None,
             held_notifications: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,

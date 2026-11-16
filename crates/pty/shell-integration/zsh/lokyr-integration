@@ -17,9 +17,11 @@ _lokyr_report_cwd() {
 }
 
 # Before each prompt: the last command's end, of its status, the folder,
-# and the prompt's marks in PS1, whose prompt a theme may have set anew;
-# the prompt's start announces that ZLE moves its cursor by the left and
-# right arrows within the line, which a click in it sends.
+# and the prompt's marks in PS1 and RPROMPT, which a theme may have set
+# anew; the prompt's start announces that ZLE moves its cursor by the left
+# and right arrows within the line, which a click in it sends. The right
+# prompt is marked as one, and the input goes on after it, so that its
+# text is no part of the command line that a click or a selection counts.
 _lokyr_precmd() {
     builtin local ret=$?
     if (( _lokyr_running )); then
@@ -28,9 +30,15 @@ _lokyr_precmd() {
     fi
     _lokyr_report_cwd
     builtin local start=$'%{\e]133;A;cl=line\a%}' input=$'%{\e]133;B\a%}'
+    builtin local right=$'%{\e]133;P;k=r\a%}'
     PS1="${PS1//"$start"/}"
     PS1="${PS1//"$input"/}"
     PS1="${start}${PS1}${input}"
+    if [[ -n "${RPROMPT-}" ]]; then
+        RPROMPT="${RPROMPT//"$right"/}"
+        RPROMPT="${RPROMPT//"$input"/}"
+        [[ -n "$RPROMPT" ]] && RPROMPT="${right}${RPROMPT}${input}"
+    fi
     builtin return $ret
 }
 

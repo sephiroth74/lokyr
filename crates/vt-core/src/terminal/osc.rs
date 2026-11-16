@@ -230,13 +230,32 @@ impl Terminal {
     /// also marks its row, `B` the command that the user types, and `C`
     /// its output, of the command's line, percent-encoded, after
     /// `cmdline_url=`, as fish and kitty's shells tell it, as `D` ends the
-    /// command, with its status when a number follows. The text printed next is in that zone. `A`'s `redraw`
-    /// option tells what the shell draws again of its prompt on a resize,
-    /// until another `A` tells otherwise: `1`, the whole prompt, as by
-    /// default; `last`, its last line; `0`, nothing.
+    /// command, with its status when a number follows. The text printed
+    /// next is in that zone. `A`'s `redraw` option tells what the shell
+    /// draws again of its prompt on a resize, until another `A` tells
+    /// otherwise: `1`, the whole prompt, as by default; `last`, its last
+    /// line; `0`, nothing. `P;k=r` starts a right prompt, of the prompt's
+    /// zone, which the `B` after it ends without marking the input again;
+    /// `P`'s other kinds change nothing.
     fn mark_prompt(&mut self, fields: &[u8]) {
         let mut fields = fields.split(|&byte| byte == b';');
         let kind = fields.next().unwrap_or_default();
+        if kind == b"P" {
+            if fields.any(|field| field == b"k=r") {
+                self.start_right_prompt();
+            }
+            return;
+        }
+        // The input that goes on after a right prompt is the command
+        // line's, whose start stays where its first `B` marked it.
+        if kind == b"B" && self.end_right_prompt() {
+            self.zone = Semantic::Input;
+            return;
+        }
+        self.right_prompt = None;
+        if matches!(kind, b"C" | b"D") {
+            self.forget_prompt_clicks();
+        }
         let mut status = None;
         if kind == b"D"
             && let Some(told) = fields

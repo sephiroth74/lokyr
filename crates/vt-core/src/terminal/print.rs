@@ -112,6 +112,7 @@ impl Terminal {
     /// Prints `c`, as the character it stands for in the character set in
     /// use.
     pub(super) fn print_translated(&mut self, c: char) {
+        self.leave_right_prompt();
         self.last_printed = Some(c);
         let c = self.charsets.translate(c);
         self.print_char(c);
@@ -126,6 +127,7 @@ impl Terminal {
         let Some(&last) = text.last() else {
             return;
         };
+        self.leave_right_prompt();
         let mut text = text;
         // Another character set, or a single shift, gives the characters
         // other meanings, and an open link takes the cells into its page's
@@ -238,6 +240,7 @@ impl Terminal {
     /// do not fit, or come with another character set, an open link, insert
     /// mode or a normal form to put them in.
     pub(super) fn print_char_run(&mut self, chars: &[char]) {
+        self.leave_right_prompt();
         let plain = self.charsets.is_plain()
             && !self.link.is_open()
             && !self.insert

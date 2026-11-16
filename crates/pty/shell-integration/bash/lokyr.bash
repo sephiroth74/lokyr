@@ -44,6 +44,8 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
     _lokyr_at_prompt=0
     # Whether this bash shows PS0, of 4.4 or later.
     _lokyr_ps0=0
+    # Whether the DEBUG trap of a bash before 4.4 is the integration's.
+    _lokyr_trapped=0
     if ((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))); then
         _lokyr_ps0=1
     fi
@@ -79,18 +81,28 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
     }
 
     # Last of the prompt's commands: the prompt's marks in PS1, and the
-    # output's at PS0's end, which the user's commands may have set anew;
-    # the prompt's start announces that readline moves its cursor by the
-    # left and right arrows within the line, which a click in it sends.
-    # The output's mark sets `_lokyr_running` as PS0 shows, of an
+    # output's at PS0's end, which the user's commands may have set anew.
+    # Where the output's mark comes, the prompt's start announces that
+    # readline moves its cursor by the left and right arrows within the
+    # line, which a click in it sends: of no mark, the terminal could not
+    # tell the command's run from its line, and would send a program the
+    # arrows. The output's mark sets `_lokyr_running` as PS0 shows, of an
     # arithmetic expansion in a substring of no length, which shows
     # nothing; without `promptvars`, PS0 would show it as it is, and has
     # none.
     _lokyr_prompt_end() {
         builtin local ret=$?
-        builtin local start='\[\e]133;A;cl=line\a\]' input='\[\e]133;B\a\]'
+        builtin local clicks='\[\e]133;A;cl=line\a\]' plain='\[\e]133;A\a\]'
+        builtin local input='\[\e]133;B\a\]' start
+        if { [ "$_lokyr_ps0" = 1 ] && builtin shopt -q promptvars; } ||
+            [ "$_lokyr_trapped" = 1 ]; then
+            start="$clicks"
+        else
+            start="$plain"
+        fi
         PS1="${PS1-}"
-        PS1="${PS1//"$start"/}"
+        PS1="${PS1//"$clicks"/}"
+        PS1="${PS1//"$plain"/}"
         PS1="${PS1//"$input"/}"
         PS1="${start}${PS1}${input}"
         if [ "$_lokyr_ps0" = 1 ]; then
@@ -132,5 +144,6 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
     fi
     if [ "$_lokyr_ps0" = 0 ] && [ -z "$(builtin trap -p DEBUG)" ]; then
         builtin trap '_lokyr_debug "$_"' DEBUG
+        _lokyr_trapped=1
     fi
 fi

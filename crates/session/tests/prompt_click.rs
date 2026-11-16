@@ -188,3 +188,80 @@ fn fish_s_cursor_goes_where_a_click_falls_and_a_selection_goes() {
     let session = shell(&fish, &home);
     clicks_and_deletes(&session, "fish> ");
 }
+
+/// The first column of `needle` on the cursor's row of `terminal`.
+fn column_of(terminal: &Terminal, needle: &str) -> u16 {
+    let text = terminal.row_text(terminal.cursor().y);
+    let at = text.find(needle).expect("the needle on the cursor's row");
+    u16::try_from(text[..at].chars().count()).unwrap()
+}
+
+#[test]
+fn zsh_s_right_prompt_is_no_part_of_its_command_line() {
+    let Some(zsh) = found(&["/bin/zsh", "/usr/bin/zsh", "/opt/homebrew/bin/zsh"]) else {
+        eprintln!("no zsh here");
+        return;
+    };
+    let home = home("zsh-right", &[(".zshrc", "PS1='zsh> '\nRPROMPT='main'\n")]);
+    let session = shell(&zsh, &home);
+    until(&session, "the prompt", |terminal| {
+        let text = terminal.row_text(terminal.cursor().y);
+        terminal.prompt_clicks().is_some()
+            && text.starts_with("zsh> ")
+            && text.trim_end().ends_with("main")
+    });
+    session.send("echo hello");
+    until(&session, "the command", |terminal| {
+        terminal
+            .row_text(terminal.cursor().y)
+            .starts_with("zsh> echo hello")
+    });
+    // A selection of the right prompt is no command line's.
+    {
+        let mut terminal = session.lock();
+        let y = terminal.cursor().y;
+        let col = column_of(&terminal, "main");
+        let row = terminal.origin().row(y);
+        terminal.select(
+            (col, row),
+            (col + 3, row),
+            SelectionShape::Cells,
+            SelectionUnit::Cell,
+            "",
+        );
+        assert_eq!(terminal.command_line_selection(), None);
+        terminal.clear_selection();
+    }
+    // A click on `hello` moves the cursor there, past the right prompt.
+    let (col, row) = place_of(&session.lock(), "hello");
+    assert!(session.prompt_click(col, row));
+    until(&session, "the cursor at the click", |terminal| {
+        terminal.cursor().x == col
+    });
+    session.send("X\r");
+    until(&session, "Xhello", |terminal| shows(terminal, "Xhello"));
+}
+
+#[test]
+fn bash_of_no_output_mark_announces_no_clicks() {
+    let Some(bash) = found(if cfg!(target_os = "macos") {
+        &["/opt/homebrew/bin/bash", "/usr/local/bin/bash"]
+    } else {
+        &["/bin/bash", "/usr/bin/bash"]
+    }) else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    // Without `promptvars`, PS0 cannot mark a command's output, which
+    // would leave the terminal sending arrows to the command that runs.
+    let home = home(
+        "bash-no-promptvars",
+        &[(".bashrc", "PS1='bash> '\nshopt -u promptvars\n")],
+    );
+    let session = shell(&bash, &home);
+    until(&session, "the prompt", |terminal| {
+        !terminal.commands().is_empty()
+            && terminal.row_text(terminal.cursor().y).starts_with("bash>")
+    });
+    assert_eq!(session.lock().prompt_clicks(), None);
+}
