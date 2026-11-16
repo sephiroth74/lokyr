@@ -371,6 +371,16 @@ pub(crate) struct Selecting {
     pub(crate) plain: bool,
 }
 
+impl Selecting {
+    /// Whether it may select something: a word's or a line's, or cells
+    /// that the pointer moved over from its anchor; not a click's. A test
+    /// that needs no terminal, which the terminal's own selection settles.
+    pub(crate) fn selects(&self) -> bool {
+        self.unit != SelectionUnit::Cell
+            || (self.anchor.row, self.anchor.boundary) != (self.last.row, self.last.boundary)
+    }
+}
+
 /// The surfaces of a window that the platform gives, where it has them:
 /// its own, and those of its layers.
 pub(crate) struct Surfaces<B: Backend> {

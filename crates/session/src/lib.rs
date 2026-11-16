@@ -575,9 +575,6 @@ impl Session {
     }
 }
 
-/// Brings the view of `terminal` back to the screen for `bytes`, input
-/// that the user sent, if it sends anything: a modifier alone sends
-/// nothing, and leaves the view.
 /// Appends to `bytes` the left or the right arrows of `arrows`, as the
 /// keys and the keyboard's protocol of `terminal` send them now.
 fn push_arrows(terminal: &Terminal, arrows: Option<terminal::PromptClick>, bytes: &mut Vec<u8>) {
@@ -612,6 +609,9 @@ fn push_keys(terminal: &Terminal, key: input::Key, times: usize, bytes: &mut Vec
     }
 }
 
+/// Brings the view of `terminal` back to the screen for `bytes`, input
+/// that the user sent, if it sends anything: a modifier alone sends
+/// nothing, and leaves the view.
 fn typed(terminal: &mut Terminal, bytes: &[u8]) {
     if !bytes.is_empty() {
         terminal.scroll_viewport(Scroll::Bottom);

@@ -16,7 +16,7 @@ use lokyr_platform_core::{
     ScrollDelta, ScrollPhase, WindowId,
 };
 use lokyr_ui_core::pane::Preedit;
-use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
+use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
     MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit,
 };
@@ -128,11 +128,11 @@ impl<B: Backend> App<B> {
                 };
                 // A key that deletes or types over a selection of the
                 // command line takes its place, as the shell announced; of
-                // no selection of the pointer's, the terminal is not looked
-                // at.
+                // no selection that the pointer made, a click's included,
+                // the terminal is not looked at.
                 if let [key] = &keys[..]
                     && self.config.cursor.click_to_move
-                    && state.selecting.is_some()
+                    && state.selecting.as_ref().is_some_and(Selecting::selects)
                     && replaces_selection(key, options)
                     && let Some(event) = keys::terminal_key(key)
                     && pane.replace_selection(&event, options)
@@ -798,6 +798,8 @@ impl<B: Backend> App<B> {
             Some(selecting) if mods.shift && !tracking && clicks <= 1 => {
                 selecting.last = spot;
                 selecting.held = true;
+                // A click that extends a selection moves no cursor.
+                selecting.plain = false;
             }
             slot => {
                 let unit = match clicks {
@@ -1226,9 +1228,14 @@ fn give(pane: &Pane, keys: &[KeyEvent], options: KeyOptions) {
 
 /// Whether `key`, pressed, deletes or types, as it takes a selection's
 /// place in the command line: Backspace or Delete of no modifier, or a key
-/// that types a text of no control character, of no Control nor Command,
-/// nor an Option that acts as Meta in `options`.
-fn replaces_selection(key: &KeyEvent, options: KeyOptions) -> bool {
+/// of a character or of the keypad's but Enter, that types a text, of no
+/// Control nor Command, nor an Option that acts as Meta in `options`.
+///
+/// The key decides rather than its text, as macOS gives the keys that move
+/// or call a function, the arrows, Home, End and F1 on among them, texts of
+/// the private use area, U+F700 to U+F8FF, which no check of control
+/// characters tells from typed text.
+pub(super) fn replaces_selection(key: &KeyEvent, options: KeyOptions) -> bool {
     if key.state != KeyState::Pressed || key.mods.control || key.mods.super_key {
         return false;
     }
@@ -1236,8 +1243,17 @@ fn replaces_selection(key: &KeyEvent, options: KeyOptions) -> bool {
     if matches!(key.code, KeyCode::Backspace | KeyCode::Delete) {
         return !(mods.shift || mods.left_alt || mods.right_alt);
     }
-    !key.text.is_empty()
-        && !key.text.chars().any(char::is_control)
+    let types = match keys::terminal_key(key).map(|event| event.key) {
+        Some(Key::Char(_)) => true,
+        Some(Key::Keypad(keypad)) => !matches!(keypad, Keypad::Enter),
+        _ => false,
+    };
+    types
+        && !key.text.is_empty()
+        && !key
+            .text
+            .chars()
+            .any(|c| c.is_control() || ('\u{f700}'..='\u{f8ff}').contains(&c))
         && !(mods.left_alt && options.left_alt_is_meta)
         && !(mods.right_alt && options.right_alt_is_meta)
 }

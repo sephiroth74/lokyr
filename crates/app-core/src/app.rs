@@ -1580,9 +1580,6 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// Checks the plugins' sections of the config against their schemas,
-    /// which tell what they refused and ignored in notices of their own,
-    /// in place of those of the config before.
     /// Tells the config's `[keys]` entries of the same keys written two
     /// ways, the first in the notice and every one in the log, or takes
     /// their notice away where the config has none.
@@ -1604,6 +1601,9 @@ impl<B: Backend> App<B> {
         );
     }
 
+    /// Checks the plugins' sections of the config against their schemas,
+    /// which tell what they refused and ignored in notices of their own,
+    /// in place of those of the config before.
     fn configure_plugins(&mut self, platform: &mut dyn Platform) {
         let notices = self.plugins.configure(&self.config.plugins);
         if self

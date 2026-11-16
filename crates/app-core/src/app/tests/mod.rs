@@ -3957,6 +3957,167 @@ fn a_backspace_over_a_selection_of_the_command_line_takes_it_away() {
     assert_eq!(app.workspace.focused(shown).unwrap().selection(), None);
 }
 
+/// The press of `code`, of `mods`, typing `text` as macOS gives it.
+fn mac_key(code: KeyCode, text: &str, mods: Modifiers) -> lokyr_platform_core::KeyEvent {
+    lokyr_platform_core::KeyEvent {
+        code,
+        state: KeyState::Pressed,
+        mods,
+        text: text.to_owned(),
+        unmodified: text.to_owned(),
+        plain: text.to_owned(),
+        time: None,
+    }
+}
+
+#[test]
+fn the_keys_that_move_or_call_a_function_replace_no_selection_of_their_mac_texts() {
+    use super::input::replaces_selection;
+    use lokyr_vt_core::input::KeyOptions;
+    let none = Modifiers::default();
+    let option = Modifiers {
+        left_alt: true,
+        ..Modifiers::default()
+    };
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::default()
+    };
+    // Option types its characters, as macOS's own does.
+    let options = KeyOptions {
+        left_alt_is_meta: false,
+        right_alt_is_meta: false,
+    };
+    // macOS's texts of the private use area: the arrows, Home, End, the
+    // pages, F5, Help, and Option or Shift with an arrow.
+    for (code, text, mods) in [
+        (KeyCode::ArrowLeft, "\u{f702}", none),
+        (KeyCode::ArrowRight, "\u{f703}", none),
+        (KeyCode::ArrowUp, "\u{f700}", none),
+        (KeyCode::ArrowDown, "\u{f701}", none),
+        (KeyCode::Home, "\u{f729}", none),
+        (KeyCode::End, "\u{f72b}", none),
+        (KeyCode::PageUp, "\u{f72c}", none),
+        (KeyCode::PageDown, "\u{f72d}", none),
+        (KeyCode::F(5), "\u{f708}", none),
+        (KeyCode::Insert, "\u{f727}", none),
+        (KeyCode::Unidentified(0x72), "\u{f746}", none),
+        (KeyCode::ArrowLeft, "\u{f702}", option),
+        (KeyCode::ArrowLeft, "\u{f702}", shift),
+        (KeyCode::Tab, "\t", none),
+        (KeyCode::Enter, "\r", none),
+        (KeyCode::NumpadEnter, "\u{3}", none),
+        (KeyCode::Escape, "\u{1b}", none),
+    ] {
+        assert!(
+            !replaces_selection(&mac_key(code, text, mods), options),
+            "{code:?} {text:?} {mods:?}"
+        );
+    }
+    // What types, and what deletes.
+    for (code, text, mods) in [
+        (KeyCode::KeyA, "a", none),
+        (KeyCode::KeyA, "A", shift),
+        (KeyCode::KeyA, "å", option),
+        (KeyCode::Space, " ", none),
+        (KeyCode::Numpad5, "5", none),
+        (KeyCode::NumpadAdd, "+", none),
+        (KeyCode::Backspace, "\u{7f}", none),
+        (KeyCode::Delete, "\u{f728}", none),
+    ] {
+        assert!(
+            replaces_selection(&mac_key(code, text, mods), options),
+            "{code:?} {text:?} {mods:?}"
+        );
+    }
+    // Option as Meta types no text of its own.
+    let meta = KeyOptions {
+        left_alt_is_meta: true,
+        ..options
+    };
+    assert!(!replaces_selection(
+        &mac_key(KeyCode::KeyA, "å", option),
+        meta
+    ));
+}
+
+#[test]
+fn an_arrow_over_a_selection_of_the_command_line_goes_alone_and_leaves_it() {
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    // `hel`, dragged over, then ← of macOS's text: its arrow alone.
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Key(mac_key(
+            KeyCode::ArrowLeft,
+            "\u{f702}",
+            Modifiers::default(),
+        )),
+    );
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
+    assert!(
+        screen(&app, window)
+            .iter()
+            .any(|line| line.trim_end() == "sent 1b5b44"),
+        "{:?}",
+        screen(&app, window)
+    );
+    let shown = app.windows[&window].window;
+    assert!(app.workspace.focused(shown).unwrap().selection().is_some());
+}
+
+#[test]
+fn a_shift_click_on_the_anchor_of_a_selection_moves_no_cursor() {
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    let shift = Modifiers {
+        shift: true,
+        ..Modifiers::default()
+    };
+    // A drag over `hel`, then a Shift-click back on its anchor, which
+    // leaves no cell selected: a key, after, comes alone.
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, click(true, cell(7, row), shift, 1));
+    fake.send(&mut app, window, click(false, cell(7, row), shift, 1));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
+    assert!(
+        screen(&app, window)
+            .iter()
+            .any(|line| line.trim_end() == "sent 61"),
+        "{:?}",
+        screen(&app, window)
+    );
+}
+
 #[test]
 fn click_to_move_off_sends_the_shell_nothing_of_a_click_nor_of_a_selection() {
     let (mut fake, mut app, window) = configured(

@@ -5267,8 +5267,6 @@ impl Host<'_, '_> {
         self.known_tab(tab)
     }
 
-    /// Whether the window `window` is not the settings' window of their
-    /// own, which no plugin closes nor asks a question on.
     /// Whether the plugin holds `config`, as Lokyr's own plugins do.
     fn holds_config(&self) -> bool {
         self.state
@@ -5277,6 +5275,8 @@ impl Host<'_, '_> {
             .is_none_or(|granted| granted.contains(&Capability::Config))
     }
 
+    /// Whether the window `window` is not the settings' window of their
+    /// own, which no plugin closes nor asks a question on.
     fn not_settings_window(&self, window: WindowId) -> Result<(), Error> {
         if self.context.workspace.settings_window() == Some(window) {
             return Err(Error::new(
