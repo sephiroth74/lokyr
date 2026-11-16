@@ -413,6 +413,48 @@ impl Session {
         self.write(bytes);
     }
 
+    /// Sends what a click of the left button at column `col` of the row
+    /// numbered `row` sends the shell at its prompt, as its prompt
+    /// announced, [`Terminal::prompt_click`]: the arrows to the clicked
+    /// character, as the keys and the keyboard's protocol send them now,
+    /// or the click itself, of SGR's encoding. Whether it sent something.
+    pub fn prompt_click(&self, col: u16, row: i64) -> bool {
+        let mut bytes = Vec::new();
+        {
+            let mut terminal = self.lock();
+            let Some(click) = terminal.prompt_click(col, row) else {
+                return false;
+            };
+            let (key, times) = match click {
+                terminal::PromptClick::Left(times) => (input::Key::Left, times),
+                terminal::PromptClick::Right(times) => (input::Key::Right, times),
+                terminal::PromptClick::Event { col, row } => {
+                    bytes.extend_from_slice(
+                        format!("\x1b[<0;{col};{row}M\x1b[<0;{col};{row}m").as_bytes(),
+                    );
+                    (input::Key::Right, 0)
+                }
+            };
+            let (modes, flags) = (terminal.input_modes(), terminal.keyboard_flags());
+            for _ in 0..times {
+                for action in [input::KeyAction::Press, input::KeyAction::Release] {
+                    let event = KeyEvent {
+                        key,
+                        action,
+                        mods: input::Mods::default(),
+                        text: "",
+                        unmodified: "",
+                        base_layout: None,
+                    };
+                    input::encode_key(&event, &modes, flags, KeyOptions::default(), &mut bytes);
+                }
+            }
+            typed(&mut terminal, &bytes);
+        }
+        self.write(bytes);
+        true
+    }
+
     /// Sends what `event` sends, and returns whether the program takes the
     /// mouse, as [`input::encode_mouse`] does.
     pub fn mouse(&self, event: &MouseEvent) -> bool {

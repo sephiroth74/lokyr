@@ -276,6 +276,7 @@ impl Terminal {
         }
         self.zone = match kind {
             b"A" => {
+                self.take_prompt_options(fields.clone());
                 for option in fields {
                     self.redraw = match option.strip_prefix(b"redraw=") {
                         Some(b"1") => Redraw::Whole,

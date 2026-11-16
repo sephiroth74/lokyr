@@ -15,6 +15,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - A program's status of its session, as iTerm2's OSC 21337 tells it and Codex sends it: its tab shows a dot of its color, unless an agent's mark, and its text and detail in its tooltip; it goes as the program exits.
 - Notifications of kitty's protocol, OSC 99, as programs send them: their title and body, in parts or in base64, shown once their last part comes, as those of OSC 9 and 777; Lokyr answers the protocol's query, as programs ask before they send one. Their icons and buttons are not shown.
 - The plugin API reads the status that a program tells of its session, `status` of a tab, of its text, its colors and its detail.
+- A click in the command line moves the shell's cursor there, as in a text field, of a shell that announces it, as fish 4.1 and Nushell do: Lokyr hands the click to the shell, or sends the arrow keys to the clicked character; a drag still selects, and a click on the prompt, or past the command's end, moves it no further than the end.
 
 ### Changed
 

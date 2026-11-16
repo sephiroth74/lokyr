@@ -790,6 +790,13 @@ impl<B: Backend> App<B> {
                 let rectangle = (mods.left_alt || mods.right_alt) && unit == SelectionUnit::Cell;
                 // The terminal keeps the anchor, which moves with its text.
                 pane.anchor_selection((spot.col, spot.row));
+                let plain = clicks <= 1
+                    && !tracking
+                    && !(mods.shift
+                        || mods.control
+                        || mods.left_alt
+                        || mods.right_alt
+                        || mods.super_key);
                 *slot = Some(Selecting {
                     anchor: spot,
                     last: spot,
@@ -801,6 +808,7 @@ impl<B: Backend> App<B> {
                     unit,
                     held: true,
                     beyond: 0,
+                    plain,
                 });
             }
         }
@@ -845,7 +853,9 @@ impl<B: Backend> App<B> {
     }
 
     /// The left button went up, which ends the selection that it made:
-    /// with `copy-on-select`, its text goes to the clipboard.
+    /// with `copy-on-select`, its text goes to the clipboard. A plain click,
+    /// which selected nothing, moves the shell's cursor to its cell at its
+    /// prompt, as the shell announced.
     fn select_release(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -853,6 +863,16 @@ impl<B: Backend> App<B> {
         if let Some(selecting) = &mut state.selecting {
             selecting.held = false;
             selecting.beyond = 0;
+            let columns = self
+                .workspace
+                .focused(state.window)
+                .map_or(0, |pane| pane.grid().columns);
+            if selecting.plain
+                && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none()
+                && let Some(pane) = self.workspace.focused(state.window)
+            {
+                pane.prompt_click(selecting.anchor.col, selecting.anchor.row);
+            }
         }
         if self.config.clipboard.copy_on_select
             && let Some(text) = self

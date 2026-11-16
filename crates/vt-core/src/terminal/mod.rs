@@ -22,6 +22,7 @@ mod matches;
 mod modes;
 mod osc;
 mod print;
+mod prompt_click;
 mod rectangles;
 mod reports;
 mod selection;
@@ -46,6 +47,7 @@ pub use keyboard::KeyboardFlags;
 pub use marks::{CommandMarks, MOST_COMMANDS};
 pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
+pub use prompt_click::{PromptClick, PromptClicks};
 pub use selection::{
     CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
 };
@@ -497,6 +499,9 @@ pub struct Terminal {
     statuses: Vec<Status>,
     /// The session's status that OSC 21337 told.
     session_status: SessionStatus,
+    /// How the shell's line editor takes a click in its command line, as
+    /// its last prompt announced it.
+    prompt_clicks: Option<PromptClicks>,
     /// The notifications of OSC 99 whose last part has not come.
     held_notifications: Vec<desktop_notifications::Held>,
     /// The DCS query being read, DECRQSS's or XTGETTCAP's, and its bytes.
@@ -637,6 +642,7 @@ impl Terminal {
             tab_color: None,
             statuses: Vec::new(),
             session_status: SessionStatus::default(),
+            prompt_clicks: None,
             held_notifications: Vec::new(),
             segmenter: Segmenter::new(),
             cluster: None,

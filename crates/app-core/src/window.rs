@@ -365,6 +365,10 @@ pub(crate) struct Selecting {
     /// How many rows past the grid's top, negative, or bottom, positive,
     /// the pointer is, which scrolls the view.
     pub(crate) beyond: i64,
+    /// Whether a plain click started it, of no modifier, which, as the
+    /// button goes up where it went down, moves the shell's cursor at its
+    /// prompt.
+    pub(crate) plain: bool,
 }
 
 /// The surfaces of a window that the platform gives, where it has them:

@@ -78,6 +78,7 @@ impl<B: Backend> App<B> {
                 unit: SelectionUnit::Word,
                 held: false,
                 beyond: 0,
+                plain: false,
             };
             show_selection(pane, &mut selecting);
             let blank = pane

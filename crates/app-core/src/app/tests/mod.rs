@@ -3841,3 +3841,66 @@ fn two_spellings_of_the_same_keys_read_of_a_notice_that_a_fixed_file_takes_away(
     assert!(!app.diagnostics.tells(&About::Keys));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
+
+/// A shell of `options` on its prompt's mark, in raw mode: ready, then its
+/// prompt and `echo hello` typed, the cursor at its end; it prints in
+/// hexadecimal, on a line of its own, the first bytes that come.
+fn prompt_shell(options: &str) -> Program {
+    shell(&format!(
+        "exec perl -e '$| = 1; system(\"stty raw -echo\"); print \"ready\\r\\n\"; \
+         print \"\\e]133;A{options}\\a\\$ \\e]133;B\\aecho hello\"; \
+         select(undef, undef, undef, 0.3) until sysread(STDIN, $b, 256); \
+         print \"\\e]133;C\\a\\r\\nsent \", unpack(\"H*\", $b), \"\\r\\n\"; sleep 30'"
+    ))
+}
+
+#[test]
+fn a_plain_click_in_the_command_line_sends_the_arrows_to_its_character() {
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    // On the `h` of `echo`, four columns in, eight characters before the
+    // cursor: eight left arrows, of no modifier's click.
+    let at = cell(4, 1);
+    fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::default(), 1));
+    let left = "1b5b44".repeat(8);
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, &format!("sent {left}"))
+    });
+}
+
+#[test]
+fn a_drag_or_a_shell_that_announced_nothing_sends_no_arrow() {
+    // A drag selects, as before.
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(4, 1), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(8, 1), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(8, 1), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
+    assert!(shows(&app, window, "sent 61"), "{:?}", screen(&app, window));
+    // A shell of no announcement: the key alone.
+    let (mut fake, mut app, window) = configured("", prompt_shell(""));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let at = cell(4, 1);
+    fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::default(), 1));
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
+    assert!(shows(&app, window, "sent 61"), "{:?}", screen(&app, window));
+}

@@ -316,6 +316,7 @@ fn a_plugin_s_moves_of_the_keyboard_do_what_the_app_s_own_do() {
             unit: lokyr_vt_core::terminal::SelectionUnit::Cell,
             held: true,
             beyond: 0,
+            plain: false,
         });
         let ended = fake.window(window).unwrap().compositions_ended;
         fake.send_app(&mut app, AppEvent::Command(command.to_owned()));

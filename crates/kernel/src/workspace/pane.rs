@@ -753,6 +753,16 @@ impl Pane {
         }
     }
 
+    /// Sends what a click of the left button at column `col` of the row
+    /// numbered `row` sends the shell at its prompt, as its prompt
+    /// announced: the arrows that move its cursor there, or the click
+    /// itself. Whether it sent something.
+    pub fn prompt_click(&self, col: u16, row: i64) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.prompt_click(col, row))
+    }
+
     /// Sends what the mouse's `event` sends, as the program's mouse modes
     /// have it, and returns whether the program took it, rather than the
     /// pane, which scrolls its view with the wheel.
