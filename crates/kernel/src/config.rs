@@ -3693,7 +3693,8 @@ long-command = 0
                 "movement",
                 "guide",
                 "hdr",
-                "hdr-brightness"
+                "hdr-brightness",
+                "click-to-move"
             ]
         );
         let font = keys::<FontConfig>();

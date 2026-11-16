@@ -16,11 +16,15 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Desktop notifications of OSC 99, as programs send them: their title and body, in parts or in base64, shown once their last part comes, as those of OSC 9 and 777; Lokyr answers the protocol's query, as programs ask before they send one. Their icons and buttons are not shown.
 - The plugin API reads the status that a program tells of its session, `status` of a tab, of its text, its colors and its detail.
 - A click in the command line moves the shell's cursor there, as in a text field, in zsh, bash and fish of Lokyr's shell integration, and in any shell that announces it, as Nushell: Lokyr hands the click to the shell, or sends the arrow keys to the clicked character; a drag still selects, and a click on the prompt, or past the command's end, moves it no further than the end.
-- Backspace, Delete or a typed character over a selection of the command line takes its place, in those shells, as in a text field.
+- Backspace, Delete or a typed character over a selection of the command line takes its place, in those shells, as in a text field; `[cursor] click-to-move` turns both off.
 
 ### Changed
 
 - An agent's notification tells the message that it told, as "claude: Claude needs your permission to use Bash", or, of none, what it asks for while it waits, as "codex asks for your permission".
+
+### Fixed
+
+- The cursor no longer shows, as it blinks, the character of another cell, as a few moves at once, of a click in the command line or of quick output, find its drawing busy: it stays where it was drawn until its next frame draws it in its new cell.
 
 ## [1.2.0] - 2026-11-16
 

@@ -3956,3 +3956,40 @@ fn a_backspace_over_a_selection_of_the_command_line_takes_it_away() {
     let shown = app.windows[&window].window;
     assert_eq!(app.workspace.focused(shown).unwrap().selection(), None);
 }
+
+#[test]
+fn click_to_move_off_sends_the_shell_nothing_of_a_click_nor_of_a_selection() {
+    let (mut fake, mut app, window) = configured(
+        "[cursor]\nclick-to-move = false\n",
+        prompt_shell(";cl=line"),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    // A click, then a drag over `hel` and a key: the key alone.
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(4, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(4, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, key());
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
+    assert!(shows(&app, window, "sent 61"), "{:?}", screen(&app, window));
+}

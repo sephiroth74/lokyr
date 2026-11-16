@@ -80,6 +80,10 @@ pub struct CursorConfig {
     /// How much brighter than white, as a multiple of it in light, with
     /// `hdr`.
     pub hdr_brightness: Brightness,
+    /// Whether a click in the shell's command line moves the shell's
+    /// cursor there, and a key that deletes or types over a selection of it
+    /// takes its place, as the shell's prompt announces that it takes them.
+    pub click_to_move: bool,
 }
 
 /// How much brighter than white an HDR cursor shows, as a multiple of white
@@ -150,6 +154,7 @@ impl Default for CursorConfig {
             guide: false,
             hdr: false,
             hdr_brightness: Brightness::default(),
+            click_to_move: true,
         }
     }
 }

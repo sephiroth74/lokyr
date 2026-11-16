@@ -127,6 +127,7 @@ impl<B: Backend> App<B> {
                 // no selection of the pointer's, the terminal is not looked
                 // at.
                 if let [key] = &keys[..]
+                    && self.config.cursor.click_to_move
                     && state.selecting.is_some()
                     && replaces_selection(key, options)
                     && let Some(event) = keys::terminal_key(key)
@@ -868,7 +869,7 @@ impl<B: Backend> App<B> {
     /// The left button went up, which ends the selection that it made:
     /// with `copy-on-select`, its text goes to the clipboard. A plain click,
     /// which selected nothing, moves the shell's cursor to its cell at its
-    /// prompt, as the shell announced.
+    /// prompt, as the shell announced, with `click-to-move`.
     fn select_release(&mut self, platform: &mut dyn Platform, window: WindowId) {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
@@ -880,7 +881,8 @@ impl<B: Backend> App<B> {
                 .workspace
                 .focused(state.window)
                 .map_or(0, |pane| pane.grid().columns);
-            if selecting.plain
+            if self.config.cursor.click_to_move
+                && selecting.plain
                 && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none()
                 && let Some(pane) = self.workspace.focused(state.window)
             {
