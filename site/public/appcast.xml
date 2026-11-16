@@ -6,6 +6,56 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Lokyr</title>
         <item>
+            <title>1.2.0</title>
+            <pubDate>Mon, 16 Nov 2026 11:59:37 +0100</pubDate>
+            <sparkle:version>202611161031</sparkle:version>
+            <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[Themes made in Lokyr: a Theme Editor of every color of a theme, its values edited of a field or of the system's color panel and written into the theme's file, its comments kept; themes made, duplicated, converted and imported in the app; and the settings' Keys page.
+
+## What's new since 1.1.0
+
+- **The Theme Editor**: on the settings window's Themes page, the Editor shows every color of a theme, the terminal's and the interface's by groups, each of its value and where it comes from: the theme's file and its line, a theme that it extends, or a rule. A click on a color opens a field of its value, a color, or for an interface color an expression of other colors, as `accent / 40%`, written into the theme's file as you pause or press Return; a click on its swatch opens the system's color panel, the eyedropper too, the color showing at once as you move. Reset puts a color back as it was when the Editor showed the theme.
+- **Previews of the theme edited**: beside the colors, a window of the theme, its tab bar, a scroll bar, a second pane and a terminal of every combination that it colors, and a plugin's panel of real controls, fields, toggles, a segmented control, a list, progresses and buttons, which take the pointer. A click on a part marks the colors that it takes, and a color's click the parts that take it. Your terminals keep their theme while the Editor shows another, and follow your edits of the theme that they use.
+- **Themes made in the app**: New… on the Themes page makes a theme of Lokyr's own light or dark values, every key written; Duplicate… in a card's menu copies a theme; View › New Theme from Current… copies the theme in use; View › Import Themes… imports `.itermcolors` and `.toml` themes, several at once. A theme of the collection or a built-in one is read-only in the Editor, whose lock makes a copy of it; an `.itermcolors` theme is converted to Lokyr's format as you edit it, its original moved to the Trash.
+- **The interface's colors follow the theme**: a theme's accent colors the focus ring, the selected rows, the toggles, the progress and the gutter of running commands, and its text the fainter texts, unless it gives them too; a color can be an expression of others, as `mix(background, foreground, 8%)`. A theme of the terminal's colors alone looks as it did.
+- **A light theme for both appearances**: a click on a theme of the appearance not in force asks whether to use it for its appearance alone or for both.
+- **The cursor guide**, a band across the cursor's row, as iTerm2's: View › Show Cursor Guide, ⌥⌘;, or `[cursor] guide`.
+- **Faint text** of its own opacity, `[text] faint-opacity`, and an **HDR cursor**, brighter than white on a display of extended dynamic range, `[cursor] hdr`, off by default.
+- **The Keys page**: the settings' shortcuts on a page of their own, of a field that filters them by their commands, their keys or their contexts.
+- **Window › Cycle Through Windows**, ⌘`, and ⇧⌘` the other way, the settings window among them.
+- **Plugins**: the plugin API 0.1.4 reads every color of a theme as it resolves, shows the system's color panel, asks a question of buttons, and draws a part of a view in a theme of a name.
+
+## Changed
+
+- The settings window has a theme of its own, Lokyr Light or Lokyr Dark by the appearance, whatever theme your terminals use.
+- What a theme colors nothing with no longer refuses it: a value that does not read, a name of no color or colors that name each other are told in the card, of their line, the rest of the theme in force.
+- A plugin's question names the plugin in its alert, unless it is one of Lokyr's own, and a plugin asks one question at a time.
+- The settings window draws anew faster, the Keys page above all, and Lokyr starts a little sooner.
+
+## Fixed
+
+- A saved theme that changes the interface's colors alone colors the tab bar, the panels and the settings window at once.
+- A block cursor on the cursor guide's row keeps its own color.
+- A resize no longer clears a running command's output of a shell whose prompt marks its start alone.
+- A pane that takes the keyboard, as Go to Next Agent brings it forward, ends its tab's zoom of another.
+- A right click or a ⌘-click on a path of a volume that does not answer, as a network's, no longer holds Lokyr.
+- A binding of a character that the US layout types with Shift, as `cmd+}`, runs as its keys are pressed and takes the place of a default of them; two entries of the same keys written two ways read, the later holding, where the whole config was refused.
+- `sleip check` refuses a plugin's config schema larger than 64 KiB, the most that Lokyr reads of one.
+
+## Before you update
+
+- Plugins installed for 1.1.0 keep working: the plugin API is 0.1.4, which takes 0.1.3's plugins.
+- Your settings window now shows Lokyr's own colors rather than your theme's.
+]]></description>
+            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.2.0/Lokyr-1.2.0.dmg" length="18641243" type="application/octet-stream" sparkle:edSignature="8GOx4SPMUrKAwZYJMt+cPvnH0yfjTLvW2P9wZ+8DdLp5LThc9UdpLuwOnkypd1E5Dida3aewcwx+03Xje8nkAw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.2.0/Lokyr202611161031-202611142210.delta" sparkle:deltaFrom="202611142210" length="2097038" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="uGVFu/ZqF61TVf49xO2cqUbUhoz0W45oojXie6J9GFyYVcbYp8eh+y68aDP2bzXapnMza9p44BmcXqglJOL8DA=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.2.0/Lokyr202611161031-202611131033.delta" sparkle:deltaFrom="202611131033" length="2738546" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KCrtITkDh79TGjU/D+WQanQUrtMYfhtffSJAvrB7BnbxqIwiamhsizR1exfz4QQLc3W3PdwtIiLoD+CDJun9DQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.1.0</title>
             <pubDate>Sat, 14 Nov 2026 23:32:38 +0100</pubDate>
             <sparkle:version>202611142210</sparkle:version>
@@ -89,6 +139,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: zgm23yulXUZ94/qrwsULIE+H7peEDb2lt7+dg7QpAtStg2l/ZoJledHHN47jkBWmoGLsGOizIZXVxJwNvRz6DA==
-length: 9377
+edSignature: R5UFoOSxdJgXS0iA4fpCTkcdhoPCY8XLTxIEL8SDkXk7/rI6svoRci+vb6mrSg4mwWqrJzJj5qHujyiXXpAuBA==
+length: 15930
 -->

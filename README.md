@@ -29,7 +29,7 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.1.0 is out**, of its settings in a window of their own: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.2.0 is out**, of its Theme Editor and themes made in the app: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -54,7 +54,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F2 | The macOS app, a window of one pane | ✔ |
 | F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | ✔ |
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
-| F3b | The settings window, then themes made in the app and the Keys page | |
+| F3b | The settings window, then themes made in the app and the Keys page | ✔ |
 | F5a | Blocks of commands, ssh integration | |
 | F5b | iTerm2's power features: tmux -CC, triggers, profiles, broadcast | |
 | F5c | Graphics and kitty's protocols: kitty graphics, sixel, hints | |
