@@ -1224,3 +1224,40 @@ fn the_active_tab_and_the_bar_are_as_translucent_as_the_window() {
     settle(&mut fake, &mut app);
     assert!((alpha(&app, "tabs.active.bg") - 1.0).abs() < 1e-6);
 }
+
+#[test]
+fn a_closed_tab_is_kept_for_its_seconds_and_none_of_zero() {
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 3, idle(), "reopen-seconds = 1\n");
+    let count = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| count(app) == 2);
+    assert!(app.workspace.keeps_closed_tabs());
+    // Its timer, at its second's end, closes it for good, its program hung
+    // up.
+    let (timer, at) = app.closed_timer.expect("the closed tab's timer");
+    assert!(at <= Instant::now() + Duration::from_secs(1));
+    std::thread::sleep(at.saturating_duration_since(Instant::now()));
+    fake.send_app(&mut app, AppEvent::Timer(timer));
+    assert!(!app.workspace.keeps_closed_tabs());
+    assert!(app.closed_timer.is_none());
+    // Of 0, none kept.
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 3, idle(), "reopen-seconds = 0\n");
+    let count = |app: &App| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| count(app) == 2);
+    assert!(!app.workspace.keeps_closed_tabs());
+}

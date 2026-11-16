@@ -658,6 +658,12 @@ pub struct App<B: Backend> {
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
+    /// The timer of the first closed tab that the workspace keeps to close
+    /// for good, and its time.
+    closed_timer: Option<(TimerId, Instant)>,
+    /// The seconds that a tab whose close the user is asked about is kept
+    /// to give back, once closed, by the tab.
+    kept_closes: BTreeMap<workspace::TabId, u32>,
     /// Where the plugins that Sleip installed are, which the app adds as it
     /// starts; none for an app of the built-in plugins alone.
     installed: Option<installed::Installed>,
@@ -1035,6 +1041,8 @@ impl<B: Backend> App<B> {
             bench_deadline: None,
             untitled_timer: None,
             restart_timer: None,
+            closed_timer: None,
+            kept_closes: BTreeMap::new(),
             installed: None,
             reloads: installed::Reloads::default(),
             decisions: lokyr_pkg_model::permissions::Permissions::default(),
@@ -3698,7 +3706,14 @@ impl<B: Backend> App<B> {
                     options,
                 } => self.open_panel(platform, (plugin, id), window, options),
                 Request::ClosePanel { plugin, id } => self.panel_gone(platform, &plugin, &id),
-                Request::CloseAsked(closing) => self.ask_close_part(platform, closing),
+                Request::CloseAsked(closing, keep) => {
+                    if let plugins::Closing::Tab(tab) = closing
+                        && keep > 0
+                    {
+                        self.kept_closes.insert(tab, keep);
+                    }
+                    self.ask_close_part(platform, closing);
+                }
                 Request::AskConsent {
                     plugin,
                     capabilities,
@@ -4003,6 +4018,7 @@ impl<B: Backend> App<B> {
             Some(_) => {}
         }
         self.arm_plugin_timer(platform);
+        self.arm_closed_timer(platform);
         for (plugin, fault) in self.plugins.take_disabled() {
             let text = self.texts.text_with(
                 "plugin-stopped",
@@ -4017,6 +4033,25 @@ impl<B: Backend> App<B> {
             for &window in self.windows.keys() {
                 platform.request_frame(window);
             }
+        }
+    }
+
+    /// Arms the platform's timer at the time of the first closed tab that
+    /// the workspace keeps to close for good; none while it keeps none.
+    pub(super) fn arm_closed_timer(&mut self, platform: &mut dyn Platform) {
+        match self.workspace.next_closed_due() {
+            Some(at) if self.closed_timer.is_none_or(|(_, armed)| armed != at) => {
+                if let Some((timer, _)) = self.closed_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+                self.closed_timer = Some((platform.start_timer(at), at));
+            }
+            None => {
+                if let Some((timer, _)) = self.closed_timer.take() {
+                    platform.cancel_timer(timer);
+                }
+            }
+            Some(_) => {}
         }
     }
 
@@ -4286,7 +4321,11 @@ impl<B: Backend> App<B> {
                 return;
             }
             WorkspaceEvent::PaneClosed { pane, tab } => {
-                self.forget_panes(&[PaneId::of(pane.0)]);
+                // A pane of a closed tab kept to give back keeps its wakes.
+                let pane = PaneId::of(pane.0);
+                if !self.workspace.keeps_closed_pane(pane) {
+                    self.forget_panes(&[pane]);
+                }
                 self.close_strayed_panels(platform);
                 vec![of_tab(self, tab)]
             }
@@ -4988,6 +5027,16 @@ impl<B: Backend> App<B> {
             AppEvent::Timer(timer) if self.bench_deadline == Some(timer) => {
                 self.bench_deadline = None;
                 self.give_up_benches(platform);
+            }
+            // The closed tabs kept whose time came close for good, their
+            // programs hung up.
+            AppEvent::Timer(timer)
+                if self.closed_timer.is_some_and(|(armed, _)| armed == timer) =>
+            {
+                self.closed_timer = None;
+                let gone = self.workspace.drop_closed_tabs(Instant::now(), false);
+                self.forget_panes(&gone);
+                self.arm_closed_timer(platform);
             }
             // The plugins' timers whose time came fire, whose events the
             // turn's end delivers.

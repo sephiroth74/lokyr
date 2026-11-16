@@ -86,6 +86,8 @@ pub(crate) struct Settings {
     /// Whether Control-Tab steps through the tabs in the order of their
     /// use, rather than in their own.
     pub(crate) control_tab_recent: bool,
+    /// How many seconds a closed tab is kept to give back, 0 for none.
+    pub(crate) reopen_seconds: u32,
 }
 
 impl Default for Settings {
@@ -98,6 +100,7 @@ impl Default for Settings {
             close_button: CloseButton::Hover,
             column_width: 200.0,
             control_tab_recent: true,
+            reopen_seconds: 10,
         }
     }
 }
@@ -135,6 +138,10 @@ impl Settings {
             _ => CloseButton::Hover,
         };
         settings.control_tab_recent = text("control-tab") != Some("order");
+        settings.reopen_seconds = match config.get("reopen-seconds") {
+            Some(Data::Integer(seconds)) => u32::try_from(*seconds).unwrap_or(0).min(86_400),
+            _ => settings.reopen_seconds,
+        };
         settings.hide_when_single = flag("hide-when-single", true);
         settings.show_index = flag("show-index", true);
         settings.column_width = match config.get("column-width") {

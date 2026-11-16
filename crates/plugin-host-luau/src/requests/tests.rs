@@ -224,6 +224,7 @@ fn a_call_makes_its_request_of_its_arguments_in_their_order() {
             Request::CloseTab {
                 tab: TabId(7),
                 ask: false,
+                keep: 0,
             },
             // A plain value's `nil` is its value; an optional field's its
             // default.
@@ -235,6 +236,7 @@ fn a_call_makes_its_request_of_its_arguments_in_their_order() {
             Request::CloseTab {
                 tab: TabId(7),
                 ask: false,
+                keep: 0,
             },
         ]
     );

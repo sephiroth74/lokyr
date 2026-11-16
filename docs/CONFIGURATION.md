@@ -198,6 +198,7 @@ show-index = true                    # true | false: ⌘1 to ⌘9 on the first n
 close-button = "hover"               # always | hover | never: a tab's close button
 column-width = 200                   # points, 60 to 600: the bar's column on the left or the right
 control-tab = "recent"               # recent | order: what Control-Tab steps through
+reopen-seconds = 10                  # 0 to 86400: seconds a closed tab stays ready to reopen
 
 [plugins.splits]
 dim-inactive = 0.15                  # 0 to 1: how much the panes without the keyboard fade
@@ -1707,6 +1708,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `v`, `shift+v`, `ctrl+v` | `copy-mode.select` | Starts a selection at the cursor, of the cells in reading order, `cells`, of whole lines, `lines`, or of a block of columns, `block`, which then goes from there to the cursor as it moves; the same key takes it away, and another changes its kind |
 | `o`, `y`, `enter`, `shift+y`, `escape`, `q`, `ctrl+c` | `copy-mode.act` | Its `action`: `o` swaps the selection's ends, `swap`; `y` and `enter` copy the selection, or the cursor's line without one, and end the mode, the selection staying, `copy`; `shift+y` copies the cursor's line and ends, `copy-line`; `escape` takes the count away, or else the selection, or else ends, `back`; `q` and `ctrl+c` end, the selection taken away, `exit`. A line's copy leaves the blanks at its end out |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
+| `cmd+shift+t` | `tabs.reopen` | Brings back the tab that you closed last, at its place, as you left it, within [`reopen-seconds`](#reopen-seconds) of its close; again, the one before |
 | `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]` | `tabs.next` | Shows the next tab, the first after the last |
 | `cmd+shift+[` | `tabs.prev` | Shows the previous tab, the last before the first |
@@ -1865,6 +1867,22 @@ What Control-Tab and Control-Shift-Tab step through: the tabs in the order of th
 - `"recent"` brings forward the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control becomes the one used last. Control-Shift-Tab goes the other way, from the tab used longest ago.
 - `"order"` brings forward the next tab of the bar, and Control-Shift-Tab the previous one, as Command-Shift-] and Command-Shift-[ do whatever this says.
 - It applies at once, as you save the file.
+
+### `reopen-seconds`
+
+<sub>Platforms: macOS</sub>
+
+How many seconds a tab that you close stays ready to come back with Shell › Reopen Closed Tab, ⇧⌘T.
+
+| Values | Default |
+|---|---|
+| from `0` to `86400` | `10` |
+
+- While it waits, the tab is out of your window, but its programs keep running and their output is read, so it comes back as you left it, at its place. After its seconds, or when Lokyr quits, it closes for good and its programs end.
+- Every tab that you close is kept, with ⌘W, its close button, a middle click or its context menu. A tab whose program ends, the last tab of a window and a window that you close are not.
+- ⇧⌘T gives back the tab closed last; press it again for the one before.
+- A kept tab holds its memory, its scrollback too, until it closes: a few megabytes for a shell, more for a long scrollback. `0` keeps none.
+- It applies to the tabs that you close after you save the file.
 
 ## `[plugins.splits]`
 

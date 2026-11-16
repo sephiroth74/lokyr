@@ -89,6 +89,7 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             (SET_COLOR, vec![("color", Kind::String, false)]),
             (DETACH, vec![]),
             (TOGGLE_PIN, vec![]),
+            (REOPEN, vec![]),
         ]
     );
     // Each title of its own catalogs, English's and Italian's alike.
@@ -138,7 +139,8 @@ fn a_close_asks_first_of_the_tab_or_of_its_pane_while_it_has_splits() {
         run(&mut host, &mut plugin, CLOSE, Args::new()),
         [Request::CloseTab {
             tab: TabId(1),
-            ask: true
+            ask: true,
+            keep: 10
         }]
     );
     let (mut host, mut plugin) = self::host(&[1, 2], 3);
@@ -338,7 +340,8 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
         ),
         [Request::CloseTab {
             tab: TabId(3),
-            ask: true
+            ask: true,
+            keep: 10
         }]
     );
     // A double click asks for its title.
@@ -494,7 +497,8 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
         closed,
         [&Request::CloseTab {
             tab: TabId(1),
-            ask: true
+            ask: true,
+            keep: 10
         }]
     );
     // Of no menu open, an item does nothing.
@@ -538,7 +542,8 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
         clicked(&mut host, &mut plugin, "close-1"),
         [Request::CloseTab {
             tab: TabId(1),
-            ask: true
+            ask: true,
+            keep: 10
         }]
     );
     let opened = clicked(&mut host, &mut plugin, bar::NEW_KEY);
@@ -928,7 +933,8 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "show-index",
             "close-button",
             "column-width",
-            "control-tab"
+            "control-tab",
+            "reopen-seconds"
         ]
     );
     let example = guide
@@ -1069,6 +1075,29 @@ fn a_pinned_tab_goes_first_narrow_and_its_key_closes_its_pane_alone() {
         [Request::ClosePane {
             pane: PaneId(2),
             ask: true
+        }]
+    );
+}
+
+#[test]
+fn a_closed_tab_is_kept_for_the_config_s_seconds_and_reopen_gives_it_back() {
+    let (mut host, mut plugin) = host(&[1, 1], 2);
+    assert_eq!(
+        run(&mut host, &mut plugin, REOPEN, Args::new()),
+        [Request::ReopenTab(WINDOW)]
+    );
+    // Of `reopen-seconds = 0`, none kept.
+    host.set_config(Data::Map(BTreeMap::from([(
+        "reopen-seconds".to_owned(),
+        Data::Integer(0),
+    )])));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::CloseTab {
+            tab: TabId(2),
+            ask: true,
+            keep: 0
         }]
     );
 }

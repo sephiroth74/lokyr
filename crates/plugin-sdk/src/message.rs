@@ -711,14 +711,25 @@ pub enum Request {
     /// shows the tab after it, or before it, and closes with its last tab.
     /// With `ask`, the host asks the user first, as it asks for a window,
     /// while a program other than a shell runs in one of its panes, and
-    /// closes it once the user confirms.
+    /// closes it once the user confirms. Of `keep` seconds, the host keeps
+    /// it for them, its panes' programs running, which
+    /// [`Request::ReopenTab`] gives back; but a window's last tab, which
+    /// closes its window.
     CloseTab {
         /// The tab.
         tab: TabId,
         /// Whether the host asks the user first.
         #[serde(default)]
         ask: bool,
+        /// How many seconds the host keeps it to give back, 0 for none, a
+        /// day at most.
+        #[serde(default)]
+        keep: u32,
     },
+    /// Gives back the tab closed last that the host keeps, at its place in
+    /// its window, or in `window` once its own closed, which shows it, as a
+    /// tab opened anew, of its panes, tells; nothing of none kept.
+    ReopenTab(WindowId),
     /// Closes a pane, whose program is hung up: its room goes to its
     /// sibling, and its tab closes with its last pane. With `ask`, the
     /// host asks the user first, as [`Request::CloseTab`] says.
@@ -1157,7 +1168,8 @@ impl Request {
             | Self::Equalize(_)
             | Self::SwapPanes { .. }
             | Self::Zoom { .. }
-            | Self::SetTabPinned { .. } => Some(Capability::WorkspaceWrite),
+            | Self::SetTabPinned { .. }
+            | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1308,6 +1320,7 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::SetTabPinned { .. }
+            | Self::ReopenTab(_)
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
@@ -1897,6 +1910,7 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::SetTabPinned { .. }
+            | Self::ReopenTab(_)
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }
@@ -2270,7 +2284,8 @@ mod tests {
         assert_eq!(
             Request::CloseTab {
                 tab: crate::host::TabId(1),
-                ask: false
+                ask: false,
+                keep: 0
             }
             .capabilities(),
             [Capability::WorkspaceWrite]

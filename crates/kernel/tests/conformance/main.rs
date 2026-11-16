@@ -762,10 +762,14 @@ fn on_kernel(
         // A close that asks closes, as the user confirms it.
         for request in plugins.take_requests() {
             match request {
-                AppRequest::CloseAsked(Closing::Tab(tab)) => {
+                AppRequest::CloseAsked(Closing::Tab(tab), 0) => {
                     kernel.workspace.close_tab(tab);
                 }
-                AppRequest::CloseAsked(Closing::Pane(pane)) => {
+                AppRequest::CloseAsked(Closing::Tab(tab), keep) => {
+                    let until = Instant::now() + Duration::from_secs(u64::from(keep));
+                    kernel.workspace.close_tab_kept(tab, until);
+                }
+                AppRequest::CloseAsked(Closing::Pane(pane), _) => {
                     kernel.workspace.close_pane(pane);
                 }
                 // The settings tab shows at the page, which its plugin
@@ -1113,11 +1117,12 @@ fn kind(request: &Request) -> usize {
         Request::AskChoice { .. } => 127,
         Request::RecentTabs(_) => 128,
         Request::SetTabPinned { .. } => 129,
+        Request::ReopenTab(_) => 130,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 130;
+const KINDS: usize = 131;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

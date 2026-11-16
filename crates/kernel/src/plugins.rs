@@ -254,8 +254,9 @@ pub enum Request {
         id: PanelId,
     },
     /// Close a tab or a pane once the user confirms it, as the app asks
-    /// for a window while a program other than a shell runs there.
-    CloseAsked(Closing),
+    /// for a window while a program other than a shell runs there; a tab
+    /// kept for the seconds given, to give back, but a window's last.
+    CloseAsked(Closing, u32),
     /// Put a window's content's top left corner at `at` on the screens, a
     /// window that a plugin's move of a tab opened, as it shows, or the
     /// window of a tab that was alone in it.
@@ -445,6 +446,9 @@ pub enum Closing {
     /// A pane.
     Pane(PaneId),
 }
+
+/// The most seconds that a closed tab is kept to give back: a day.
+pub const MOST_KEPT: u32 = 86_400;
 
 /// The clipboard, which the app reaches through its platform.
 pub trait Clipboard {
@@ -4511,14 +4515,33 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             // of the call closed, and record what they change.
             // A close that asks goes to the app, which asks the user as it
             // asks for a window.
-            Asked::CloseTab { tab, ask: true } => {
-                requests.push(Request::CloseAsked(Closing::Tab(TabId::of(tab.0))));
+            Asked::CloseTab {
+                tab,
+                ask: true,
+                keep,
+            } => {
+                requests.push(Request::CloseAsked(Closing::Tab(TabId::of(tab.0)), keep));
             }
             Asked::ClosePane { pane, ask: true } => {
-                requests.push(Request::CloseAsked(Closing::Pane(PaneId::of(pane.0))));
+                requests.push(Request::CloseAsked(Closing::Pane(PaneId::of(pane.0)), 0));
             }
-            Asked::CloseTab { tab, ask: false } => {
+            Asked::CloseTab {
+                tab,
+                ask: false,
+                keep: 0,
+            } => {
                 context.workspace.close_tab(TabId::of(tab.0));
+            }
+            Asked::CloseTab {
+                tab,
+                ask: false,
+                keep,
+            } => {
+                let until = Instant::now() + Duration::from_secs(u64::from(keep));
+                context.workspace.close_tab_kept(TabId::of(tab.0), until);
+            }
+            Asked::ReopenTab(window) => {
+                context.workspace.reopen_tab(WindowId::of(window.0));
             }
             Asked::ClosePane { pane, ask: false } => {
                 context.workspace.close_pane(PaneId::of(pane.0));
@@ -5996,6 +6019,15 @@ impl Host<'_, '_> {
                         "a tab's color is an RGB one, not one of the palette's",
                     ));
                 }
+            }
+            Asked::CloseTab { keep, .. } if *keep > MOST_KEPT => {
+                return Err(Error::new(
+                    Code::Failed,
+                    format!("a closed tab is kept a day at most, not {keep} seconds"),
+                ));
+            }
+            Asked::ReopenTab(window) => {
+                self.window(*window)?;
             }
             Asked::CloseTab { tab, .. }
             | Asked::ActivateTab(tab)

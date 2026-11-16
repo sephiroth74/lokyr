@@ -328,6 +328,10 @@ struct FakeTab {
 /// title, its color and its marks.
 type Look = (String, Option<Color>, TabMarks);
 
+/// A tab closed that the fake host keeps to give back: its id, the tab,
+/// its panes, its window and its place there.
+type ClosedTab = (TabId, FakeTab, Vec<(PaneId, FakePane)>, WindowId, usize);
+
 /// What a tab bar marks a tab of, as a read of the tabs tells it, which a
 /// test gives a tab of the fake host.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -541,6 +545,9 @@ pub struct FakeHost {
     tab_use_count: u64,
     /// Whether the order of the tabs' use holds, as Control is held.
     order_held: bool,
+    /// The tabs closed that it keeps to give back, the last closed last:
+    /// each tab, its panes, its window and its place there.
+    closed_tabs: Vec<ClosedTab>,
     /// Of a plugin that does not read the processes, the title that it last
     /// learnt of each pane, its program's, of none at first, which a change
     /// of the pane's folder or program, that it cannot read, leaves.
@@ -646,6 +653,7 @@ impl FakeHost {
             tab_uses: BTreeMap::new(),
             tab_use_count: 0,
             order_held: false,
+            closed_tabs: Vec::new(),
             told_panes: BTreeMap::new(),
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
@@ -1931,7 +1939,9 @@ impl FakeHost {
             }
             // A close that asks closes as the user's confirmation would,
             // which a test reads among the requests done.
-            Request::CloseTab { tab, .. } => self.close_tab(*tab),
+            Request::CloseTab { tab, keep: 0, .. } => self.close_tab(*tab),
+            Request::CloseTab { tab, .. } => self.close_tab_kept(*tab),
+            Request::ReopenTab(window) => self.reopen_tab(*window),
             Request::ClosePane { pane, .. } => self.close_pane(*pane),
             Request::SetTabTitle { tab: id, title } => {
                 let before = self.look(*id);
@@ -2266,6 +2276,79 @@ impl FakeHost {
             }
             Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed { window }),
         }
+    }
+
+    /// Closes `tab` as [`FakeHost::close_tab`] does, but keeps it to give
+    /// back, as the app does; a window's last tab closes as before.
+    fn close_tab_kept(&mut self, tab: TabId) {
+        let Some(window) = self.tabs.get(&tab).map(|shown| shown.window) else {
+            return;
+        };
+        let Some(index) = self
+            .windows
+            .get(&window)
+            .filter(|shown| shown.tabs.len() > 1)
+            .and_then(|shown| shown.tabs.iter().position(|&id| id == tab))
+        else {
+            return self.close_tab(tab);
+        };
+        let left = self.detach_tab(tab);
+        let Some(kept) = self.tabs.remove(&tab) else {
+            return;
+        };
+        let mut panes = Vec::new();
+        for pane in leaves(&kept.layout) {
+            if let Some(held) = self.panes.remove(&pane) {
+                panes.push((pane, held));
+            }
+            self.changed(WorkspaceEvent::PaneClosed { pane, tab });
+        }
+        self.changed(WorkspaceEvent::TabClosed { tab, window });
+        self.closed_tabs.push((tab, kept, panes, window, index));
+        self.tell_left(left);
+    }
+
+    /// Gives back the tab closed last that it keeps, at its place in its
+    /// window, or in `fallback` once its own closed, as the app does.
+    fn reopen_tab(&mut self, fallback: WindowId) {
+        let Some((tab, mut kept, panes, window, index)) = self.closed_tabs.pop() else {
+            return;
+        };
+        let window = if self.windows.contains_key(&window) {
+            window
+        } else if self.windows.contains_key(&fallback) {
+            fallback
+        } else {
+            self.closed_tabs.push((tab, kept, panes, window, index));
+            return;
+        };
+        kept.window = window;
+        let pinned = kept.marks.pinned;
+        let ids: Vec<PaneId> = panes.iter().map(|&(pane, _)| pane).collect();
+        for (pane, mut held) in panes {
+            held.window = window;
+            self.panes.insert(pane, held);
+        }
+        self.tabs.insert(tab, kept);
+        let pinned_count = self.pinned_in(window);
+        let mut placed = 0;
+        if let Some(shown) = self.windows.get_mut(&window) {
+            placed = if pinned {
+                index.min(pinned_count)
+            } else {
+                index.clamp(pinned_count, shown.tabs.len())
+            };
+            shown.tabs.insert(placed, tab);
+        }
+        self.changed(WorkspaceEvent::TabCreated {
+            tab,
+            window,
+            index: placed,
+        });
+        for pane in ids {
+            self.changed(WorkspaceEvent::PaneCreated { pane, tab });
+        }
+        self.activate_tab(tab);
     }
 
     /// Closes `tab`, with its panes.
@@ -3889,6 +3972,16 @@ impl Calling<'_> {
                         format!("a resize of {by} is not a share from -1 to 1"),
                     ));
                 }
+                Response::Done
+            }
+            Request::CloseTab { keep, .. } if *keep > 86_400 => {
+                return Err(Error::new(
+                    Code::Failed,
+                    format!("a closed tab is kept a day at most, not {keep} seconds"),
+                ));
+            }
+            Request::ReopenTab(window) => {
+                self.known_window(*window)?;
                 Response::Done
             }
             Request::CloseTab { tab, .. }

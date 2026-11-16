@@ -1236,7 +1236,19 @@ impl<'a> Cx<'a> {
     /// the user confirms it while a program other than a shell runs there,
     /// as the host asks for a window.
     pub fn close_tab(&mut self, tab: TabId, ask: bool) -> Result<(), Error> {
-        self.done(Request::CloseTab { tab, ask })
+        self.done(Request::CloseTab { tab, ask, keep: 0 })
+    }
+
+    /// Closes `tab` as [`Cx::close_tab`] does, but keeps it for `keep`
+    /// seconds, its panes' programs running, to give back.
+    pub fn close_tab_kept(&mut self, tab: TabId, ask: bool, keep: u32) -> Result<(), Error> {
+        self.done(Request::CloseTab { tab, ask, keep })
+    }
+
+    /// Gives back the tab closed last that the host keeps, at its place, or
+    /// in `window` once its own closed.
+    pub fn reopen_tab(&mut self, window: WindowId) -> Result<(), Error> {
+        self.done(Request::ReopenTab(window))
     }
 
     /// Closes `pane`, as this call returns; with `ask`, as

@@ -12,6 +12,7 @@ command-tabs-rename = Rinomina tab…
 command-tabs-set-color = Imposta colore del tab
 command-tabs-detach = Sposta tab in una nuova finestra
 command-tabs-toggle-pin = Fissa tab
+command-tabs-reopen = Riapri tab chiuso
 
 rename-message = Il titolo del tab
 rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, o la sua cartella.

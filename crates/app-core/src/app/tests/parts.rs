@@ -342,6 +342,32 @@ fn control_tab_steps_through_the_tabs_used_while_control_is_held() {
 }
 
 #[test]
+fn a_closed_tab_comes_back_by_shift_command_t() {
+    let (mut fake, mut app, window, ..) = with_parts(idle());
+    let tabs = |app: &App| {
+        let shown = app.workspace.window(app.windows[&window].window).unwrap();
+        (shown.tabs().to_vec(), shown.active_tab())
+    };
+    let key = |fake: &mut Fake, app: &mut App, code, text: &str, mods| {
+        fake.send(app, window, key_event(code, text, mods, true));
+    };
+    let shifted = Modifiers { shift: true, ..CMD };
+    key(&mut fake, &mut app, KeyCode::KeyT, "t", CMD);
+    key(&mut fake, &mut app, KeyCode::KeyT, "t", CMD);
+    let (opened, third) = tabs(&app);
+    assert_eq!(opened.len(), 3);
+    // Closed, of a shell at its prompt: kept, out of the window.
+    key(&mut fake, &mut app, KeyCode::KeyW, "w", CMD);
+    run_until(&mut fake, &mut app, |_, app| tabs(app).0.len() == 2);
+    assert!(app.workspace.keeps_closed_tabs());
+    // Given back at its place, shown.
+    key(&mut fake, &mut app, KeyCode::KeyT, "t", shifted);
+    run_until(&mut fake, &mut app, |_, app| tabs(app).0.len() == 3);
+    assert_eq!(tabs(&app), (opened.clone(), third));
+    assert!(!app.workspace.keeps_closed_tabs());
+}
+
+#[test]
 fn the_tabs_keys_open_select_move_and_close_tabs() {
     let (mut fake, mut app, window, ..) = with_parts(idle());
     let active = |app: &App| {

@@ -2531,3 +2531,62 @@ fn a_pinned_tab_goes_first_and_stays_before_the_tabs_moved_and_opened_later() {
     // Of a tab not there, nothing.
     assert!(!workspace.set_tab_pinned(TabId::of(999_999), true));
 }
+
+#[test]
+fn a_closed_tab_kept_reads_its_output_and_comes_back_at_its_place_until_its_time() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 10"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let kept = pane("printf 'one\\n'; sleep 0.5; printf 'two\\n'; sleep 30");
+    let kept_pane = kept.id();
+    let second = workspace.open_tab(window, kept, 1).unwrap();
+    let third = workspace.open_tab(window, pane("sleep 10"), 2).unwrap();
+    workspace.activate_tab(second);
+    // Closed and kept: out of its window, as its plugins hear.
+    workspace.take_events();
+    let until = Instant::now() + Duration::from_secs(10);
+    assert!(workspace.close_tab_kept(second, until));
+    assert_eq!(workspace.window(window).unwrap().tabs(), [first, third]);
+    assert!(workspace.tab(second).is_none() && workspace.pane(kept_pane).is_none());
+    assert!(workspace.keeps_closed_pane(kept_pane));
+    assert_eq!(workspace.next_closed_due(), Some(until));
+    let heard = changes(&mut workspace);
+    assert!(heard.contains(&Change::TabClosed {
+        tab: second.into(),
+        window: window.into()
+    }));
+    // Its program prints meanwhile, which comes back with it, at its
+    // place, shown.
+    std::thread::sleep(Duration::from_millis(1200));
+    assert_eq!(workspace.reopen_tab(window), Some(second));
+    assert_eq!(
+        workspace.window(window).unwrap().tabs(),
+        [first, second, third]
+    );
+    assert_eq!(workspace.window(window).unwrap().active_tab(), second);
+    assert!(changes(&mut workspace).contains(&Change::TabCreated {
+        tab: second.into(),
+        window: window.into(),
+        index: 1
+    }));
+    let shown = |workspace: &Workspace| {
+        let terminal = workspace.pane(kept_pane).unwrap().terminal().unwrap();
+        (0..3).map(|y| terminal.row_text(y)).collect::<Vec<_>>()
+    };
+    assert_eq!(shown(&workspace)[..2], ["one", "two"]);
+    // None kept to give back now; closed again, it goes for good once its
+    // time is up, or all of them as the app quits.
+    assert_eq!(workspace.reopen_tab(window), None);
+    let soon = Instant::now() + Duration::from_millis(10);
+    workspace.close_tab_kept(second, soon);
+    workspace.close_tab_kept(third, soon + Duration::from_secs(60));
+    assert!(workspace.drop_closed_tabs(Instant::now(), false).is_empty());
+    assert_eq!(workspace.drop_closed_tabs(soon, false), [kept_pane]);
+    assert!(!workspace.keeps_closed_pane(kept_pane));
+    assert_eq!(workspace.drop_closed_tabs(soon, true).len(), 1);
+    assert!(!workspace.keeps_closed_tabs());
+    // A window's last tab closes the window, kept or not.
+    assert!(workspace.close_tab_kept(first, soon));
+    assert!(workspace.window(window).is_none());
+    assert!(!workspace.keeps_closed_tabs());
+}

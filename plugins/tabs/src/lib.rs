@@ -69,6 +69,10 @@ const DETACH: &str = "tabs.detach";
 /// Pins the focused tab, at its window's start, narrow, or unpins it.
 const TOGGLE_PIN: &str = "tabs.toggle-pin";
 
+/// Gives back the tab closed last, which the host keeps for
+/// `reopen-seconds`.
+const REOPEN: &str = "tabs.reopen";
+
 /// The plugin's catalogs, of its commands' titles and its question's
 /// texts.
 /// A tab's context menu, a panel, and its items' keys; and the message of
@@ -137,7 +141,7 @@ type Spec = (
 );
 
 /// The commands, in the order of the menus.
-fn commands() -> [Spec; 12] {
+fn commands() -> [Spec; 13] {
     let empty = || Some(Value::String(String::new()));
     [
         (NEW, "New Tab", None),
@@ -160,6 +164,7 @@ fn commands() -> [Spec; 12] {
         ),
         (DETACH, "Move Tab to New Window", None),
         (TOGGLE_PIN, "Pin Tab", None),
+        (REOPEN, "Reopen Closed Tab", None),
     ]
 }
 
@@ -322,9 +327,13 @@ impl Plugin for Tabs {
                 let (tab, _) = cx.new_tab(window, None)?;
                 cx.activate_tab(tab)
             }
-            (UiEventKind::Click, _) if let Some(id) = id("close-") => cx.close_tab(TabId(id), true),
+            (UiEventKind::Click, _) if let Some(id) = id("close-") => {
+                cx.close_tab_kept(TabId(id), true, self.settings.reopen_seconds)
+            }
             (UiEventKind::Click, Some(tab)) => cx.activate_tab(tab),
-            (UiEventKind::MiddleClick, Some(tab)) => cx.close_tab(tab, true),
+            (UiEventKind::MiddleClick, Some(tab)) => {
+                cx.close_tab_kept(tab, true, self.settings.reopen_seconds)
+            }
             // A tab dragged to another place in its bar, which the bar's
             // next render shows.
             (UiEventKind::Reorder { index }, Some(tab)) => cx.move_tab(tab, window, *index),
@@ -386,7 +395,8 @@ impl Plugin for Tabs {
             CLOSE if tab.panes.len() > 1 => cx.close_pane(tab.focused, true),
             // A pinned tab stays, as its key closes no pinned tab.
             CLOSE if tab.pinned => Ok(()),
-            CLOSE => cx.close_tab(tab.id, true),
+            CLOSE => cx.close_tab_kept(tab.id, true, self.settings.reopen_seconds),
+            REOPEN => cx.reopen_tab(window),
             TOGGLE_PIN => cx.set_tab_pinned(tab.id, !tab.pinned),
             NEXT => cx.activate_tab(tabs[(at + 1) % tabs.len()].id),
             PREV => cx.activate_tab(tabs[(at + tabs.len() - 1) % tabs.len()].id),
@@ -694,10 +704,10 @@ impl Tabs {
             MENU_PIN => cx.set_tab_pinned(tab, !shown.pinned),
             MENU_RENAME => self.rename(cx, window, shown, &Args::new()),
             MENU_DETACH if tabs.len() > 1 => cx.tab_to_new_window(tab),
-            MENU_CLOSE => cx.close_tab(tab, true),
+            MENU_CLOSE => cx.close_tab_kept(tab, true, self.settings.reopen_seconds),
             MENU_CLOSE_OTHERS => {
                 for other in tabs.iter().filter(|other| other.id != tab) {
-                    cx.close_tab(other.id, true)?;
+                    cx.close_tab_kept(other.id, true, self.settings.reopen_seconds)?;
                 }
                 Ok(())
             }

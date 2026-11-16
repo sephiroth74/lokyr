@@ -433,6 +433,22 @@ pub struct Workspace {
     /// Whether the order of the tabs' use holds, as Control is held while
     /// Control-Tab steps through it.
     order_held: bool,
+    /// The tabs closed that it keeps for a while, to give back, the last
+    /// closed last.
+    closed: Vec<Closed>,
+}
+
+/// A tab closed that the workspace keeps, out of every window, its panes'
+/// programs running and their output read, until its time is up.
+#[derive(Debug)]
+struct Closed {
+    tab: Tab,
+    panes: Vec<Pane>,
+    /// The window that it was in, and its place among that window's tabs.
+    window: WindowId,
+    index: usize,
+    /// When it closes for good.
+    until: Instant,
 }
 
 impl Workspace {
@@ -1419,6 +1435,156 @@ impl Workspace {
         shown.own_color = color;
         self.tab_looked(tab, &before);
         true
+    }
+
+    /// Closes `tab` as [`Workspace::close_tab`] does, as its plugins and its
+    /// window learn, but keeps it until `until`, its panes' programs running
+    /// and their output read, to give back: the settings tab, and a
+    /// window's last tab, which closes the window, close as before. Whether
+    /// the tab was open.
+    pub fn close_tab_kept(&mut self, tab: TabId, until: Instant) -> bool {
+        let Some(window) = self.tabs.get(&tab).map(|shown| shown.window) else {
+            return self.close_tab(tab);
+        };
+        let Some(index) = self
+            .windows
+            .get(&window)
+            .filter(|shown| shown.tabs.len() > 1)
+            .and_then(|shown| shown.tabs.iter().position(|&id| id == tab))
+        else {
+            return self.close_tab(tab);
+        };
+        let left = self.detach_tab(tab);
+        let Some(kept) = self.tabs.remove(&tab) else {
+            return false;
+        };
+        let mut panes = Vec::new();
+        for pane in kept.layout.panes() {
+            self.tab_of.remove(&pane);
+            self.waiting.remove(&pane);
+            if let Some(gone) = self.panes.remove(&pane) {
+                // Its agent leaves the windows, as the Dock's badge counts.
+                if let Some(before) = gone.agent().and_then(Agent::state) {
+                    self.events.push(Event::Agent {
+                        pane,
+                        name: gone.agent().map(Agent::name).unwrap_or_default().to_owned(),
+                        before: Some(before),
+                        now: None,
+                        told: false,
+                    });
+                }
+                panes.push(gone);
+            }
+            self.changed(WorkspaceEvent::PaneClosed {
+                pane: pane.into(),
+                tab: tab.into(),
+            });
+        }
+        self.changed(WorkspaceEvent::TabClosed {
+            tab: tab.into(),
+            window: window.into(),
+        });
+        self.closed.push(Closed {
+            tab: kept,
+            panes,
+            window,
+            index,
+            until,
+        });
+        self.tell_left(left);
+        true
+    }
+
+    /// Gives back the tab closed last that it keeps, at its place in its
+    /// window, or of `fallback` once its window closed, which shows it, as
+    /// a tab opened anew, of its panes, tells; none of none kept.
+    pub fn reopen_tab(&mut self, fallback: WindowId) -> Option<TabId> {
+        let closed = self.closed.pop()?;
+        let open = |window: &WindowId| {
+            self.windows.contains_key(window) && self.settings_window() != Some(*window)
+        };
+        let window = if open(&closed.window) {
+            closed.window
+        } else if open(&fallback) {
+            fallback
+        } else {
+            self.closed.push(closed);
+            return None;
+        };
+        let Closed {
+            mut tab,
+            panes,
+            index,
+            ..
+        } = closed;
+        let id = tab.id;
+        tab.window = window;
+        let pinned = tab.marks.pinned;
+        let ids: Vec<PaneId> = panes.iter().map(Pane::id).collect();
+        for pane in panes {
+            self.tab_of.insert(pane.id(), id);
+            self.panes.insert(pane.id(), pane);
+        }
+        self.tabs.insert(id, tab);
+        let held = self.pinned_in(window);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            let index = if pinned {
+                index.min(held)
+            } else {
+                index.clamp(held, shown.tabs.len())
+            };
+            shown.tabs.insert(index, id);
+        }
+        self.created(id, &ids);
+        self.activate_tab(id);
+        // Its agents come back to the windows.
+        for &pane in &ids {
+            if let Some(agent) = self.panes.get(&pane).and_then(Pane::agent)
+                && let Some(now) = agent.state()
+            {
+                let name = agent.name().to_owned();
+                self.events.push(Event::Agent {
+                    pane,
+                    name,
+                    before: None,
+                    now: Some(now),
+                    told: false,
+                });
+            }
+        }
+        Some(id)
+    }
+
+    /// Whether it keeps a closed tab to give back.
+    pub fn keeps_closed_tabs(&self) -> bool {
+        !self.closed.is_empty()
+    }
+
+    /// Whether `pane` is of a closed tab that it keeps.
+    pub fn keeps_closed_pane(&self, pane: PaneId) -> bool {
+        self.closed
+            .iter()
+            .any(|closed| closed.panes.iter().any(|kept| kept.id() == pane))
+    }
+
+    /// When the first of the closed tabs that it keeps closes for good.
+    pub fn next_closed_due(&self) -> Option<Instant> {
+        self.closed.iter().map(|closed| closed.until).min()
+    }
+
+    /// Closes for good the closed tabs whose time is up at `now`, or every
+    /// one of `all`, their panes' programs hung up: their panes, for the
+    /// app to forget.
+    pub fn drop_closed_tabs(&mut self, now: Instant, all: bool) -> Vec<PaneId> {
+        let mut gone = Vec::new();
+        self.closed.retain(|closed| {
+            let due = all || closed.until <= now;
+            if due {
+                gone.extend(closed.panes.iter().map(Pane::id));
+            }
+            !due
+        });
+        gone
     }
 
     /// The tabs of `window`, in the order of their use, the one that showed

@@ -27,6 +27,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.set-color` | | | Gives the tab its `color`, as `"#ff8800"`; an empty one gives the program's back |
 | `tabs.detach` | Shell › Move Tab to New Window | | Moves the tab out to a window of its own |
 | `tabs.toggle-pin` | Shell › Pin Tab | | Pins the tab at the start of the bar, or unpins it. The tab's context menu has the same item |
+| `tabs.reopen` | Shell › Reopen Closed Tab | ⇧⌘T | Brings back the tab you closed last, at its place, as you left it. Press it again for the one before. A closed tab waits `reopen-seconds`, 10 by default |
 
 The commands without keys are there for your own bindings:
 
@@ -49,6 +50,7 @@ Its keys go in [`[plugins.tabs]`](../CONFIGURATION.md#pluginstabs), each applied
 | `close-button` | `"always"`, `"hover"`, `"never"` | `"hover"` | When a tab shows its close button |
 | `column-width` | from `60` to `600` | `200` | The column's width in points, on the left or the right, which a drag of its edge changes too |
 | `control-tab` | `"recent"`, `"order"` | `"recent"` | What ⌃Tab and ⌃⇧Tab step through: the tabs in the order you used them, or in the bar's order |
+| `reopen-seconds` | from `0` to `86400` | `10` | How many seconds a tab you close stays ready to come back with ⇧⌘T. Its programs keep running meanwhile and it keeps its memory; `0` keeps none |
 
 ```toml
 [plugins.tabs]

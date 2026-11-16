@@ -2,6 +2,8 @@
 //! program runs, quitting, a window's title, a paste of several lines, a
 //! link to open, a program's read of the clipboard; and their answers.
 
+use std::time::{Duration, Instant};
+
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::config::{ConfirmPaste, OpenFile, OpenUrl};
 use lokyr_kernel::diagnostics::{About, Diagnostic};
@@ -154,11 +156,14 @@ impl<B: Backend> App<B> {
         {
             self.close(platform, window);
         }
-        if let Some((window, closing)) = self.part_asks.remove(&alert)
-            && button == 0
-            && self.part_in(window, closing)
-        {
-            self.close_part(platform, window, closing);
+        if let Some((window, closing)) = self.part_asks.remove(&alert) {
+            if button == 0 && self.part_in(window, closing) {
+                self.close_part(platform, window, closing);
+            }
+            // A close not made keeps nothing.
+            if let Closing::Tab(tab) = closing {
+                self.kept_closes.remove(&tab);
+            }
         }
         // The capabilities granted to the plugin that activates, or refused.
         if let Some(asked) = self.consent_asks.remove(&alert) {
@@ -721,6 +726,9 @@ impl<B: Backend> App<B> {
             .get(&window)
             .is_some_and(|state| self.workspace.panes_of(state.window).len() <= panes.len());
         if last {
+            if let Closing::Tab(tab) = closing {
+                self.kept_closes.remove(&tab);
+            }
             self.ask_close(platform, window);
             return;
         }
@@ -804,13 +812,23 @@ impl<B: Backend> App<B> {
                     self.close(platform, window);
                     return;
                 }
-                let panes = self
-                    .workspace
-                    .tab(tab)
-                    .map(|tab| tab.layout().panes())
-                    .unwrap_or_default();
-                self.forget_panes(&panes);
-                self.workspace.close_tab(tab);
+                // Kept for its seconds, its panes' wakes kept, to give back.
+                match self.kept_closes.remove(&tab) {
+                    Some(keep) => {
+                        let until = Instant::now() + Duration::from_secs(u64::from(keep));
+                        self.workspace.close_tab_kept(tab, until);
+                        self.arm_closed_timer(platform);
+                    }
+                    None => {
+                        let panes = self
+                            .workspace
+                            .tab(tab)
+                            .map(|tab| tab.layout().panes())
+                            .unwrap_or_default();
+                        self.forget_panes(&panes);
+                        self.workspace.close_tab(tab);
+                    }
+                }
                 self.keyboard_moved(platform, window);
                 self.show_title(platform, window);
                 platform.request_frame(window);

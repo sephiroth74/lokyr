@@ -13,6 +13,7 @@ command-tabs-rename = Rename Tab…
 command-tabs-set-color = Set Tab Color
 command-tabs-detach = Move Tab to New Window
 command-tabs-toggle-pin = Pin Tab
+command-tabs-reopen = Reopen Closed Tab
 
 # The question of a tab's title.
 rename-message = The tab's title

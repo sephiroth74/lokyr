@@ -892,6 +892,15 @@
   {
     "capabilities": [],
     "category": "tabs",
+    "name": "tabs.reopen",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Reopen Closed Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
     "name": "tabs.set-color",
     "params": [
       {

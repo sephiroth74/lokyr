@@ -2846,6 +2846,7 @@ fn workspace(world: &World) -> Scenario {
                         Request::CloseTab {
                             tab: NO_TAB,
                             ask: false,
+                            keep: 0,
                         },
                         failed(Code::NotFound, "there is no tab 999999"),
                     ),
@@ -3102,14 +3103,17 @@ fn workspace(world: &World) -> Scenario {
                         Request::CloseTab {
                             tab: tab(1),
                             ask: false,
+                            keep: 0,
                         },
                         Response::Done,
                     ),
-                    // Of a shell at its prompt, as the user confirms it.
+                    // Of a shell at its prompt, as the user confirms it,
+                    // kept to give back.
                     (
                         Request::CloseTab {
                             tab: tab(0),
                             ask: true,
+                            keep: 10,
                         },
                         Response::Done,
                     ),
@@ -3133,6 +3137,68 @@ fn workspace(world: &World) -> Scenario {
                         tab: tab(0),
                         window: w,
                     }),
+                ],
+            },
+            // Given back at its place, which it shows, as a tab opened anew;
+            // then closed for good. One past a day's keep refused.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (Request::ReopenTab(w), Response::Done),
+                    (
+                        Request::ReopenTab(NO_WINDOW),
+                        failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                    (
+                        Request::CloseTab {
+                            tab: t,
+                            ask: false,
+                            keep: 86_401,
+                        },
+                        failed(
+                            Code::Failed,
+                            "a closed tab is kept a day at most, not 86401 seconds",
+                        ),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![
+                    ws(WorkspaceEvent::TabCreated {
+                        tab: tab(0),
+                        window: w,
+                        index: 1,
+                    }),
+                    ws(WorkspaceEvent::PaneCreated {
+                        pane: pane(0),
+                        tab: tab(0),
+                    }),
+                    ws(WorkspaceEvent::TabActivated {
+                        tab: tab(0),
+                        window: w,
+                    }),
+                ],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::CloseTab {
+                        tab: tab(0),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![
+                    ws(WorkspaceEvent::PaneClosed {
+                        pane: pane(0),
+                        tab: tab(0),
+                    }),
+                    ws(WorkspaceEvent::TabClosed {
+                        tab: tab(0),
+                        window: w,
+                    }),
+                    ws(WorkspaceEvent::TabActivated { tab: t, window: w }),
                 ],
             },
             // A new tab into the first's pane, below it, whole, half and

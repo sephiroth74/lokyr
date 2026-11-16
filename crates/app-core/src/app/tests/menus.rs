@@ -71,6 +71,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Rename Tab…",
             "Move Tab to New Window",
             "Pin Tab",
+            "Reopen Closed Tab shift+cmd+t",
             "-",
             "Select Next Pane cmd+]",
             "Select Previous Pane cmd+[",
@@ -195,6 +196,7 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Rename Tab…",
             "Move Tab to New Window",
             "Pin Tab",
+            "Reopen Closed Tab shift+cmd+t",
             "-",
             "Select Next Pane cmd+]",
             "Select Previous Pane cmd+[",
@@ -317,7 +319,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 129);
+    assert_eq!(app.keymap.bindings().len(), 130);
 }
 
 #[test]
