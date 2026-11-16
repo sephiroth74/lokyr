@@ -1515,7 +1515,7 @@ impl<B: Backend> App<B> {
         show_layer(
             platform,
             drawing,
-            (window, Layer::Cursor),
+            (window, Layer::Cursor, !state.occluded),
             &mut state.cursor_layer,
             cursor_shown,
             size.scale,
@@ -1533,7 +1533,7 @@ impl<B: Backend> App<B> {
         show_layer(
             platform,
             drawing,
-            (window, Layer::BlinkingText),
+            (window, Layer::BlinkingText, !state.occluded),
             &mut state.text_layer,
             text_shown,
             size.scale,
@@ -2244,7 +2244,7 @@ impl<B: Backend> App<B> {
         show_layer(
             platform,
             drawing,
-            (window, Layer::Cursor),
+            (window, Layer::Cursor, false),
             &mut state.cursor_layer,
             None,
             size.scale,
@@ -2254,7 +2254,7 @@ impl<B: Backend> App<B> {
         show_layer(
             platform,
             drawing,
-            (window, Layer::BlinkingText),
+            (window, Layer::BlinkingText, false),
             &mut state.text_layer,
             None,
             size.scale,
@@ -2278,12 +2278,13 @@ impl<B: Backend> App<B> {
 fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
     drawing: &mut Drawing<B>,
-    (window, layer): (WindowId, Layer),
+    (window, layer, visible): (WindowId, Layer, bool),
     state: &mut WindowLayer<B>,
     shown: Option<(CellBatch, (f64, f64))>,
     scale: f64,
     (blink, slide): (Option<PlatformBlink>, Option<Slide>),
 ) {
+    let mut undrawn = false;
     let place = shown.and_then(|(cells, (x, y))| {
         let surface = state.surface.as_ref()?;
         let margin = |pixels: i32| u32::try_from(pixels).unwrap_or(0) * 2;
@@ -2299,8 +2300,11 @@ fn show_layer<B: Backend>(
             surface.resize(width, height, scale);
             match drawing.renderer.draw_untimed(surface, &list) {
                 Ok(true) => state.drawn = Some(drawn),
-                Ok(false) => {}
-                Err(error) => eprintln!("lokyr: {error}"),
+                Ok(false) => undrawn = true,
+                Err(error) => {
+                    eprintln!("lokyr: {error}");
+                    undrawn = true;
+                }
             }
         }
         let points = |pixels: f64| pixels / scale;
@@ -2317,6 +2321,15 @@ fn show_layer<B: Backend>(
             slide: None,
         })
     });
+    // Cells that did not draw, as no drawable came, leave the layer where
+    // its last cells show, of no other place, which would show them over
+    // other cells; the next frame draws them again, while the window shows.
+    if undrawn {
+        if visible {
+            platform.request_frame(window);
+        }
+        return;
+    }
     if state.place != place {
         let sent = match (&state.place, place) {
             (Some(before), Some(after))

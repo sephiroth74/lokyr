@@ -1075,6 +1075,56 @@ fn typed_moves(fake: &mut Fake, app: &mut App, window: WindowId, text: &str) -> 
 }
 
 #[test]
+fn a_cursor_s_layer_whose_cells_did_not_draw_stays_until_the_next_frame_draws_them() {
+    // A program that, at a key, moves the cursor back onto the `b` before
+    // it, which the layer's cells take.
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program =
+        shell("stty raw -echo; printf 'ready ab'; head -c 1 >/dev/null; printf '\\b'; sleep 30");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let state = app.windows.get_mut(&window).unwrap();
+    state.surface = Some(fakes::Surface::default());
+    state.cursor_layer.surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready ab"));
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let before = cursor_place(&fake, window).expect("the cursor's layer");
+    let refuses = |app: &App| {
+        app.windows.get(&window).map_or(0, |state| {
+            state.cursor_layer.surface.as_ref().map_or(0, |surface| {
+                surface.refuses.load(std::sync::atomic::Ordering::Relaxed)
+            })
+        })
+    };
+    // Its next draw gives no drawable, as every one of the layer's is in
+    // use: the layer stays where its last cells show, and asks a frame.
+    app.windows[&window]
+        .cursor_layer
+        .surface
+        .as_ref()
+        .unwrap()
+        .refuses
+        .store(1, std::sync::atomic::Ordering::Relaxed);
+    fake.send(&mut app, window, typed(KeyCode::KeyA, "a", false));
+    run_until(&mut fake, &mut app, |_, app| refuses(app) == 0);
+    // Its place's origin, as the key started its blink anew.
+    assert_eq!(
+        cursor_place(&fake, window).map(|place| place.origin),
+        Some(before.origin)
+    );
+    assert!(fake.window(window).unwrap().frame_requested);
+    // The next frame draws them, and the layer goes onto the `b`.
+    run_until(&mut fake, &mut app, |fake, _| {
+        cursor_place(fake, window).is_some_and(|place| place.origin.x < before.origin.x)
+    });
+}
+
+#[test]
 fn a_move_of_the_cursor_s_own_slides_its_layer_as_the_config_says() {
     let mut config = unpadded();
     config.cursor.movement = cursor::Movement::Snappy;

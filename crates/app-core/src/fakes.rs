@@ -62,6 +62,15 @@ impl lokyr_render_core::Renderer for Renderer {
     }
 
     fn draw(&mut self, target: &Surface, _list: &DisplayList) -> Result<bool, String> {
+        if target
+            .refuses
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok()
+        {
+            return Ok(false);
+        }
         self.frames += 1;
         target.frames.fetch_add(1, Ordering::Relaxed);
         Ok(true)
@@ -118,6 +127,9 @@ impl lokyr_render_core::Renderer for Renderer {
 pub(crate) struct Surface {
     pub(crate) frames: AtomicUsize,
     pub(crate) extended: std::sync::atomic::AtomicBool,
+    /// How many draws into it give no drawable, as a layer whose every
+    /// drawable is in use, the next first.
+    pub(crate) refuses: AtomicUsize,
 }
 
 impl lokyr_render_core::Surface for Surface {
