@@ -1328,7 +1328,7 @@ Whether an agent tells, in a notification of the system's, that it waits for you
 |---|---|
 | `true`, `false` | `true` |
 
-- The notification tells the agent's program, the message that it told, if any, and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's iTerm2 and Ghostty channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells "is waiting for you" of an agent that rings its bell.
+- The notification tells the agent's program, the message that it told, if any, and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's notification channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells "is waiting for you" of an agent that rings its bell.
 - It applies as you save the file.
 
 ### `dock-badge`

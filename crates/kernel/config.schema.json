@@ -974,7 +974,7 @@
           "default": true,
           "description": "Whether an agent tells, in a notification of the system's, that it waits for you or is done, while its window has no focus.",
           "x-platforms": ["macos"],
-          "x-guide": "Whether an agent tells, in a notification of the system's, that it waits for you or is done, while its window has no focus.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The notification tells the agent's program, the message that it told, if any, and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's iTerm2 and Ghostty channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells \"is waiting for you\" of an agent that rings its bell.\n- It applies as you save the file.",
+          "x-guide": "Whether an agent tells, in a notification of the system's, that it waits for you or is done, while its window has no focus.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The notification tells the agent's program, the message that it told, if any, and its tab's title; a click on it brings forward the agent's pane, its tab and its window. An agent that asks for you by a notification of its own (OSC 9 or OSC 777, as Claude Code's notification channels send) shows that notification alone, whose click brings its pane forward too; Lokyr tells \"is waiting for you\" of an agent that rings its bell.\n- It applies as you save the file.",
           "x-example": "true",
           "x-example-comment": "true | false: a notification as an agent waits for you or is done"
         },
