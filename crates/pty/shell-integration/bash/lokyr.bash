@@ -79,14 +79,16 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
     }
 
     # Last of the prompt's commands: the prompt's marks in PS1, and the
-    # output's at PS0's end, which the user's commands may have set anew.
+    # output's at PS0's end, which the user's commands may have set anew;
+    # the prompt's start announces that readline moves its cursor by the
+    # left and right arrows within the line, which a click in it sends.
     # The output's mark sets `_lokyr_running` as PS0 shows, of an
     # arithmetic expansion in a substring of no length, which shows
     # nothing; without `promptvars`, PS0 would show it as it is, and has
     # none.
     _lokyr_prompt_end() {
         builtin local ret=$?
-        builtin local start='\[\e]133;A\a\]' input='\[\e]133;B\a\]'
+        builtin local start='\[\e]133;A;cl=line\a\]' input='\[\e]133;B\a\]'
         PS1="${PS1-}"
         PS1="${PS1//"$start"/}"
         PS1="${PS1//"$input"/}"

@@ -85,7 +85,7 @@ Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under
 - ✔ Tabs, in a bar at the top, at the bottom or down a side, in three looks, dragged between windows and onto panes, a program's progress round its tab.
 - ✔ Split panes, their dividers dragged, the panes without the keyboard faded.
 - ✔ A find bar that highlights every match, through 100 000 lines in about 25 ms, and marks them along the panes' scroll bars, which show as macOS's do.
-- ✔ Shell integration for zsh, bash and fish: jumps between prompts, a mark of each command's outcome, the command at the pane's top as its output scrolls, a notification as a long one ends.
+- ✔ Shell integration for zsh, bash and fish: jumps between prompts, a mark of each command's outcome, the command at the pane's top as its output scrolls, a notification as a long one ends, a click in the command line that moves the cursor there.
 - ✔ Fonts through CoreText: fallback, ligatures, bold and italic faces or their synthesis, emoji, box drawing and powerline symbols drawn to the cell.
 - ✔ xterm's sequences, the kitty keyboard protocol, synchronized output, OSC 8 links, OSC 52 with consent, Unicode 18's grapheme clusters and widths.
 - ✔ Input methods, Secure Keyboard Entry, Option as Meta, chords and leaders in the keys.

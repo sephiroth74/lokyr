@@ -111,29 +111,32 @@ impl Terminal {
     /// that announced nothing, nor of a click on the prompt.
     pub fn prompt_click(&self, col: u16, row: i64) -> Option<PromptClick> {
         let clicks = self.prompt_clicks?;
-        if self.alternate_active || self.zone != Semantic::Input {
-            return None;
-        }
+        let (start, top) = self.command_line_start()?;
         let y = self.screen_y(row)?;
         let col = col.min(self.cols().saturating_sub(1));
-        let command = self.commands().last().copied();
-        let on_screen = |mark: Option<(u16, i64)>| {
-            let (x, row) = mark?;
-            Some((x, self.screen_y(row)?))
-        };
-        let cursor = self.cursor();
-        let top = on_screen(command.and_then(|command| command.prompt))
-            .map(|(_, y)| y)
-            .or_else(|| self.prompt_row(cursor.y))?;
         if y < top {
             return None;
         }
         let relative = match clicks {
             PromptClicks::Events { relative } => relative,
             PromptClicks::Line | PromptClicks::Lines => {
-                let start =
-                    on_screen(command.and_then(|command| command.input)).unwrap_or((0, top));
-                return self.arrows(clicks, start, (col, y));
+                if (y, col) < (start.1, start.0) {
+                    return None;
+                }
+                let line = self.edited_line(start);
+                let cursor = self.cursor();
+                // A click below the command line's last row moves nothing.
+                if y > line.last_row().unwrap_or(start.1).max(cursor.y) {
+                    return None;
+                }
+                let x = self.character_x(col, y);
+                if clicks == PromptClicks::Line && line.line_of(y) != line.line_of(cursor.y) {
+                    return None;
+                }
+                return arrows(
+                    line.before((cursor.y, u32::from(cursor.x))),
+                    line.before((y, u32::from(x))),
+                );
             }
         };
         Some(PromptClick::Event {
@@ -142,19 +145,71 @@ impl Terminal {
         })
     }
 
-    /// The arrows of `clicks` from the cursor to `(x, y)` of the screen,
-    /// in the command line that starts at `start`.
-    fn arrows(
-        &self,
-        clicks: PromptClicks,
-        (start_x, start_y): (u16, u16),
-        (x, y): (u16, u16),
-    ) -> Option<PromptClick> {
-        if (y, x) < (start_y, start_x) {
+    /// What replaces the selection, which a key that deletes or types
+    /// takes the place of, where it lies within the command line that the
+    /// shell edits, as its prompt announced that its line editor takes the
+    /// arrows or the clicks: the arrows from the cursor to the selection's
+    /// end, then as many Backspaces as it holds characters; within the
+    /// cursor's line but of `cl=` of several. None otherwise, as of a
+    /// selection that takes some of the prompt or of a rectangle.
+    pub fn command_line_selection(&mut self) -> Option<(Option<PromptClick>, usize)> {
+        let clicks = self.prompt_clicks?;
+        let selected = self.selection()?;
+        if selected.shape != super::SelectionShape::Cells {
             return None;
         }
-        let rows = &self.screen().rows;
+        let (start, _) = self.command_line_start()?;
+        let origin = self.origin();
+        let first = (
+            selected.start.0,
+            self.screen_y(origin.top + selected.start.1)?,
+        );
+        let last = (selected.end.0, self.screen_y(origin.top + selected.end.1)?);
+        if (first.1, first.0) < (start.1, start.0) {
+            return None;
+        }
+        let line = self.edited_line(start);
         let cursor = self.cursor();
+        if clicks != PromptClicks::Lines
+            && (line.line_of(first.1) != line.line_of(cursor.y)
+                || line.line_of(last.1) != line.line_of(cursor.y))
+        {
+            return None;
+        }
+        let from = line.before((first.1, u32::from(self.character_x(first.0, first.1))));
+        let to = line.before((last.1, u32::from(last.0) + 1));
+        let deletes = to.checked_sub(from).filter(|&deletes| deletes > 0)?;
+        Some((
+            arrows(line.before((cursor.y, u32::from(cursor.x))), to),
+            deletes.min(MOST_ARROWS),
+        ))
+    }
+
+    /// Where the command line that the shell edits starts, `B`'s mark, and
+    /// the row where its prompt starts, while it edits it on the primary
+    /// screen; none otherwise.
+    fn command_line_start(&self) -> Option<((u16, u16), u16)> {
+        if self.alternate_active || self.zone != Semantic::Input {
+            return None;
+        }
+        let command = self.commands().last().copied();
+        let on_screen = |mark: Option<(u16, i64)>| {
+            let (x, row) = mark?;
+            Some((x, self.screen_y(row)?))
+        };
+        let top = on_screen(command.and_then(|command| command.prompt))
+            .map(|(_, y)| y)
+            .or_else(|| self.prompt_row(self.cursor().y))?;
+        let start = on_screen(command.and_then(|command| command.input)).unwrap_or((0, top));
+        Some((start, top))
+    }
+
+    /// The command line from `start`: its characters, the cells that the
+    /// shell printed since `B`, and the ends of its lines that do not wrap
+    /// into the next row, to its last character, or to the cursor past it,
+    /// as the blank cells that a line's erase leaves show none.
+    fn edited_line(&self, (start_x, start_y): (u16, u16)) -> CommandLine {
+        let rows = &self.screen().rows;
         let mut steps = Vec::new();
         for row_y in start_y..self.rows() {
             let (page, row) = rows.screen_row(row_y);
@@ -162,69 +217,37 @@ impl Terminal {
             for (cell_x, cell) in page.cells(row).iter().enumerate().skip(usize::from(from)) {
                 if cell.semantic() == Semantic::Input
                     && !matches!(cell.width(), Width::SpacerTail | Width::SpacerHead)
+                    && let Ok(x) = u16::try_from(cell_x)
                 {
-                    steps.push((
-                        Step::Char {
-                            x: u16::try_from(cell_x).ok()?,
-                            y: row_y,
-                        },
-                        has_character(cell.content()),
-                    ));
+                    steps.push((Step::Char { x, y: row_y }, has_character(cell.content())));
                 }
             }
             if !page.row(row).has(RowFlag::SoftWrapped) {
                 steps.push((Step::Break { y: row_y }, false));
             }
         }
-        // The command line ends at its last character, or at the cursor
-        // past it, as the blank cells that a line's erase leaves show none.
-        let cursor_place = (cursor.y, u32::from(cursor.x));
-        let before = |place: (u16, u32)| {
-            steps
-                .iter()
-                .filter(|(step, _)| step.place() < place)
-                .count()
-        };
+        let cursor = self.cursor();
+        let past_cursor = steps
+            .iter()
+            .filter(|(step, _)| step.place() < (cursor.y, u32::from(cursor.x)))
+            .count();
         let last = steps
             .iter()
             .rposition(|&(_, character)| character)
             .map_or(0, |at| at + 1);
-        let end = last.max(before(cursor_place));
-        let steps = &steps[..end.min(steps.len())];
-        let count_before = |place: (u16, u32)| {
-            steps
-                .iter()
-                .filter(|(step, _)| step.place() < place)
-                .count()
-        };
-        // A click below the command line's last row moves nothing.
-        let last_row = steps.last().map_or(start_y, |(step, _)| step.place().0);
-        if y > last_row.max(cursor.y) {
-            return None;
+        steps.truncate(last.max(past_cursor));
+        CommandLine {
+            steps: steps.into_iter().map(|(step, _)| step).collect(),
         }
-        // The second half of a wide character is its first's.
-        let (page, row) = rows.screen_row(y);
-        let x = match page.cells(row).get(usize::from(x)).map(|cell| cell.width()) {
+    }
+
+    /// The column of the character at column `x` of the screen's row `y`:
+    /// a wide character's second half is its first's.
+    fn character_x(&self, x: u16, y: u16) -> u16 {
+        let (page, row) = self.screen().rows.screen_row(y);
+        match page.cells(row).get(usize::from(x)).map(|cell| cell.width()) {
             Some(Width::SpacerTail) => x.saturating_sub(1),
             _ => x,
-        };
-        if clicks == PromptClicks::Line {
-            let line_of = |row_y: u16| {
-                steps
-                    .iter()
-                    .filter(|(step, _)| matches!(step, Step::Break { y } if *y < row_y))
-                    .count()
-            };
-            if line_of(y) != line_of(cursor.y) {
-                return None;
-            }
-        }
-        let from = count_before(cursor_place);
-        let to = count_before((y, u32::from(x)));
-        match to.cmp(&from) {
-            std::cmp::Ordering::Greater => Some(PromptClick::Right((to - from).min(MOST_ARROWS))),
-            std::cmp::Ordering::Less => Some(PromptClick::Left((from - to).min(MOST_ARROWS))),
-            std::cmp::Ordering::Equal => None,
         }
     }
 
@@ -245,6 +268,44 @@ impl Terminal {
             let (page, row) = rows.screen_row(row_y);
             page.row(row).has(RowFlag::PromptStart)
         })
+    }
+}
+
+/// The command line's steps, in reading order.
+struct CommandLine {
+    steps: Vec<Step>,
+}
+
+impl CommandLine {
+    /// How many steps are before `place`, in reading order.
+    fn before(&self, place: (u16, u32)) -> usize {
+        self.steps
+            .iter()
+            .filter(|step| step.place() < place)
+            .count()
+    }
+
+    /// The line of the screen's row `y`: how many lines end before it.
+    fn line_of(&self, y: u16) -> usize {
+        self.steps
+            .iter()
+            .filter(|step| matches!(step, Step::Break { y: end } if *end < y))
+            .count()
+    }
+
+    /// The row of its last step.
+    fn last_row(&self) -> Option<u16> {
+        self.steps.last().map(|step| step.place().0)
+    }
+}
+
+/// The arrows from the step `from` to the step `to`, of
+/// [`MOST_ARROWS`] at most; none between the same steps.
+fn arrows(from: usize, to: usize) -> Option<PromptClick> {
+    match to.cmp(&from) {
+        std::cmp::Ordering::Greater => Some(PromptClick::Right((to - from).min(MOST_ARROWS))),
+        std::cmp::Ordering::Less => Some(PromptClick::Left((from - to).min(MOST_ARROWS))),
+        std::cmp::Ordering::Equal => None,
     }
 }
 

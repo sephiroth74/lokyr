@@ -763,6 +763,17 @@ impl Pane {
             .is_some_and(|session| session.prompt_click(col, row))
     }
 
+    /// Sends what the key `event`, which deletes or types, sends in place
+    /// of the selection that lies within the command line that the shell
+    /// edits, as its prompt announced: the arrows to the selection's end,
+    /// as many Backspaces as it holds characters, then the key. Whether it
+    /// did, as the selection was there.
+    pub fn replace_selection(&self, event: &KeyEvent<'_>, options: KeyOptions) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.replace_selection(event, options))
+    }
+
     /// Sends what the mouse's `event` sends, as the program's mouse modes
     /// have it, and returns whether the program took it, rather than the
     /// pane, which scrolls its view with the wheel.

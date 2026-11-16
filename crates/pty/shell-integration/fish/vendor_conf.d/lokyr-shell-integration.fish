@@ -39,9 +39,12 @@ function __lokyr_report_cwd
     printf '\e]7;file://%s%s\a' $hostname (string escape --style=url -- $PWD)
 end
 
+# The prompt's start announces that fish moves its cursor by the left and
+# right arrows within the line, which a click in it sends; fish 4.1 and
+# later announce the clicks themselves.
 function __lokyr_prompt_start --on-event fish_prompt
     __lokyr_report_cwd
-    printf '\e]133;A\a'
+    printf '\e]133;A;cl=line\a'
 end
 
 function __lokyr_preexec --on-event fish_preexec

@@ -12,8 +12,8 @@ use lokyr_kernel::plugins;
 use lokyr_kernel::workspace::{Pane, PaneId};
 use lokyr_kernel::{keymap, paste};
 use lokyr_platform_core::{
-    Dropped, Ime, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point, ScrollDelta,
-    ScrollPhase, WindowId,
+    Dropped, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point,
+    ScrollDelta, ScrollPhase, WindowId,
 };
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::input::{Key, KeyOptions, MouseAction, MouseEvent, Wheel};
@@ -116,13 +116,26 @@ impl<B: Backend> App<B> {
                     self.close_typing_panels(platform, window);
                     self.typed_into(window);
                 }
-                let Some(pane) = self
-                    .windows
-                    .get(&window)
-                    .and_then(|state| self.workspace.focused(state.window))
-                else {
+                let Some(state) = self.windows.get_mut(&window) else {
                     return;
                 };
+                let Some(pane) = self.workspace.focused(state.window) else {
+                    return;
+                };
+                // A key that deletes or types over a selection of the
+                // command line takes its place, as the shell announced; of
+                // no selection of the pointer's, the terminal is not looked
+                // at.
+                if let [key] = &keys[..]
+                    && state.selecting.is_some()
+                    && replaces_selection(key, options)
+                    && let Some(event) = keys::terminal_key(key)
+                    && pane.replace_selection(&event, options)
+                {
+                    state.selecting = None;
+                    platform.request_frame(window);
+                    return;
+                }
                 give(pane, &keys, options);
             }
         }
@@ -1203,6 +1216,24 @@ fn give(pane: &Pane, keys: &[KeyEvent], options: KeyOptions) {
             pane.key(&event, options);
         }
     }
+}
+
+/// Whether `key`, pressed, deletes or types, as it takes a selection's
+/// place in the command line: Backspace or Delete of no modifier, or a key
+/// that types a text of no control character, of no Control nor Command,
+/// nor an Option that acts as Meta in `options`.
+fn replaces_selection(key: &KeyEvent, options: KeyOptions) -> bool {
+    if key.state != KeyState::Pressed || key.mods.control || key.mods.super_key {
+        return false;
+    }
+    let mods = key.mods;
+    if matches!(key.code, KeyCode::Backspace | KeyCode::Delete) {
+        return !(mods.shift || mods.left_alt || mods.right_alt);
+    }
+    !key.text.is_empty()
+        && !key.text.chars().any(char::is_control)
+        && !(mods.left_alt && options.left_alt_is_meta)
+        && !(mods.right_alt && options.right_alt_is_meta)
 }
 
 /// Whether `key` is a modifier or a lock, which no binding takes.

@@ -132,7 +132,7 @@ struct Curated {
 
 /// The curated tips, the most useful first: a new action, feature or
 /// shortcut of the app adds its own, its message in every catalog.
-const CURATED: [Curated; 39] = [
+const CURATED: [Curated; 40] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     plain("agents", "tip-agents"),
     plain("agent-status", "tip-agent-status"),
@@ -163,6 +163,7 @@ const CURATED: [Curated; 39] = [
         Arg::Text("direction", "right"),
     ),
     plain("links", "tip-links"),
+    plain("prompt-click", "tip-prompt-click"),
     plain("editor-line", "tip-editor-line"),
     command(
         "copy-output",

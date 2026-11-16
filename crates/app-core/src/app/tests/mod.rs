@@ -3854,15 +3854,26 @@ fn prompt_shell(options: &str) -> Program {
     ))
 }
 
+/// The screen's row of `window` that shows the prompt of [`prompt_shell`],
+/// below the warnings that its program may print first.
+fn prompt_row(app: &App, window: WindowId) -> u16 {
+    let at = screen(app, window)
+        .iter()
+        .position(|line| line.starts_with("$ echo hello"))
+        .expect("the prompt");
+    u16::try_from(at).unwrap()
+}
+
 #[test]
 fn a_plain_click_in_the_command_line_sends_the_arrows_to_its_character() {
     let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
     run_until(&mut fake, &mut app, |_, app| {
         shows(app, window, "$ echo hello")
     });
+    let row = prompt_row(&app, window);
     // On the `h` of `echo`, four columns in, eight characters before the
     // cursor: eight left arrows, of no modifier's click.
-    let at = cell(4, 1);
+    let at = cell(4, row);
     fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
     fake.send(&mut app, window, click(false, at, Modifiers::default(), 1));
     let left = "1b5b44".repeat(8);
@@ -3873,34 +3884,75 @@ fn a_plain_click_in_the_command_line_sends_the_arrows_to_its_character() {
 
 #[test]
 fn a_drag_or_a_shell_that_announced_nothing_sends_no_arrow() {
-    // A drag selects, as before.
+    // A drag selects, as before: Escape, which replaces no selection,
+    // comes alone.
     let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
     run_until(&mut fake, &mut app, |_, app| {
         shows(app, window, "$ echo hello")
     });
+    let row = prompt_row(&app, window);
     fake.send(
         &mut app,
         window,
-        click(true, cell(4, 1), Modifiers::default(), 1),
+        click(true, cell(4, row), Modifiers::default(), 1),
     );
-    fake.send(&mut app, window, moved(cell(8, 1), Modifiers::default()));
+    fake.send(&mut app, window, moved(cell(8, row), Modifiers::default()));
     fake.send(
         &mut app,
         window,
-        click(false, cell(8, 1), Modifiers::default(), 1),
+        click(false, cell(8, row), Modifiers::default(), 1),
     );
-    fake.send(&mut app, window, key());
+    fake.send(
+        &mut app,
+        window,
+        typed(lokyr_platform_core::KeyCode::Escape, "\u{1b}", false),
+    );
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
-    assert!(shows(&app, window, "sent 61"), "{:?}", screen(&app, window));
+    assert!(shows(&app, window, "sent 1b"), "{:?}", screen(&app, window));
     // A shell of no announcement: the key alone.
     let (mut fake, mut app, window) = configured("", prompt_shell(""));
     run_until(&mut fake, &mut app, |_, app| {
         shows(app, window, "$ echo hello")
     });
-    let at = cell(4, 1);
+    let row = prompt_row(&app, window);
+    let at = cell(4, row);
     fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
     fake.send(&mut app, window, click(false, at, Modifiers::default(), 1));
     fake.send(&mut app, window, key());
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent "));
     assert!(shows(&app, window, "sent 61"), "{:?}", screen(&app, window));
+}
+
+#[test]
+fn a_backspace_over_a_selection_of_the_command_line_takes_it_away() {
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    // `hel`, dragged over: two left arrows from the end, then three
+    // Backspaces, as DEL.
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        typed(lokyr_platform_core::KeyCode::Backspace, "\u{7f}", false),
+    );
+    let sent = format!("{}{}", "1b5b44".repeat(2), "7f".repeat(3));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, &format!("sent {sent}"))
+    });
+    // The selection went with it.
+    let shown = app.windows[&window].window;
+    assert_eq!(app.workspace.focused(shown).unwrap().selection(), None);
 }

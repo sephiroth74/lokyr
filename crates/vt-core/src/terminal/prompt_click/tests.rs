@@ -128,3 +128,74 @@ fn a_secondary_prompt_keeps_the_options_and_a_new_prompt_takes_its_own() {
     Parser::new().advance(&mut terminal, b"\x1b]133;A;cl=other\x07");
     assert_eq!(terminal.prompt_clicks(), None);
 }
+
+/// What replaces the selection of `terminal` from column `from` to column
+/// `to`, both of the screen's row `y`, as a key deletes or types over it.
+fn replaced(
+    terminal: &mut Terminal,
+    (from, to): (u16, u16),
+    y: u16,
+) -> Option<(Option<PromptClick>, usize)> {
+    let row = terminal.origin().row(y);
+    terminal.select(
+        (from, row),
+        (to, row),
+        crate::terminal::SelectionShape::Cells,
+        crate::terminal::SelectionUnit::Cell,
+        "",
+    );
+    terminal.command_line_selection()
+}
+
+#[test]
+fn a_selection_in_the_command_line_goes_of_the_arrows_to_its_end_and_as_many_backspaces() {
+    // `hel` of `echo hello`: two left arrows from the end, then three
+    // Backspaces.
+    let mut terminal = fed(40, &prompt(";cl=line", "echo hello"));
+    assert_eq!(
+        replaced(&mut terminal, (7, 9), 0),
+        Some((Some(PromptClick::Left(2)), 3))
+    );
+    // To past the command's end: its characters alone, from the cursor.
+    assert_eq!(replaced(&mut terminal, (7, 20), 0), Some((None, 5)));
+    // A wide character one Backspace.
+    let mut terminal = fed(40, &prompt(";cl=line", "a漢b"));
+    assert_eq!(
+        replaced(&mut terminal, (3, 4), 0),
+        Some((Some(PromptClick::Left(1)), 1))
+    );
+    // Of a shell that takes the clicks too.
+    let mut terminal = fed(40, &prompt(";click_events=1", "echo hello"));
+    assert_eq!(
+        replaced(&mut terminal, (2, 5), 0),
+        Some((Some(PromptClick::Left(6)), 4))
+    );
+}
+
+#[test]
+fn a_selection_of_the_prompt_or_of_another_line_is_not_the_command_line_s() {
+    let mut terminal = fed(40, &prompt(";cl=line", "echo hello"));
+    assert_eq!(replaced(&mut terminal, (0, 4), 0), None);
+    let typed = "one\r\ntwo";
+    let mut terminal = fed(40, &prompt(";cl=line", typed));
+    assert_eq!(replaced(&mut terminal, (2, 3), 0), None);
+    // Of the lines' arrows: from 7 steps in to 2, one deleted.
+    let mut terminal = fed(40, &prompt(";cl=m", typed));
+    assert_eq!(
+        replaced(&mut terminal, (3, 3), 0),
+        Some((Some(PromptClick::Left(5)), 1))
+    );
+    // Of a shell that announced nothing, or a rectangle.
+    let mut terminal = fed(40, &prompt("", "echo hello"));
+    assert_eq!(replaced(&mut terminal, (7, 9), 0), None);
+    let mut terminal = fed(40, &prompt(";cl=line", "echo hello"));
+    let row = terminal.origin().row(0);
+    terminal.select(
+        (7, row),
+        (9, row),
+        crate::terminal::SelectionShape::Rectangle,
+        crate::terminal::SelectionUnit::Cell,
+        "",
+    );
+    assert_eq!(terminal.command_line_selection(), None);
+}

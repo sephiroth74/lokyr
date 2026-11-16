@@ -425,30 +425,39 @@ impl Session {
             let Some(click) = terminal.prompt_click(col, row) else {
                 return false;
             };
-            let (key, times) = match click {
-                terminal::PromptClick::Left(times) => (input::Key::Left, times),
-                terminal::PromptClick::Right(times) => (input::Key::Right, times),
-                terminal::PromptClick::Event { col, row } => {
-                    bytes.extend_from_slice(
-                        format!("\x1b[<0;{col};{row}M\x1b[<0;{col};{row}m").as_bytes(),
-                    );
-                    (input::Key::Right, 0)
-                }
-            };
-            let (modes, flags) = (terminal.input_modes(), terminal.keyboard_flags());
-            for _ in 0..times {
-                for action in [input::KeyAction::Press, input::KeyAction::Release] {
-                    let event = KeyEvent {
-                        key,
-                        action,
-                        mods: input::Mods::default(),
-                        text: "",
-                        unmodified: "",
-                        base_layout: None,
-                    };
-                    input::encode_key(&event, &modes, flags, KeyOptions::default(), &mut bytes);
-                }
+            match click {
+                terminal::PromptClick::Event { col, row } => bytes.extend_from_slice(
+                    format!("\x1b[<0;{col};{row}M\x1b[<0;{col};{row}m").as_bytes(),
+                ),
+                arrows => push_arrows(&terminal, Some(arrows), &mut bytes),
             }
+            typed(&mut terminal, &bytes);
+        }
+        self.write(bytes);
+        true
+    }
+
+    /// Sends what the key `event`, which deletes or types, sends in place
+    /// of the selection, where it lies within the command line that the
+    /// shell edits, as its prompt announced that its line editor takes the
+    /// arrows or the clicks, [`Terminal::command_line_selection`]: the
+    /// arrows to the selection's end, as many Backspaces as it holds
+    /// characters, then the key, but a Backspace or a Delete, which they
+    /// took; the selection goes. Whether it did, of nothing sent otherwise.
+    pub fn replace_selection(&self, event: &KeyEvent<'_>, options: KeyOptions) -> bool {
+        let mut bytes = Vec::new();
+        {
+            let mut terminal = self.lock();
+            let Some((arrows, deletes)) = terminal.command_line_selection() else {
+                return false;
+            };
+            push_arrows(&terminal, arrows, &mut bytes);
+            push_keys(&terminal, input::Key::Backspace, deletes, &mut bytes);
+            if !matches!(event.key, input::Key::Backspace | input::Key::Delete) {
+                let flags = terminal.keyboard_flags();
+                input::encode_key(event, &terminal.input_modes(), flags, options, &mut bytes);
+            }
+            terminal.clear_selection();
             typed(&mut terminal, &bytes);
         }
         self.write(bytes);
@@ -569,6 +578,40 @@ impl Session {
 /// Brings the view of `terminal` back to the screen for `bytes`, input
 /// that the user sent, if it sends anything: a modifier alone sends
 /// nothing, and leaves the view.
+/// Appends to `bytes` the left or the right arrows of `arrows`, as the
+/// keys and the keyboard's protocol of `terminal` send them now.
+fn push_arrows(terminal: &Terminal, arrows: Option<terminal::PromptClick>, bytes: &mut Vec<u8>) {
+    match arrows {
+        Some(terminal::PromptClick::Left(times)) => {
+            push_keys(terminal, input::Key::Left, times, bytes);
+        }
+        Some(terminal::PromptClick::Right(times)) => {
+            push_keys(terminal, input::Key::Right, times, bytes);
+        }
+        _ => {}
+    }
+}
+
+/// Appends to `bytes` what `key`, of no modifier, sends `times` times, a
+/// press and a release each, as the keys and the keyboard's protocol of
+/// `terminal` send them now.
+fn push_keys(terminal: &Terminal, key: input::Key, times: usize, bytes: &mut Vec<u8>) {
+    let (modes, flags) = (terminal.input_modes(), terminal.keyboard_flags());
+    for _ in 0..times {
+        for action in [input::KeyAction::Press, input::KeyAction::Release] {
+            let event = KeyEvent {
+                key,
+                action,
+                mods: input::Mods::default(),
+                text: "",
+                unmodified: "",
+                base_layout: None,
+            };
+            input::encode_key(&event, &modes, flags, KeyOptions::default(), bytes);
+        }
+    }
+}
+
 fn typed(terminal: &mut Terminal, bytes: &[u8]) {
     if !bytes.is_empty() {
         terminal.scroll_viewport(Scroll::Bottom);
