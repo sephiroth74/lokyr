@@ -1,0 +1,16 @@
+## drag: means of the two rounds
+| Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
+|---|---|---|---|---|---|---|---|
+| v110-opaque | 57.7 | 16.0 | 13.30 | 21.31 | 28 % | 3 % | 206 |
+| v120-opaque | 57.1 | 23.0 | 13.24 | 21.27 | 29 % | 3 % | 206 |
+| v110-blur | 58.1 | 15.0 | 13.05 | 13.80 | 30 % | 4 % | 206 |
+| v120-blur | 58.0 | 16.0 | 13.32 | 27.87 | 25 % | 2 % | 206 |
+
+## resize: means of the two rounds
+| Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
+|---|---|---|---|---|---|---|---|
+| v110-opaque | 56.2 | 31.5 | 12.29 | 20.62 | 35 % | 16 % | 114 |
+| v120-opaque | 55.7 | 33.0 | 12.43 | 28.29 | 34 % | 16 % | 114 |
+| v110-blur | 55.8 | 36.5 | 12.41 | 20.82 | 31 % | 15 % | 114 |
+| v120-blur | 56.3 | 31.0 | 12.20 | 19.84 | 34 % | 15 % | 114 |
+
