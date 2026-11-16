@@ -112,6 +112,23 @@ impl Drop for Sandbox {
 }
 
 /// The standard output of `output`, as text.
+/// The output of `command`, of a program that the test just copied: run
+/// again while Linux tells it busy, as another test's thread forked a
+/// child that holds the copy's file open for writing until the child runs
+/// its own program.
+fn run_copied(command: &mut Command) -> Output {
+    let mut tries = 0;
+    loop {
+        match command.output() {
+            Err(error) if error.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            output => return output.unwrap(),
+        }
+    }
+}
+
 fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
@@ -353,16 +370,16 @@ fn sleip_reads_the_api_of_the_bundle_that_it_is_in_through_a_link_to_it() {
     std::fs::create_dir_all(&bin).unwrap();
     std::os::unix::fs::symlink(&bundled, bin.join("sleip")).unwrap();
     for sleip in [bundled, bin.join("sleip")] {
-        let output = Command::new(&sleip)
+        let mut command = Command::new(&sleip);
+        command
             .arg("doctor")
             .env("HOME", &sandbox.home)
             .env("XDG_CONFIG_HOME", sandbox.home.join(".config"))
             .env("XDG_DATA_HOME", sandbox.home.join(".local/share"))
             .env("XDG_CACHE_HOME", sandbox.home.join(".cache"))
             .env_remove("SLEIP_LOKYR")
-            .env("PATH", "/usr/bin:/bin")
-            .output()
-            .unwrap();
+            .env("PATH", "/usr/bin:/bin");
+        let output = run_copied(&mut command);
         let text = stdout(&output);
         let resource = contents
             .join("Resources/api-version")
