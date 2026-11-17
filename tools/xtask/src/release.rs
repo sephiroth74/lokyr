@@ -16,7 +16,9 @@
 //! 5. the draft, `v<version>`, of the commit, a candidate's a pre-release,
 //!    with the DMG, the dSYM and the bill, its notes
 //!    `docs/releases/<X.Y.Z>.md`, and `CHANGELOG.md` its section, of the
-//!    format that `check-changelog` checks;
+//!    format that `check-changelog` checks; a release's pages of no mark
+//!    of what no release has yet, which `cargo xtask since` made the
+//!    release's;
 //! 6. the DMG in the feed of tests;
 //! 7. a release's DMG in the public feed, `site/public/appcast.xml`, its
 //!    deltas uploaded to the draft, the appcast to commit and push once the
@@ -76,6 +78,16 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         "CHANGELOG.md has no `## [{release}] - YYYY-MM-DD`: move its Unreleased entries there first"
     );
     crate::changelog::check(&changelog).map_err(anyhow::Error::msg)?;
+    // A release's pages tell what it has as released: a candidate's keep
+    // their marks, as the release is still to come.
+    if !version.contains('-') {
+        let left = crate::since::left(&root)?;
+        ensure!(
+            left.is_empty(),
+            "these still say `not released yet`: {}; run `cargo xtask since {version}` first, in the commit that prepares the release",
+            left.join(", ")
+        );
+    }
     let changed = output(
         Command::new("git").args(["status", "--porcelain"]),
         "reading the checkout's state",

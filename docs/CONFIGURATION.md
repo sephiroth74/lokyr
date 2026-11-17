@@ -684,7 +684,7 @@ How much brighter than white the cursor shows with [`hdr`](#hdr), as a multiple 
 
 ### `click-to-move`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 Whether a click in your shell's command line moves its cursor there, as in a text field, and a key that deletes or types over a selection of the command line takes its place.
 
@@ -1688,8 +1688,8 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
 | `alt+cmd+;` | `window.toggle-cursor-guide` | Shows the cursor guide, a band across the cursor's row, or hides it, in every window, as View › Show Cursor Guide does, until [`guide`](#guide) changes |
-| `cmd+u` | `window.toggle-opacity` | Shows the window in front opaque, of a translucent [`background-opacity`](#background-opacity), or translucent again, as View › Use Transparency does |
-| `cmd+shift+e` | `links.hints` | Labels what the pane shows that you may pick, as View › Show Hints does: URLs, paths, git's hashes, IP addresses and your [`hints`](#hints) |
+| `cmd+u` | `window.toggle-opacity` | Shows the window in front opaque, of a translucent [`background-opacity`](#background-opacity), or translucent again, as View › Use Transparency does · not released yet |
+| `cmd+shift+e` | `links.hints` | Labels what the pane shows that you may pick, as View › Show Hints does: URLs, paths, git's hashes, IP addresses and your [`hints`](#hints) · not released yet |
 | `shift+cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
 | `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
 | `cmd+up` | `pane.prompt-previous` | Scrolls the view to the prompt above its top, of the commands that the shell marks, as [`shell-integration`](#shell-integration) has it, the prompt at the view's top |
@@ -1704,7 +1704,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+shift+g` | `search.previous` | Makes the previous match the current one, the one below, the first after the last |
 | `cmd+shift+p` | `command-palette.open` | Opens the command palette, whose field ranks the commands as you type |
 | `up`, `down` | `command-palette.move` | In the command palette, while its field has the keys: moves the selection up or down the list |
-| `tab`, `shift+tab` | `links.hints-action` | While the hints show, as their field has the keys: moves what a pick does through open, copy, type and select, and back |
+| `tab`, `shift+tab` | `links.hints-action` | While the hints show, as their field has the keys: moves what a pick does through open, copy, type and select, and back · not released yet |
 | `cmd+shift+c` | `copy-mode.toggle` | Starts the copy mode in the pane, or ends it, as Edit › Copy Mode does: a cursor of its own, at the terminal's, or at the view's last row while the view is up in the scrollback, which the keys below move and select with, through the scrollback and the screen, without the mouse; a badge at the pane's bottom right tells the mode. While it runs, the keys that no binding takes go nowhere, rather than to the program, and ⌘C copies its selection, as always. It ends as another pane of the tab takes the keyboard, as a program such as vim shows its own screen, where it does not start, and as a resize lays the rows out anew; a click on the badge ends it too |
 | `h`, `left`, `l`, `right`, `k`, `up`, `j`, `down` | `copy-mode.move` | In the copy mode: moves its cursor a cell left or right, or a row up or down, `to` `left`, `right`, `up` or `down`, as far as the scrollback's first row and the screen's last; the view follows the cursor |
 | `w`, `b`, `e`, `shift+w`, `shift+b`, `shift+e` | `copy-mode.move` | To the next word's start, `word-next`, the start of the word before, `word-previous`, or the word's end, `word-end`: a word is of letters, digits and `_`, or of punctuation; with Shift, of anything but blanks, `big-word-next`, `big-word-previous` and `big-word-end`. A line's end parts two words, and a row that wraps does not |
@@ -1717,7 +1717,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `v`, `shift+v`, `ctrl+v` | `copy-mode.select` | Starts a selection at the cursor, of the cells in reading order, `cells`, of whole lines, `lines`, or of a block of columns, `block`, which then goes from there to the cursor as it moves; the same key takes it away, and another changes its kind |
 | `o`, `y`, `enter`, `shift+y`, `escape`, `q`, `ctrl+c` | `copy-mode.act` | Its `action`: `o` swaps the selection's ends, `swap`; `y` and `enter` copy the selection, or the cursor's line without one, and end the mode, the selection staying, `copy`; `shift+y` copies the cursor's line and ends, `copy-line`; `escape` takes the count away, or else the selection, or else ends, `back`; `q` and `ctrl+c` end, the selection taken away, `exit`. A line's copy leaves the blanks at its end out |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
-| `cmd+shift+t` | `tabs.reopen` | Brings back the tab that you closed last, at its place, as you left it, within [`reopen-seconds`](#reopen-seconds) of its close; again, the one before |
+| `cmd+shift+t` | `tabs.reopen` | Brings back the tab that you closed last, at its place, as you left it, within [`reopen-seconds`](#reopen-seconds) of its close; again, the one before · not released yet |
 | `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]` | `tabs.next` | Shows the next tab, the first after the last |
 | `cmd+shift+[` | `tabs.prev` | Shows the previous tab, the last before the first |
@@ -1865,7 +1865,7 @@ The width of the bar's column, on the left or the right, in points.
 
 ### `control-tab`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 What Control-Tab and Control-Shift-Tab step through: the tabs in the order of their use, or in their own.
 
@@ -1879,7 +1879,7 @@ What Control-Tab and Control-Shift-Tab step through: the tabs in the order of th
 
 ### `reopen-seconds`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 How many seconds a tab that you close stays ready to come back with Shell › Reopen Closed Tab, ⇧⌘T.
 
@@ -2024,7 +2024,7 @@ It applies at once.
 
 ### `double-tap`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 A modifier whose double tap shows or hides the quick terminal from any app, as its command does: press the modifier alone and let go of it, twice, within the system's double-click interval, as System Settings › Accessibility › Pointer Control sets it.
 
@@ -2192,7 +2192,7 @@ The days between two tips as Lokyr starts.
 
 ### `alphabet`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 The letters of the hints' labels, in the order that they take them: the first letters label the hints nearest the cursor, one letter each, and the hints past them take two.
 
@@ -2206,7 +2206,7 @@ The letters of the hints' labels, in the order that they take them: the first le
 
 ### `hints`
 
-<sub>Platforms: macOS</sub>
+<sub>Platforms: macOS · not released yet</sub>
 
 Patterns of your own that View › Show Hints labels too, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself.
 

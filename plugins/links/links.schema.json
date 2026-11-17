@@ -11,6 +11,7 @@
       "maxLength": 64,
       "default": "asdfghjklqwertyuiopzxcvbnm",
       "x-platforms": ["macos"],
+      "x-since": "next",
       "x-guide": "The letters of the hints' labels, in the order that they take them: the first letters label the hints nearest the cursor, one letter each, and the hints past them take two.\n\n| Values | Default |\n|---|---|\n| lowercase letters and digits, each once, 2 at least | `\"asdfghjklqwertyuiopzxcvbnm\"` |\n\n- The home row's first, by default, so that the nearest hints are a key away. A capital, as Shift types it, copies the hint whatever its action.\n- A value of another character, or of a letter twice, is told in a notice, and the hints keep the default.\n- It applies as you save the file, to the next hints.",
       "x-example": "\"asdfghjklqwertyuiopzxcvbnm\"",
       "x-example-comment": "the letters of the hints' labels, nearest first"
@@ -38,6 +39,7 @@
       },
       "default": {},
       "x-platforms": ["macos"],
+      "x-since": "next",
       "x-guide": "Patterns of your own that View › Show Hints labels too, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself.\n\n| Values | Default |\n|---|---|\n| tables of a `pattern` and a `url` | none |\n\n- Each is a table of its name, under `[plugins.links.hints]`, of a `pattern`, a regular expression, and of a `url` that a hint's opening opens, where `$0` is the whole match and `$1` to `$9` its groups, as a ticket's number to its page. A pattern without a `url` is a hint that its opening copies.\n- A match of your patterns comes before what the hints find by themselves, as one of its text; a pattern that does not read is told in a notice and left out.\n- It applies as you save the file, to the next hints.",
       "x-example": "{ jira = { pattern = \"PROJ-\\\\d+\", url = \"https://jira.example.com/browse/$0\" } }",
       "x-example-comment": "a ticket's number to its page"

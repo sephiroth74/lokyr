@@ -12,7 +12,9 @@ A ⌘-click on text opens what the text points to: the link that the program gav
 
 A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, and its checkbox can stop asking; a folder opens in the Finder at once. A program, an application or a script that would run never runs: it shows in the Finder, selected.
 
-## Hints · not released yet
+## Hints
+
+<sub>Platforms: macOS · not released yet</sub>
 
 Press ⇧⌘E, or choose View › Show Hints: every URL, path that exists, path with its line, git hash and IP address that the pane shows gets a label of one or two letters, drawn over its first letters in the theme's accent, the nearest the cursor of one letter. Type a label to pick its hint:
 
@@ -40,8 +42,8 @@ url = "https://jira.example.com/browse/$0"
 | `links.copy` | | Copies what `links.open` would open at the cell: the link, the URL, or the path from `/` |
 | `links.new-window` | | Opens a window whose shell starts in the folder of the path at the cell, or in the folder that holds its file |
 | `links.new-tab` | | Opens a tab, after the others, as `links.new-window` does a window |
-| `links.hints` | ⇧⌘E | Shows the hints of the pane, a pick doing its `action`: `"open"` by default, `"copy"`, `"type"` or `"select"` |
-| `links.hints-action` | Tab, ⇧Tab in the hints | Moves what a pick does by its `delta`, through open, copy, type and select |
+| `links.hints` | ⇧⌘E | Shows the hints of the pane, a pick doing its `action`: `"open"` by default, `"copy"`, `"type"` or `"select"` · not released yet |
+| `links.hints-action` | Tab, ⇧Tab in the hints | Moves what a pick does by its `delta`, through open, copy, type and select · not released yet |
 
 The first four take the cell's `column` and `row`; the pane's context menu lists them, as Open Link, Copy Link Address, New Window at Folder and New Tab at Folder, each dimmed where the cell holds nothing that it takes: a URL of the web has no folder. A link's `file:` URL of this Mac, of no host, of `localhost` or of the Mac's name, as `ls --hyperlink`, ripgrep and `fd` write it, opens and has its folder; one of another machine opens not.
 

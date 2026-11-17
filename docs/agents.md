@@ -21,6 +21,8 @@ A tab of several agents shows the most urgent: one that waits before one at work
 
 ## Programs that tell their status
 
+<sub>Platforms: macOS · not released yet</sub>
+
 A program can tell its state exactly, of OSC 7501, the [Program Status Protocol](https://control-codes.page/proposals/osc-7501/), as Claude Code and Codex do once Lokyr answers the protocol's query. Lokyr then shows what the program tells, whether `[agents] programs` lists it or not, and guesses nothing of its output, its quiet or its bell:
 
 - **At work** while it says `working`, and its progress, if it tells one, in the tab's ring, as a progress of OSC 9;4.

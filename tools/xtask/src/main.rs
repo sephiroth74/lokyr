@@ -17,6 +17,7 @@ mod notarize;
 mod private;
 mod release;
 mod sbom;
+mod since;
 mod site;
 mod sparkle;
 mod symbolicate;
@@ -49,6 +50,7 @@ fn main() -> ExitCode {
         Some("new-language") => languages::run_new(args),
         Some("notarize") => notarize::run(args),
         Some("release") => release::run(args),
+        Some("since") => since::run(args),
         Some("site") => site::run(args),
         Some("symbolicate") => symbolicate::run(args),
         Some("terminfo") => terminfo::run(args),
@@ -88,6 +90,7 @@ fn print_help() {
          new-language <code>         make a language ready to translate: English's catalogs copied, and every list and guide of it\n  \
          notarize                    have Apple notarize target/Lokyr.app, and staple the ticket\n  \
          release <version> [--without-feed]  a candidate's or a release's bundle, DMG, dSYM and SBOM, to a draft on GitHub and the feed\n  \
+         since <version>             make the marks of what no release has yet, in the pages and the config's schemas, the release's\n  \
          site [--out <dir>]          build the documentation's site of the public Markdown into target/site\n  \
          site --changed-since <commit>  print the addresses of the site's pages changed since a commit\n  \
          symbolicate <report.ips>    the crashed thread of a crash report, Lokyr's frames told by the release's dSYM\n  \

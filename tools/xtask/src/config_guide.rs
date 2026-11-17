@@ -225,9 +225,24 @@ fn key_text(node: &Ordered) -> Result<Vec<String>> {
             other => bail!("`{other}` is no platform"),
         })
         .collect::<Result<_>>()?;
+    // The release that brought it, or the mark of what no release has
+    // yet, which `cargo xtask since` makes the release's.
+    let since = match node.get("x-since").and_then(Ordered::text) {
+        None => String::new(),
+        Some("next") => format!(" {}", crate::since::MARK),
+        Some(version)
+            if version.split('.').count() >= 2
+                && version.split('.').all(|part| {
+                    !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())
+                }) =>
+        {
+            format!(" · Since {version}")
+        }
+        Some(other) => bail!("`{other}` is no `x-since`: a release's version, X.Y, or `next`"),
+    };
     let mut out = vec![
         String::new(),
-        format!("<sub>Platforms: {}</sub>", platforms.join(", ")),
+        format!("<sub>Platforms: {}{since}</sub>", platforms.join(", ")),
     ];
     if let Some(text) = node.get("x-guide").and_then(Ordered::text) {
         out.extend([String::new(), text.to_owned()]);
@@ -302,6 +317,37 @@ mod tests {
                 "]".to_owned()
             ]
         );
+    }
+
+    #[test]
+    fn a_key_s_line_of_platforms_tells_its_release_or_that_no_release_has_it() {
+        let node = |since: Option<&str>| {
+            let mut fields = vec![(
+                "x-platforms".to_owned(),
+                Ordered::Array(vec![Ordered::Scalar("macos".into())]),
+            )];
+            if let Some(since) = since {
+                fields.push(("x-since".to_owned(), Ordered::Scalar(since.into())));
+            }
+            Ordered::Object(fields)
+        };
+        let line = |since| key_text(&node(since)).map(|lines| lines[1].clone());
+        assert_eq!(line(None).unwrap(), "<sub>Platforms: macOS</sub>");
+        assert_eq!(
+            line(Some("next")).unwrap(),
+            "<sub>Platforms: macOS · not released yet</sub>"
+        );
+        assert_eq!(
+            line(Some("1.3")).unwrap(),
+            "<sub>Platforms: macOS · Since 1.3</sub>"
+        );
+        assert_eq!(
+            line(Some("1.3.1")).unwrap(),
+            "<sub>Platforms: macOS · Since 1.3.1</sub>"
+        );
+        for wrong in ["soon", "1", "1.x", "v1.3"] {
+            assert!(line(Some(wrong)).is_err(), "{wrong}");
+        }
     }
 
     #[test]
