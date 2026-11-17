@@ -610,10 +610,11 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             let scale = self.layout.scale();
             let room = self.layout.scroll_room(tree, id) / scale;
             let scrolled = (self.layout.scrolled(id) / scale, room);
+            let shown = self.indicator_shows(id);
             if crate::layout::across(tree, id) {
-                self.indicator_across(frame, scrolled);
+                self.indicator_across(frame, scrolled, shown);
             } else {
-                self.indicator(frame, scrolled);
+                self.indicator(frame, scrolled, shown);
             }
         }
         if clips {
@@ -813,7 +814,8 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             }
             self.items.extend(items);
         }
-        self.indicator(frame, state.extent(list));
+        let shown = self.indicator_shows(id);
+        self.indicator(frame, state.extent(list), shown);
         self.items.push(Item::PopClip);
     }
 
@@ -955,16 +957,26 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         }
     }
 
+    /// How much the scroll's indicator of the list or the scroll area
+    /// `id` shows, as its view scrolled and the system shows its scroll
+    /// bars: whole of a tree painted of no motion, as a picture of it.
+    fn indicator_shows(&self, id: NodeId) -> f32 {
+        self.motion.map_or(1.0, |(animations, now)| {
+            animations.indicator(self.tree.key(id), now)
+        })
+    }
+
     /// The indicator of a scroll within `frame`, scrolled down `scrolled`
-    /// points of `room`, at its right edge, as macOS's overlay scroll bars
-    /// show it: none of a content that fits.
-    fn indicator(&mut self, frame: Frame, (scrolled, room): (f32, f32)) {
+    /// points of `room`, at its right edge, of the opacity `shown`, as
+    /// macOS's overlay scroll bars show it: none of a content that fits.
+    fn indicator(&mut self, frame: Frame, (scrolled, room): (f32, f32), shown: f32) {
         let Some(color) = self.tokens.get("scrollbar") else {
             return;
         };
-        if room <= 0.0 {
+        if room <= 0.0 || shown <= 0.0 {
             return;
         }
+        let color = color.with_alpha(color.alpha * shown.min(1.0));
         let scale = self.layout.scale();
         let view = frame.height;
         let total = view + room * scale;
@@ -986,15 +998,17 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     }
 
     /// The indicator of a scroll across `frame`, a row's, scrolled
-    /// rightwards `scrolled` of `room`, in points, at its bottom edge, as
-    /// [`Painter::indicator`] is at a column's right edge.
-    fn indicator_across(&mut self, frame: Frame, (scrolled, room): (f32, f32)) {
+    /// rightwards `scrolled` of `room`, in points, at its bottom edge, of
+    /// the opacity `shown`, as [`Painter::indicator`] is at a column's
+    /// right edge.
+    fn indicator_across(&mut self, frame: Frame, (scrolled, room): (f32, f32), shown: f32) {
         let Some(color) = self.tokens.get("scrollbar") else {
             return;
         };
-        if room <= 0.0 {
+        if room <= 0.0 || shown <= 0.0 {
             return;
         }
+        let color = color.with_alpha(color.alpha * shown.min(1.0));
         let scale = self.layout.scale();
         let view = frame.width;
         let total = view + room * scale;
@@ -3706,6 +3720,70 @@ mod tests {
             .find(|shape| shape.fill == token("scrollbar"))
             .unwrap();
         assert_eq!(indicator.rect.y, 10 + 100 - 24);
+        // Of the window's motion, the indicator shows as the list scrolls
+        // and a moment after, then fades and goes; always where the system
+        // shows its scroll bars so.
+        let mut animations = crate::animation::Animations::new();
+        let start = Instant::now();
+        let moving = |font: &mut Font<Blocks>, animations: &crate::animation::Animations, now| {
+            let fields = Fields::new();
+            let items = paint(
+                &tree,
+                &layout,
+                font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: None,
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &lists,
+                    motion: Some((animations, now)),
+                    fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
+                },
+            );
+            split(&items)
+                .0
+                .iter()
+                .find(|shape| {
+                    let bar = token("scrollbar");
+                    (shape.fill.red, shape.fill.green, shape.fill.blue)
+                        == (bar.red, bar.green, bar.blue)
+                        && shape.rect.width == 4
+                })
+                .map(|shape| shape.fill.alpha / token("scrollbar").alpha)
+        };
+        assert_eq!(moving(&mut font, &animations, start), None);
+        animations.scrolled(&"rows".into(), start);
+        assert_eq!(moving(&mut font, &animations, start), Some(1.0));
+        let fading = moving(
+            &mut font,
+            &animations,
+            start + std::time::Duration::from_millis(1150),
+        )
+        .unwrap();
+        assert!((fading - 0.5).abs() < 0.02, "{fading}");
+        assert_eq!(
+            moving(
+                &mut font,
+                &animations,
+                start + std::time::Duration::from_secs(2)
+            ),
+            None
+        );
+        animations.always_indicators = true;
+        assert_eq!(
+            moving(
+                &mut font,
+                &animations,
+                start + std::time::Duration::from_secs(2)
+            ),
+            Some(1.0)
+        );
         // A list of no state yet paints none of its rows.
         let (_, glyphs) = split(&painted(&mut font, None, &Lists::new()));
         assert!(glyphs.is_empty());

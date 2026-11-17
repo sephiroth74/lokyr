@@ -43,7 +43,18 @@ pub struct Animations {
     reduced: bool,
     /// The drag of a reorderable node, and its slides.
     pub(crate) reorder: Reorder,
+    /// When each list or scroll area of a key last scrolled, whose
+    /// indicator shows a moment after, then fades.
+    scrolls: HashMap<Key, Instant>,
+    /// Whether the scroll indicators show always, as the system shows its
+    /// scroll bars, rather than while their views scroll.
+    pub always_indicators: bool,
 }
+
+/// How long a scroll's indicator shows after its view last scrolled,
+/// before it fades, and how long it fades, as macOS's overlay scroll bars.
+const INDICATOR_SHOWS: Duration = Duration::from_millis(1000);
+const INDICATOR_FADES: Duration = Duration::from_millis(300);
 
 impl Default for Animations {
     fn default() -> Self {
@@ -57,6 +68,8 @@ impl Default for Animations {
             presses: HashMap::new(),
             reduced: false,
             reorder: Reorder::new(),
+            scrolls: HashMap::new(),
+            always_indicators: false,
         }
     }
 }
@@ -157,6 +170,9 @@ impl Animations {
         let rendered = self.revision != Some(tree.revision());
         self.revision = Some(tree.revision());
         self.reduced = reduced;
+        // The indicators that faded leave nothing behind.
+        self.scrolls
+            .retain(|_, scrolled| now < *scrolled + INDICATOR_SHOWS + INDICATOR_FADES);
         if rendered {
             self.hoverable.clear();
             self.pressable.clear();
@@ -241,7 +257,8 @@ impl Animations {
     }
 
     /// Whether a transition runs at `now`, for which the host draws a frame
-    /// at each refresh of the display: a slide, a fade, or a hover's fade.
+    /// at each refresh of the display: a slide, a fade, a hover's fade, or
+    /// a scroll's indicator's.
     pub fn running(&self, now: Instant) -> bool {
         self.nodes.values().any(|animated| {
             animated.moving.is_some_and(|run| !run.ended(now))
@@ -252,6 +269,59 @@ impl Animations {
             .chain(self.presses.values())
             .any(|hovering| hovering.fading.is_some_and(|run| !run.ended(now)))
             || self.reorder.running(now)
+            || self.indicators_fade(now)
+    }
+
+    /// The list or the scroll area of `key` scrolled at `now`: its
+    /// indicator shows, and fades a moment after it last scrolls.
+    pub fn scrolled(&mut self, key: &Key, now: Instant) {
+        self.scrolls.insert(key.clone(), now);
+    }
+
+    /// How much the scroll's indicator of the list or the scroll area of
+    /// `key` shows at `now`, from 0 to 1: always, as the system shows its
+    /// scroll bars so; else while its view scrolls and a moment after,
+    /// then fading, at once where the system reduces motion; none of a
+    /// view of no key, which no scroll stamps.
+    pub fn indicator(&self, key: Option<&Key>, now: Instant) -> f32 {
+        if self.always_indicators {
+            return 1.0;
+        }
+        let Some(scrolled) = key.and_then(|key| self.scrolls.get(key)) else {
+            return 0.0;
+        };
+        let shown = *scrolled + INDICATOR_SHOWS;
+        if now < shown {
+            return 1.0;
+        }
+        if self.reduced || now >= shown + INDICATOR_FADES {
+            return 0.0;
+        }
+        1.0 - (now - shown).as_secs_f32() / INDICATOR_FADES.as_secs_f32()
+    }
+
+    /// When the first scroll's indicator that shows at `now` starts to
+    /// fade, for which the host wakes then: none while none shows, or the
+    /// system shows them always.
+    pub fn indicator_due(&self, now: Instant) -> Option<Instant> {
+        if self.always_indicators {
+            return None;
+        }
+        self.scrolls
+            .values()
+            .map(|scrolled| *scrolled + INDICATOR_SHOWS)
+            .filter(|&due| due > now)
+            .min()
+    }
+
+    /// Whether a scroll's indicator fades at `now`.
+    fn indicators_fade(&self, now: Instant) -> bool {
+        !self.always_indicators
+            && !self.reduced
+            && self.scrolls.values().any(|scrolled| {
+                let shown = *scrolled + INDICATOR_SHOWS;
+                now >= shown && now < shown + INDICATOR_FADES
+            })
     }
 
     /// The pointer is over the nodes of `hovered`'s keys, at `now`: the
@@ -473,6 +543,54 @@ mod tests {
         duration: 0.2,
         easing: Easing::Linear,
     };
+
+    #[test]
+    fn a_scroll_s_indicator_shows_as_its_view_scrolls_then_fades() {
+        let mut animations = Animations::new();
+        let (start, rows) = (Instant::now(), Key::from("rows"));
+        let at = |millis: u64| start + Duration::from_millis(millis);
+        // None before its view scrolls, nor of a view of no key.
+        assert_eq!(animations.indicator(Some(&rows), start), 0.0);
+        assert_eq!(animations.indicator(None, start), 0.0);
+        assert_eq!(animations.indicator_due(start), None);
+        // Whole while it scrolls and a second after, of no frame, the host
+        // waking as it starts to fade.
+        animations.scrolled(&rows, start);
+        assert_eq!(animations.indicator(Some(&rows), at(999)), 1.0);
+        assert!(!animations.running(at(500)));
+        assert_eq!(animations.indicator_due(at(500)), Some(at(1000)));
+        // Then fading, of a frame at each refresh, and gone.
+        let half = animations.indicator(Some(&rows), at(1150));
+        assert!((half - 0.5).abs() < 0.01, "{half}");
+        assert!(animations.running(at(1150)));
+        assert_eq!(animations.indicator(Some(&rows), at(1300)), 0.0);
+        assert!(!animations.running(at(1300)));
+        assert_eq!(animations.indicator_due(at(1300)), None);
+        // Another scroll shows it again, whole.
+        animations.scrolled(&rows, at(1200));
+        assert_eq!(animations.indicator(Some(&rows), at(2100)), 1.0);
+        // The system's scroll bars always shown: always, of no wake.
+        animations.always_indicators = true;
+        assert_eq!(animations.indicator(Some(&"other".into()), at(9000)), 1.0);
+        assert_eq!(animations.indicator_due(at(1300)), None);
+        assert!(!animations.running(at(2300)));
+    }
+
+    #[test]
+    fn a_scroll_s_indicator_goes_at_once_of_reduced_motion_and_leaves_nothing() {
+        let (mut tree, mut layout) = (Tree::new(), Layout::new(1.0));
+        laid(&mut tree, &mut layout, &Node::text("x"));
+        let mut animations = Animations::new();
+        let (start, rows) = (Instant::now(), Key::from("rows"));
+        animations.scrolled(&rows, start);
+        animations.laid_out(&tree, &layout, start, true);
+        let after = start + Duration::from_millis(1001);
+        assert_eq!(animations.indicator(Some(&rows), after), 0.0);
+        assert!(!animations.running(after));
+        // A layout past the fade forgets the scroll.
+        animations.laid_out(&tree, &layout, start + Duration::from_secs(2), false);
+        assert!(animations.scrolls.is_empty());
+    }
 
     /// A row of boxes 20 points wide, of the keys of `order`, of a linear
     /// transition, the box `b` of `opacity`.

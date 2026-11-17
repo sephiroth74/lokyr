@@ -353,7 +353,9 @@ impl<B: Backend> App<B> {
             ScrollDelta::Lines { x, y } => (x * LINE, y * LINE),
             ScrollDelta::Points { x, y } => (x, y),
         };
-        let scrolled = view.surface.scrolled(local(view, at), (x as f32, y as f32));
+        let scrolled = view
+            .surface
+            .scrolled(local(view, at), (x as f32, y as f32), Instant::now());
         let events: Vec<_> = told(view, scrolled).collect();
         self.ui_events.extend(events);
         self.views_changed(window);
@@ -693,11 +695,18 @@ impl<B: Backend> App<B> {
     /// Keeps the tooltips' timer at the soonest time that a tooltip of the
     /// windows' slots' views waits for, or none.
     pub(super) fn wake_for_tooltips(&mut self, platform: &mut dyn Platform) {
+        let now = Instant::now();
         let deadline = self
             .windows
             .values()
             .flat_map(|state| &state.chrome)
-            .filter_map(|view| view.surface.tooltip.deadline())
+            .flat_map(|view| {
+                [
+                    view.surface.tooltip.deadline(),
+                    view.surface.animations.indicator_due(now),
+                ]
+            })
+            .flatten()
             .min();
         if self.tooltip_timer.map(|(_, at)| at) == deadline {
             return;
@@ -710,7 +719,9 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// The tooltips' timer fired: those whose time came show.
+    /// The tooltips' timer fired: those whose time came show, and the
+    /// scroll's indicators whose time came start to fade, of the frames
+    /// that the fade asks.
     pub(super) fn tooltips_due(&mut self, platform: &mut dyn Platform) {
         self.tooltip_timer = None;
         let now = Instant::now();
@@ -718,6 +729,7 @@ impl<B: Backend> App<B> {
             let mut shown = false;
             for view in &mut state.chrome {
                 shown |= view.surface.tooltip.tick(now);
+                shown |= view.surface.animations.running(now);
             }
             if shown {
                 platform.request_frame(window);

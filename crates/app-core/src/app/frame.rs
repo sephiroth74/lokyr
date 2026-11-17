@@ -883,6 +883,9 @@ impl<B: Backend> App<B> {
         };
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
+        // The views' scroll indicators show always where the system shows
+        // its scroll bars so, else while their views scroll.
+        let always_indicators = !platform.scrollers().overlay;
         let headroom = platform.screen_headroom(window);
         // The padding at the cells' left that the gutter takes, if it shows.
         let gutter = self
@@ -1146,6 +1149,7 @@ impl<B: Backend> App<B> {
             })
             .collect();
         for view in &mut state.chrome {
+            view.surface.animations.always_indicators = always_indicators;
             view.surface.animate(now, reduced);
             view.surface.fills_apart = fills_apart;
             view.surface.covered = if fills_apart {
@@ -2048,6 +2052,9 @@ impl<B: Backend> App<B> {
         };
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
+        // The views' scroll indicators show always where the system shows
+        // its scroll bars so, else while their views scroll.
+        let always_indicators = !platform.scrollers().overlay;
         // The theme in force's specimen, which a view's terminal specimen
         // draws, as the panes would: a window of no panes, as the settings
         // window, alone takes it.
@@ -2092,6 +2099,7 @@ impl<B: Backend> App<B> {
             })
             .collect();
         for view in &mut state.chrome {
+            view.surface.animations.always_indicators = always_indicators;
             view.surface.animate(now, reduced);
             view.surface.fills_apart = fills_apart;
             view.surface.covered = if fills_apart {

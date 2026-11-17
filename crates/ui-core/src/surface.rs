@@ -442,15 +442,18 @@ impl Surface {
     }
 
     /// A wheel or a trackpad scrolled at `at`, `delta` points across and
-    /// towards the content above: the innermost list or scroll area under
-    /// the pointer scrolls, and the hover follows; another node learns of
-    /// the scroll. The tooltip hides.
-    pub fn scrolled(&mut self, at: (f32, f32), delta: (f32, f32)) -> Vec<NodeEvent> {
+    /// towards the content above, at `now`: the innermost list or scroll
+    /// area under the pointer scrolls, its indicator showing, and the hover
+    /// follows; another node learns of the scroll. The tooltip hides.
+    pub fn scrolled(&mut self, at: (f32, f32), delta: (f32, f32), now: Instant) -> Vec<NodeEvent> {
         self.tooltip.dismiss();
         let path = pointer::hit(&self.tree, &self.layout, at);
         match list::scrollable(&self.tree, &path) {
             Some(node) => {
                 list::scroll((&self.tree, &mut self.layout, &mut self.lists), node, delta);
+                if let Some(key) = self.tree.key(node) {
+                    self.animations.scrolled(key, now);
+                }
                 self.pointer.laid_out(&self.tree, &self.layout)
             }
             None => self.pointer.scrolled(&self.tree, &self.layout, at, delta),
@@ -816,16 +819,16 @@ mod tests {
     fn a_scroll_scrolls_the_list_or_the_area_under_it_and_a_key_goes_where_it_is_taken() {
         let mut surface = surface();
         // Over the list: its rows, not an event.
-        let events = surface.scrolled(middle(&surface, "rows"), (0.0, -30.0));
+        let events = surface.scrolled(middle(&surface, "rows"), (0.0, -30.0), Instant::now());
         assert!(kinds(&events).is_empty());
         let rows = surface.lists.state(&"rows".into()).unwrap();
         assert_eq!(rows.anchor(), (1, 10.0));
         // Over the area: its boxes.
         let area = surface.tree.by_key(&"area".into()).unwrap();
-        surface.scrolled(middle(&surface, "area"), (0.0, -30.0));
+        surface.scrolled(middle(&surface, "area"), (0.0, -30.0), Instant::now());
         assert_eq!(surface.layout.scrolled(area), 30.0);
         // Over the button: its scroll's event.
-        let events = surface.scrolled(middle(&surface, "go"), (0.0, -5.0));
+        let events = surface.scrolled(middle(&surface, "go"), (0.0, -5.0), Instant::now());
         assert_eq!(
             kinds(&events),
             [("go".to_owned(), UiEventKind::Scroll { x: 0.0, y: -5.0 })]

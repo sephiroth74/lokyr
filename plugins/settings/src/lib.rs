@@ -96,10 +96,15 @@ const SECTIONS: &str = "sections";
 /// The sidebar's width, in points.
 const SIDEBAR: f32 = 160.0;
 
-/// The padding of a row of the sidebar, at its left and at its right, in
-/// points: less at the left, beside the sidebar's own, and more at the
-/// right, which a long title keeps away from the edge.
-const ROW_PADDING: (f32, f32) = (4.0, 12.0);
+/// The room between a sidebar's edges and its search field and its rows'
+/// bands, at its left and at its right alike, in points: as much as the
+/// host insets a menu's list's bands from the list's sides, of a list as
+/// wide as its sidebar.
+const SIDE_MARGIN: f32 = 6.0;
+
+/// The room inside a sidebar's row's band, before its icon, which lines up
+/// with the search field's, and after its title, in points.
+const BAND_PADDING: (f32, f32) = (4.0, 6.0);
 
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
@@ -1804,9 +1809,9 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         height: Length::Points(ROW),
         padding: Edges {
             top: 0.0,
-            right: ROW_PADDING.1,
+            right: SIDE_MARGIN + BAND_PADDING.1,
             bottom: 0.0,
-            left: ROW_PADDING.0,
+            left: SIDE_MARGIN + BAND_PADDING.0,
         },
         ..Layout::default()
     });
@@ -1849,6 +1854,18 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         width: Length::Fraction(1.0),
         ..Layout::default()
     });
+    // The field as far from the sidebar's edges as the rows' bands, of a
+    // list as wide as the sidebar.
+    let search = Node::container(vec![search]).layout(Layout {
+        width: Length::Fraction(1.0),
+        padding: Edges {
+            top: 0.0,
+            right: SIDE_MARGIN,
+            bottom: 0.0,
+            left: SIDE_MARGIN,
+        },
+        ..Layout::default()
+    });
     Node::container(vec![search, list])
         .key("sidebar")
         .role(Role::Group)
@@ -1858,7 +1875,12 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
-            padding: Edges::all(6.0),
+            padding: Edges {
+                top: 6.0,
+                right: 0.0,
+                bottom: 6.0,
+                left: 0.0,
+            },
             ..Layout::default()
         })
 }
@@ -2964,7 +2986,7 @@ fn themes_tree(
             width: Length::Points(SIDEBAR),
             min_width: Length::Points(SIDEBAR),
             height: Length::Fraction(1.0),
-            padding: Edges::all(6.0),
+            padding: Edges::all(SIDE_MARGIN),
             ..Layout::default()
         });
     if let Some(editor) = editor {
@@ -3140,9 +3162,9 @@ fn side_row(cx: &mut Cx<'_>, (word, title, icon): (&str, &str, &str), selected: 
         width: Length::Fraction(1.0),
         padding: Edges {
             top: 0.0,
-            right: ROW_PADDING.1,
+            right: BAND_PADDING.1,
             bottom: 0.0,
-            left: ROW_PADDING.0,
+            left: BAND_PADDING.0,
         },
         ..Layout::default()
     })

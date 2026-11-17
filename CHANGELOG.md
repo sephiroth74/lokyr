@@ -33,7 +33,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
-- The settings window's sidebar is wider, and its sections' names start closer to its left edge and stay further from its right one, so that a long name fits.
+- The settings window's sidebar is wider, and its search field and its sections line up at the same distance from its edges, on both sides.
+- The scroll indicator of a list or a scrolling area, such as the settings window's sidebar or the command palette, shows while you scroll it and fades a moment after, like macOS's scroll bars, or stays when System Settings shows scroll bars always.
 - ⌃Tab and ⌃⇧Tab follow the order you used the tabs in, not the bar's order. ⇧⌘] and ⇧⌘[ still follow the bar.
 - An agent's notification tells the message that it told, as "claude: Claude needs your permission to use Bash", or, of none, what it asks for while it waits, as "codex asks for your permission".
 
