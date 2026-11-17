@@ -48,4 +48,5 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 - [Performance](PERFORMANCE.md)
 - [Measurements](bench/RELEASES.md)
 - [Contributing](../CONTRIBUTING.md)
+- [Writing the documentation](WRITING-DOCS.md)
 - [Translating](../TRANSLATING.md)
