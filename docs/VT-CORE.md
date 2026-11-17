@@ -349,22 +349,6 @@ normalization = "none"    # none | nfc | nfd | hfs+
 
 ## Supported protocols
 
-The "Phase" column shows the [roadmap](ROADMAP.md) phase in which support lands.
+The sequences that the core reads, each with the version that brought it and its specification, are in [Escape codes](escape-codes.md), with how a program finds Lokyr and the exact replies to its queries. Still to come: kitty's graphics' placeholders and the rest of its protocol, and Sixel (DCS `q`), in F5c; OSC 1337's `SetUserVar`, `CurrentDir`, `RemoteHost` and `ShellIntegrationVersion`, through a plugin.
 
-| Group | Sequences | Phase |
-|---|---|---|
-| C0 controls | BEL, BS, HT, LF, VT, FF, CR, SO, SI | F1 |
-| ESC | DECSC/DECRC (ESC 7/8), IND, NEL, HTS, RI, DECBI/DECFI (ESC 6/9), RIS, DECKPAM/DECKPNM, G0–G3 charset designation, LS2/LS3, SS2/SS3, DECALN | F1 |
-| Cursor | CUU, CUD, CUF, CUB, CNL, CPL, CHA, CUP, HVP, VPA, VPR, HPA, HPR, CHT, CBT, DECSCUSR | F1 |
-| Editing | ICH, DCH, IL, DL, ECH, ED, EL, DECSED, DECSEL, REP, SU, SD, DECSTBM, DECSLRM, SCOSC/SCORC, DECSCA, SPA/EPA (ESC V/W), TBC; the VT420's columns, DECIC, DECDC, and rectangles, DECCRA, DECERA, DECFRA, DECSERA | F1 |
-| Resets and levels | RIS, DECSTR (soft reset), DECSCL (conformance level, kept for DECRQSS) | F1 |
-| SGR | 0–9, 21–29, 30–37, 90–97, 38;5 and 38;2 (also with `:`), 39, 40–47, 100–107, 48, 49, 4:0–4:5 (underline styles), 53/55 (overline), 58/59 (underline color) | F1 |
-| ANSI modes | IRM (4), LNM (20); GATM, SRTM, VEM, HEM, PUM, FEAM, FETM, MATM, TTM, SATM, TSM and EBM reported as permanently reset | F1 |
-| DEC modes | 1 (DECCKM), 3 (DECCOLM), 4 (DECSCLM), 5 (DECSCNM), 6 (DECOM), 7 (DECAWM), 12 (blink), 25 (DECTCEM), 40 (DECCOLM allowed), 41 (xterm's fix for curses), 45 (reverse wrap), 1045 (extended reverse wrap), 47/1047/1049 (alternate screen), 1048, 66 (DECNKM), 67 (DECBKM: Backspace sends BS, and Control with it DEL), 69 (DECLRMM), 95 (DECNCSM), 1000/1002/1003/1006/1016 (mouse), 1004 (focus), 1007 (alternate scroll), 1036 (Meta sends ESC), 2004 (bracketed paste), 2026 (synchronized output), 2027 (grapheme clustering); 2031 (the color scheme's reports) in F3 | F1, F3 |
-| Reports | DA1, DA2, DA3, DECID, DSR (5n, 6n), DECDSR (?6n, ?15n, ?25n, ?26n, ?53n, ?55n, ?56n, ?62n, ?63n, ?75n, ?85n), the color scheme (?996n, in F3), DECRQM, DECRQSS, DECRQCRA, XTVERSION, XTGETTCAP; XTWINOPS 14t/16t/18t (sizes), 22t/23t (title stack) and, with the window's operations allowed, 1t/2t (iconify), 3t (move), 4t and 8t (resizes in pixels and cells), 9t (maximize), 10t (full screen), 11t, 13t, 15t and 19t (the window's state and place, the display's size), and DECSLPP; xterm's title modes (`CSI > Ps t` and `T`, which reset both without parameters); XTSAVE and XTRESTORE (`CSI ? Pm s` and `r`). Title reporting (21t) and DECRQCRA are **disabled** by default | F1 |
-| OSC | 0/1/2 (title), 4/104 (palette), 5/105 (special colors), 7 (cwd), 8 (hyperlinks), 10/11/12 and 110/111/112 (dynamic colors), 52 (clipboard: write yes, read no by default), 133 (semantic prompts), 9, 777 and 99 (notifications), 9;4 (progress), 6;1 (tab color, iTerm2), 7501 (programs' statuses), 21337 (session status, iTerm2) | F1–F3, F5a |
-| OSC 1337 (iTerm2) | SetUserVar, CurrentDir, RemoteHost and ShellIntegrationVersion through a plugin; `File=` (images) before 1.0.0 | F3–F5 |
-| kitty | Keyboard protocol (F1–F2); graphics via APC `G`, a subset of direct transmission before 1.0.0, its placeholders and the rest in F5c; OSC 99 notifications (F5) | F1–F5 |
-| Sixel | DCS `q` | F5c |
-
-Sequences not listed here are ignored. Debug builds also log them, so the list of missing sequences comes from real sessions.
+Sequences that the core doesn't read are ignored. Debug builds also log them, so the list of missing sequences comes from real sessions.

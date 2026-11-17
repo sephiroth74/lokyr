@@ -30,6 +30,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 ## Reference
 
 - [Configuration](CONFIGURATION.md)
+- [Escape codes](escape-codes.md)
 - [Changelog](../CHANGELOG.md)
 - [Release notes](releases/README.md)
 - [Writing a plugin](plugins/authoring.md)
