@@ -44,13 +44,17 @@ A line's copy leaves the blanks at its end out.
 
 ## Commands
 
+<!-- commands: lokyr/copy-mode -->
+
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `copy-mode.toggle` | Edit › Copy Mode | ⇧⌘C | Starts the mode in the pane that has the keyboard, or ends it |
-| `copy-mode.move` | | the moves above | Moves the cursor `to` a place: `left`, `right`, `up`, `down`, `word-next`, `word-previous`, `word-end`, `big-word-next`, `big-word-previous`, `big-word-end`, `line-start`, `line-first`, `line-end`, `top`, `bottom`, `view-top`, `view-middle`, `view-bottom`, `half-page-up`, `half-page-down`, `page-up`, `page-down`, `paragraph-previous` or `paragraph-next` |
-| `copy-mode.select` | | `v`, `V`, ⌃V | Starts a selection of a `kind`, `cells`, `lines` or `block`, changes its kind, or takes it away |
-| `copy-mode.count` | | `0` to `9` | Adds a `digit` to the count of the next move; `0` of no count goes to the line's start |
-| `copy-mode.act` | | `o`, `y`, Return, `Y`, Escape, `q`, ⌃C | Its `action`: `swap`, `copy`, `copy-line`, `back` or `exit` |
+| `copy-mode.move` | | `h`, ←, `l`, →, `k`, ↑, `j`, ↓, `w`, `b`, `e`, `W`, `B`, `E`, Home, ⇧6, ⇧4, End, `g` `g`, `G`, `H`, `M`, `L`, ⌃U, ⌃D, ⌃B, Page Up, ⌃F, Page Down, ⇧[, ⇧] while `copy-mode.open && pane.focused` | Moves the cursor `to` a place: `left`, `right`, `up`, `down`, `word-next`, `word-previous`, `word-end`, `big-word-next`, `big-word-previous`, `big-word-end`, `line-start`, `line-first`, `line-end`, `top`, `bottom`, `view-top`, `view-middle`, `view-bottom`, `half-page-up`, `half-page-down`, `page-up`, `page-down`, `paragraph-previous` or `paragraph-next` |
+| `copy-mode.select` | | `v`, `V`, ⌃V while `copy-mode.open && pane.focused` | Starts a selection of a `kind`, `cells`, `lines` or `block`, changes its kind, or takes it away |
+| `copy-mode.count` | | `0` to `9` while `copy-mode.open && pane.focused` | Adds a `digit` to the count of the next move; `0` of no count goes to the line's start |
+| `copy-mode.act` | | `o`, `y`, Return, `Y`, Escape, `q`, ⌃C while `copy-mode.open && pane.focused` | Its `action`: `swap`, `copy`, `copy-line`, `back` or `exit` |
+
+<!-- commands end -->
 
 To leave the mode with `x` as well:
 

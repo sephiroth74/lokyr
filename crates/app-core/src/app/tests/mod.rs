@@ -36,6 +36,7 @@ mod installed;
     not(feature = "sample-slots"),
     not(feature = "sample-worker")
 ))]
+mod docs;
 mod luau_commands;
 mod marks;
 mod menus;

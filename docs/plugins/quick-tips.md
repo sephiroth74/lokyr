@@ -26,9 +26,13 @@ A plugin's own commands of no parameters have their tips by themselves, of their
 
 ## Commands
 
+<!-- commands: lokyr/quick-tips -->
+
 | Command | Title | Keys | What it does |
 |---|---|---|---|
 | `quick-tips.show` | Show a Tip | | Shows the next tip at once, whatever the week and Don't show again |
+
+<!-- commands end -->
 
 ## Config
 

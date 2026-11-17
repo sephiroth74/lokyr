@@ -133,6 +133,7 @@ jobs:
       - run: just build
       - run: just build-minimal
       - run: just test
+      - run: just check-docs
         timeout-minutes: 8
       # Signed ad hoc, as the runner has no Developer ID.
       - run: just bundle

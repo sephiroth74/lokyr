@@ -32,6 +32,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 ## Reference
 
 - [Configuration](CONFIGURATION.md)
+- [Commands](commands.md)
 - [Escape codes](escape-codes.md)
   - [Progress and status](escape-codes/progress-and-status.md)
   - [Notifications](escape-codes/notifications.md)

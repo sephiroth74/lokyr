@@ -66,11 +66,18 @@ const EDIT: &str = "https://github.com/sephiroth74/lokyr/edit/main";
 
 /// The pages made of their sources, each of the source that a change goes
 /// to, which its footer links in place of the page's editor.
-const GENERATED: [(&str, &str, &str); 1] = [(
-    "docs/CONFIGURATION.md",
-    "crates/kernel/config.schema.json",
-    "the config's schema",
-)];
+const GENERATED: [(&str, &str, &str); 2] = [
+    (
+        "docs/CONFIGURATION.md",
+        "crates/kernel/config.schema.json",
+        "the config's schema",
+    ),
+    (
+        "docs/commands.md",
+        "crates/app-core/src/app/tests/docs.rs",
+        "the app's commands and default keys",
+    ),
+];
 
 /// The files of the documents' folders that the site copies: their images.
 const IMAGES: [&str; 6] = ["svg", "png", "jpg", "jpeg", "gif", "webp"];

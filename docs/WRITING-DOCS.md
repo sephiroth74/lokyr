@@ -203,6 +203,7 @@ Some pages, or parts of them, are made from their sources, so that they can't dr
 
 - **[The configuration guide](CONFIGURATION.md)** comes from the config's schemas and its template, by `cargo xtask config-guide`.
 - **The theme tokens' table** in [the theme authors' guide](themes/authoring.md) comes from the tokens' rules, by `cargo xtask theme-guide`.
+- **[The commands' reference](commands.md)** comes from the app's commands and its default keys, by `cargo xtask docs`, which also writes the **Default keys** column of the commands' tables of the plugins' pages, between `<!-- commands: lokyr/<plugin> -->` and `<!-- commands end -->`. Write the other columns of those tables by hand: the check fails when a table leaves out a command of its plugin, or lists one that the plugin doesn't have.
 
 ## Check your page
 

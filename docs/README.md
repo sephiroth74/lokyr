@@ -19,6 +19,7 @@ Lokyr is a fast terminal for macOS, written in Rust. Every feature that you see,
 ## Reference
 
 - [Configuration](CONFIGURATION.md): every setting, its values and its default.
+- [Commands](commands.md): every command, its arguments and its default keys, to bind your own.
 - [Changelog](../CHANGELOG.md) and [release notes](releases/README.md): what changed in each version.
 - [Writing a plugin](plugins/authoring.md) and the [plugin reference](plugins/reference.md), for plugin authors.
 - [Making a theme](themes/authoring.md), for theme authors.

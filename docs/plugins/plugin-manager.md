@@ -30,9 +30,13 @@ The Plugins page of the settings window: every plugin that Lokyr runs, the ones 
 
 ## Commands
 
+<!-- commands: lokyr/plugin-manager -->
+
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `plugin-manager.open` | Lokyr › Plugins… | | Opens the settings window at the Plugins page |
+
+<!-- commands end -->
 
 ## Configuration
 

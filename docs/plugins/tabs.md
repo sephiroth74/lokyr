@@ -16,6 +16,8 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 
 ## Commands
 
+<!-- commands: lokyr/tabs -->
+
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `tabs.new` | Shell › New Tab | ⌘T | Opens a tab after the others, its shell in the folder of the pane that has the keyboard |
@@ -36,6 +38,8 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.set-group-color` | | | Gives the tab's group its `color`, as `"#ff8800"`; an empty one leaves it of none, gray · not released yet |
 | `tabs.fold-group` | Shell › Fold Group | | Folds the tab's group, showing the tab after it · not released yet |
 | `tabs.ungroup` | Shell › Ungroup | | Takes the tab's group apart, its tabs staying where they are · not released yet |
+
+<!-- commands end -->
 
 The commands without keys are there for your own bindings:
 

@@ -237,6 +237,10 @@ check-config-guide:
 check-theme-guide:
     cargo xtask theme-guide --check
 
+# Check that docs/commands.md and the keys of the plugins' tables of commands are the app's commands and default keys (macOS); `cargo xtask docs` writes them.
+check-docs:
+    cargo xtask docs --check
+
 # Test the measuring tools of tools/bench, which compare the terminals and read powermetrics' recordings (macOS).
 test-bench-tools:
     python3 -m unittest discover -s tools/bench
@@ -246,7 +250,7 @@ ui-gallery *args:
     cargo run --locked -p lokyr-ui-gallery -- {{args}}
 
 # Run the CI checks locally. Linux is covered by `test-linux`, CI's Linux job in the container of Linux's checks, and `check-linux`, the x86_64 check.
-ci: lint build test test-linux check-linux deny check-deps check-comments check-changelog check-links check-config-guide check-theme-guide check-dist check-luau-types build-minimal bundle
+ci: lint build test test-linux check-linux deny check-deps check-comments check-changelog check-links check-config-guide check-theme-guide check-docs check-dist check-luau-types build-minimal bundle
 
 # Build target/Lokyr.app from the release binary, signed with the identity that $LOKYR_SIGN_IDENTITY names, or ad hoc, with Sparkle's release and the themes' collection (downloads them the first time); `--features three-drawables` builds it of three drawables a window, and `--no-default-features --features dist-minimal` of the minimal distribution.
 bundle *args:

@@ -20,9 +20,13 @@ A window that a global key slides in from an edge of the screen, over every app,
 
 ## Commands
 
+<!-- commands: lokyr/quick-terminal -->
+
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `window.toggle-quick-terminal` | Shell › Quick Terminal | | Shows the quick terminal, opening it first, or hides it, as above |
+
+<!-- commands end -->
 
 ## Configuration
 

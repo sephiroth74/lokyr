@@ -27,12 +27,16 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 
 ## Commands
 
+<!-- commands: lokyr/command-palette -->
+
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `command-palette.open` | View › Command Palette… | ⇧⌘P | Opens the palette in the window that has the focus |
-| `command-palette.theme` | View › Choose Theme… | — | Opens the theme picker, of the themes of the appearance in force |
-| `command-palette.agents` | Window › Show Agents… | ⇧⌥⌘A | Opens the agents' list, of every window's AI agents, the most urgent first |
-| `command-palette.move` | — | ↑ and ↓ in the palette | Moves the list's selection, by its argument `delta`, a whole number of items |
+| `command-palette.theme` | View › Choose Theme… | | Opens the theme picker, of the themes of the appearance in force |
+| `command-palette.agents` | Window › Show Agents… | ⌥⇧⌘A | Opens the agents' list, of every window's AI agents, the most urgent first |
+| `command-palette.move` | — | ↑, ↓ while `command-palette.focused` | Moves the list's selection, by its argument `delta`, a whole number of items |
+
+<!-- commands end -->
 
 ## Turning it off
 

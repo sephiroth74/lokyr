@@ -8,6 +8,7 @@ mod check_deps;
 mod check_links;
 mod config_guide;
 mod dmg;
+mod docs;
 mod feed;
 mod gen_dist;
 mod languages;
@@ -44,6 +45,7 @@ fn main() -> ExitCode {
         Some("check-links") => check_links::run(args),
         Some("config-guide") => config_guide::run(args),
         Some("dmg") => dmg::run(args),
+        Some("docs") => docs::run(args),
         Some("feed") => feed::run(args),
         Some("gen-dist") => gen_dist::run(args),
         Some("luau-types") => luau_types::run(args),
@@ -83,6 +85,7 @@ fn print_help() {
          config-guide [--check]      write docs/CONFIGURATION.md of the config's schema and the plugins', or check it\n  \
          dmg [--no-notarize]         build target/Lokyr-<version>.dmg of the bundle, notarized first, signed, notarized and stapled\n  \
          dmg layout                  have the Finder lay out the image's window, and keep its .DS_Store\n  \
+         docs [--check]              write docs/commands.md and the plugins' tables of commands of the app's, or check them\n  \
          feed add <dmg> [--notes <file>] [--channel <name>]  add a DMG and its notes to the feed of tests, its appcast signed\n  \
          feed serve                  have Lokyr on this Mac read the feed of tests, and serve it on 127.0.0.1:8123\n  \
          gen-dist [--check]          the app's distributions' features and plugins, of dist/*.toml, or check them\n  \

@@ -25,7 +25,7 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⇧⌘T | `tabs.reopen`: the tab you closed last · not released yet |
 | ⌘D, ⇧⌘D, ⌥⌘ and an arrow, ⌘], ⌘[, ⌃⌘ and an arrow, ⇧⌘Return | the splits: split right or down, the pane in a direction, the next and the previous pane, resize, zoom |
 
-The [keys' table in the configuration guide](../CONFIGURATION.md#bindings) has every binding, with what each command does.
+The [commands' reference](../commands.md) lists every command with its default keys, and the [keys' table in the configuration guide](../CONFIGURATION.md#bindings) has every binding, with what each command does.
 
 ## Your own keys
 
