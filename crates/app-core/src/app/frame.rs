@@ -874,6 +874,7 @@ impl<B: Backend> App<B> {
         let movement = config.movement;
         let selection_colors = self.variant(platform, window).selection;
         let match_colors = self.variant(platform, window).match_colors();
+        let label_colors = self.variant(platform, window).label_colors();
         let colors = (selection_colors, match_colors);
         let dark = platform.appearance() == Appearance::Dark;
         // The chrome of the window's own appearance, as its title is, and
@@ -986,9 +987,10 @@ impl<B: Backend> App<B> {
             other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
         }
         // A search's matches over the cells, and the plugins' decorations
-        // over the text, under the composition.
+        // over the text and their labels, under the composition.
         cells::highlight(&mut batch, snapshot, match_colors);
         cells::decorate(&mut batch, snapshot, &cell);
+        cells::labels(&mut batch, snapshot, &cell, label_colors, font);
         if let Some(preedit) = &state.preedit {
             cells::preedit(&mut batch, snapshot, &cell, preedit, font);
         }

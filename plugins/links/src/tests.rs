@@ -106,7 +106,10 @@ fn underlined(host: &FakeHost) -> Vec<Span> {
     host.decorations()
         .iter()
         .map(|decoration| {
-            assert_eq!((decoration.pane, decoration.look), (PANE, UNDERLINED));
+            assert_eq!(
+                (decoration.pane, decoration.look.clone()),
+                (PANE, UNDERLINED)
+            );
             (decoration.from, decoration.to)
         })
         .collect()
@@ -155,6 +158,11 @@ fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
                 Category::Tabs,
                 of(&["terminal-read", "process-read"])
             ),
+            (
+                HINTS,
+                Category::View,
+                of(&["terminal-read", "process-read", "decorate", "pane-view"])
+            ),
         ]
     );
     for command in host.commands() {
@@ -163,13 +171,16 @@ fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
             .iter()
             .map(|param| (param.name.as_str(), param.kind, param.default.as_ref()))
             .collect();
-        assert_eq!(
-            params,
-            [
+        // The hints of none: of the focused pane's view.
+        let wanted: &[(&str, Kind, Option<&Value>)] = if command.name == HINTS {
+            &[]
+        } else {
+            &[
                 ("column", Kind::Integer, None),
-                ("row", Kind::Integer, None)
+                ("row", Kind::Integer, None),
             ]
-        );
+        };
+        assert_eq!(params, wanted);
         // Every title in both languages.
         for (_, catalog) in CATALOGS {
             let message = format!("command-{} =", command.name.replace('.', "-"));
@@ -561,4 +572,154 @@ fn a_path_loses_its_dots_and_its_empty_parts() {
     ] {
         assert_eq!(super::normal(path), normal, "{path}");
     }
+}
+
+/// A host whose focused pane shows `lines`, each on its own row from the
+/// first, a cell each character, of a grid of 40 rows, its cursor on the
+/// row after the last, in the directory `/work/lokyr`.
+fn screen(lines: &[&str]) -> FakeHost {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.directory = Some("/work/lokyr".to_owned());
+    pane.grid = (80, 40);
+    pane.held = 0..40;
+    for (row, line) in (0..).zip(lines) {
+        let cells = (0..line.chars().count())
+            .map(|at| (u16::try_from(at).unwrap(), row))
+            .collect();
+        pane.lines.insert(
+            row,
+            LineText {
+                text: (*line).to_owned(),
+                cells,
+            },
+        );
+    }
+    pane.cursor = (0, i64::try_from(lines.len()).unwrap());
+    host
+}
+
+/// The hints' field's typing of `text`.
+fn typing(text: &str) -> UiEvent {
+    UiEvent {
+        view: ViewId::Panel(PanelId::from(HINTS_PANEL)),
+        key: HINTS_FIELD.into(),
+        kind: UiEventKind::InputChanged {
+            text: text.to_owned(),
+            revision: 1,
+        },
+    }
+}
+
+/// The labels that `host`'s decorations show, by their first cells.
+fn labels(host: &FakeHost) -> Vec<((u16, i64), String)> {
+    let mut found: Vec<((u16, i64), String)> = host
+        .decorations()
+        .iter()
+        .filter_map(|laid| Some((laid.from, laid.look.label.clone()?)))
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+fn hints_label_what_the_screen_shows_the_nearest_the_cursor_first_and_a_label_picks_one() {
+    let mut host = screen(&[
+        "see https://lokyr.dev/docs ok",
+        "   --> src/main.rs:42:7",
+        "commit 4482b9e9 on 192.168.1.20",
+        "nothing here",
+    ]);
+    let mut links = Links::default();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let opened = host.take_done();
+    // The hash and the address, a row from the cursor, then the path, then
+    // the URL.
+    assert_eq!(
+        labels(&host),
+        [
+            ((4, 0), "f".to_owned()),
+            ((7, 1), "d".to_owned()),
+            ((7, 2), "a".to_owned()),
+            ((19, 2), "s".to_owned()),
+        ]
+    );
+    // Each underlined over its whole text, and the panel of the letters.
+    let url = host
+        .decorations()
+        .iter()
+        .find(|laid| laid.from == (4, 0))
+        .unwrap();
+    assert_eq!(url.to, (25, 0));
+    assert_eq!(url.look.underline, Some(Underline::Single));
+    assert!(opened.iter().any(|request| matches!(
+        request,
+        Request::OpenPanel { id, options } if id.0 == HINTS_PANEL && options.close_escape
+    )));
+    // `s` picks the address, which it selects; its labels go.
+    host.take_done();
+    host.ui_event(&mut links, &typing("s")).unwrap();
+    let done = host.take_done();
+    assert!(
+        done.contains(&Request::SelectCells {
+            pane: PANE,
+            first: (19, 2),
+            last: (30, 2),
+            kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
+        }),
+        "{done:?}"
+    );
+    assert!(done.contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL))));
+    assert!(host.decorations().is_empty());
+    assert!(links.hints.is_none());
+}
+
+#[test]
+fn letters_narrow_the_labels_of_two_and_escape_leaves() {
+    // Thirty hashes: 25 labels of one letter, and five of two of the last.
+    let lines: Vec<String> = (0..30).map(|at| format!("c0ffee{at:02}a")).collect();
+    let lines: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let mut host = screen(&lines);
+    let mut links = Links::default();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    host.render(&mut links, &ViewId::Panel(PanelId::from(HINTS_PANEL)))
+        .expect("the hints' field");
+    assert_eq!(labels(&host).len(), 30);
+    let two: Vec<String> = labels(&host)
+        .into_iter()
+        .map(|(_, label)| label)
+        .filter(|label| label.len() == 2)
+        .collect();
+    assert_eq!(two.len(), 5);
+    assert!(two.iter().all(|label| label.starts_with('m')));
+    // `m` leaves those five.
+    host.ui_event(&mut links, &typing("m")).unwrap();
+    assert_eq!(labels(&host).len(), 5);
+    // Of none that starts with them, the field emptied and every label
+    // shown again.
+    host.take_done();
+    host.ui_event(&mut links, &typing("mz")).unwrap();
+    assert!(host.take_done().iter().any(|request| matches!(
+        request,
+        Request::SetText { text, .. } if text.is_empty()
+    )));
+    assert_eq!(labels(&host).len(), 30);
+    // Escape closes the panel, which takes the labels away.
+    host.post(Event::PanelClosed(PanelId::from(HINTS_PANEL)));
+    host.deliver(&mut links).unwrap();
+    assert!(host.decorations().is_empty());
+    assert!(links.hints.is_none());
+    // A screen of nothing to pick opens no panel.
+    let mut host = screen(&["plain words alone"]);
+    let mut links = Links::default();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    assert!(
+        !host
+            .take_done()
+            .iter()
+            .any(|request| matches!(request, Request::OpenPanel { .. }))
+    );
 }

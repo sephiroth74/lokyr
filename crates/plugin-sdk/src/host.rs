@@ -1361,7 +1361,7 @@ pub struct StyleRun {
 }
 
 /// How a decoration looks over its cells.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DecorationLook {
     /// The line under the cells, if any.
     pub underline: Option<Underline>,
@@ -1373,6 +1373,29 @@ pub struct DecorationLook {
     /// link that a click opens.
     #[serde(default)]
     pub pointing: bool,
+    /// A label that the host draws over its first cells, in place of their
+    /// text, as a hint's letters, of the theme's colors for labels: from
+    /// one to [`MOST_LABEL`] ASCII letters and digits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+/// The most characters of a decoration's label.
+pub const MOST_LABEL: usize = 3;
+
+/// Whether `label` is a decoration's label: from one to [`MOST_LABEL`]
+/// ASCII letters and digits; why not otherwise.
+pub fn check_label(label: &str) -> Result<(), String> {
+    let fine = !label.is_empty()
+        && label.len() <= MOST_LABEL
+        && label.bytes().all(|byte| byte.is_ascii_alphanumeric());
+    if fine {
+        Ok(())
+    } else {
+        Err(format!(
+            "a decoration's label is of 1 to {MOST_LABEL} ASCII letters and digits, not `{label}`"
+        ))
+    }
 }
 
 /// How a pane's view scrolls through its scrollback.
@@ -2002,6 +2025,24 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_label_is_of_one_to_three_letters_or_digits_and_written_as_its_text() {
+        assert_eq!(check_label("ab"), Ok(()));
+        for refused in ["", "abcd", "a b", "é", "a-"] {
+            assert!(check_label(refused).is_err(), "{refused}");
+        }
+        let look = DecorationLook {
+            label: Some("k2".to_owned()),
+            ..DecorationLook::default()
+        };
+        let json = serde_json::to_string(&look).unwrap();
+        assert!(json.contains(r#""label":"k2""#), "{json}");
+        assert_eq!(serde_json::from_str::<DecorationLook>(&json).unwrap(), look);
+        // Of none, nothing written.
+        let plain = serde_json::to_string(&DecorationLook::default()).unwrap();
+        assert!(!plain.contains("label"), "{plain}");
+    }
 
     #[test]
     fn an_empty_search_is_every_plugin_of_the_registry_and_sleip_s_words_none() {

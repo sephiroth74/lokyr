@@ -2882,12 +2882,13 @@ fn a_plugin_s_decorations_keep_their_text_through_new_output() {
                         underline_color: Some((255, 0, 0)),
                         background: None,
                         pointing: false,
+                        label: None,
                     };
                     for row in 0..3 {
                         let line = cx.line_text(pane, row, 0)?.unwrap();
                         if let Some(at) = line.text.find("match") {
                             let at = u16::try_from(at).unwrap();
-                            let id = cx.decorate(pane, (at, row), (at + 4, row), look)?;
+                            let id = cx.decorate(pane, (at, row), (at + 4, row), look.clone())?;
                             found.borrow_mut().push(id);
                         }
                     }
@@ -3110,7 +3111,9 @@ fn a_plugin_reads_a_row_s_styles_and_decorates_only_what_the_pane_holds() {
                     }
                     seen.push(format!("{:?}", cx.styles(pane, 900)?));
                     let look = host::DecorationLook::default();
-                    let missing = cx.decorate(pane, (0, 900), (1, 900), look).unwrap_err();
+                    let missing = cx
+                        .decorate(pane, (0, 900), (1, 900), look.clone())
+                        .unwrap_err();
                     let backwards = cx.decorate(pane, (3, 0), (1, 0), look).unwrap_err();
                     seen.push(format!("{:?} {:?}", missing.code, backwards.code));
                     Ok(())
@@ -4638,6 +4641,7 @@ fn a_kept_tab_s_pane_comes_back_of_none_of_what_the_plugins_left_on_it() {
                         underline_color: None,
                         background: None,
                         pointing: false,
+                        label: None,
                     };
                     cx.decorate(pane, (2, 0), (7, 0), look)?;
                     cx.mark_gutter(pane, 0, (255, 0, 0))?;
@@ -5233,6 +5237,7 @@ fn leaver() -> Box<dyn Plugin> {
                 underline_color: None,
                 background: None,
                 pointing: false,
+                label: None,
             };
             cx.decorate(pane, (0, 0), (2, 0), look)?;
             cx.mark_gutter(pane, 0, (255, 0, 0))?;

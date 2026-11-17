@@ -275,7 +275,7 @@ fn found_in(pane: &FakePane, query: &host::SearchQuery) -> Result<Vec<host::Sear
 }
 
 /// A decoration that the plugin laid: its pane, its cells and its look.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FakeDecoration {
     /// Its id.
     pub id: u64,
@@ -4758,13 +4758,17 @@ impl Calling<'_> {
                         "a decoration's cells are not the pane's, or not in reading order",
                     ));
                 }
+                if let Some(label) = &look.label {
+                    host::check_label(label)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 let id = self.host.next_id();
                 self.host.decorations.push(FakeDecoration {
                     id,
                     pane: *pane,
                     from: *from,
                     to: *to,
-                    look: *look,
+                    look: look.clone(),
                 });
                 Response::Decoration(id)
             }

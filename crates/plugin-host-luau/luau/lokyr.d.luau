@@ -489,6 +489,7 @@ export type DecorationLook = {
     underline_color: { number }?,
     background: { number }?,
     pointing: boolean?,
+    label: string?,
 }
 
 export type Direction =

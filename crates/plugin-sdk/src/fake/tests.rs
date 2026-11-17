@@ -597,6 +597,7 @@ impl Plugin for Looker {
             underline_color: None,
             background: None,
             pointing: true,
+            label: None,
         };
         cx.decorate(PaneId(1), (0, 0), (2, 0), look).is_ok()
             && cx
@@ -907,9 +908,12 @@ fn a_panel_s_opening_asks_its_render_its_close_drops_its_tree_and_a_decoration_o
         underline_color: None,
         background: None,
         pointing: false,
+        label: None,
     };
     let mut probe = Probe::new(move |cx, name| match name {
-        "probe.go" => cx.decorate(PaneId(1), (0, 0), (1, 0), look).map(|_| ()),
+        "probe.go" => cx
+            .decorate(PaneId(1), (0, 0), (1, 0), look.clone())
+            .map(|_| ()),
         "probe.close" => cx.close_pane(PaneId(1), false),
         _ => cx.undecorate(PaneId(1), FIRST_ID),
     });

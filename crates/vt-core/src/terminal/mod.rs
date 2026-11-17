@@ -37,7 +37,7 @@ mod window;
 pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
-pub use decorations::{Decorated, Look, MOST_DECORATIONS};
+pub use decorations::{Decorated, Label, Look, MOST_DECORATIONS};
 pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
     IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,

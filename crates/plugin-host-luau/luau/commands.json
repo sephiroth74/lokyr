@@ -332,6 +332,20 @@
   {
     "capabilities": [
       "terminal-read",
+      "process-read",
+      "decorate",
+      "pane-view"
+    ],
+    "category": "view",
+    "name": "links.hints",
+    "params": [],
+    "plugin": "lokyr/links",
+    "title": "Show Hints",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
       "process-read"
     ],
     "category": "tabs",

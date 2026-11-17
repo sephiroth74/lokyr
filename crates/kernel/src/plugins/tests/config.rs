@@ -413,6 +413,7 @@ impl Plugin for Toggled {
                 underline_color: None,
                 background: None,
                 pointing: false,
+                label: None,
             },
         )?;
         let window = cx.focused_window().expect("a focused window");

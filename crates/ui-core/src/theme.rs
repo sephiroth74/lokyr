@@ -21,6 +21,16 @@ pub struct SelectionColors {
     pub foreground: Option<Color>,
 }
 
+/// The colors of the labels that decorations draw over the terminal's
+/// cells, as hints' letters: their background, and their text's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LabelColors {
+    /// Under a label's letters.
+    pub background: Color,
+    /// Its letters'.
+    pub foreground: Color,
+}
+
 /// The colors of a search's matches over the terminal's cells, translucent,
 /// over the cells' own: a match's, and the current one's.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,6 +65,29 @@ pub struct Tokens(HashMap<String, Color>, HashSet<String>);
 pub const TRANSPARENT: &str = "transparent";
 
 impl Variant {
+    /// The colors of the decorations' labels, as hints' letters: the
+    /// tokens `hints.label.bg` and `hints.label.fg`, or the accent and the
+    /// black or the white that reads over it.
+    pub fn label_colors(&self) -> LabelColors {
+        let background = self
+            .tokens
+            .get("hints.label.bg")
+            .or_else(|| self.tokens.get("accent"))
+            .unwrap_or(Color::from_rgb8(0x00, 0x7a, 0xff));
+        // White or black, whichever reads over the background.
+        let light =
+            0.2126 * background.red + 0.7152 * background.green + 0.0722 * background.blue > 0.6;
+        let readable = if light {
+            Color::from_rgb8(0, 0, 0)
+        } else {
+            Color::from_rgb8(0xff, 0xff, 0xff)
+        };
+        LabelColors {
+            background,
+            foreground: self.tokens.get("hints.label.fg").unwrap_or(readable),
+        }
+    }
+
     /// The colors of a search's matches, of the tokens `search.match` and
     /// `search.match.current`.
     pub fn match_colors(&self) -> MatchColors {

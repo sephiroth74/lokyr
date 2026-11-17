@@ -12,7 +12,7 @@ use lokyr_vt_core::unicode::Widths;
 
 use crate::paint;
 use crate::text::TextConfig;
-use crate::theme::{self, MatchColors, SelectionColors};
+use crate::theme::{self, LabelColors, MatchColors, SelectionColors};
 
 /// A glyph as the atlas holds it: its pixels, and where they go from the pen
 /// on the baseline.
@@ -368,6 +368,74 @@ pub fn decorate(batch: &mut CellBatch, snapshot: &Snapshot, cell: &CellMetrics) 
         });
     }
 }
+
+/// Draws the labels of `snapshot`'s decorations over `batch`, its grid as
+/// [`cells_with`] laid it out: each decoration's label once, over the
+/// first cells of its first span that the view shows, one a character, of
+/// `colors`' background in place of theirs and its letters in place of
+/// their text; what goes past the right edge is left out.
+pub fn labels(
+    batch: &mut CellBatch,
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    colors: LabelColors,
+    glyphs: &mut dyn Glyphs,
+) {
+    let columns = batch.columns;
+    let mut drawn: Vec<u64> = Vec::new();
+    let mut text = String::new();
+    for span in snapshot.decorations() {
+        let Some(label) = span.look.label else {
+            continue;
+        };
+        if span.row >= batch.rows || span.first >= columns || drawn.contains(&span.id) {
+            continue;
+        }
+        drawn.push(span.id);
+        let row = span.row;
+        for (at, &character) in label.chars().iter().enumerate() {
+            let Some(column) = u16::try_from(at)
+                .ok()
+                .map(|at| span.first + at)
+                .filter(|&column| column < columns)
+            else {
+                break;
+            };
+            batch
+                .glyphs
+                .retain(|glyph| glyph.row != row || glyph.column != column);
+            let index = usize::from(row) * usize::from(columns) + usize::from(column);
+            batch.backgrounds[index] = colors.background;
+            text.clear();
+            text.push(character);
+            let shown = CellText {
+                text: &text,
+                style: &LABEL_STYLE,
+                wide: false,
+                dark: luma(colors.background) < luma(colors.foreground),
+            };
+            if let Some(found) = glyphs.glyph(&shown).filter(|found| found.region.width > 0) {
+                batch.glyphs.push(CellGlyph {
+                    column,
+                    row,
+                    region: found.region,
+                    x: found.left,
+                    y: i32::try_from(cell.baseline).unwrap_or(i32::MAX) - found.top,
+                    color: colors.foreground,
+                    smoothed: found.smoothed,
+                });
+            }
+        }
+        let end = span.first + u16::from(label.len).min(columns - span.first);
+        cut_lines(batch, row, span.first..end);
+    }
+}
+
+/// The style of a label's letters: bold.
+const LABEL_STYLE: Style = Style {
+    bold: true,
+    ..Style::DEFAULT
+};
 
 /// Lays the highlights of `snapshot`'s searches' matches over `batch`, its
 /// grid as [`cells_with`] laid it out: `colors`' match's over each
@@ -2582,6 +2650,48 @@ mod tests {
         );
         assert_eq!(batch.backgrounds[8 + 2], color(red));
         assert_ne!(batch.backgrounds[8 + 3], color(red));
+    }
+
+    #[test]
+    fn a_decoration_s_label_shows_once_over_its_first_cells_of_its_colors() {
+        use lokyr_vt_core::parser::Parser;
+        use lokyr_vt_core::terminal::{Label, Look, Options, Snapshot, Terminal};
+
+        let mut terminal = Terminal::new(8, 2, Options::default());
+        Parser::new().advance(&mut terminal, b"abcdefgh\r\nxyz");
+        let labeled = Look {
+            label: Some(Label::new("ka")),
+            ..Look::default()
+        };
+        // Across both rows: its label on its first row's span alone.
+        assert!(terminal.decorate(1, (5, 0), (1, 1), labeled));
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let mut asked = Vec::new();
+        let mut batch = cells(&shown, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        let colors = LabelColors {
+            background: Color::from_rgb8(0, 0x7a, 0xff),
+            foreground: Color::from_rgb8(0xff, 0xff, 0xff),
+        };
+        asked.clear();
+        labels(&mut batch, &shown, &cell(), colors, &mut atlas(&mut asked));
+        // Bold, of a cell each.
+        assert_eq!(
+            asked,
+            [("k".to_owned(), true, false), ("a".to_owned(), true, false)]
+        );
+        assert_eq!(batch.backgrounds[5], colors.background);
+        assert_eq!(batch.backgrounds[6], colors.background);
+        assert_ne!(batch.backgrounds[7], colors.background);
+        assert_ne!(batch.backgrounds[8], colors.background);
+        // Its letters in place of the cells' own, of its text's color.
+        let row: Vec<(u16, Color)> = batch
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.row == 0 && (5..=6).contains(&glyph.column))
+            .map(|glyph| (glyph.column, glyph.color))
+            .collect();
+        assert_eq!(row, [(5, colors.foreground), (6, colors.foreground)]);
     }
 
     #[test]

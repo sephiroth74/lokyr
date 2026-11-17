@@ -4387,7 +4387,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 to,
                 look,
             } => {
-                if !pane(on).is_some_and(|pane| pane.decorate(id, from, to, decoration(look))) {
+                if !pane(on).is_some_and(|pane| pane.decorate(id, from, to, decoration(&look))) {
                     state.decorations.remove(&id);
                 }
                 continue;
@@ -4826,7 +4826,7 @@ fn layout(layout: &Layout) -> host::Layout {
 }
 
 /// The terminal's look of a decoration of the SDK's.
-fn decoration(look: host::DecorationLook) -> Look {
+fn decoration(look: &host::DecorationLook) -> Look {
     let rgb = |(r, g, b): (u8, u8, u8)| Rgb { r, g, b };
     Look {
         underline: match look.underline {
@@ -4840,6 +4840,10 @@ fn decoration(look: host::DecorationLook) -> Look {
         underline_color: look.underline_color.map(rgb),
         background: look.background.map(rgb),
         pointing: look.pointing,
+        label: look
+            .label
+            .as_deref()
+            .map(lokyr_vt_core::terminal::Label::new),
     }
 }
 
@@ -6044,6 +6048,10 @@ impl Host<'_, '_> {
                         "a decoration's cells are not the pane's, or not in reading order",
                     ));
                 }
+                if let Some(label) = &look.label {
+                    host::check_label(label)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 let id = new_id();
                 self.state.decorations.insert(id, *pane);
                 self.writes.push(Write::Decorate {
@@ -6051,7 +6059,7 @@ impl Host<'_, '_> {
                     pane: *pane,
                     from: *from,
                     to: *to,
-                    look: *look,
+                    look: look.clone(),
                 });
                 return Ok(Response::Decoration(id));
             }

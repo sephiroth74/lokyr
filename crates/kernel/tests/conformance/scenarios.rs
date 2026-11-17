@@ -1599,6 +1599,7 @@ fn links(world: &World) -> Scenario {
         underline_color: None,
         background: None,
         pointing: true,
+        label: None,
     };
     let pointer = Event::Pointer {
         pane,
@@ -1712,9 +1713,37 @@ fn links(world: &World) -> Scenario {
                         pane,
                         from: (4, row),
                         to: (22, row),
-                        look,
+                        look: look.clone(),
                     },
                     Response::Decoration(0),
+                ),
+                // A label of letters, as a hint's, and one of too many.
+                (
+                    Request::Decorate {
+                        pane,
+                        from: (4, row),
+                        to: (22, row),
+                        look: DecorationLook {
+                            label: Some("ab".to_owned()),
+                            ..look.clone()
+                        },
+                    },
+                    Response::Decoration(0),
+                ),
+                (
+                    Request::Decorate {
+                        pane,
+                        from: (4, row),
+                        to: (22, row),
+                        look: DecorationLook {
+                            label: Some("abcd".to_owned()),
+                            ..look.clone()
+                        },
+                    },
+                    failed(
+                        Code::Failed,
+                        "a decoration's label is of 1 to 3 ASCII letters and digits, not `abcd`",
+                    ),
                 ),
                 (
                     Request::Decorate {

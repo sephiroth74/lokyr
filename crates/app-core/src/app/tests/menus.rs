@@ -143,6 +143,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Jump to Previous Prompt cmd+ArrowUp",
             "Jump to Next Prompt cmd+ArrowDown",
             "-",
+            "Show Hints",
+            "-",
             "Show Cursor Guide alt+cmd+;",
             "-",
             "Command Palette… shift+cmd+p",

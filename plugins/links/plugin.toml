@@ -12,6 +12,7 @@ process-read = true
 clipboard-write = true
 workspace-write = true
 decorate = true
+pane-view = true
 pointer-read = true
 
 [contributes]
@@ -20,4 +21,5 @@ commands = [
     { name = "links.copy", title = "Copy Link Address" },
     { name = "links.new-window", title = "New Window at Folder" },
     { name = "links.new-tab", title = "New Tab at Folder" },
+    { name = "links.hints", title = "Show Hints" },
 ]

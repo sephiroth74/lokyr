@@ -6,11 +6,15 @@
 //! the pane's foreground. A file opens in its application, a directory in
 //! the file manager. Its other commands of a cell, which the pane's context
 //! menu lists, copy what would open, and open a window or a tab in the
-//! folder of the path there. Like every built-in plugin, it depends only on
-//! the plugin SDK.
+//! folder of the path there. Its hints label what the focused pane shows
+//! that the keyboard may pick, URLs, paths, a path's line, hashes of git's
+//! and IP addresses, of one or two letters each, the shortest for those
+//! nearest the cursor, which the letters typed pick and Escape leaves.
+//! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
+mod hints;
 mod scan;
 
 use lokyr_plugin_sdk::command::{
@@ -19,6 +23,8 @@ use lokyr_plugin_sdk::command::{
 use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline, file_host};
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
+use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
+use lokyr_plugin_sdk::view::{Edges, Layout, Length, Node, Style, Token, UiEventKind};
 
 pub use scan::{Found, Place, find};
 
@@ -35,6 +41,17 @@ const COPY: &str = "links.copy";
 const NEW_WINDOW: &str = "links.new-window";
 /// Opens a tab after the others, as [`NEW_WINDOW`] does a window.
 const NEW_TAB: &str = "links.new-tab";
+/// Labels what the focused pane shows that the keyboard may pick, which
+/// the letters typed pick.
+const HINTS: &str = "links.hints";
+
+/// The panel of the hints, whose field takes the letters typed, and its
+/// field's key.
+const HINTS_PANEL: &str = "hints";
+const HINTS_FIELD: &str = "letters";
+
+/// The most hints that a screen shows, the nearest the cursor's first.
+const MOST_HINTS: usize = 26 * 26;
 
 /// The rows before the clicked one and after it that the read of its line
 /// takes: a URL or a path of thousands of characters, and no more of a line
@@ -54,6 +71,7 @@ const UNDERLINED: DecorationLook = DecorationLook {
     underline_color: None,
     background: None,
     pointing: true,
+    label: None,
 };
 
 /// The most cells around the pointer's that an OSC 8 link's underline
@@ -69,10 +87,28 @@ type Span = ((u16, i64), (u16, i64));
 type Candidate = (String, Option<Span>, Option<Place>);
 
 /// The plugin of the links, and the link that it underlines, while
-/// Command is held over it: its pane, its cells and its decoration.
+/// Command is held over it: its pane, its cells and its decoration; and
+/// the hints that it shows.
 #[derive(Debug, Default)]
 pub struct Links {
     underlined: Option<(PaneId, Span, u64)>,
+    hints: Option<Shown>,
+}
+
+/// The hints that a pane shows: the pane, and each hint.
+#[derive(Debug)]
+struct Shown {
+    pane: PaneId,
+    hints: Vec<Hint>,
+}
+
+/// A hint that a pane shows: its label, its cells, and its decoration
+/// while it shows.
+#[derive(Debug)]
+struct Hint {
+    label: String,
+    span: Span,
+    decoration: Option<u64>,
 }
 
 impl Plugin for Links {
@@ -104,6 +140,19 @@ impl Plugin for Links {
                 when: None,
             })?;
         }
+        cx.register_command(Command {
+            name: HINTS.to_owned(),
+            title: "Show Hints".to_owned(),
+            category: Category::View,
+            capabilities: vec![
+                Capability::TerminalRead,
+                Capability::ProcessRead,
+                Capability::Decorate,
+                Capability::PaneView,
+            ],
+            params: Vec::new(),
+            when: None,
+        })?;
         cx.subscribe(&[POINTER])
     }
 
@@ -114,6 +163,12 @@ impl Plugin for Links {
     /// The pointer over a link that opens, with Command held, underlines
     /// it, as long as both stay; the underline goes as either does.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        // The hints' panel closed, of Escape or a click away: they go.
+        if events.iter().any(
+            |event| matches!(event, Event::PanelClosed(id) if *id == PanelId::from(HINTS_PANEL)),
+        ) {
+            self.end_hints(cx);
+        }
         let Some((pane, at, mods)) = events.iter().rev().find_map(|event| match event {
             Event::Pointer { pane, at, mods } => Some((*pane, *at, *mods)),
             _ => None,
@@ -161,6 +216,7 @@ impl Plugin for Links {
                 let (tab, _) = cx.new_tab_in(window, None, &folder)?;
                 cx.activate_tab(tab)
             }
+            HINTS => self.show_hints(cx),
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("links has no command `{name}`"),
@@ -175,9 +231,232 @@ impl Plugin for Links {
         match name {
             OPEN | COPY => opening(cx, args).ok().flatten().is_some(),
             NEW_WINDOW | NEW_TAB => folder(cx, args).ok().flatten().is_some(),
+            HINTS => cx.focused_pane().is_some(),
             _ => false,
         }
     }
+
+    /// The hints' panel: a field of the letters typed, small, at the pane's
+    /// bottom right.
+    fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view != ViewId::Panel(PanelId::from(HINTS_PANEL)) || self.hints.is_none() {
+            return None;
+        }
+        let placeholder = cx
+            .message("hints-placeholder", &[])
+            .ok()
+            .filter(|text| text != "hints-placeholder")
+            .unwrap_or_else(|| "Type a hint".to_owned());
+        Some(
+            Node::container(vec![
+                Node::field(placeholder.as_str())
+                    .key(HINTS_FIELD)
+                    .layout(Layout {
+                        width: Length::Points(140.0),
+                        ..Layout::default()
+                    }),
+            ])
+            .layout(Layout {
+                padding: Edges::all(6.0),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: Some(Token::from("panel.bg")),
+                radius: 8.0,
+                ..Style::default()
+            }),
+        )
+    }
+
+    /// The letters typed pick the hint of their label, or narrow the labels
+    /// to those that start with them.
+    fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        if event.view != ViewId::Panel(PanelId::from(HINTS_PANEL)) || event.key.0 != HINTS_FIELD {
+            return Ok(());
+        }
+        match &event.kind {
+            UiEventKind::InputChanged { text, revision } => self.typed(cx, text, *revision),
+            _ => Ok(()),
+        }
+    }
+}
+
+impl Links {
+    /// Shows the hints of the focused pane: what its view shows that the
+    /// keyboard may pick, labeled, the shortest labels for the hints
+    /// nearest the cursor; and the panel of the letters typed. Of none,
+    /// nothing.
+    fn show_hints(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        self.end_hints(cx);
+        let Some(pane) = cx.focused_pane() else {
+            return Ok(());
+        };
+        let found = screen_hints(cx, pane)?;
+        if found.is_empty() {
+            return Ok(());
+        }
+        let labels = hints::labels(found.len(), hints::ALPHABET);
+        let mut shown = Shown {
+            pane,
+            hints: Vec::new(),
+        };
+        for (span, label) in found.into_iter().zip(labels) {
+            shown.hints.push(Hint {
+                label,
+                span,
+                decoration: None,
+            });
+        }
+        for hint in &mut shown.hints {
+            hint.decoration =
+                Some(cx.decorate(pane, hint.span.0, hint.span.1, hint_look(&hint.label))?);
+        }
+        self.hints = Some(shown);
+        cx.open_panel(
+            HINTS_PANEL,
+            PanelOptions {
+                anchor: Anchor::PaneCorner {
+                    pane,
+                    corner: Corner::BottomRight,
+                },
+                role: Role::Dialog,
+                close_outside: true,
+                close_escape: true,
+                takes_keys: false,
+                close_typing: false,
+            },
+        )
+    }
+
+    /// The letters `text` typed in the hints' field, of its `revision`: the
+    /// hint of their label picked; the labels that start with them shown,
+    /// the others hidden; of none that does, the field emptied and every
+    /// label shown again.
+    fn typed(&mut self, cx: &mut Cx<'_>, text: &str, revision: u64) -> Result<(), Error> {
+        let Some(shown) = &mut self.hints else {
+            return Ok(());
+        };
+        let typed = text.trim().to_lowercase();
+        if let Some(hint) = shown.hints.iter().find(|hint| hint.label == typed) {
+            let (pane, span) = (shown.pane, hint.span);
+            self.end_hints(cx);
+            let _ = cx.close_panel(HINTS_PANEL);
+            return cx.select_cells(pane, span.0, span.1);
+        }
+        let any = shown
+            .hints
+            .iter()
+            .any(|hint| hint.label.starts_with(&typed));
+        if !any {
+            let panel = ViewId::Panel(PanelId::from(HINTS_PANEL));
+            cx.set_text(panel, HINTS_FIELD, "", revision)?;
+        }
+        let pane = shown.pane;
+        for hint in &mut shown.hints {
+            let wanted = !any || hint.label.starts_with(&typed);
+            match (wanted, hint.decoration) {
+                (true, None) => {
+                    hint.decoration = Some(cx.decorate(
+                        pane,
+                        hint.span.0,
+                        hint.span.1,
+                        hint_look(&hint.label),
+                    )?);
+                }
+                (false, Some(id)) => {
+                    let _ = cx.undecorate(pane, id);
+                    hint.decoration = None;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Takes the hints that show away, their labels with them.
+    fn end_hints(&mut self, cx: &mut Cx<'_>) {
+        let Some(shown) = self.hints.take() else {
+            return;
+        };
+        for id in shown.hints.iter().filter_map(|hint| hint.decoration) {
+            // A pane that closed took its decorations.
+            let _ = cx.undecorate(shown.pane, id);
+        }
+    }
+}
+
+/// How a hint looks: underlined, of its label over its first cells.
+fn hint_look(label: &str) -> DecorationLook {
+    DecorationLook {
+        underline: Some(Underline::Single),
+        label: Some(label.to_owned()),
+        ..DecorationLook::default()
+    }
+}
+
+/// The hints of what the view of `pane` shows, each of its cells, the
+/// nearest the cursor first, [`MOST_HINTS`] at most: of each
+/// logical line that the view shows, its URLs, its paths that are there,
+/// its hashes of git's and its IP addresses, which start in the view.
+fn screen_hints(cx: &mut Cx<'_>, pane: PaneId) -> Result<Vec<Span>, Error> {
+    let view = cx.viewport(pane)?;
+    let (top, bottom) = (view.top, view.top + i64::from(view.rows));
+    let mut found: Vec<Span> = Vec::new();
+    let mut read_to = top;
+    let mut directory: Option<Option<String>> = None;
+    for row in top..bottom {
+        if row < read_to {
+            continue;
+        }
+        let Some(line) = cx.line_text(pane, row, REACH)? else {
+            read_to = row + 1;
+            continue;
+        };
+        read_to = line
+            .cells
+            .iter()
+            .map(|&(_, at)| at + 1)
+            .max()
+            .unwrap_or(row + 1);
+        for hint in hints::in_line(&line.text) {
+            let span = cells_of(&line.cells, hint.first, hint.end);
+            if !(top..bottom).contains(&span.0.1) {
+                continue;
+            }
+            // A path that is there, from the working directory of a
+            // relative one.
+            if let hints::Kind::Link(Found::Path(path, _)) = &hint.kind {
+                let target = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
+                    normal(path)
+                } else {
+                    let directory = match &directory {
+                        Some(known) => known.clone(),
+                        None => {
+                            let known = cx.working_directory(pane)?;
+                            directory = Some(known.clone());
+                            known
+                        }
+                    };
+                    let Some(directory) = directory else {
+                        continue;
+                    };
+                    normal(&format!("{directory}/{path}"))
+                };
+                if !cx.opens(&target)? {
+                    continue;
+                }
+            }
+            found.push(span);
+        }
+    }
+    // The nearest the cursor first: of the fewest rows from it, then of the
+    // fewest columns.
+    if let Some((column, row)) = cx.cursor_cell(pane)? {
+        found
+            .sort_by_key(|(first, _)| (first.1.abs_diff(row), u32::from(first.0.abs_diff(column))));
+    }
+    found.truncate(MOST_HINTS);
+    Ok(found)
 }
 
 /// What a click on the cell of `args`' `column` and `row` opens, in the

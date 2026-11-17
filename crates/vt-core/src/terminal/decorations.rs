@@ -26,6 +26,36 @@ pub struct Look {
     /// Whether the pointer over its cells is a pointing hand, as over a
     /// link that a click opens.
     pub pointing: bool,
+    /// A label that the embedder draws over its first cells, in place of
+    /// their text, as a hint's letters: its characters, of `len` used.
+    pub label: Option<Label>,
+}
+
+/// A decoration's label: up to three characters.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Label {
+    /// Its characters, of which the first `len` are its own.
+    pub chars: [char; 3],
+    /// How many it has.
+    pub len: u8,
+}
+
+impl Label {
+    /// The label of the characters of `text`, its first three.
+    pub fn new(text: &str) -> Self {
+        let mut chars = [' '; 3];
+        let mut len = 0;
+        for (slot, character) in chars.iter_mut().zip(text.chars()) {
+            *slot = character;
+            len += 1;
+        }
+        Self { chars, len }
+    }
+
+    /// Its characters.
+    pub fn chars(&self) -> &[char] {
+        &self.chars[..usize::from(self.len).min(3)]
+    }
 }
 
 /// A span of a decoration, as the view shows it: the cells of a row of the
@@ -178,6 +208,7 @@ mod tests {
         underline_color: None,
         background: None,
         pointing: false,
+        label: None,
     };
 
     #[test]
