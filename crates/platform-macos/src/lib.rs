@@ -19,6 +19,7 @@ mod backend;
 mod color_panel;
 mod default_terminal;
 mod definition;
+mod double_taps;
 mod drag_image;
 mod fill;
 mod frame;

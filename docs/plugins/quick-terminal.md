@@ -7,6 +7,7 @@ A window that a global key slides in from an edge of the screen, over every app,
 ## The quick terminal
 
 - **Its key** is yours to choose, one that works in every app, written after `global:` in [`[keys]`](../CONFIGURATION.md#bindings), which macOS gives Lokyr without the Accessibility permission. Pick one that no other app takes.
+- **Or a double tap of a modifier**, as `double-tap` sets it: press Control, say, alone and let go of it, twice, quickly, from any app. A key or a click while the modifier is held, or between the taps, makes none, so that Control-C twice is no double tap. To see the modifiers while another app is in front, macOS asks you to allow Lokyr in System Settings › Privacy & Security › Input Monitoring; Lokyr reads the modifiers alone, never what you type. · not released yet
 - **The key shows it** and gives it the keys; again, it hides it, and the app that had the focus takes it back; shown without the focus, it takes the focus.
 - **Its shell runs while it is hidden**, so that it shows at once, where [`new-directory`](../CONFIGURATION.md#new-directory) says; closed, as its shell exits, the next key opens a new one.
 - **It hides as it loses the focus**, as `autohide` says, but to a question of Lokyr's on it.
@@ -34,6 +35,7 @@ Its keys go in [`[plugins.quick-terminal]`](../CONFIGURATION.md#pluginsquick-ter
 | `screen` | `"main"`, `"mouse"`, `"menu-bar"` | `"main"` | The screen that it shows on |
 | `animation` | from `0` to `2000` | `200` | How long it slides, in milliseconds |
 | `autohide` | `true`, `false` | `true` | Whether it hides as it loses the focus |
+| `double-tap` | `"none"`, `"ctrl"`, `"alt"`, `"cmd"`, `"shift"` | `"none"` | The modifier whose double tap, from any app, shows or hides it · not released yet |
 | `spaces` | `"move"`, `"remain"` | `"move"` | Whether it follows you to the Space in front |
 
 ```toml
@@ -53,4 +55,4 @@ The quick terminal goes, its window and its shell with it, and Shell › Quick T
 
 ## Permissions
 
-It asks for the global keys and the quick windows, `global-hotkey`, to show its window over every app's.
+It asks for the global keys, the double taps of modifiers and the quick windows, `global-hotkey`, to show its window over every app's.

@@ -116,6 +116,7 @@ fn title_of(diagnostic: &Diagnostic) -> &'static str {
         (About::Config, _) => "notice-config",
         (About::Font, _) => "notice-font",
         (About::GlobalKeys, _) => "notice-global-keys",
+        (About::DoubleTaps, _) => "notice-double-taps",
         (About::Term, _) => "notice-term",
         (About::Theme, _) => "notice-theme",
         (About::Keys, _) => "notice-keys",

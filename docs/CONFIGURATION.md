@@ -211,6 +211,7 @@ size = "40%,80%"                     # into the screen, then along the edge: 1% 
 screen = "mouse"                     # main | mouse | menu-bar
 animation = 150                      # ms, from 0 to 2000
 autohide = false                     # true | false: hides as it loses the focus
+double-tap = "ctrl"                  # none | ctrl | alt | cmd | shift
 spaces = "remain"                    # move | remain
 
 [plugins.search]
@@ -1944,7 +1945,7 @@ Whether the keyboard goes to the pane that the pointer comes over, without a cli
 
 <sub>Platforms: macOS</sub>
 
-The quick terminal of the built-in plugin `lokyr/quick-terminal`: a window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``"global:ctrl+`" = "window.toggle-quick-terminal"`` does; Shell › Quick Terminal runs it too.
+The quick terminal of the built-in plugin `lokyr/quick-terminal`: a window that a global key slides in from an edge of the screen, over every app, the ones in full screen too, and out again: a terminal at hand from anywhere. Bind its command, `window.toggle-quick-terminal`, to a key of `[keys]` that works in every app, with `global:`, which macOS gives Lokyr without the Accessibility permission, as [Bindings](#bindings) says, as ``"global:ctrl+`" = "window.toggle-quick-terminal"`` does; Shell › Quick Terminal runs it too, and a double tap of a modifier, as [`double-tap`](#double-tap) sets it.
 
 ```toml
 [keys]
@@ -2020,6 +2021,21 @@ Whether the quick terminal hides as it loses the focus, as you click another app
 | `true`, `false` | `true` |
 
 It applies at once.
+
+### `double-tap`
+
+<sub>Platforms: macOS</sub>
+
+A modifier whose double tap shows or hides the quick terminal from any app, as its command does: press the modifier alone and let go of it, twice, within the system's double-click interval, as System Settings › Accessibility › Pointer Control sets it.
+
+| Values | Default |
+|---|---|
+| `"none"`, `"ctrl"`, `"alt"` (Option), `"cmd"`, `"shift"` | `"none"` |
+
+- A key or a click while the modifier is held, or between the two taps, makes no double tap, so that Control-C twice is no double tap of Control; another modifier with it makes none either.
+- To see the modifiers while another app is in front, macOS asks you to allow Lokyr in System Settings › Privacy & Security › Input Monitoring, as you first set this key; until you allow it, a notice tells you where, and the double tap works once you come back to Lokyr. Lokyr reads the modifiers alone, never what you type.
+- What it costs: while it is set, each press and release of a modifier in any app wakes Lokyr for a moment, off the thread that draws; nothing at rest. With `"none"`, Lokyr watches nothing.
+- It applies at once.
 
 ### `spaces`
 

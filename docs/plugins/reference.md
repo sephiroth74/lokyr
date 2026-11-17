@@ -25,7 +25,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `process-spawn` | Starting processes; refused before 1.0.0, with a notice | Very high |
 | `net:<host>` | HTTP requests to the listed hosts, whatever their case; refused before 1.0.0, with a notice | High |
 | `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths and to the paths under them, of whole components and no `..` | High |
-| `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, and quick windows, which slide in over every app's | Medium |
+| `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, the double taps of modifiers from any app, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends | High: a password typed by mistake ends up there |
@@ -86,6 +86,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `panel-closed` | One of the plugin's panels closes | — |
 | `page-shown`, `page-hidden` | One of the plugin's pages of the settings window shows, or hides as another shows or the window closes; Lokyr's own plugins alone have pages | — |
 | `timer` | One of the plugin's timers fires | — |
+| `double-tapped` | The modifier that the plugin watches, `watch_double_tap`, is tapped twice, alone, from any app | `global-hotkey` |
 | `package`, `packages-ended` | A job of the packages' service tells a line, or ends | `packages` |
 | `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes; or the installed plugins are taken anew, whatever their list holds, as of a package that Lokyr refused | `packages` |
 | `settings-changed` | The config applies anew, of other values, or a plugin of a config schema is installed, updated or removed | `config` |

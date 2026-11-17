@@ -165,6 +165,9 @@ fn every() -> Vec<Event> {
         Event::SettingsChanged,
         Event::ThemesChanged,
         Event::ThemeChanged,
+        Event::DoubleTapped {
+            modifier: lokyr_plugin_sdk::host::Modifier::Ctrl,
+        },
         Event::PageShown("plugins".to_owned()),
         Event::PageHidden("plugins".to_owned()),
     ]);
@@ -205,6 +208,8 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(pointer.kind == "pointer" and pointer.at[1] == 4 and pointer.at[2] == -2 and pointer.mods.command)
         assert(events[16].at == nil)
         assert(events[19].kind == "panel-closed" and events[19].id == "find")
+        local tapped = events[#events - 2]
+        assert(tapped.kind == "double-tapped" and tapped.modifier == "ctrl")
         local shown, hidden = events[#events - 1], events[#events]
         assert(shown.kind == "page-shown" and shown.page == "plugins")
         assert(hidden.kind == "page-hidden" and hidden.page == "plugins")

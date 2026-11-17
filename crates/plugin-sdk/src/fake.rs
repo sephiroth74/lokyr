@@ -521,6 +521,8 @@ pub struct FakeHost {
     images: (crate::image::Budget, Option<u64>),
     /// What the plugin keeps from idle sleep.
     awake: host::Awake,
+    /// The modifier whose double tap the plugin hears.
+    double_tap: Option<host::Modifier>,
     /// The notices that the plugin showed, in their order, and the time of
     /// its last, of the host's clock.
     notices: Vec<host::Notice>,
@@ -645,6 +647,7 @@ impl FakeHost {
             kept: Vec::new(),
             images: (crate::image::Budget::default(), None),
             awake: host::Awake::Off,
+            double_tap: None,
             notices: Vec::new(),
             noticed_at: None,
             default_bindings: Vec::new(),
@@ -1246,6 +1249,22 @@ impl FakeHost {
         self.awake
     }
 
+    /// The modifier whose double tap the plugin hears, as the host would
+    /// watch it.
+    pub fn double_tap_watched(&self) -> Option<host::Modifier> {
+        self.double_tap
+    }
+
+    /// Taps `modifier` twice, as the platform would tell it: the plugin
+    /// that watches it hears it, as [`FakeHost::deliver`] gives it; one
+    /// that watches another, or none, hears nothing.
+    pub fn double_tap(&mut self, modifier: host::Modifier) -> &mut Self {
+        if self.double_tap == Some(modifier) {
+            self.owed.push(Event::DoubleTapped { modifier });
+        }
+        self
+    }
+
     /// The notices that the plugin showed, in their order, the last the
     /// one that the card shows, each of its title or the plugin's
     /// namespace.
@@ -1301,6 +1320,10 @@ impl FakeHost {
         assert!(
             !matches!(event, Event::Timer { .. }),
             "a timer's event is the host's, as a timer fires: `advance` fires them"
+        );
+        assert!(
+            !matches!(event, Event::DoubleTapped { .. }),
+            "a double tap's event is the host's, as it watches the modifier: `double_tap` gives it"
         );
         // An answer closes its question, after which the plugin may ask
         // another.
@@ -1541,6 +1564,7 @@ impl FakeHost {
                     | Event::Package { .. }
                     | Event::PackagesEnded { .. }
                     | Event::TabBarResized { .. }
+                    | Event::DoubleTapped { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
                 batch.push(event);
@@ -5110,6 +5134,7 @@ impl Calling<'_> {
             Request::CancelTimer(id) => {
                 self.host.timers.remove(&id);
             }
+            Request::WatchDoubleTap(modifier) => self.host.double_tap = modifier,
             other => {
                 return Err(Error::new(
                     Code::Fault,

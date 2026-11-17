@@ -139,6 +139,10 @@ pub enum AppEvent {
     /// [`Platform::set_global_keys`](crate::Platform::set_global_keys),
     /// was pressed: its index.
     GlobalKey(usize),
+    /// A modifier whose double taps the app watches, with
+    /// [`Platform::watch_double_taps`](crate::Platform::watch_double_taps),
+    /// was tapped twice.
+    DoubleTap(crate::Modifier),
     /// The user opened the app again, as from its icon in the Dock, while
     /// it shows no window, nor one minimized.
     Reopen,

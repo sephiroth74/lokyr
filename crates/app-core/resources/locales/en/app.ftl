@@ -212,6 +212,7 @@ open-file-dont-ask = Don't ask again for files
 notice-config = The config file does not apply
 notice-font = A font is missing
 notice-global-keys = A global key does not work
+notice-double-taps = A double tap does not work
 notice-term = The terminal type is unknown
 notice-theme = A theme does not apply
 notice-keys = Keys written twice

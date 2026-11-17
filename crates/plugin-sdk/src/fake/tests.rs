@@ -2080,6 +2080,38 @@ fn a_plugin_keeps_the_mac_awake_of_its_capability_as_its_call_returns() {
 }
 
 #[test]
+fn a_plugin_hears_the_double_tap_of_the_modifier_that_it_watches_alone() {
+    use crate::host::Modifier;
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::GlobalHotkey]);
+    let mut watch = Probe::new(|cx, _| cx.watch_double_tap(Some(Modifier::Ctrl)));
+    host.command(&mut watch, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.double_tap_watched(), Some(Modifier::Ctrl));
+    // Its modifier's, heard alone; another's, nothing.
+    host.double_tap(Modifier::Cmd);
+    host.double_tap(Modifier::Ctrl);
+    host.deliver(&mut watch).unwrap();
+    assert_eq!(watch.heard, [["double-tapped"]]);
+    // A call that fails keeps its declaration, as declarations take
+    // effect at once; none watches nothing.
+    let mut failing = Probe::new(|cx, _| {
+        cx.watch_double_tap(Some(Modifier::Shift))?;
+        Err(Error::new(Code::Failed, "on purpose"))
+    });
+    assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
+    assert_eq!(host.double_tap_watched(), Some(Modifier::Shift));
+    let mut none = Probe::new(|cx, _| cx.watch_double_tap(None));
+    host.command(&mut none, "probe.go", Args::new()).unwrap();
+    host.double_tap(Modifier::Shift);
+    host.deliver(&mut none).unwrap();
+    assert!(none.heard.is_empty());
+    // Of `global-hotkey` alone.
+    let mut without = FakeHost::new("acme/probe").with_capabilities(Vec::new());
+    let refused = without.command(&mut watch, "probe.go", Args::new());
+    assert_eq!(refused.unwrap_err().code, Code::MissingCapability);
+    assert_eq!(without.double_tap_watched(), None);
+}
+
+#[test]
 fn a_built_in_plugin_shows_a_page_of_its_manifest_alone_and_hears_it_shown_and_hidden() {
     let manifest = concat!(
         "[plugin]\nname = \"lokyr/probe\"\nkind = \"builtin\"\n",

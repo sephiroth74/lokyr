@@ -241,6 +241,63 @@ fn a_size_that_does_not_read_takes_half_the_screen_and_tells_why() {
 }
 
 #[test]
+fn its_modifier_s_double_tap_shows_and_hides_it_as_the_command_does() {
+    // None by default, of no double tap watched.
+    let (host_of_none, _) = host(&[]);
+    assert_eq!(host_of_none.double_tap_watched(), None);
+    let (mut host, mut plugin) = host(&[("double-tap", text("ctrl"))]);
+    assert_eq!(host.double_tap_watched(), Some(Modifier::Ctrl));
+    // Its tap opens it, then, with the focus, hides it, as the command.
+    host.take_done();
+    host.double_tap(Modifier::Ctrl);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        quick_requests(&mut host),
+        [Request::OpenQuickWindow {
+            place: QuickPlace::default(),
+            directory: None,
+        }]
+    );
+    let window = quick(&plugin);
+    host.double_tap(Modifier::Ctrl);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        quick_requests(&mut host),
+        [Request::ShowQuickWindow {
+            window,
+            place: None
+        }]
+    );
+    // Another modifier's does nothing.
+    host.double_tap(Modifier::Cmd);
+    host.deliver(&mut plugin).unwrap();
+    assert!(quick_requests(&mut host).is_empty());
+    // A change of the config watches its new modifier, at once, and
+    // `"none"` none.
+    host.set_config(section(&[("double-tap", text("cmd"))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.double_tap_watched(), Some(Modifier::Cmd));
+    host.double_tap(Modifier::Cmd);
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        quick_requests(&mut host),
+        [Request::ShowQuickWindow {
+            window,
+            place: Some(QuickPlace::default()),
+        }]
+    );
+    for (value, watched) in [
+        ("alt", Some(Modifier::Alt)),
+        ("shift", Some(Modifier::Shift)),
+        ("none", None),
+    ] {
+        host.set_config(section(&[("double-tap", text(value))]));
+        host.deliver(&mut plugin).unwrap();
+        assert_eq!(host.double_tap_watched(), watched, "{value}");
+    }
+}
+
+#[test]
 fn a_closed_quick_window_gives_way_to_a_new_one() {
     let (mut host, mut plugin) = host(&[]);
     toggle(&mut host, &mut plugin);
@@ -271,6 +328,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "screen",
             "animation",
             "autohide",
+            "double-tap",
             "spaces"
         ]
     );

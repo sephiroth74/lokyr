@@ -22,6 +22,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
+mod double_tap;
 mod event;
 #[cfg(any(test, feature = "fake"))]
 pub mod fake;
@@ -35,6 +36,7 @@ mod tests;
 mod tools;
 mod waker;
 
+pub use double_tap::{DoubleTap, DoubleTaps, Held, Modifier};
 pub use event::{AppEvent, Appearance, Dropped, WindowEvent};
 pub use geometry::{
     ContentRect, PixelSize, Point, ScreenPoint, ScreenRect, Size, Titlebar, WindowSize,
@@ -551,6 +553,13 @@ pub trait Platform {
     /// [`AppEvent::GlobalKey`], with its index. Gives the indices of those
     /// that the system refused, as another app takes them.
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize>;
+
+    /// Watches the double taps of `modifiers` in every app, in place of
+    /// those before: each comes as [`AppEvent::DoubleTap`]. None watches
+    /// nothing and costs nothing. Tells whether it watches, or waits for
+    /// the system's leave to see the modifiers in other apps, which it asks
+    /// for, and watches once it is given.
+    fn watch_double_taps(&mut self, modifiers: &[Modifier]) -> DoubleTaps;
 
     /// Closes a window: no event comes from it any more.
     fn close_window(&mut self, window: WindowId);

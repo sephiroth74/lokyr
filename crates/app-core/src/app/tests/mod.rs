@@ -3169,6 +3169,89 @@ fn the_quick_terminal_stays_as_it_loses_the_focus_without_autohide_or_to_a_quest
 }
 
 #[test]
+fn a_double_tap_of_the_quick_terminal_s_modifier_shows_and_hides_it_from_every_app() {
+    use lokyr_platform_core::{Held, Modifier};
+    let parse = |text: &str| Config::parse(text, std::path::Path::new("config.toml")).unwrap();
+    // A config applied, as the file's reload does, which a turn's end
+    // gives the plugins.
+    let apply = |fake: &mut Fake, app: &mut App, config: Config| {
+        app.apply(fake, config);
+        fake.send_app(app, AppEvent::Wake);
+    };
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet());
+    fake.start(&mut app);
+    // None by default, of nothing watched.
+    assert!(fake.double_taps().is_empty());
+    apply(
+        &mut fake,
+        &mut app,
+        parse("[plugins.quick-terminal]\ndouble-tap = \"ctrl\"\n"),
+    );
+    assert_eq!(fake.double_taps(), [Modifier::Control]);
+    // Two quick taps of Control alone, of no key nor click, show it.
+    let control = Held {
+        control: true,
+        ..Held::NONE
+    };
+    let start = Instant::now();
+    let long = Duration::from_secs(60);
+    let tap_twice = |fake: &mut Fake, app: &mut App, from: Duration, idle: Duration| {
+        let mut tapped = false;
+        for (at, held) in [
+            (0, control),
+            (80, Held::NONE),
+            (200, control),
+            (280, Held::NONE),
+        ] {
+            let now = start + from + Duration::from_millis(at);
+            tapped |= fake.change_modifiers(app, held, now, idle);
+        }
+        tapped
+    };
+    assert!(tap_twice(&mut fake, &mut app, Duration::ZERO, long));
+    let quick = quick_window(&fake).expect("the quick terminal");
+    assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+    // Again, with the focus, they hide it.
+    fake.send(&mut app, quick, WindowEvent::Focused(true));
+    assert!(tap_twice(&mut fake, &mut app, Duration::from_secs(2), long));
+    assert_eq!(fake.window(quick).unwrap().quick.unwrap(), None);
+    // Control-C twice, a key while it is held, is no double tap.
+    let shortcut = Duration::from_millis(30);
+    assert!(!tap_twice(
+        &mut fake,
+        &mut app,
+        Duration::from_secs(4),
+        shortcut
+    ));
+    assert_eq!(fake.window(quick).unwrap().quick.unwrap(), None);
+    // Without the system's leave, a notice tells where to give it; a tap
+    // once it is given takes the notice away.
+    fake.allow_double_taps(false);
+    apply(
+        &mut fake,
+        &mut app,
+        parse("[plugins.quick-terminal]\ndouble-tap = \"cmd\"\n"),
+    );
+    assert_eq!(fake.double_taps(), [Modifier::Command]);
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert_eq!(shown.about, About::DoubleTaps);
+    assert!(
+        shown.text.contains("double tap of Command")
+            && shown.text.contains("Privacy & Security › Input Monitoring"),
+        "{}",
+        shown.text
+    );
+    fake.allow_double_taps(true);
+    fake.send_app(&mut app, AppEvent::DoubleTap(Modifier::Command));
+    assert!(app.diagnostics.shown_diagnostic().is_none());
+    assert!(fake.window(quick).unwrap().quick.unwrap().is_some());
+    // Of none, nothing watched.
+    apply(&mut fake, &mut app, Config::default());
+    assert!(fake.double_taps().is_empty());
+}
+
+#[test]
 fn a_global_key_runs_its_command_from_every_app_and_keeps_the_app_open() {
     let config = Config::parse(
         "[keys]\n\"global:ctrl+`\" = \"window.toggle-quick-terminal\"\n\"global:ctrl+f24\" = \"window.new\"\n",

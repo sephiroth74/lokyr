@@ -1108,6 +1108,13 @@ pub enum Request {
     /// nor the one that it owes, if it fired; one that is not there stays
     /// so.
     CancelTimer(u64),
+    /// Hears the double tap of a modifier, from any app, in place of the
+    /// one before, or of none: [`Event::DoubleTapped`] comes to the plugin
+    /// alone as the modifier is pressed and let go of alone twice within
+    /// the system's double-click interval. It takes effect at once, and
+    /// ends as the plugin stops. The platform may need the user's leave to
+    /// see the modifiers in other apps, which the host asks for and tells.
+    WatchDoubleTap(Option<crate::host::Modifier>),
 }
 
 /// What a request is to the host.
@@ -1311,6 +1318,7 @@ impl Request {
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
             | Self::ShowPage(_) => None,
+            Self::WatchDoubleTap(_) => Some(Capability::GlobalHotkey),
         }
     }
 
@@ -1456,7 +1464,8 @@ impl Request {
             | Self::Subscribe(_)
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
-            | Self::CancelTimer(_) => Effect::Declaration,
+            | Self::CancelTimer(_)
+            | Self::WatchDoubleTap(_) => Effect::Declaration,
         }
     }
 }
@@ -1828,6 +1837,12 @@ pub enum Event {
         /// The timer's id.
         id: u64,
     },
+    /// The modifier that the plugin watches, of
+    /// [`Request::WatchDoubleTap`], was tapped twice, to it alone.
+    DoubleTapped {
+        /// The modifier.
+        modifier: crate::host::Modifier,
+    },
     /// An event of a plugin's own.
     Custom {
         /// Its name, `namespace.event`, of the plugin's namespace.
@@ -1869,6 +1884,7 @@ impl Event {
             Self::CommandEnded { .. } => COMMAND_ENDED,
             Self::ConfigChanged => "config-changed",
             Self::Timer { .. } => "timer",
+            Self::DoubleTapped { .. } => "double-tapped",
             Self::Custom { name, .. } => name,
         }
     }
@@ -1944,6 +1960,7 @@ impl Request {
             Self::RegisterCommand { .. }
             | Self::Bind { .. }
             | Self::Subscribe { .. }
+            | Self::WatchDoubleTap { .. }
             | Self::Emit { .. }
             | Self::PreviewTheme { .. }
             | Self::SetTheme { .. }
@@ -2416,6 +2433,20 @@ mod tests {
                 .capabilities()
                 .is_empty()
         );
+        // A modifier's double tap, from any app, of `global-hotkey`, a
+        // declaration.
+        let tap = Request::WatchDoubleTap(Some(crate::host::Modifier::Alt));
+        assert_eq!(tap.capabilities(), [Capability::GlobalHotkey]);
+        assert_eq!(tap.effect(), Effect::Declaration);
+        assert_eq!(tap.answer(), "done");
+        assert_eq!(
+            serde_json::to_string(&tap).unwrap(),
+            r#"{"watch-double-tap":"alt"}"#
+        );
+        let tapped = Event::DoubleTapped {
+            modifier: crate::host::Modifier::Cmd,
+        };
+        assert_eq!(tapped.name(), "double-tapped");
         // The reads of the workspace and the plugin's own UI take none.
         assert!(Request::Windows.capabilities().is_empty());
         assert!(Request::PaneTitle(pane).capabilities().is_empty());

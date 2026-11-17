@@ -10,10 +10,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use crate::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
-    Error, Fill, GlobalKey, Handler, Layer, LayerPlace, MainMenu, Platform, Point, PointerArea,
-    PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
-    Sweep, Target, TargetKind, TimerId, Titlebar, ToolLink, Usage, Waker, WindowAttributes,
-    WindowEvent, WindowHandle, WindowId, WindowSize,
+    DoubleTap, DoubleTaps, Error, Fill, GlobalKey, Handler, Held, Layer, LayerPlace, MainMenu,
+    Modifier, Platform, Point, PointerArea, PointerShape, QuickPlace, SavePanelId, ScreenPoint,
+    ScreenRect, Scrollers, Shortcut, Size, Sweep, Target, TargetKind, TimerId, Titlebar, ToolLink,
+    Usage, Waker, WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 
 /// The scale of the fake's display when a test sets none: a Retina one.
@@ -308,6 +308,12 @@ pub struct Fake {
     /// app takes, which the fake refuses.
     global_keys: Vec<GlobalKey>,
     taken_keys: Vec<GlobalKey>,
+    /// The modifiers whose double taps the app watches, whether the
+    /// system's leave to watch them is given, and the finder of their
+    /// taps, of the Mac's default double-click interval.
+    double_taps: Vec<Modifier>,
+    taps_allowed: bool,
+    taps: DoubleTap,
     last_id: u64,
     woken: Arc<AtomicBool>,
     quit: bool,
@@ -390,6 +396,9 @@ impl Fake {
             revealed: Vec::new(),
             global_keys: Vec::new(),
             taken_keys: Vec::new(),
+            double_taps: Vec::new(),
+            taps_allowed: true,
+            taps: DoubleTap::new(std::time::Duration::from_millis(500)),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
             quit: false,
@@ -928,6 +937,38 @@ impl Fake {
         self.taken_keys.push(key);
     }
 
+    /// The modifiers whose double taps the app watches, as it asked last.
+    pub fn double_taps(&self) -> &[Modifier] {
+        &self.double_taps
+    }
+
+    /// Gives or takes away the system's leave to see the modifiers in other
+    /// apps, which the fake has given by default.
+    pub fn allow_double_taps(&mut self, allowed: bool) {
+        self.taps_allowed = allowed;
+    }
+
+    /// Changes the modifiers held to `held` at `now`, of no key nor click
+    /// for `idle`, as the system tells it: a double tap of a modifier that
+    /// the app watches, with the system's leave, comes to it as
+    /// [`AppEvent::DoubleTap`]. Whether one came.
+    pub fn change_modifiers(
+        &mut self,
+        handler: &mut dyn Handler,
+        held: Held,
+        now: std::time::Instant,
+        idle: std::time::Duration,
+    ) -> bool {
+        let tapped = self.taps.change(held, now, idle);
+        match tapped {
+            Some(modifier) if self.taps_allowed && self.double_taps.contains(&modifier) => {
+                self.send_app(handler, AppEvent::DoubleTap(modifier));
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Whether the app has quit.
     pub fn has_quit(&self) -> bool {
         self.quit
@@ -1186,6 +1227,17 @@ impl Platform for Fake {
             }
         }
         self.raise(window);
+    }
+
+    fn watch_double_taps(&mut self, modifiers: &[Modifier]) -> DoubleTaps {
+        self.double_taps = modifiers.to_vec();
+        if modifiers.is_empty() {
+            DoubleTaps::Off
+        } else if self.taps_allowed {
+            DoubleTaps::Watching
+        } else {
+            DoubleTaps::NotAllowed
+        }
     }
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {

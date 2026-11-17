@@ -644,6 +644,9 @@ struct State {
     held_cursors: BTreeSet<host::PaneId>,
     /// What it keeps from idle sleep, which the app holds as it is active.
     awake: host::Awake,
+    /// The modifier whose double tap it hears, which the app watches as
+    /// it is active.
+    double_tap: Option<host::Modifier>,
     /// What its images may still draw, and when it last asked for one.
     images: (image::Budget, Option<Instant>),
     /// The quick windows that it opened, which close as it stops.
@@ -1668,6 +1671,7 @@ impl Plugins {
                 gutter_marks: BTreeMap::new(),
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
+                double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
                 slow: Vec::new(),
@@ -2256,6 +2260,27 @@ impl Plugins {
             }));
         }
         items
+    }
+
+    /// The modifiers whose double taps the active plugins hear, each once,
+    /// in their order, which the app watches: none costs nothing.
+    pub fn double_taps(&self) -> Vec<host::Modifier> {
+        let watched: BTreeSet<host::Modifier> =
+            self.active().filter_map(|state| state.double_tap).collect();
+        watched.into_iter().collect()
+    }
+
+    /// Tells the active plugins that watch `modifier` that it was tapped
+    /// twice, at the next delivery, each alone.
+    pub fn double_tapped(&mut self, modifier: host::Modifier) {
+        for entry in &self.entries {
+            if entry.state.status == Status::Active && entry.state.double_tap == Some(modifier) {
+                self.out.events.push((
+                    Some(entry.state.name.clone()),
+                    Event::DoubleTapped { modifier },
+                ));
+            }
+        }
     }
 
     /// What the active plugins keep from idle sleep: the strongest that one
@@ -4224,6 +4249,7 @@ fn clear_leftovers(state: &mut State, context: &mut Context<'_>, out: &mut Outbo
     }
     release_cursors(state, context.workspace);
     state.awake = host::Awake::Off;
+    state.double_tap = None;
     for id in std::mem::take(&mut state.panels).into_keys() {
         out.requests.push(Request::ClosePanel {
             plugin: state.name.clone(),
@@ -7019,7 +7045,8 @@ impl Host<'_, '_> {
     }
 
     /// Takes `request`, a declaration of the plugin's commands, its keys,
-    /// its subscriptions or its timers, at once: a command, a key or an item
+    /// its subscriptions, its timers or the double tap that it hears, at
+    /// once: a command, a key or an item
     /// that the plugin declared already changes nothing, so that the keymap
     /// and the menus are not made anew for it. A timer of the call's waits
     /// from the host's time of the call, and goes, as a timer that it
@@ -7027,7 +7054,10 @@ impl Host<'_, '_> {
     fn declare(&mut self, request: Asked) -> Result<Response, Error> {
         if !matches!(
             request,
-            Asked::Subscribe(_) | Asked::StartTimer { .. } | Asked::CancelTimer(_)
+            Asked::Subscribe(_)
+                | Asked::StartTimer { .. }
+                | Asked::CancelTimer(_)
+                | Asked::WatchDoubleTap(_)
         ) {
             self.within_declared()?;
         }
@@ -7189,6 +7219,7 @@ impl Host<'_, '_> {
             Asked::CancelTimer(id) => {
                 self.state.timers.remove(&id);
             }
+            Asked::WatchDoubleTap(modifier) => self.state.double_tap = modifier,
             other => {
                 return Err(Error::new(
                     Code::Fault,

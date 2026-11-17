@@ -100,6 +100,9 @@ define_class!(
             // Another app may have taken the default terminal while the app
             // was in the background.
             crate::default_terminal::look_again();
+            // The user may have allowed the double taps meanwhile, or
+            // changed the double-click interval.
+            crate::double_taps::again();
         }
 
         #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]

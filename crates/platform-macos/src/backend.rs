@@ -8,10 +8,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
-    Error, Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Platform, Point, PointerArea,
-    PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers, Shortcut, Size,
-    Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent, WindowHandle,
-    WindowId, WindowSize,
+    DoubleTaps, Error, Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Modifier, Platform,
+    Point, PointerArea, PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers,
+    Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
+    WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
@@ -544,6 +544,10 @@ impl Platform for Backend {
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
         self.global_keys.set(keys)
+    }
+
+    fn watch_double_taps(&mut self, modifiers: &[Modifier]) -> DoubleTaps {
+        crate::double_taps::set(modifiers, self.waker.clone())
     }
 
     fn close_window(&mut self, window: WindowId) {

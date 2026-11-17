@@ -1445,6 +1445,22 @@ pub enum Awake {
     Display,
 }
 
+/// A modifier key whose double tap a plugin hears, as it presses and lets
+/// go of it alone twice within the system's double-click interval, from
+/// any app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Modifier {
+    /// Control.
+    Ctrl,
+    /// Alt, Option on the Mac.
+    Alt,
+    /// Command on the Mac, Super elsewhere.
+    Cmd,
+    /// Shift.
+    Shift,
+}
+
 /// How much a plugin's notice matters, which its icon and its color tell,
 /// and how long it shows before it goes by itself.
 #[derive(

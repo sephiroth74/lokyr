@@ -176,6 +176,7 @@ open-file-dont-ask = Non chiedere più per i file
 notice-config = Il file di configurazione non si applica
 notice-font = Manca un font
 notice-global-keys = Un tasto globale non funziona
+notice-double-taps = Un doppio tocco non funziona
 notice-term = Il tipo di terminale è sconosciuto
 notice-theme = Un tema non si applica
 notice-keys = Scorciatoie scritte due volte

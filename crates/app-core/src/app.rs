@@ -29,9 +29,9 @@ use lokyr_kernel::workspace::{
 };
 use lokyr_platform_core::Layer;
 use lokyr_platform_core::{
-    AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, GlobalKey, Handler,
-    Platform, SavePanelId, ScreenPoint, Size, TimerId, WindowAttributes, WindowEvent, WindowId,
-    WindowSize,
+    AboutLine, AboutPanel, Alert, AlertId, AlertStyle, AppEvent, Appearance, DoubleTaps, GlobalKey,
+    Handler, Platform, SavePanelId, ScreenPoint, Size, TimerId, WindowAttributes, WindowEvent,
+    WindowId, WindowSize,
 };
 use lokyr_pty::Program;
 use lokyr_render_core::{Renderer, Surface as _};
@@ -882,6 +882,9 @@ pub struct App<B: Backend> {
     /// What the app keeps from idle sleep, as the platform last took it,
     /// with its assertion's name.
     awake: (host::Awake, String),
+    /// The modifiers whose double taps the platform watches for the
+    /// plugins, as the app gave them last.
+    double_taps: Vec<host::Modifier>,
     /// The jobs of the packages' service, Sleip's commands that Lokyr's own
     /// plugins start.
     packages: packages::Jobs,
@@ -1127,6 +1130,7 @@ impl<B: Backend> App<B> {
             previews: lokyr_ui_core::paint::Previews::new(),
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
+            double_taps: Vec::new(),
             packages: packages::Jobs::beside_the_app(),
             placing: BTreeMap::new(),
             placing_size: None,
@@ -2848,6 +2852,33 @@ impl<B: Backend> App<B> {
         self.report(platform, diagnostic);
     }
 
+    /// Tells whether the double taps that the plugins hear are watched:
+    /// where the system's leave to see the modifiers in other apps is not
+    /// given, a notice tells where to give it, as the platform asked for
+    /// it; else the notice goes.
+    fn tell_double_taps(&mut self, platform: &mut dyn Platform, watching: DoubleTaps) {
+        if watching != DoubleTaps::NotAllowed {
+            self.resolve(platform, &About::DoubleTaps);
+            return;
+        }
+        let named: Vec<&str> = self
+            .double_taps
+            .iter()
+            .map(|modifier| match modifier {
+                host::Modifier::Ctrl => "Control",
+                host::Modifier::Alt => "Option",
+                host::Modifier::Cmd => "Command",
+                host::Modifier::Shift => "Shift",
+            })
+            .collect();
+        let text = format!(
+            "the double tap of {} needs Lokyr allowed in System Settings › Privacy & Security › Input Monitoring, to see the modifiers in other apps; it works once you allow it and come back to Lokyr",
+            named.join(", ")
+        );
+        let diagnostic = Diagnostic::new(Code::Unavailable, text, About::DoubleTaps);
+        self.report(platform, diagnostic);
+    }
+
     /// The directory that a window that opens now starts in: the first
     /// window's, as the app starts, `start-directory` says; another's,
     /// `new-directory`, of the window that the commands run in, or the one
@@ -3985,6 +4016,18 @@ impl<B: Backend> App<B> {
             );
             self.awake = (awake, reason);
         }
+        // The double taps that the active plugins hear, watched in every
+        // app; none watches nothing, which costs nothing.
+        let taps = self.plugins.double_taps();
+        if taps != self.double_taps {
+            let modifiers: Vec<lokyr_platform_core::Modifier> = taps
+                .iter()
+                .map(|&modifier| platform_modifier(modifier))
+                .collect();
+            let watching = platform.watch_double_taps(&modifiers);
+            self.double_taps = taps;
+            self.tell_double_taps(platform, watching);
+        }
         // The images that plugins that stopped kept go, of their pictures.
         let plugins = &self.plugins;
         let stopped: Vec<String> = self
@@ -5043,6 +5086,12 @@ impl<B: Backend> App<B> {
                     self.run(platform, &invocation.command, invocation.args);
                 }
             }
+            // A modifier tapped twice, to the plugins that watch it, at the
+            // turn's end; it works, whatever a notice told before.
+            AppEvent::DoubleTap(modifier) => {
+                self.resolve(platform, &About::DoubleTaps);
+                self.plugins.double_tapped(host_modifier(modifier));
+            }
             AppEvent::Reopen => self.open_window(platform),
             AppEvent::QuitRequested => self.ask_quit(platform, true),
             // What woke the application changed what a window shows, ended
@@ -5565,6 +5614,26 @@ impl<B: Backend> Handler for App<B> {
     fn window_event(&mut self, platform: &mut dyn Platform, window: WindowId, event: WindowEvent) {
         self.take_window_event(platform, window, event);
         self.end_turn(platform);
+    }
+}
+
+/// The platform's modifier of the plugins' `modifier`.
+fn platform_modifier(modifier: host::Modifier) -> lokyr_platform_core::Modifier {
+    match modifier {
+        host::Modifier::Ctrl => lokyr_platform_core::Modifier::Control,
+        host::Modifier::Alt => lokyr_platform_core::Modifier::Alt,
+        host::Modifier::Cmd => lokyr_platform_core::Modifier::Command,
+        host::Modifier::Shift => lokyr_platform_core::Modifier::Shift,
+    }
+}
+
+/// The plugins' modifier of the platform's `modifier`.
+fn host_modifier(modifier: lokyr_platform_core::Modifier) -> host::Modifier {
+    match modifier {
+        lokyr_platform_core::Modifier::Control => host::Modifier::Ctrl,
+        lokyr_platform_core::Modifier::Alt => host::Modifier::Alt,
+        lokyr_platform_core::Modifier::Command => host::Modifier::Cmd,
+        lokyr_platform_core::Modifier::Shift => host::Modifier::Shift,
     }
 }
 

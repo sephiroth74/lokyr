@@ -24,6 +24,7 @@ tip-zoom = Premi { $keys } per ingrandire il pannello a tutto il tab, e di nuovo
 tip-focus-pane = Premi { $keys }, o lo stesso con un'altra freccia, per passare la tastiera al pannello accanto.
 tip-goto-tab = Premi { $keys } e i numeri seguenti per andare dritto a un tab dalla sua posizione.
 tip-quick-terminal = Premi { $keys } da qualsiasi app per far scendere il terminale rapido.
+tip-double-tap = Metti [plugins.quick-terminal] double-tap = "ctrl" nella config, poi premi Control due volte, da solo, per mostrare il terminale rapido da qualsiasi app.
 tip-clear = Premi { $keys } per pulire lo scrollback e lo schermo, tenendo il prompt.
 tip-font-size = Premi { $keys } per ingrandire il testo, in ogni finestra.
 

@@ -159,6 +159,7 @@ export type Cx = {
     set_state: (state: Data) -> (true?, string?, number?),
     start_timer: (delay: number, repeats: boolean) -> (number?, string?, number?),
     cancel_timer: (timer: number) -> (true?, string?, number?),
+    watch_double_tap: (modifier: Modifier?) -> (true?, string?, number?),
 }
 
 export type Event =
@@ -201,6 +202,7 @@ export type Event =
     | { kind: "theme-changed" }
     | { kind: "config-changed" }
     | { kind: "timer", id: number }
+    | { kind: "double-tapped", modifier: Modifier }
     | { kind: "custom", name: string, schema: string, value: Data }
 
 export type UiEvent =
@@ -642,6 +644,12 @@ export type MenuItem = {
 export type MenuPlace =
     | { bar: Category }
     | "pane-context"
+
+export type Modifier =
+    | "ctrl"
+    | "alt"
+    | "cmd"
+    | "shift"
 
 export type Mods = {
     shift: boolean,

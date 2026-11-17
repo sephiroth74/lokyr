@@ -833,6 +833,8 @@ fn on_kernel(
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 Event::ColorPicked { color } => plugins.color_picked(name(scenario), *color),
                 Event::ColorPanelClosed => plugins.color_panel_closed(name(scenario)),
+                // A double tap, as the platform tells it, to its watchers.
+                Event::DoubleTapped { modifier } => plugins.double_tapped(*modifier),
                 event => plugins.post(event.clone()),
             }
         }
@@ -899,7 +901,10 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
             host.render(plugin.as_mut(), &view);
         }
         for event in &step.posts {
-            host.post(event.clone());
+            match event {
+                Event::DoubleTapped { modifier } => host.double_tap(*modifier),
+                event => host.post(event.clone()),
+            };
         }
         host.advance(Duration::from_millis(step.wait));
         host.deliver(plugin.as_mut()).unwrap();
@@ -1150,11 +1155,12 @@ fn kind(request: &Request) -> usize {
         Request::FoldGroup { .. } => 136,
         Request::Ungroup(_) => 137,
         Request::Groups(_) => 138,
+        Request::WatchDoubleTap(_) => 139,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 139;
+const KINDS: usize = 140;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

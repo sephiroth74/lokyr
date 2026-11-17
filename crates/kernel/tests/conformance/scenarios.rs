@@ -25,10 +25,10 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
     DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
-    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Packages,
-    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
-    Viewport, WindowId, WindowInfo, check_file_name,
+    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier,
+    Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
+    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
+    TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -236,6 +236,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         cells_and_saves(world),
         awake(true),
         awake(false),
+        double_taps(true),
+        double_taps(false),
         notices(),
         packages(true),
         packages(false),
@@ -382,6 +384,63 @@ fn awake(allowed: bool) -> Scenario {
             (Request::KeepAwake(Awake::System), answer()),
             (Request::KeepAwake(Awake::Off), answer()),
         ])],
+    }
+}
+
+/// A modifier's double tap, of `global-hotkey`, when `allowed`: Control's
+/// watched, its tap heard and another's not, then Command's in its place,
+/// and none, of no tap heard; refused of a plugin that lacks the
+/// capability, which hears nothing.
+fn double_taps(allowed: bool) -> Scenario {
+    let answer = || {
+        if allowed {
+            Response::Done
+        } else {
+            failed(
+                Code::MissingCapability,
+                "the plugin `acme/conformer` lacks the capability `global-hotkey`",
+            )
+        }
+    };
+    let tapped = |modifier| Event::DoubleTapped { modifier };
+    let heard = |modifier| {
+        if allowed {
+            vec![tapped(modifier)]
+        } else {
+            Vec::new()
+        }
+    };
+    let watch = |modifier| Step {
+        wait: 0,
+        asks: vec![(Request::WatchDoubleTap(modifier), answer())],
+        posts: Vec::new(),
+        heard: Vec::new(),
+    };
+    let tap = |modifiers: Vec<Modifier>, heard: Vec<Event>| Step {
+        wait: 0,
+        asks: Vec::new(),
+        posts: modifiers.into_iter().map(tapped).collect(),
+        heard,
+    };
+    Scenario {
+        name: format!(
+            "a modifier's double tap, {} `global-hotkey`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::GlobalHotkey]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps: vec![
+            watch(Some(Modifier::Ctrl)),
+            tap(vec![Modifier::Cmd, Modifier::Ctrl], heard(Modifier::Ctrl)),
+            watch(Some(Modifier::Cmd)),
+            tap(vec![Modifier::Ctrl, Modifier::Cmd], heard(Modifier::Cmd)),
+            watch(None),
+            tap(vec![Modifier::Cmd], Vec::new()),
+        ],
     }
 }
 

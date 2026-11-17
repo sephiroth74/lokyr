@@ -13,7 +13,7 @@
 
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error};
 use lokyr_plugin_sdk::host::{
-    QuickEdge, QuickLength, QuickPlace, QuickScreen, WindowId, WindowInfo,
+    Modifier, QuickEdge, QuickLength, QuickPlace, QuickScreen, WindowId, WindowInfo,
 };
 use lokyr_plugin_sdk::message::{Data, Event, WINDOW_FOCUS};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -34,6 +34,9 @@ static CATALOGS: [(&str, &str); 2] = [
 pub struct QuickTerminal {
     settings: Settings,
     window: Option<WindowId>,
+    /// Whether it told the host the double tap that it watches, of its
+    /// settings', as it activated.
+    watching: bool,
 }
 
 /// Its config, as `[plugins.quick-terminal]` gives it.
@@ -43,6 +46,8 @@ struct Settings {
     place: QuickPlace,
     /// Whether it hides as it loses the focus.
     autohide: bool,
+    /// The modifier whose double tap shows or hides it, from any app.
+    double_tap: Option<Modifier>,
 }
 
 impl Default for Settings {
@@ -50,6 +55,7 @@ impl Default for Settings {
         Self {
             place: QuickPlace::default(),
             autohide: true,
+            double_tap: None,
         }
     }
 }
@@ -87,6 +93,13 @@ impl Settings {
         if let Some(Data::Boolean(autohide)) = config.get("autohide") {
             settings.autohide = *autohide;
         }
+        settings.double_tap = match text("double-tap") {
+            Some("ctrl") => Some(Modifier::Ctrl),
+            Some("alt") => Some(Modifier::Alt),
+            Some("cmd") => Some(Modifier::Cmd),
+            Some("shift") => Some(Modifier::Shift),
+            _ => None,
+        };
         let mut error = None;
         if let Some(size) = text("size") {
             match size_of(size) {
@@ -167,11 +180,15 @@ impl Plugin for QuickTerminal {
     }
 
     /// A change of its config takes it; the quick terminal that loses the
-    /// focus hides, as `autohide` says.
+    /// focus hides, as `autohide` says; its modifier's double tap shows or
+    /// hides it, as its command does.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
             match event {
                 Event::ConfigChanged => self.configure(cx)?,
+                Event::DoubleTapped { modifier } if self.settings.double_tap == Some(*modifier) => {
+                    self.toggle(cx)?;
+                }
                 Event::WindowFocus {
                     window,
                     focused: false,
@@ -194,6 +211,15 @@ impl Plugin for QuickTerminal {
                 format!("quick-terminal has no command `{name}`"),
             ));
         }
+        self.toggle(cx)
+    }
+}
+
+impl QuickTerminal {
+    /// Shows the quick terminal, at its config's place, opening it first,
+    /// in the folder of a new window's; or hides it, if it shows with the
+    /// focus. Shown without the focus, it takes the focus.
+    fn toggle(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let place = self.settings.place;
         match self.shown(cx)? {
             None => {
@@ -206,13 +232,16 @@ impl Plugin for QuickTerminal {
             Some(info) => cx.show_quick_window(info.id, Some(place)),
         }
     }
-}
 
-impl QuickTerminal {
-    /// Takes its section of the config; a size that does not read takes
-    /// the default's, and tells why.
+    /// Takes its section of the config, and watches the double tap that
+    /// it names, or none; a size that does not read takes the default's,
+    /// and tells why.
     fn configure(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let (settings, error) = Settings::of(&cx.config()?);
+        if settings.double_tap != self.settings.double_tap || !self.watching {
+            cx.watch_double_tap(settings.double_tap)?;
+            self.watching = true;
+        }
         self.settings = settings;
         error.map_or(Ok(()), Err)
     }

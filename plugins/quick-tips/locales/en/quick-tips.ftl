@@ -20,6 +20,7 @@ tip-zoom = Press { $keys } to zoom the pane to the whole tab, and again to put i
 tip-focus-pane = Press { $keys }, or the same with another arrow, to move the keyboard to the pane beside.
 tip-goto-tab = Press { $keys } and the next numbers to go straight to a tab by its place.
 tip-quick-terminal = Press { $keys } from any app to slide the quick terminal down.
+tip-double-tap = Set [plugins.quick-terminal] double-tap = "ctrl" in the config, then press Control twice, alone, to show the quick terminal from any app.
 tip-clear = Press { $keys } to clear the scrollback and the screen, the prompt kept.
 tip-font-size = Press { $keys } to make the text bigger, in every window.
 tip-switch-tab = Press { $keys } to go back to the tab you used before. Keep Control held and press Tab again to go further back.

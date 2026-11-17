@@ -316,6 +316,19 @@ impl<'a> Cx<'a> {
         self.done(Request::SetClipboardText(text.to_owned()))
     }
 
+    /// Hears the double tap of `modifier` from any app, in place of the
+    /// one before, or of none, at once: [`Event::DoubleTapped`] comes to
+    /// the plugin alone, until it stops. Of the capability
+    /// `global-hotkey`.
+    ///
+    /// [`Event::DoubleTapped`]: crate::message::Event::DoubleTapped
+    pub fn watch_double_tap(
+        &mut self,
+        modifier: Option<crate::host::Modifier>,
+    ) -> Result<(), Error> {
+        self.done(Request::WatchDoubleTap(modifier))
+    }
+
     /// Keeps the system, or the system and the display, from idle sleep,
     /// or lets it sleep, as this call returns.
     pub fn keep_awake(&mut self, awake: crate::host::Awake) -> Result<(), Error> {
