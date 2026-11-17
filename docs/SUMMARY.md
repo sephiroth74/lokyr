@@ -31,6 +31,8 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 
 - [Configuration](CONFIGURATION.md)
 - [Escape codes](escape-codes.md)
+  - [Progress and status](escape-codes/progress-and-status.md)
+  - [Notifications](escape-codes/notifications.md)
 - [Changelog](../CHANGELOG.md)
 - [Release notes](releases/README.md)
 - [Writing a plugin](plugins/authoring.md)

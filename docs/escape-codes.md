@@ -64,7 +64,7 @@ Prefer a query for each feature, such as DECRQM for a mode, to a check of the na
 
 ## The codes that Lokyr reads
 
-xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html) describe the standard codes, which Lokyr reads as xterm does unless the table says otherwise. The codes that a later version brought say so in the **Since** column. Lokyr ignores a code that it doesn't read, and shows nothing of it.
+xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html) describe the standard codes, which Lokyr reads as xterm does unless the table says otherwise. The codes of a page of their own link to it: [progress and status](escape-codes/progress-and-status.md) and [notifications](escape-codes/notifications.md). The codes that a later version brought say so in the **Since** column. Lokyr ignores a code that it doesn't read, and shows nothing of it.
 
 ### Controls, the cursor and editing
 
@@ -105,14 +105,14 @@ xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.h
 | OSC 8 | Hyperlinks | 0.2 | [Hyperlinks in terminals](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda) |
 | OSC 10, 11 and 12, and 110, 111 and 112 | The text's, the background's and the cursor's colors, set, asked for and reset | 0.2 | [xterm](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands) |
 | OSC 52 | The clipboard: written, and read only as [`[clipboard] read`](CONFIGURATION.md#read) allows | 0.2 | [xterm](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands) |
-| OSC 9 and 777 | Desktop notifications | 0.2 | |
+| [OSC 9](escape-codes/notifications.md#osc-9-a-notification) and [777](escape-codes/notifications.md#osc-777-a-notification-with-a-title) | Desktop notifications | 0.2 | |
 | OSC 6 ; 1 | The tab's color | 0.5.1 | [Its escape codes](https://iterm2.com/documentation-escape-codes.html) |
-| OSC 9 ; 4 | A program's progress, on its tab | 0.5.1 | [Progress bar sequences](https://learn.microsoft.com/en-us/windows/terminal/tutorials/progress-bar-sequences) |
+| [OSC 9 ; 4](escape-codes/progress-and-status.md#osc-94-progress) | A program's progress, on its tab | 0.5.1 | [Progress bar sequences](https://learn.microsoft.com/en-us/windows/terminal/tutorials/progress-bar-sequences) |
 | OSC 133 | Semantic prompts: where each prompt, command and output starts | 0.7 | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
 | OSC 1337 `File=` | Inline images, whole or in parts (`MultipartFile=`, `FilePart=`, `FileEnd`) | 1.0 | [Inline images](https://iterm2.com/documentation-images.html) |
-| OSC 99 | Desktop notifications of a title and a body, in parts, and the query of what the terminal supports · not released yet | | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
-| OSC 7501 | A program's status, such as working, waiting or done · not released yet | | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
-| OSC 21337 | A session's status, shown on its tab · not released yet | | [Session status](https://iterm2.com/documentation-session-status.html) |
+| [OSC 99](escape-codes/notifications.md#osc-99-a-notification-in-parts) | Desktop notifications of a title and a body, in parts, and the query of what the terminal supports · not released yet | | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
+| [OSC 7501](escape-codes/progress-and-status.md#osc-7501-a-programs-status) | A program's status, such as working, waiting or done · not released yet | | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
+| [OSC 21337](escape-codes/progress-and-status.md#osc-21337-a-sessions-status) | A session's status, shown on its tab · not released yet | | [Session status](https://iterm2.com/documentation-session-status.html) |
 
 ### The keyboard and graphics
 
