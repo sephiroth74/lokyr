@@ -13,7 +13,7 @@
 //! line, as the proposal's end of the line has it.
 
 use super::Terminal;
-use crate::page::{Content, RowFlag, Semantic, Width};
+use crate::page::{Cell, Content, RowFlag, Semantic, Width};
 
 /// The most arrows that a click sends, and the most arrows and deletes
 /// that a selection's replacement sends, past which it sends none.
@@ -243,7 +243,7 @@ impl Terminal {
         {
             return None;
         }
-        if self.holds_other_text(first, last) {
+        if self.holds_other_text(start, first, last) {
             return None;
         }
         let from = line.before((first.1, u32::from(self.character_x(first.0, first.1))));
@@ -270,21 +270,26 @@ impl Terminal {
     }
 
     /// Whether the cells from `first` to `last`, by column and screen's
-    /// row, in reading order, hold a character not of the input, as a
-    /// right prompt's: the blank cells after a line's text hold none.
-    fn holds_other_text(&self, first: (u16, u16), last: (u16, u16)) -> bool {
+    /// row, in reading order, of the command line from `start`, hold a
+    /// character not of the input: a prompt's, or the input's past the
+    /// blank cells that end a row's input, as a right prompt that no mark
+    /// tells is; the blank cells after a line's text hold none.
+    fn holds_other_text(&self, start: (u16, u16), first: (u16, u16), last: (u16, u16)) -> bool {
         let rows = &self.screen().rows;
         (first.1..=last.1).any(|y| {
             let (page, row) = rows.screen_row(y);
+            let cells = page.cells(row);
+            let end = input_end(cells, if y == start.1 { start.0 } else { 0 });
             let from = if y == first.1 { first.0 } else { 0 };
             let to = if y == last.1 { last.0 } else { u16::MAX };
-            page.cells(row)
+            cells
                 .iter()
                 .enumerate()
                 .skip(usize::from(from))
                 .take_while(|&(x, _)| x <= usize::from(to))
-                .any(|(_, cell)| {
-                    cell.semantic() != Semantic::Input && has_character(cell.content())
+                .any(|(x, cell)| {
+                    has_character(cell.content())
+                        && (cell.semantic() != Semantic::Input || x >= end)
                 })
         })
     }
@@ -311,16 +316,26 @@ impl Terminal {
     }
 
     /// The command line from `start`: its characters, the cells that the
-    /// shell printed since `B`, and the ends of its lines that do not wrap
-    /// into the next row, to its last character, or to the cursor past it,
-    /// as the blank cells that a line's erase leaves show none.
+    /// shell printed since `B` up to the blank cells that end each row's
+    /// input, past which a right prompt that no mark tells is no part of
+    /// it, and the ends of its lines that do not wrap into the next row, to
+    /// its last character other than a space, or to the cursor past it, as
+    /// the blank cells that a line's erase leaves show none and the spaces
+    /// that a line editor erases a character with count not.
     fn edited_line(&self, (start_x, start_y): (u16, u16)) -> CommandLine {
         let rows = &self.screen().rows;
         let mut steps = Vec::new();
         for row_y in start_y..self.rows() {
             let (page, row) = rows.screen_row(row_y);
             let from = if row_y == start_y { start_x } else { 0 };
-            for (cell_x, cell) in page.cells(row).iter().enumerate().skip(usize::from(from)) {
+            let cells = page.cells(row);
+            let end = input_end(cells, from);
+            for (cell_x, cell) in cells
+                .iter()
+                .enumerate()
+                .skip(usize::from(from))
+                .take(end.saturating_sub(usize::from(from)))
+            {
                 if cell.semantic() == Semantic::Input
                     && !matches!(cell.width(), Width::SpacerTail | Width::SpacerHead)
                     && let Ok(x) = u16::try_from(cell_x)
@@ -332,7 +347,7 @@ impl Terminal {
                             y: row_y,
                             grapheme,
                         },
-                        has_character(cell.content()),
+                        shows_text(cell.content()),
                     ));
                 }
             }
@@ -437,6 +452,25 @@ fn arrows(from: usize, to: usize) -> Option<PromptClick> {
 /// Whether a cell of `content` shows a character, a space too.
 fn has_character(content: Content) -> bool {
     matches!(content, Content::Char(c) | Content::Grapheme(c) if c != '\0')
+}
+
+/// Whether a cell of `content` shows a character other than a space, as a
+/// line editor that erases a character by writing a space over it leaves.
+fn shows_text(content: Content) -> bool {
+    matches!(content, Content::Char(c) | Content::Grapheme(c) if c != '\0' && c != ' ')
+}
+
+/// Where the input of the row of `cells` ends, from the column `from`: at
+/// its first blank cell that is no input's nor prompt's, as the semantic
+/// prompts' input line holds its input, then a blank area, then a final
+/// prompt, which a shell may draw of no mark; the row's end of none.
+fn input_end(cells: &[Cell], from: u16) -> usize {
+    cells
+        .iter()
+        .enumerate()
+        .skip(usize::from(from))
+        .find(|(_, cell)| cell.semantic() == Semantic::Output && !has_character(cell.content()))
+        .map_or(cells.len(), |(x, _)| x)
 }
 
 #[cfg(test)]

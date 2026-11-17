@@ -241,6 +241,70 @@ fn a_right_prompt_is_no_part_of_the_command_line() {
 }
 
 #[test]
+fn the_spaces_that_zsh_erases_with_are_no_part_of_the_command_line() {
+    // zsh erases a character with `\b \b`: `echo hello` and three
+    // Backspaces leave `echo he` and three spaces, the cursor at 9.
+    let mut terminal = fed(
+        40,
+        &prompt(";cl=line", "echo hello\x08 \x08\x08 \x08\x08 \x08"),
+    );
+    assert_eq!(terminal.cursor().x, 9);
+    // `he` to past the end: its two characters, from the cursor.
+    assert_eq!(replaced(&mut terminal, (7, 20), 0), Some((None, 2)));
+    // A click past the end: at the end already.
+    assert_eq!(click(&terminal, 15, 0), None);
+    // Control-W writes spaces over the word it takes: `echo hello world`,
+    // Control-W, then a Backspace, leave `echo hello`.
+    let mut terminal = fed(
+        40,
+        &prompt(
+            ";cl=line",
+            "echo hello world\x08\x08\x08\x08\x08     \x08\x08\x08\x08\x08\x08 \x08",
+        ),
+    );
+    assert_eq!(terminal.cursor().x, 12);
+    assert_eq!(replaced(&mut terminal, (7, 30), 0), Some((None, 5)));
+    // Spaces typed within the line stay its characters.
+    let mut terminal = fed(40, &prompt(";cl=line", "a  b"));
+    assert_eq!(replaced(&mut terminal, (3, 5), 0), Some((None, 3)));
+}
+
+/// fish 4's prompt, as it draws it: its start of the clicks' events, its
+/// input's mark, a right prompt of no mark at the row's end after a
+/// carriage return, then the cursor back in the input, which `typed` fills.
+fn fish(typed: &str) -> Terminal {
+    fed(
+        60,
+        &format!(
+            "\x1b]133;A;click_events=1\x07fish> \x1b]133;B\x07\r\x1b[54CRIGHTP\r\x1b[6C{typed}"
+        ),
+    )
+}
+
+#[test]
+fn a_right_prompt_of_no_mark_is_no_part_of_the_command_line() {
+    let mut terminal = fish("echo hi");
+    assert_eq!(terminal.cell(55, 0).semantic(), Semantic::Input);
+    assert_eq!(terminal.cursor().x, 13);
+    // A selection of the right prompt, or up to it, is no command line's.
+    assert_eq!(replaced(&mut terminal, (54, 59), 0), None);
+    assert_eq!(replaced(&mut terminal, (11, 59), 0), None);
+    // One of `hi` to the blank cells before it is: its two characters.
+    assert_eq!(replaced(&mut terminal, (11, 40), 0), Some((None, 2)));
+    // A click on the right prompt is past the input's end.
+    Parser::new().advance(&mut terminal, b"\x1b[5D");
+    let at = terminal.cursor().x;
+    assert_eq!(at, 8);
+    assert_eq!(
+        replaced(&mut terminal, (6, 9), 0),
+        Some((Some(PromptClick::Right(2)), 4))
+    );
+    // Of no input yet, the right prompt is no command line either.
+    let mut empty = fish("");
+    assert_eq!(replaced(&mut empty, (54, 59), 0), None);
+}
+
+#[test]
 fn a_right_prompt_of_no_input_s_mark_ends_as_the_text_goes_back_before_it() {
     let mut terminal = with_right_prompt(false);
     for x in 35..39 {

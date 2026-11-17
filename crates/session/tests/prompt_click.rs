@@ -265,3 +265,103 @@ fn bash_of_no_output_mark_announces_no_clicks() {
     });
     assert_eq!(session.lock().prompt_clicks(), None);
 }
+
+/// A Backspace pressed, as the key that takes a selection away.
+fn backspace() -> KeyEvent<'static> {
+    KeyEvent {
+        key: Key::Backspace,
+        action: KeyAction::Press,
+        mods: Mods::default(),
+        text: "",
+        unmodified: "",
+        base_layout: None,
+    }
+}
+
+/// Selects from column `from` to column `to` of the cursor's row.
+fn select_on_cursor_row(session: &Session, from: u16, to: u16) {
+    let mut terminal = session.lock();
+    let row = terminal.origin().row(terminal.cursor().y);
+    terminal.select(
+        (from, row),
+        (to, row),
+        SelectionShape::Cells,
+        SelectionUnit::Cell,
+        "",
+    );
+}
+
+#[test]
+fn zsh_s_erased_characters_are_no_part_of_a_selection_that_goes() {
+    let Some(zsh) = found(&["/bin/zsh", "/usr/bin/zsh", "/opt/homebrew/bin/zsh"]) else {
+        eprintln!("no zsh here");
+        return;
+    };
+    let home = home("zsh-erased", &[(".zshrc", "PS1='zsh> '\n")]);
+    let session = shell(&zsh, &home);
+    until(&session, "the prompt", |terminal| {
+        terminal.prompt_clicks().is_some()
+    });
+    // Three Backspaces, which zsh draws as spaces over the characters.
+    session.send("echo hello\x7f\x7f\x7f");
+    until(&session, "echo he", |terminal| {
+        terminal.row_text(terminal.cursor().y).trim_end() == "zsh> echo he"
+    });
+    // `he` and past the line's end: `he` alone goes.
+    let col = column_of(&session.lock(), "he");
+    select_on_cursor_row(&session, col, col + 20);
+    assert!(session.replace_selection(&backspace(), KeyOptions::default()));
+    until(&session, "the selection taken away", |terminal| {
+        terminal.row_text(terminal.cursor().y).trim_end() == "zsh> echo"
+    });
+    session.send("\r");
+    until(&session, "the next prompt", |terminal| {
+        terminal.row_text(terminal.cursor().y).trim_end() == "zsh>"
+    });
+}
+
+#[test]
+fn fish_s_right_prompt_is_no_part_of_a_selection_that_goes() {
+    let Some(fish) = found(&[
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+        "/usr/bin/fish",
+    ]) else {
+        eprintln!("no fish here");
+        return;
+    };
+    let home = home(
+        "fish-right",
+        &[(
+            ".config/fish/config.fish",
+            "function fish_prompt; echo -n 'fish> '; end\nfunction fish_right_prompt; echo -n RIGHTP; end\nfunction fish_greeting; end\n",
+        )],
+    );
+    let session = shell(&fish, &home);
+    until(&session, "the prompt", |terminal| {
+        let text = terminal.row_text(terminal.cursor().y);
+        terminal.prompt_clicks().is_some() && text.trim_end().ends_with("RIGHTP")
+    });
+    session.send("echo hi");
+    until(&session, "the command", |terminal| {
+        terminal
+            .row_text(terminal.cursor().y)
+            .starts_with("fish> echo hi")
+    });
+    // `hi` up to the right prompt's end is no command line's.
+    let (hi, right) = {
+        let terminal = session.lock();
+        (column_of(&terminal, "hi"), column_of(&terminal, "RIGHTP"))
+    };
+    select_on_cursor_row(&session, hi, right + 5);
+    assert!(!session.replace_selection(&backspace(), KeyOptions::default()));
+    // `hi` to the blank cells before it goes alone.
+    select_on_cursor_row(&session, hi, right - 2);
+    assert!(session.replace_selection(&backspace(), KeyOptions::default()));
+    until(&session, "the selection taken away", |terminal| {
+        let text = terminal.row_text(terminal.cursor().y);
+        text.starts_with("fish> echo ")
+            && !text.contains("hi")
+            && text.trim_end().ends_with("RIGHTP")
+    });
+}
