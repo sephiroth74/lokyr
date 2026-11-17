@@ -770,7 +770,7 @@ impl View {
         let local = self.local(panel, at);
         let events = self
             .surface_mut(panel)
-            .map(|surface| surface.scrolled(local, delta))
+            .map(|surface| surface.scrolled(local, delta, Instant::now()))
             .unwrap_or_default();
         self.apply(events);
     }
