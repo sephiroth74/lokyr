@@ -9,6 +9,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 
 ## Use
 
+- [Shell integration](shell-integration.md)
 - [AI agents](agents.md)
 - [Plugins](plugins/README.md)
   - [Tab bar](plugins/tabs.md)

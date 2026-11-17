@@ -10,6 +10,7 @@ Lokyr is a fast terminal for macOS, written in Rust. Every feature that you see,
 
 ## Use Lokyr
 
+- [Shell integration](shell-integration.md): how your shell reports its prompts and commands, so that you can jump between them, see which failed, and click in the command line.
 - [AI agents](agents.md): what a tab shows of the AI coding agents that run in it, and how to find the one that needs you.
 - [Plugins](plugins/README.md): the plugins that come with Lokyr, a page each, such as the [tab bar](plugins/tabs.md), the [splits](plugins/splits.md), [find](plugins/search.md), [links and hints](plugins/links.md) and the [quick terminal](plugins/quick-terminal.md); and how to install more with Sleip.
 
