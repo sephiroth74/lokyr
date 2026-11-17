@@ -476,7 +476,7 @@ fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
     // Of the row's room, which scrolls past its tabs' least widths.
     let track = Node::scroll(
         tabs.iter()
-            .map(|tab| told(pill(tab, (settings, texts)), tab.tab))
+            .map(|tab| tip(pill(tab, (settings, texts)), tab))
             .collect(),
     )
     .key(TRACK_KEY)
@@ -543,7 +543,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     } else {
         middle.extend(dot(tab.tab.color));
     }
-    middle.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
+    middle.extend(narrow_marks(tab.tab, &texts.marks));
     middle.push(Node::text(short_title(tab).as_str()));
     if !pinned {
         middle.extend(tab.keys.map(keys));
@@ -586,7 +586,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
     } else {
         (0.0, LEAST_PILL, 1.0)
     };
-    pinned_tip(
+    pinned_label(
         Node::container(children)
             .key(tab_key(tab.tab.id.0).as_str())
             .carries(tab.tab.id)
@@ -637,11 +637,11 @@ fn short_title(tab: &Shown<'_>) -> String {
     }
 }
 
-/// `node`, of a pinned `tab`, of its whole title as its tooltip, which an
-/// agent's message takes the place of.
-fn pinned_tip(node: Node, tab: &Shown<'_>) -> Node {
+/// `node`, of a pinned `tab`, of its whole title as its label to
+/// accessibility, in place of the first letters that it shows.
+fn pinned_label(node: Node, tab: &Shown<'_>) -> Node {
     if tab.tab.pinned {
-        node.tooltip(tab.title.as_str())
+        node.label(tab.title.as_str())
     } else {
         node
     }
@@ -678,7 +678,7 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
         if at > 0 {
             strip.push(Node::separator());
         }
-        strip.push(told(cell(tab, top, (settings, texts)), tab.tab));
+        strip.push(tip(cell(tab, top, (settings, texts)), tab));
     }
     children.push(
         Node::scroll(strip)
@@ -766,7 +766,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     } else if settings.close_button != CloseButton::Never {
         children.push(close_button(tab.tab.id.0, settings.close_button, texts));
     }
-    children.extend(marks(tab.tab, &texts.marks, ProgressAt::Outline));
+    children.extend(narrow_marks(tab.tab, &texts.marks));
     children.push(title);
     if !pinned {
         children.extend(dot(tab.tab.color));
@@ -795,7 +795,7 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     } else {
         (0.0, LEAST_CELL, 1.0)
     };
-    pinned_tip(
+    pinned_label(
         lined(
             content,
             top,
@@ -1113,16 +1113,33 @@ fn status_text(tab: &TabInfo) -> Option<String> {
     }
 }
 
-/// `node`, of `tab`, of the message of its agent that waits as its
-/// tooltip, or of the status that its program tells of its session, as
-/// the tab tells no more than its mark.
-fn told(node: Node, tab: &TabInfo) -> Node {
-    match waiting_message(tab)
+/// What `tab` tells beyond its mark: the message of its agent that waits,
+/// or the status that its program tells of its session.
+fn told_text(tab: &TabInfo) -> Option<String> {
+    waiting_message(tab)
         .map(str::to_owned)
         .or_else(|| status_text(tab))
-    {
-        Some(message) => node.tooltip(message),
+}
+
+/// `node`, of `tab`, of what it tells beyond its mark as its tooltip, of a
+/// tab that shows its whole title.
+fn told(node: Node, tab: &TabInfo) -> Node {
+    match told_text(tab) {
+        Some(told) => node.tooltip(told),
         None => node,
+    }
+}
+
+/// `node`, of `tab`, as [`told`] gives it, but of a pinned tab, whose first
+/// letters cut its title, of its whole title as its tooltip, what it tells
+/// after it.
+fn tip(node: Node, tab: &Shown<'_>) -> Node {
+    if !tab.tab.pinned {
+        return told(node, tab.tab);
+    }
+    match told_text(tab.tab) {
+        Some(told) => node.tooltip(format!("{} — {told}", tab.title)),
+        None => node.tooltip(tab.title.as_str()),
     }
 }
 
@@ -1134,9 +1151,38 @@ fn told(node: Node, tab: &TabInfo) -> Node {
 /// full-screen one; or a dot of the output that came while it did not
 /// show; or a ring of a program that runs, which stands still.
 fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
+    ranked_marks(tab, texts, at)
+        .into_iter()
+        .map(|(_, mark)| mark)
+        .collect()
+}
+
+/// The marks of `tab` as [`marks`] gives them, round its outline, of a tab
+/// of its whole width; of a pinned tab, too narrow for more beside its pin
+/// and its letters, the most urgent alone, the first of them of the least
+/// rank.
+fn narrow_marks(tab: &TabInfo, texts: &MarkTexts) -> Vec<Node> {
+    let ranked = ranked_marks(tab, texts, ProgressAt::Outline);
+    if !tab.pinned {
+        return ranked.into_iter().map(|(_, mark)| mark).collect();
+    }
+    let most = ranked.iter().map(|&(rank, _)| rank).min();
+    ranked
+        .into_iter()
+        .find(|&(rank, _)| Some(rank) == most)
+        .map(|(_, mark)| mark)
+        .into_iter()
+        .collect()
+}
+
+/// The marks of [`marks`], each of its urgency's rank, the least the most
+/// urgent: an agent that waits or failed, the bell, the protected input's
+/// lock, another agent's state or the status's dot, the progress or the
+/// spinner, the output that came, and a program that runs.
+fn ranked_marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<(u8, Node)> {
     let mut marks = Vec::new();
     if tab.secure {
-        marks.push(Node::icon("lock").label(texts.secure.as_str()));
+        marks.push((2, Node::icon("lock").label(texts.secure.as_str())));
     }
     if let Some(agent) = tab.agent {
         let (icon, color, label) = match agent {
@@ -1149,18 +1195,27 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
             Some(message) => format!("{label}: {message}"),
             None => label.clone(),
         };
-        marks.push(Node::icon(icon).label(label).style(Style {
-            color: Some(Token::from(color)),
-            ..Style::default()
-        }));
+        let rank = if matches!(agent, AgentState::Waiting | AgentState::Error) {
+            0
+        } else {
+            3
+        };
+        marks.push((
+            rank,
+            Node::icon(icon).label(label).style(Style {
+                color: Some(Token::from(color)),
+                ..Style::default()
+            }),
+        ));
     } else if let Some(Color::Rgb(red, green, blue)) = tab
         .status
         .as_ref()
         .and_then(|status| status.indicator.or(status.color))
     {
         // The status that its program tells of its session, of its dot's
-        // color, or of its text's of none, as iTerm2's.
-        marks.push(
+        // color, or of its text's of none.
+        marks.push((
+            3,
             Node::container(vec![])
                 .label(status_text(tab).unwrap_or_else(|| texts.running.clone()))
                 .style(Style {
@@ -1176,10 +1231,10 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
                     height: Length::Points(7.0),
                     ..Layout::default()
                 }),
-        );
+        ));
     }
     if tab.bell {
-        marks.push(Node::icon("bell").label(texts.bell.as_str()));
+        marks.push((1, Node::icon("bell").label(texts.bell.as_str())));
     }
     let circle = |style: Style, label: &str| {
         Node::container(vec![])
@@ -1200,15 +1255,15 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
     // for the user, as ssh, a REPL or an agent, keeps the ring, as a
     // full-screen program, as vim, which may stay for hours.
     if let Some(progress) = tab.progress.filter(|_| at == ProgressAt::Ring) {
-        marks.push(ring(progress, texts.running.as_str()));
+        marks.push((4, ring(progress, texts.running.as_str())));
     } else if tab.running && tab.printing && !tab.alternate && tab.progress.is_none() {
-        marks.push(spinner(texts.running.as_str()));
+        marks.push((4, spinner(texts.running.as_str())));
     } else if tab.activity {
         let style = Style {
             background: Some(Token::from("accent")),
             ..Style::default()
         };
-        marks.push(circle(style, texts.activity.as_str()));
+        marks.push((5, circle(style, texts.activity.as_str())));
     } else if tab.running {
         let style = Style {
             border: Some(Border {
@@ -1217,7 +1272,7 @@ fn marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<Node> {
             }),
             ..Style::default()
         };
-        marks.push(circle(style, texts.running.as_str()));
+        marks.push((6, circle(style, texts.running.as_str())));
     }
     marks
 }

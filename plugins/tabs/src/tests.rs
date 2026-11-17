@@ -1101,3 +1101,146 @@ fn a_closed_tab_is_kept_for_the_config_s_seconds_and_reopen_gives_it_back() {
         }]
     );
 }
+
+/// The node of the tab `tab` in `bar`, which carries it.
+fn tab_node(bar: &Node, tab: TabId) -> Node {
+    let mut walk = vec![bar];
+    while let Some(node) = walk.pop() {
+        if node.carries == Some(tab) {
+            return node.clone();
+        }
+        walk.extend(node.children.iter());
+    }
+    panic!("no node of the tab {tab:?}");
+}
+
+/// The labels of `node`'s subtree, in their order.
+fn labels(node: &Node) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut walk = vec![node];
+    while let Some(node) = walk.pop() {
+        found.extend(node.label.clone());
+        walk.extend(node.children.iter().rev());
+    }
+    found
+}
+
+#[test]
+fn a_pinned_tab_tells_its_whole_title_and_its_agent_and_shows_its_most_urgent_mark() {
+    use lokyr_plugin_sdk::fake::TabMarks;
+    use lokyr_plugin_sdk::host::AgentState;
+
+    let marks = TabMarks {
+        agent: Some(AgentState::Waiting),
+        agent_message: Some("Allow the edit?".to_owned()),
+        bell: true,
+        activity: true,
+        running: true,
+        secure: true,
+        pinned: true,
+        ..TabMarks::default()
+    };
+    for look in ["unified", "seamless"] {
+        let (mut host, mut plugin) = host(&[1, 1], 1);
+        host.set_config(Data::Map(BTreeMap::from([(
+            "style".to_owned(),
+            Data::Text(look.to_owned()),
+        )])));
+        host.pane(PaneId(2)).title = Some("cargo test".to_owned());
+        host.set_tab_marks(TabId(2), marks.clone());
+        host.deliver(&mut plugin).unwrap();
+        let bar = host
+            .render(&mut plugin, &ViewId::TabBar(WINDOW))
+            .expect("a bar of two tabs");
+        let pinned = tab_node(&bar, TabId(2));
+        // Its whole title, which its letters cut, and the agent's message,
+        // in its tooltip; its title its label to accessibility.
+        assert_eq!(
+            pinned.tooltip.as_deref(),
+            Some("cargo test — Allow the edit?"),
+            "{look}"
+        );
+        assert_eq!(pinned.label.as_deref(), Some("cargo test"), "{look}");
+        // Beside its pin, the waiting agent alone, of its marks.
+        assert_eq!(
+            labels(&pinned),
+            ["cargo test", "Pinned", "Agent Waiting: Allow the edit?"],
+            "{look}"
+        );
+        // Of no agent, its bell.
+        host.set_tab_marks(
+            TabId(2),
+            TabMarks {
+                agent: None,
+                agent_message: None,
+                ..marks.clone()
+            },
+        );
+        host.deliver(&mut plugin).unwrap();
+        let bar = host
+            .render(&mut plugin, &ViewId::TabBar(WINDOW))
+            .expect("a bar of two tabs");
+        let pinned = tab_node(&bar, TabId(2));
+        assert_eq!(pinned.tooltip.as_deref(), Some("cargo test"), "{look}");
+        assert_eq!(labels(&pinned), ["cargo test", "Pinned", "Bell"], "{look}");
+        // A tab not pinned keeps every mark, and its tooltip the message
+        // alone, as it shows its title.
+        host.set_tab_marks(
+            TabId(2),
+            TabMarks {
+                pinned: false,
+                ..marks.clone()
+            },
+        );
+        host.deliver(&mut plugin).unwrap();
+        let bar = host
+            .render(&mut plugin, &ViewId::TabBar(WINDOW))
+            .expect("a bar of two tabs");
+        let shown = tab_node(&bar, TabId(2));
+        assert_eq!(shown.tooltip.as_deref(), Some("Allow the edit?"), "{look}");
+        let every = labels(&shown);
+        for mark in ["Secure Keyboard Entry", "Bell"] {
+            assert!(every.contains(&mark.to_owned()), "{look}: {every:?}");
+        }
+    }
+}
+
+#[test]
+fn close_other_tabs_spares_the_pinned_tabs() {
+    use lokyr_plugin_sdk::fake::TabMarks;
+
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    host.set_tab_marks(
+        TabId(2),
+        TabMarks {
+            pinned: true,
+            ..TabMarks::default()
+        },
+    );
+    host.deliver(&mut plugin).unwrap();
+    let bar = ViewId::TabBar(WINDOW);
+    host.render(&mut plugin, &bar).expect("a bar of three tabs");
+    let mut on = |view: ViewId, key: &str, kind| {
+        host.take_done();
+        host.ui_event(
+            &mut plugin,
+            &UiEvent {
+                view,
+                key: key.into(),
+                kind,
+            },
+        )
+        .unwrap();
+        host.take_done()
+    };
+    on(bar, "tab-1", UiEventKind::ContextMenu);
+    let menu = ViewId::Panel(PanelId::from("tab-menu"));
+    let closed: Vec<TabId> = on(menu, "menu-close-others", UiEventKind::Click)
+        .iter()
+        .filter_map(|request| match request {
+            Request::CloseTab { tab, .. } => Some(*tab),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(closed, [TabId(3)]);
+}

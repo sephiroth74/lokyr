@@ -705,8 +705,10 @@ impl Tabs {
             MENU_RENAME => self.rename(cx, window, shown, &Args::new()),
             MENU_DETACH if tabs.len() > 1 => cx.tab_to_new_window(tab),
             MENU_CLOSE => cx.close_tab_kept(tab, true, self.settings.reopen_seconds),
+            // The others but the pinned ones, as their key closes no pinned
+            // tab.
             MENU_CLOSE_OTHERS => {
-                for other in tabs.iter().filter(|other| other.id != tab) {
+                for other in tabs.iter().filter(|other| other.id != tab && !other.pinned) {
                     cx.close_tab_kept(other.id, true, self.settings.reopen_seconds)?;
                 }
                 Ok(())
