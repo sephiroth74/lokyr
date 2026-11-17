@@ -1102,7 +1102,9 @@ fn a_pattern_of_a_url_that_does_not_open_is_left_out_and_told_once_a_change() {
         .collect();
     assert_eq!(
         notices,
-        ["The hint `editor` has a URL that doesn't open: only http, https, mailto, file URLs open"]
+        [
+            "The hint `editor` has a URL that doesn't open, `vscode://file/work/$0`: only http, https, mailto, file URLs open"
+        ]
     );
     // The config changed, of the same problem: no notice.
     let lokyr_plugin_sdk::message::Data::Map(mut changed) = config else {
@@ -1117,15 +1119,39 @@ fn a_pattern_of_a_url_that_does_not_open_is_left_out_and_told_once_a_change() {
     host.deliver(&mut links).unwrap();
     assert_eq!(links.alphabet.as_deref(), Some("jkl"));
     assert_eq!(host.notices().len(), 1);
-    // A pattern that does not read, of an error of several lines, beside
-    // it: one notice of both, of one line.
+    // Its URL changed, to another that does not open: told again.
+    host.advance(std::time::Duration::from_secs(2));
+    host.set_config(hints_config(&[(
+        "editor",
+        r"\w+\.rs",
+        Some("vvsxcode://file/work/$0"),
+    )]));
+    host.deliver(&mut links).unwrap();
+    assert_eq!(host.notices().len(), 2);
+    assert!(host.notices()[1].text.contains("`vvsxcode://file/work/$0`"));
+    // Of another problem too soon after, the host takes no notice: told at
+    // the next change that keeps it.
     host.set_config(hints_config(&[
-        ("editor", r"\w+\.rs", Some("vscode://file/work/$0")),
+        ("editor", r"\w+\.rs", Some("vvsxcode://file/work/$0")),
         ("broken", "(", None),
     ]));
     host.deliver(&mut links).unwrap();
-    let notice = &host.notices().last().unwrap().text;
     assert_eq!(host.notices().len(), 2);
+    host.advance(std::time::Duration::from_secs(2));
+    host.set_config(hints_config(&[
+        ("editor", r"\w+\.rs", Some("vvsxcode://file/work/$0")),
+        ("broken", "(", None),
+        (
+            "jira",
+            r"PROJ-\d+",
+            Some("https://jira.example.com/browse/$0"),
+        ),
+    ]));
+    host.deliver(&mut links).unwrap();
+    assert_eq!(host.notices().len(), 3);
+    // A pattern that does not read, of an error of several lines, beside
+    // it: one notice of both, of one line.
+    let notice = &host.notices().last().unwrap().text;
     assert!(
         notice.contains("`broken`") && notice.contains("`editor`") && !notice.contains('\n'),
         "{notice}"
@@ -1134,7 +1160,7 @@ fn a_pattern_of_a_url_that_does_not_open_is_left_out_and_told_once_a_change() {
     host.advance(std::time::Duration::from_secs(2));
     host.set_config(hints_config(&[]));
     host.deliver(&mut links).unwrap();
-    assert_eq!(host.notices().len(), 2);
+    assert_eq!(host.notices().len(), 3);
     assert!(links.told.is_none());
 }
 

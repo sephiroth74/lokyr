@@ -20,7 +20,7 @@ hints-action-select = Select
 # doesn't read, of its name and its error; a URL whose scheme doesn't
 # open, of the schemes that do; an alphabet that isn't one.
 hints-pattern-refused = The hint `{ $name }` has a pattern that doesn't read: { $error }
-hints-url-refused = The hint `{ $name }` has a URL that doesn't open: only { $schemes } URLs open
+hints-url-refused = The hint `{ $name }` has a URL that doesn't open, `{ $url }`: only { $schemes } URLs open
 hints-alphabet-refused = The hints' alphabet `{ $alphabet }` isn't lowercase letters and digits, each once: the hints keep the default
 
 # The notice of a pick that failed, of the hint's text and the error.

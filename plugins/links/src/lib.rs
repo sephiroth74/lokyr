@@ -86,7 +86,7 @@ const ENGLISH: [(&str, &str); 9] = [
     ),
     (
         "hints-url-refused",
-        "The hint `{ $name }` has a URL that doesn't open: only { $schemes } URLs open",
+        "The hint `{ $name }` has a URL that doesn't open, `{ $url }`: only { $schemes } URLs open",
     ),
     (
         "hints-alphabet-refused",
@@ -663,10 +663,14 @@ impl Links {
                     "hints-pattern-refused",
                     &[("name", &name), ("error", &error)],
                 ),
-                Refusal::Url(name) => message(
+                Refusal::Url(name, url) => message(
                     cx,
                     "hints-url-refused",
-                    &[("name", &name), ("schemes", &OPEN_SCHEMES.join(", "))],
+                    &[
+                        ("name", &name),
+                        ("url", &url),
+                        ("schemes", &OPEN_SCHEMES.join(", ")),
+                    ],
                 ),
             });
         }
@@ -685,14 +689,20 @@ impl Links {
             }
         }
         // One notice of them all, as a plugin's notices come a second
-        // apart at least.
+        // apart at least; one that the host did not take, as it came too
+        // soon after another, is told at the next change.
         let told = (!problems.is_empty()).then(|| notice_text(&problems.join(" · ")));
-        if told != self.told
-            && let Some(text) = &told
-        {
-            let _ = cx.notify(text, NoticeLevel::Warning, None);
+        if told == self.told {
+            return;
         }
-        self.told = told;
+        match &told {
+            Some(text) => {
+                if cx.notify(text, NoticeLevel::Warning, None).is_ok() {
+                    self.told = told;
+                }
+            }
+            None => self.told = None,
+        }
     }
 }
 
@@ -757,11 +767,12 @@ fn pick(cx: &mut Cx<'_>, pane: PaneId, hint: &Hint, action: Action) -> Result<()
 }
 
 /// Why a pattern of the config is left out: of its name, a pattern that
-/// does not read, of its error, or a URL of a scheme that does not open.
+/// does not read, of its error, or a URL of a scheme that does not open,
+/// of the URL.
 #[derive(Debug, PartialEq, Eq)]
 enum Refusal {
     Pattern(String, String),
-    Url(String),
+    Url(String, String),
 }
 
 /// The patterns of `config`'s `hints`, in the order of their names, and
@@ -794,7 +805,7 @@ fn patterns_of(config: &Data) -> (Vec<hints::Pattern>, Vec<Refusal>) {
             .and_then(url_scheme)
             .is_some_and(|scheme| !scheme_opens(scheme))
         {
-            refused.push(Refusal::Url(name.clone()));
+            refused.push(Refusal::Url(name.clone(), url.unwrap_or_default()));
             continue;
         }
         match regex_automata::meta::Regex::new(pattern) {

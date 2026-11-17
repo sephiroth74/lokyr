@@ -1038,9 +1038,9 @@ Whether your shell loads Lokyr's integration, which reports where each prompt st
 |---|---|
 | `true`, `false` | `true` |
 
-- It applies to zsh, bash and fish when they are your login shell, without changing your files. macOS's own bash, `/bin/bash`, of version 3.2, gets it only when you add it by hand.
-- It applies to the shells that start after the change; the open ones keep what they started with.
-- [Shell integration](shell-integration.md) tells what it gives you, such as the jumps between prompts, the gutter's marks and a click in the command line, how each shell loads it, how to add it by hand, and what to do when commands get no marks.
+- Lokyr loads it into zsh, bash and fish when they're your login shell, without changing your files. macOS's own bash, `/bin/bash`, which is version 3.2, gets it only when you add a line to `~/.bash_profile`, and a shell that you start from another one when you add it to that shell's startup file, as [Shell integration](shell-integration.md#set-it-up-by-hand) shows.
+- A change applies to the shells that start after it; the shells already open keep what they started with.
+- [Shell integration](shell-integration.md) explains what it gives you, such as the jumps between prompts, the gutter's marks and a click in the command line, how each shell loads it, how to add it by hand, and what to do when commands get no marks.
 
 ### `image-memory`
 
