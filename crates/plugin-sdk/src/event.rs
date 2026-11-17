@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::host::{PaneId, TabId, WindowId};
+use crate::host::{GroupId, PaneId, TabId, WindowId};
 
 /// A change of the workspace.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -108,11 +108,19 @@ pub enum WorkspaceEvent {
         /// The tab that it is in.
         tab: TabId,
     },
+    /// A group of tabs was made, or changed: its name, its color, its fold
+    /// or its tabs, or it went, taken apart or of no tab left.
+    GroupChanged {
+        /// The group.
+        group: GroupId,
+        /// Its window, or the one that it was in.
+        window: WindowId,
+    },
 }
 
 impl WorkspaceEvent {
     /// The names of the workspace's events, as plugins subscribe to them.
-    pub const NAMES: [&'static str; 13] = [
+    pub const NAMES: [&'static str; 14] = [
         "window-opened",
         "window-closed",
         "tab-created",
@@ -126,6 +134,7 @@ impl WorkspaceEvent {
         "layout-changed",
         "tab-changed",
         "pane-changed",
+        "group-changed",
     ];
 
     /// The event's name, as a plugin subscribes to it.
@@ -144,6 +153,7 @@ impl WorkspaceEvent {
             Self::LayoutChanged { .. } => "layout-changed",
             Self::TabChanged { .. } => "tab-changed",
             Self::PaneChanged { .. } => "pane-changed",
+            Self::GroupChanged { .. } => "group-changed",
         }
     }
 }

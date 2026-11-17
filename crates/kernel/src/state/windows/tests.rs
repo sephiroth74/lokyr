@@ -35,10 +35,11 @@ fn pane() -> Pane {
     )
 }
 
-/// Two windows: the first of a tab of three panes, its splits of a ratio
-/// and of none, the keyboard on its last pane, then a tab of a title and a
-/// color of its own, which it shows; the second of one tab of two panes,
-/// the first zoomed.
+/// Two windows: the first of a pinned tab of three panes, its splits of a
+/// ratio and of none, the keyboard on its last pane, then a tab of a title
+/// and a color of its own, which it shows, in a group of a name and a
+/// color with the tab after it, and a last tab in a folded group of its
+/// own; the second of one tab of two panes, the first zoomed.
 fn sample() -> Kept {
     let pane = |directory: &str| Layout::Pane {
         directory: Some(directory.to_owned()),
@@ -71,6 +72,7 @@ fn sample() -> Kept {
                         active: 2,
                         zoomed: None,
                         pinned: true,
+                        group: None,
                     },
                     Tab {
                         title: Some("logs".to_owned()),
@@ -79,9 +81,40 @@ fn sample() -> Kept {
                         active: 0,
                         zoomed: None,
                         pinned: false,
+                        group: Some(0),
+                    },
+                    Tab {
+                        title: None,
+                        color: None,
+                        layout: pane("/f"),
+                        active: 0,
+                        zoomed: None,
+                        pinned: false,
+                        group: Some(0),
+                    },
+                    Tab {
+                        title: None,
+                        color: None,
+                        layout: pane("/g"),
+                        active: 0,
+                        zoomed: None,
+                        pinned: false,
+                        group: Some(1),
                     },
                 ],
                 active: 1,
+                groups: vec![
+                    Group {
+                        name: "work".to_owned(),
+                        color: Some("#3478f6".to_owned()),
+                        folded: false,
+                    },
+                    Group {
+                        name: String::new(),
+                        color: None,
+                        folded: true,
+                    },
+                ],
             },
             Window {
                 frame: None,
@@ -97,8 +130,10 @@ fn sample() -> Kept {
                     active: 0,
                     zoomed: Some(0),
                     pinned: false,
+                    group: None,
                 }],
                 active: 0,
+                groups: Vec::new(),
             },
         ],
         front: Some(1),
@@ -129,6 +164,7 @@ fn the_kept_windows_read_back_as_they_were_written() {
 fn the_file_is_json_of_its_version_first() {
     let text = serde_json::to_string(&sample()).unwrap();
     assert!(text.starts_with(r#"{"version":1,"windows":[{"frame":{"x":40.0,"#));
+    assert!(text.contains(r##""groups":[{"name":"work","color":"#3478f6"},{"folded":true}]"##));
     assert!(text.contains(
         r#""layout":{"split":{"direction":"horizontal","ratio":0.3,"first":{"pane":{"directory":"/a"}}"#
     ));
@@ -174,6 +210,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             active: 0,
             zoomed: None,
             pinned: false,
+            group: None,
         })
         .collect();
     write(&state, &kept).unwrap();
@@ -188,6 +225,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             frame: None,
             tabs: Vec::new(),
             active: 0,
+            groups: Vec::new(),
         })
         .collect();
     write(&state, &kept).unwrap();
@@ -216,7 +254,7 @@ fn a_workspace_kept_opens_again_as_it_was() {
         opened.push((id, window.frame));
     }
     // Each pane spawned in its directory, in the layout's order.
-    assert_eq!(directories.len(), 6);
+    assert_eq!(directories.len(), 8);
     let again = Kept::of(&workspace, &opened, Some(opened[1].0), |pane| {
         directories.get(&pane.id()).cloned().flatten()
     });
@@ -224,7 +262,7 @@ fn a_workspace_kept_opens_again_as_it_was() {
     // The workspace's own: the second split's ratio is the parts' weights',
     // the keyboard on the third pane, the second tab shown.
     let window = workspace.window(opened[0].0).unwrap();
-    assert_eq!(window.tabs().len(), 2);
+    assert_eq!(window.tabs().len(), 4);
     assert_eq!(window.active_tab(), window.tabs()[1]);
     let tab = workspace.tab(window.tabs()[0]).unwrap();
     let panes = tab.layout().panes();
@@ -250,6 +288,12 @@ fn a_workspace_kept_opens_again_as_it_was() {
             b: 0
         })
     );
+    // The groups, the last folded.
+    let groups = workspace.groups_of(opened[0].0);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].name(), "work");
+    assert_eq!(workspace.group_tabs(groups[0].id()), window.tabs()[1..3]);
+    assert!(groups[1].folded());
     let window = workspace.window(opened[1].0).unwrap();
     let tab = workspace.tab(window.active_tab()).unwrap();
     assert_eq!(tab.zoomed(), Some(tab.layout().panes()[0]));
@@ -270,8 +314,10 @@ fn the_settings_tab_is_not_kept_and_its_window_keeps_the_tab_before_it() {
     let tabs = workspace.window(first).unwrap().tabs().to_vec();
     workspace.open_settings(first, "Settings").unwrap();
     let again = Kept::of(&workspace, &opened, None, |_| None);
-    assert_eq!(again.windows[0].tabs.len(), 2);
+    assert_eq!(again.windows[0].tabs.len(), 4);
     assert_eq!(again.windows[0].active, 1);
+    // The settings tab, between two tabs of a group, splits it not.
+    assert_eq!(again.windows[0].groups, kept.windows[0].groups);
     // Shown from before the settings tab: the first tab's place.
     workspace.activate_tab(tabs[0]);
     let again = Kept::of(&workspace, &opened, None, |_| None);
@@ -300,6 +346,7 @@ fn a_window_of_another_workspace_or_of_no_tab_is_left_out() {
         frame: None,
         tabs: Vec::new(),
         active: 0,
+        groups: Vec::new(),
     };
     assert_eq!(empty.open(&mut workspace, |_| pane()), None);
 }

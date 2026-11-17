@@ -1,7 +1,7 @@
 //! The windows that were open as the app quit, which it opens again as it
 //! starts: their frames, their tabs, each tab's title and color of its own,
 //! its splits and their ratios, the pane that has its keyboard and the one
-//! zoomed, and each pane's directory. Their programs start anew, of the
+//! zoomed, and each pane's directory; and the groups of their tabs. Their programs start anew, of the
 //! app's program; what the panes held is not kept.
 //!
 //! A file of its own in the state's directory, of JSON, of a format's
@@ -24,7 +24,8 @@ use crate::workspace::{self, Pane, Ratio, Side, Workspace};
 const FILE: &str = "windows.json";
 
 /// The version of the file's format, which a later one that it cannot
-/// read raises.
+/// read raises; fields that it does not know are read past, as the groups
+/// of tabs, which an earlier Lokyr opens ungrouped.
 pub const VERSION: u32 = 1;
 
 /// The most panes that a file opens, of all its windows, past which it is
@@ -60,6 +61,24 @@ pub struct Window {
     /// The index of the tab that it shows.
     #[serde(default)]
     pub active: usize,
+    /// The groups of its tabs, in the order of their tabs, which each tab
+    /// names by its index.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub groups: Vec<Group>,
+}
+
+/// A group of a window's tabs that the app keeps.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Group {
+    /// Its name, empty for none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// Its color, as `#rrggbb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Whether it is folded.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub folded: bool,
 }
 
 /// A rectangle on the screens, in points: its top left corner, from the top
@@ -99,6 +118,9 @@ pub struct Tab {
     /// Whether it is pinned, at its window's start.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub pinned: bool,
+    /// The index of its group among its window's, if it is in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<usize>,
 }
 
 /// A tab's layout that the app keeps: a tree of splits whose leaves are
@@ -231,11 +253,17 @@ impl Kept {
             let Some(window) = workspace.window(id) else {
                 continue;
             };
+            let groups: Vec<&workspace::Group> = workspace.groups_of(id);
             let tabs: Vec<Tab> = window
                 .tabs()
                 .iter()
                 .filter_map(|&tab| workspace.tab(tab))
-                .map(|tab| Tab::of(workspace, tab, &directory))
+                .map(|tab| Tab {
+                    group: tab
+                        .group()
+                        .and_then(|group| groups.iter().position(|kept| kept.id() == group)),
+                    ..Tab::of(workspace, tab, &directory)
+                })
                 .collect();
             if tabs.is_empty() {
                 continue;
@@ -257,10 +285,19 @@ impl Kept {
             } else {
                 kept.saturating_sub(1)
             };
+            let groups = groups
+                .iter()
+                .map(|group| Group {
+                    name: group.name().to_owned(),
+                    color: group.color().map(hex),
+                    folded: group.folded(),
+                })
+                .collect();
             windows.push(Window {
                 frame,
                 tabs,
                 active,
+                groups,
             });
         }
         Self {
@@ -284,15 +321,30 @@ impl Window {
         let window = workspace.open_window(spawn(first.layout.first_directory()));
         let tab = workspace.window(window)?.active_tab();
         first.lay_out(workspace, tab, &mut spawn);
-        let mut tabs = vec![tab];
+        let mut tabs = vec![(tab, first.group)];
         for (index, kept) in rest.iter().enumerate() {
             let pane = spawn(kept.layout.first_directory());
             if let Some(tab) = workspace.open_tab(window, pane, index + 1) {
                 kept.lay_out(workspace, tab, &mut spawn);
-                tabs.push(tab);
+                tabs.push((tab, kept.group));
             }
         }
-        if let Some(&active) = tabs.get(self.active) {
+        // The groups of the tabs that name them, folded as they were, before
+        // the tab shown, which unfolds its own.
+        for (index, group) in self.groups.iter().enumerate() {
+            let members: Vec<workspace::TabId> = tabs
+                .iter()
+                .filter(|(_, of)| *of == Some(index))
+                .map(|&(tab, _)| tab)
+                .collect();
+            let color = group.color.as_deref().and_then(rgb);
+            if let Some(made) = workspace.new_group(&members, &group.name, color)
+                && group.folded
+            {
+                workspace.fold_group(made, true);
+            }
+        }
+        if let Some(&(active, _)) = tabs.get(self.active) {
             workspace.activate_tab(active);
         }
         Some(window)
@@ -316,6 +368,7 @@ impl Tab {
             active: index(tab.active_pane()).unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
             pinned: tab.marks().pinned,
+            group: None,
         }
     }
 

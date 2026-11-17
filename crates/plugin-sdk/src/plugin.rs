@@ -49,9 +49,10 @@ use std::borrow::Cow;
 
 use crate::command::{Args, Code, Command, Error};
 use crate::host::{
-    BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found, Host,
-    Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
-    ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
+    BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
+    GroupId, GroupInfo, Host, Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
+    WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -1168,6 +1169,66 @@ impl<'a> Cx<'a> {
     /// Pins `tab`, at its window's start, or unpins it.
     pub fn set_tab_pinned(&mut self, tab: TabId, pinned: bool) -> Result<(), Error> {
         self.done(Request::SetTabPinned { tab, pinned })
+    }
+
+    /// Makes a group of `tabs`, of one window and none pinned, of `name`
+    /// and `color`, as [`Request::NewGroup`] says: its id, which the call's
+    /// later writes take, as the group is made once the call returns.
+    pub fn new_group(
+        &mut self,
+        tabs: &[TabId],
+        name: &str,
+        color: Option<Color>,
+    ) -> Result<GroupId, Error> {
+        match self.request(Request::NewGroup {
+            tabs: tabs.to_vec(),
+            name: name.to_owned(),
+            color,
+        }) {
+            Response::Group(group) => Ok(group),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Puts `tab` at the end of `group`'s tabs.
+    pub fn add_to_group(&mut self, tab: TabId, group: GroupId) -> Result<(), Error> {
+        self.done(Request::AddToGroup { tab, group })
+    }
+
+    /// Takes `tab` out of its group, right after the group's tabs.
+    pub fn remove_from_group(&mut self, tab: TabId) -> Result<(), Error> {
+        self.done(Request::RemoveFromGroup(tab))
+    }
+
+    /// Gives `group` the name `name`, empty for none.
+    pub fn rename_group(&mut self, group: GroupId, name: &str) -> Result<(), Error> {
+        self.done(Request::RenameGroup {
+            group,
+            name: name.to_owned(),
+        })
+    }
+
+    /// Gives `group` the color `color`, or none.
+    pub fn set_group_color(&mut self, group: GroupId, color: Option<Color>) -> Result<(), Error> {
+        self.done(Request::SetGroupColor { group, color })
+    }
+
+    /// Folds `group`, or unfolds it, as [`Request::FoldGroup`] says.
+    pub fn fold_group(&mut self, group: GroupId, folded: bool) -> Result<(), Error> {
+        self.done(Request::FoldGroup { group, folded })
+    }
+
+    /// Takes `group` apart, its tabs staying where they are.
+    pub fn ungroup(&mut self, group: GroupId) -> Result<(), Error> {
+        self.done(Request::Ungroup(group))
+    }
+
+    /// The groups of `window`'s tabs, in the order of their tabs.
+    pub fn groups(&mut self, window: WindowId) -> Result<Vec<GroupInfo>, Error> {
+        match self.request(Request::Groups(window)) {
+            Response::Groups(groups) => Ok(groups),
+            other => Err(failed(other)),
+        }
     }
 
     /// The layout of `tab`.

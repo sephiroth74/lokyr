@@ -118,6 +118,7 @@ struct Symbols {
     tabs: Vec<u64>,
     panes: Vec<u64>,
     timers: Vec<u64>,
+    groups: Vec<u64>,
 }
 
 impl Symbols {
@@ -128,6 +129,7 @@ impl Symbols {
             tabs: Vec::new(),
             panes: Vec::new(),
             timers: Vec::new(),
+            groups: Vec::new(),
         }
     }
 
@@ -143,7 +145,8 @@ impl Symbols {
                             1 => &symbols.windows,
                             2 => &symbols.tabs,
                             3 => &symbols.panes,
-                            _ => &symbols.timers,
+                            4 => &symbols.timers,
+                            _ => &symbols.groups,
                         };
                         let id = ids.get(k).unwrap_or_else(|| {
                             panic!(
@@ -202,6 +205,10 @@ impl Symbols {
 
     fn timer(&mut self, id: u64) -> u64 {
         Self::symbol(&mut self.timers, id, 4)
+    }
+
+    fn group(&mut self, id: host::GroupId) -> host::GroupId {
+        host::GroupId(Self::symbol(&mut self.groups, id.0, 5))
     }
 
     fn layout(&mut self, layout: Layout) -> Layout {
@@ -263,6 +270,19 @@ impl Symbols {
                         focused: self.pane(info.focused),
                         panes: info.panes.into_iter().map(|id| self.pane(id)).collect(),
                         zoomed: info.zoomed.map(|id| self.pane(id)),
+                        group: info.group.map(|id| self.group(id)),
+                        ..info
+                    })
+                    .collect(),
+            ),
+            Response::Group(group) => Response::Group(self.group(group)),
+            Response::Groups(groups) => Response::Groups(
+                groups
+                    .into_iter()
+                    .map(|info| lokyr_plugin_sdk::host::GroupInfo {
+                        id: self.group(info.id),
+                        window: self.window(info.window),
+                        tabs: info.tabs.into_iter().map(|id| self.tab(id)).collect(),
                         ..info
                     })
                     .collect(),
@@ -376,6 +396,10 @@ impl Symbols {
                 W::PaneChanged { pane, tab } => W::PaneChanged {
                     pane: self.pane(pane),
                     tab: self.tab(tab),
+                },
+                W::GroupChanged { group, window } => W::GroupChanged {
+                    group: self.group(group),
+                    window: self.window(window),
                 },
             }),
             other => other,
@@ -1118,11 +1142,19 @@ fn kind(request: &Request) -> usize {
         Request::RecentTabs(_) => 128,
         Request::SetTabPinned { .. } => 129,
         Request::ReopenTab(_) => 130,
+        Request::NewGroup { .. } => 131,
+        Request::AddToGroup { .. } => 132,
+        Request::RemoveFromGroup(_) => 133,
+        Request::RenameGroup { .. } => 134,
+        Request::SetGroupColor { .. } => 135,
+        Request::FoldGroup { .. } => 136,
+        Request::Ungroup(_) => 137,
+        Request::Groups(_) => 138,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 131;
+const KINDS: usize = 139;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

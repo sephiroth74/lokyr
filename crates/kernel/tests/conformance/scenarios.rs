@@ -24,9 +24,9 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
-    DecorationLook, Direction, Edge, LEAST_DELAY, Layout, Line, LineText, MOST_DELAY,
-    MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Packages, PaneId,
-    PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
+    DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
+    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Packages,
+    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
     SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
     Viewport, WindowId, WindowInfo, check_file_name,
 };
@@ -127,6 +127,12 @@ pub const fn timer(k: u64) -> u64 {
     4 * SYMBOL + k
 }
 
+/// The group that the trace meets as the `k`th of those that the scenario
+/// makes.
+pub const fn group(k: u64) -> GroupId {
+    GroupId(5 * SYMBOL + k)
+}
+
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
 /// text and cells as the pane reads them, the commands of [`COMMAND`], the
@@ -218,6 +224,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         copy_mode(world),
         workspace(world),
         tabs(world),
+        groups(world),
         tab_changes(world, true),
         tab_changes(world, false),
         window_titles(world, true),
@@ -889,6 +896,7 @@ fn tabs(world: &World) -> Scenario {
         agent_message: None,
         status: None,
         pinned: false,
+        group: None,
     };
     let other = |id, active, pane| TabInfo {
         id,
@@ -1240,6 +1248,344 @@ fn tabs(world: &World) -> Scenario {
                 Request::Tabs(w),
                 Response::Tabs(vec![info("", None)]),
             )]),
+        ],
+    }
+}
+
+/// A group that no host holds.
+const NO_GROUP: GroupId = GroupId(999_999);
+
+/// A window's groups of tabs: one made of two tabs apart, which come next
+/// to one another, renamed by a later write of the same call; a tab added
+/// and taken out, its color taken away; folded, as the window shows a tab
+/// out of it, and unfolded as it shows one of its own; taken apart; and
+/// what is refused, each group's change told.
+fn groups(world: &World) -> Scenario {
+    let (w, t, p) = (world.window, world.tab, world.pane);
+    let blue = Color::Rgb(52, 120, 246);
+    let changed = Event::Workspace(WorkspaceEvent::GroupChanged {
+        group: group(0),
+        window: w,
+    });
+    let fresh = Event::Workspace(WorkspaceEvent::GroupChanged {
+        group: group(1),
+        window: w,
+    });
+    let info = |id, active, focused, group| TabInfo {
+        id,
+        window: w,
+        kind: lokyr_plugin_sdk::host::TabKind::Terminal,
+        title: String::new(),
+        color: None,
+        active,
+        focused,
+        panes: vec![focused],
+        zoomed: None,
+        activity: false,
+        bell: false,
+        progress: None,
+        printing: false,
+        running: false,
+        alternate: false,
+        secure: false,
+        agent: None,
+        agent_message: None,
+        status: None,
+        pinned: false,
+        group,
+    };
+    let shown = |name: &str, color, folded, tabs| GroupInfo {
+        id: group(0),
+        window: w,
+        name: name.to_owned(),
+        color,
+        folded,
+        tabs,
+    };
+    Scenario {
+        name: "a window's groups of tabs".to_owned(),
+        capabilities: None,
+        subscriptions: vec!["group-changed".to_owned()],
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(0),
+                            pane: pane(0),
+                        },
+                    ),
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(1),
+                            pane: pane(1),
+                        },
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: vec![t, tab(1)],
+                            name: "work".to_owned(),
+                            color: Some(blue),
+                        },
+                        Response::Group(group(0)),
+                    ),
+                    (
+                        Request::RenameGroup {
+                            group: group(0),
+                            name: "build".to_owned(),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: Vec::new(),
+                            name: String::new(),
+                            color: None,
+                        },
+                        failed(Code::Failed, "a group has one tab at least"),
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: vec![NO_TAB],
+                            name: String::new(),
+                            color: None,
+                        },
+                        failed(Code::NotFound, "there is no tab 999999"),
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: vec![t],
+                            name: "x".repeat(257),
+                            color: None,
+                        },
+                        failed(
+                            Code::Failed,
+                            "a group's name is 256 characters at most, not 257",
+                        ),
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: vec![t],
+                            name: String::new(),
+                            color: Some(Color::Palette(1)),
+                        },
+                        failed(
+                            Code::Failed,
+                            "a group's color is an RGB one, not one of the palette's",
+                        ),
+                    ),
+                    (
+                        Request::AddToGroup {
+                            tab: tab(0),
+                            group: NO_GROUP,
+                        },
+                        failed(Code::NotFound, "there is no group 999999"),
+                    ),
+                    (
+                        Request::RenameGroup {
+                            group: group(0),
+                            name: "a\nb".to_owned(),
+                        },
+                        failed(Code::Failed, "a group's name holds no control character"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed.clone()],
+            },
+            // Next to one another, the tab between them after them.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Groups(w),
+                        Response::Groups(vec![shown("build", Some(blue), false, vec![t, tab(1)])]),
+                    ),
+                    (
+                        Request::Tabs(w),
+                        Response::Tabs(vec![
+                            info(t, true, p, Some(group(0))),
+                            info(tab(1), false, pane(1), Some(group(0))),
+                            info(tab(0), false, pane(0), None),
+                        ]),
+                    ),
+                    (
+                        Request::AddToGroup {
+                            tab: tab(0),
+                            group: group(0),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetGroupColor {
+                            group: group(0),
+                            color: None,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed.clone()],
+            },
+            // A tab taken out; folded, the window shows the tab after it.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Groups(w),
+                        Response::Groups(vec![shown(
+                            "build",
+                            None,
+                            false,
+                            vec![t, tab(1), tab(0)],
+                        )]),
+                    ),
+                    (Request::RemoveFromGroup(tab(0)), Response::Done),
+                    (
+                        Request::FoldGroup {
+                            group: group(0),
+                            folded: true,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed.clone()],
+            },
+            // Shown, one of its tabs unfolds it; taken apart, its tabs
+            // stay; the scenario's tabs closed.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Groups(w),
+                        Response::Groups(vec![shown("build", None, true, vec![t, tab(1)])]),
+                    ),
+                    (Request::ActivateTab(t), Response::Done),
+                    (Request::Ungroup(group(0)), Response::Done),
+                    (
+                        Request::CloseTab {
+                            tab: tab(0),
+                            ask: false,
+                            keep: 0,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::CloseTab {
+                            tab: tab(1),
+                            ask: false,
+                            keep: 0,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed],
+            },
+            // A pinned tab refused; a group of a tab that the same call
+            // opens, which goes with its last tab.
+            ask(vec![(
+                Request::SetTabPinned {
+                    tab: t,
+                    pinned: true,
+                },
+                Response::Done,
+            )]),
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::NewGroup {
+                            tabs: vec![t],
+                            name: String::new(),
+                            color: None,
+                        },
+                        failed(
+                            Code::Failed,
+                            &format!("the tab {} is pinned, which no group takes", t.0),
+                        ),
+                    ),
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(2),
+                            pane: pane(2),
+                        },
+                    ),
+                    (
+                        Request::NewGroup {
+                            tabs: vec![tab(2)],
+                            name: "fresh".to_owned(),
+                            color: None,
+                        },
+                        Response::Group(group(1)),
+                    ),
+                    (
+                        Request::SetTabPinned {
+                            tab: t,
+                            pinned: false,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Groups(w),
+                        Response::Groups(vec![GroupInfo {
+                            id: group(1),
+                            name: "fresh".to_owned(),
+                            color: None,
+                            folded: false,
+                            tabs: vec![tab(2)],
+                            window: w,
+                        }]),
+                    ),
+                    (
+                        Request::CloseTab {
+                            tab: tab(2),
+                            ask: false,
+                            keep: 0,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![fresh],
+            },
+            ask(vec![
+                (Request::Groups(w), Response::Groups(Vec::new())),
+                (
+                    Request::Groups(NO_WINDOW),
+                    failed(Code::NotFound, "there is no window 999999"),
+                ),
+                (
+                    Request::FoldGroup {
+                        group: NO_GROUP,
+                        folded: false,
+                    },
+                    failed(Code::NotFound, "there is no group 999999"),
+                ),
+            ]),
         ],
     }
 }
@@ -2877,6 +3223,7 @@ fn workspace(world: &World) -> Scenario {
         agent_message: None,
         status: None,
         pinned: false,
+        group: None,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

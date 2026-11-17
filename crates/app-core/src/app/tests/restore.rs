@@ -221,8 +221,10 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                     active: 0,
                     zoomed: None,
                     pinned: false,
+                    group: None,
                 }],
                 active: 0,
+                groups: Vec::new(),
             })
             .collect(),
         front: None,
@@ -300,6 +302,7 @@ fn a_window_of_a_display_that_went_opens_on_one_that_is_there() {
         frame: None,
         tabs: Vec::new(),
         active: 0,
+        groups: Vec::new(),
     });
     windows::write(&state, &kept).unwrap();
     let mut fake = Fake::default();

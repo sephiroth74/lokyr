@@ -27,8 +27,9 @@ use crate::command::{Args, Capability, Command, Error};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Bytes, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
-    Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind,
-    ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId, WindowInfo,
+    GroupId, GroupInfo, Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
+    WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -677,6 +678,8 @@ pub enum Request {
     /// steps through it, and takes the tab that shows first as Control is
     /// released.
     RecentTabs(WindowId),
+    /// A window's groups of tabs, in the order of their tabs.
+    Groups(WindowId),
     /// A tab's layout.
     Layout(TabId),
     /// Opens a tab in a window, at `index` of its tabs, or at their end
@@ -768,6 +771,60 @@ pub enum Request {
         /// Whether it is pinned.
         pinned: bool,
     },
+    /// Makes a group of tabs of one window, none pinned, of `name` and
+    /// `color`, its tabs next to one another at the first's place in their
+    /// order, each out of the group that it was in: the group's id, given
+    /// at once, which the call's later writes take.
+    NewGroup {
+        /// Its tabs, one at least.
+        tabs: Vec<TabId>,
+        /// Its name, empty for none,
+        /// [`MOST_GROUP_NAME`](crate::host::MOST_GROUP_NAME) characters at
+        /// most.
+        #[serde(default)]
+        name: String,
+        /// Its color, an RGB one.
+        #[serde(default)]
+        color: Option<Color>,
+    },
+    /// Puts a tab, not pinned, into a group, at the end of its tabs, in its
+    /// window, out of the group that it was in.
+    AddToGroup {
+        /// The tab.
+        tab: TabId,
+        /// The group.
+        group: GroupId,
+    },
+    /// Takes a tab out of its group, right after the group's tabs; a
+    /// group that it leaves of none goes.
+    RemoveFromGroup(TabId),
+    /// Gives a group a name, empty for none.
+    RenameGroup {
+        /// The group.
+        group: GroupId,
+        /// Its name, [`MOST_GROUP_NAME`](crate::host::MOST_GROUP_NAME)
+        /// characters at most.
+        name: String,
+    },
+    /// Gives a group a color, an RGB one, or none.
+    SetGroupColor {
+        /// The group.
+        group: GroupId,
+        /// Its color.
+        color: Option<Color>,
+    },
+    /// Folds a group, its tabs hidden behind its name in the bar, or
+    /// unfolds it: a window that shows one of its tabs shows the tab after
+    /// the group, or before it, and a group of the window's every tab
+    /// folds not; showing one of its tabs unfolds it.
+    FoldGroup {
+        /// The group.
+        group: GroupId,
+        /// Whether it is folded.
+        folded: bool,
+    },
+    /// Takes a group apart, its tabs staying where they are.
+    Ungroup(GroupId),
     /// Puts the plugin's tab bar at `place` in the windows that show it, a
     /// column's width from [`COLUMN_WIDTHS`](crate::host::COLUMN_WIDTHS)'s
     /// narrowest to its widest, in
@@ -1172,6 +1229,13 @@ impl Request {
             | Self::SwapPanes { .. }
             | Self::Zoom { .. }
             | Self::SetTabPinned { .. }
+            | Self::NewGroup { .. }
+            | Self::AddToGroup { .. }
+            | Self::RemoveFromGroup(_)
+            | Self::RenameGroup { .. }
+            | Self::SetGroupColor { .. }
+            | Self::FoldGroup { .. }
+            | Self::Ungroup(_)
             | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
@@ -1209,6 +1273,7 @@ impl Request {
             | Self::Windows
             | Self::Tabs(_)
             | Self::RecentTabs(_)
+            | Self::Groups(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1275,6 +1340,7 @@ impl Request {
             | Self::Windows
             | Self::Tabs(_)
             | Self::RecentTabs(_)
+            | Self::Groups(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1323,6 +1389,13 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::SetTabPinned { .. }
+            | Self::NewGroup { .. }
+            | Self::AddToGroup { .. }
+            | Self::RemoveFromGroup(_)
+            | Self::RenameGroup { .. }
+            | Self::SetGroupColor { .. }
+            | Self::FoldGroup { .. }
+            | Self::Ungroup(_)
             | Self::ReopenTab(_)
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
@@ -1475,6 +1548,10 @@ pub enum Response {
         /// Its pane.
         pane: PaneId,
     },
+    /// A group that is made as the call returns.
+    Group(GroupId),
+    /// A window's groups of tabs.
+    Groups(Vec<GroupInfo>),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -1913,6 +1990,12 @@ impl Request {
             | Self::SetTabTitle { .. }
             | Self::SetTabColor { .. }
             | Self::SetTabPinned { .. }
+            | Self::AddToGroup { .. }
+            | Self::RemoveFromGroup { .. }
+            | Self::RenameGroup { .. }
+            | Self::SetGroupColor { .. }
+            | Self::FoldGroup { .. }
+            | Self::Ungroup { .. }
             | Self::ReopenTab(_)
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
@@ -1974,6 +2057,8 @@ impl Request {
             Self::FontSize { .. } => "font-size",
             Self::Windows { .. } => "windows",
             Self::Tabs { .. } | Self::RecentTabs { .. } => "tabs",
+            Self::Groups { .. } => "groups",
+            Self::NewGroup { .. } => "group",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",

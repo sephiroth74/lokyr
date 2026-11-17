@@ -58,7 +58,7 @@ use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
 use crate::workspace::{
-    Direction, Edge, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
+    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
 };
 
 mod search;
@@ -1195,6 +1195,13 @@ enum Write {
         direction: Direction,
         side: Side,
         new: PaneId,
+    },
+    /// A group of tabs, of the id that the host gave it.
+    NewGroup {
+        id: GroupId,
+        tabs: Vec<TabId>,
+        name: String,
+        color: Option<Rgb>,
     },
     /// A render of one of the call's plugin's views.
     Render(ViewId),
@@ -4396,6 +4403,17 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 }
                 continue;
             }
+            // A group of tabs that an earlier write of the call closed or
+            // moved apart is made of none.
+            Write::NewGroup {
+                id,
+                tabs,
+                name,
+                color,
+            } => {
+                context.workspace.new_group_as(id, &tabs, &name, color);
+                continue;
+            }
             // A tab or a split of a window or a pane that an earlier write
             // of the call closed starts no program.
             Write::NewTab {
@@ -4628,6 +4646,28 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             }
             Asked::SetTabPinned { tab, pinned } => {
                 context.workspace.set_tab_pinned(TabId::of(tab.0), pinned);
+            }
+            Asked::AddToGroup { tab, group } => {
+                context
+                    .workspace
+                    .add_to_group(TabId::of(tab.0), GroupId::of(group.0));
+            }
+            Asked::RemoveFromGroup(tab) => {
+                context.workspace.remove_from_group(TabId::of(tab.0));
+            }
+            Asked::RenameGroup { group, name } => {
+                context.workspace.rename_group(GroupId::of(group.0), &name);
+            }
+            Asked::SetGroupColor { group, color } => {
+                context
+                    .workspace
+                    .set_group_color(GroupId::of(group.0), rgb_of(color));
+            }
+            Asked::FoldGroup { group, folded } => {
+                context.workspace.fold_group(GroupId::of(group.0), folded);
+            }
+            Asked::Ungroup(group) => {
+                context.workspace.ungroup(GroupId::of(group.0));
             }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
@@ -5320,6 +5360,45 @@ impl Host<'_, '_> {
         self.known_tab(tab)
     }
 
+    /// The window of the tab `tab`, which a group takes: there, or opened
+    /// by the call's writes so far, neither the settings tab nor pinned.
+    fn groupable(&self, tab: host::TabId) -> Result<host::WindowId, Error> {
+        self.known_tab_not_settings(tab)?;
+        let opened = self.writes.iter().find_map(|write| match write {
+            Write::NewTab {
+                window, tab: id, ..
+            } if id.get() == tab.0 => Some(*window),
+            _ => None,
+        });
+        if let Some(window) = opened {
+            return Ok(window.into());
+        }
+        let shown = self.tab(tab)?;
+        if shown.marks().pinned {
+            return Err(Error::new(
+                Code::Failed,
+                format!("the tab {} is pinned, which no group takes", tab.0),
+            ));
+        }
+        Ok(shown.window().into())
+    }
+
+    /// Whether the group `group` is there, or the call's writes so far make
+    /// it; `not-found` otherwise.
+    fn known_group(&self, group: host::GroupId) -> Result<(), Error> {
+        let made = self
+            .writes
+            .iter()
+            .any(|write| matches!(write, Write::NewGroup { id, .. } if id.get() == group.0));
+        if made || self.context.workspace.group(GroupId::of(group.0)).is_some() {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::NotFound,
+            format!("there is no group {}", group.0),
+        ))
+    }
+
     /// Whether the plugin holds `config`, as Lokyr's own plugins do.
     fn holds_config(&self) -> bool {
         self.state
@@ -5745,6 +5824,17 @@ impl Host<'_, '_> {
                     .unwrap_or_default();
                 self.tabs_read(tabs)
             }
+            Asked::Groups(window) => {
+                self.window(window)?;
+                let workspace = &*self.context.workspace;
+                Response::Groups(
+                    workspace
+                        .groups_of(WindowId::of(window.0))
+                        .into_iter()
+                        .map(|group| group_info(workspace, group))
+                        .collect(),
+                )
+            }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             Asked::CommandLine { pane, command } => {
                 Response::Text(self.pane(pane)?.command_line(command))
@@ -6064,6 +6154,40 @@ impl Host<'_, '_> {
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
             }
+            Asked::NewGroup { tabs, name, color } => {
+                check_group(name, *color)?;
+                let Some(&first) = tabs.first() else {
+                    return Err(Error::new(Code::Failed, "a group has one tab at least"));
+                };
+                let window = self.groupable(first)?;
+                for &tab in &tabs[1..] {
+                    if self.groupable(tab)? != window {
+                        return Err(Error::new(Code::Failed, "a group's tabs are of one window"));
+                    }
+                }
+                let id = GroupId::new();
+                self.writes.push(Write::NewGroup {
+                    id,
+                    tabs: tabs.iter().map(|tab| TabId::of(tab.0)).collect(),
+                    name: name.clone(),
+                    color: rgb_of(*color),
+                });
+                return Ok(Response::Group(id.into()));
+            }
+            Asked::AddToGroup { tab, group } => {
+                self.groupable(*tab)?;
+                self.known_group(*group)?;
+            }
+            Asked::RemoveFromGroup(tab) => self.known_tab_not_settings(*tab)?,
+            Asked::RenameGroup { group, name } => {
+                check_group(name, None)?;
+                self.known_group(*group)?;
+            }
+            Asked::SetGroupColor { group, color } => {
+                check_group("", *color)?;
+                self.known_group(*group)?;
+            }
+            Asked::FoldGroup { group, .. } | Asked::Ungroup(group) => self.known_group(*group)?,
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;
                 if matches!(color, Some(host::Color::Palette(_))) {
@@ -7137,6 +7261,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent: marks.agent.filter(|_| reads),
         agent_message: marks.agent_message.filter(|_| reads),
         pinned: marks.pinned,
+        group: tab.group().map(Into::into),
         status: marks
             .status
             .filter(|_| reads)
@@ -7195,7 +7320,40 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         agent_message: None,
         status: None,
         pinned: false,
+        group: None,
     })
+}
+
+/// What a read of a window's groups tells of `group`, of `workspace`.
+fn group_info(workspace: &Workspace, group: &crate::workspace::Group) -> host::GroupInfo {
+    host::GroupInfo {
+        id: group.id().into(),
+        window: group.window().into(),
+        name: group.name().to_owned(),
+        color: group
+            .color()
+            .map(|color| host::Color::Rgb(color.r, color.g, color.b)),
+        folded: group.folded(),
+        tabs: workspace
+            .group_tabs(group.id())
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    }
+}
+
+/// The color of a tab's or a group's `color`, an RGB one alone.
+fn rgb_of(color: Option<host::Color>) -> Option<Rgb> {
+    match color {
+        Some(host::Color::Rgb(red, green, blue)) => Some(Rgb::new(red, green, blue)),
+        _ => None,
+    }
+}
+
+/// Whether a group's `name` and `color` are a group's, as the SDK's
+/// [`host::check_group`] tells.
+fn check_group(name: &str, color: Option<host::Color>) -> Result<(), Error> {
+    host::check_group(name, color).map_err(|message| Error::new(Code::Failed, message))
 }
 
 /// The color of a tab of `color`, as a plugin learns it.

@@ -25,6 +25,53 @@ pub struct TabId(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PaneId(pub u64);
 
+/// A group of a window's tabs, by the host's id, which no other group of
+/// the process has had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct GroupId(pub u64);
+
+/// The most characters of a group's name.
+pub const MOST_GROUP_NAME: usize = 256;
+
+/// Whether a group's `name` and `color` are a group's: a name of
+/// [`MOST_GROUP_NAME`] characters at most and of no control character, and
+/// an RGB color; why not otherwise.
+pub fn check_group(name: &str, color: Option<Color>) -> Result<(), String> {
+    let length = name.chars().count();
+    if length > MOST_GROUP_NAME {
+        return Err(format!(
+            "a group's name is {MOST_GROUP_NAME} characters at most, not {length}"
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("a group's name holds no control character".to_owned());
+    }
+    if matches!(color, Some(Color::Palette(_))) {
+        return Err("a group's color is an RGB one, not one of the palette's".to_owned());
+    }
+    Ok(())
+}
+
+/// A group of a window's tabs, as a read of a window's groups gives it:
+/// its tabs next to one another, of no pinned tab.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GroupInfo {
+    /// The group.
+    pub id: GroupId,
+    /// Its window.
+    pub window: WindowId,
+    /// Its name, empty for none.
+    pub name: String,
+    /// Its color, an RGB one; `None` for none.
+    #[serde(default)]
+    pub color: Option<Color>,
+    /// Whether it is folded, its tabs hidden behind its name in the bar.
+    #[serde(default)]
+    pub folded: bool,
+    /// Its tabs, in their order, one at least.
+    pub tabs: Vec<TabId>,
+}
+
 /// A point on the screens, in points, from the top left corner of the menu
 /// bar's screen, rightwards and downwards, as the screens lie on one plane.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -271,6 +318,9 @@ pub struct TabInfo {
     /// Whether it is pinned, at its window's start.
     #[serde(default)]
     pub pinned: bool,
+    /// The group that it is in, if it is in one.
+    #[serde(default)]
+    pub group: Option<GroupId>,
 }
 
 /// The status that a program tells of its session, as iTerm2's OSC 21337

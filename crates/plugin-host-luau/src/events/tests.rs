@@ -1,5 +1,5 @@
 use lokyr_plugin_sdk::event::WorkspaceEvent;
-use lokyr_plugin_sdk::host::{Edge, Line, PaneId, SearchMatch, TabId, Viewport, WindowId};
+use lokyr_plugin_sdk::host::{Edge, GroupId, Line, PaneId, SearchMatch, TabId, Viewport, WindowId};
 use lokyr_plugin_sdk::message::{Data, Mods};
 use lokyr_plugin_sdk::ui::{PanelId, ViewId};
 use lokyr_plugin_sdk::view::{Key, UiEventKind};
@@ -39,6 +39,10 @@ fn workspace() -> Vec<WorkspaceEvent> {
         WorkspaceEvent::LayoutChanged { tab },
         WorkspaceEvent::TabChanged { tab },
         WorkspaceEvent::PaneChanged { pane, tab },
+        WorkspaceEvent::GroupChanged {
+            group: GroupId(6),
+            window,
+        },
     ]
 }
 
@@ -194,28 +198,30 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
     lua.load(
         r#"
         local created = events[3]
+        local grouped = events[14]
+        assert(grouped.kind == "group-changed" and grouped.group == 6 and grouped.window == 1)
         assert(created.kind == "tab-created" and created.tab == 2 and created.window == 1 and created.index == 0)
-        local pointer = events[14]
+        local pointer = events[15]
         assert(pointer.kind == "pointer" and pointer.at[1] == 4 and pointer.at[2] == -2 and pointer.mods.command)
-        assert(events[15].at == nil)
-        assert(events[18].kind == "panel-closed" and events[18].id == "find")
+        assert(events[16].at == nil)
+        assert(events[19].kind == "panel-closed" and events[19].id == "find")
         local shown, hidden = events[#events - 1], events[#events]
         assert(shown.kind == "page-shown" and shown.page == "plugins")
         assert(hidden.kind == "page-hidden" and hidden.page == "plugins")
-        local keys = events[19]
+        local keys = events[20]
         assert(keys.kind == "keys-changed" and next(keys, next(keys)) == nil)
-        assert(events[21].viewport.alternate == true)
-        assert(events[24].kind == "command-ended" and events[24].status == nil)
-        assert(events[29].kind == "timer" and events[29].id == 12)
-        local custom = events[30]
+        assert(events[22].viewport.alternate == true)
+        assert(events[25].kind == "command-ended" and events[25].status == nil)
+        assert(events[30].kind == "timer" and events[30].id == 12)
+        local custom = events[31]
         assert(custom.kind == "custom" and custom.name == "acme.done" and custom.value[1] == 1)
-        local saved, failed = events[31], events[32]
+        local saved, failed = events[32], events[33]
         assert(saved.kind == "saved" and saved.path == "/Users/me/Lokyr.png" and saved.error == nil)
         assert(failed.path == nil and failed.error == "it cannot be written")
-        local picked, closed = events[33], events[34]
+        local picked, closed = events[34], events[35]
         assert(picked.kind == "color-picked" and string.sub(picked.color, 2) == "4c9bff80")
         assert(closed.kind == "color-panel-closed" and next(closed, next(closed)) == nil)
-        local chosen = events[35]
+        local chosen = events[36]
         assert(chosen.kind == "chosen" and chosen.id == 13 and chosen.button == 1)
         "#,
     )

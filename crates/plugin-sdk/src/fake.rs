@@ -44,8 +44,9 @@ use std::fmt::Write as _;
 use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
-    self, BarPlace, Binding, Color, DecorationLook, Direction, Edge, Layout, LineText, MOST_STATE,
-    PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId, WindowInfo,
+    self, BarPlace, Binding, Color, DecorationLook, Direction, Edge, GroupId, GroupInfo, Layout,
+    LineText, MOST_STATE, PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId,
+    WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{
@@ -322,6 +323,16 @@ struct FakeTab {
     title: Option<String>,
     color: Option<Color>,
     marks: TabMarks,
+    group: Option<GroupId>,
+}
+
+/// A group of a window's tabs that the fake host keeps, as the app does.
+#[derive(Clone, Debug)]
+struct FakeGroup {
+    window: WindowId,
+    name: String,
+    color: Option<Color>,
+    folded: bool,
 }
 
 /// What a tab bar shows of a tab, whose change `tab-changed` tells: its
@@ -378,6 +389,8 @@ enum Opened {
     Nothing,
     Tab(TabId, PaneId),
     Pane(PaneId),
+    /// A group of tabs.
+    Group(GroupId),
     /// A quick window, of its tab and its pane.
     Quick(WindowId, TabId, PaneId),
 }
@@ -548,6 +561,8 @@ pub struct FakeHost {
     /// The tabs closed that it keeps to give back, the last closed last:
     /// each tab, its panes, its window and its place there.
     closed_tabs: Vec<ClosedTab>,
+    /// The groups of the windows' tabs, as the app keeps them.
+    groups: BTreeMap<GroupId, FakeGroup>,
     /// Of a plugin that does not read the processes, the title that it last
     /// learnt of each pane, its program's, of none at first, which a change
     /// of the pane's folder or program, that it cannot read, leaves.
@@ -654,6 +669,7 @@ impl FakeHost {
             tab_use_count: 0,
             order_held: false,
             closed_tabs: Vec::new(),
+            groups: BTreeMap::new(),
             told_panes: BTreeMap::new(),
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
@@ -1823,6 +1839,7 @@ impl FakeHost {
                 title: None,
                 color: None,
                 marks: TabMarks::default(),
+                group: None,
             });
             if first.insert(tab) {
                 entry.window = window;
@@ -1981,6 +1998,43 @@ impl FakeHost {
                 self.looked(*id, &before);
             }
             Request::SetTabPinned { tab, pinned } => self.set_tab_pinned(*tab, *pinned),
+            Request::NewGroup { tabs, name, color } => {
+                if let Opened::Group(id) = opened {
+                    self.new_group(id, tabs, name, *color);
+                }
+            }
+            Request::AddToGroup { tab, group } => self.add_to_group(*tab, *group),
+            Request::RemoveFromGroup(tab) => self.leave_group(*tab),
+            Request::RenameGroup { group, name } => {
+                if let Some(shown) = self.groups.get_mut(group)
+                    && shown.name != *name
+                {
+                    shown.name.clone_from(name);
+                    let window = shown.window;
+                    self.group_changed(*group, window);
+                }
+            }
+            Request::SetGroupColor { group, color } => {
+                let color = color.filter(|color| matches!(color, Color::Rgb(..)));
+                if let Some(shown) = self.groups.get_mut(group)
+                    && shown.color != color
+                {
+                    shown.color = color;
+                    let window = shown.window;
+                    self.group_changed(*group, window);
+                }
+            }
+            Request::FoldGroup { group, folded } => self.fold_group(*group, *folded),
+            Request::Ungroup(group) => {
+                if let Some(window) = self.groups.remove(group).map(|shown| shown.window) {
+                    for shown in self.tabs.values_mut() {
+                        if shown.group == Some(*group) {
+                            shown.group = None;
+                        }
+                    }
+                    self.group_changed(*group, window);
+                }
+            }
             Request::ActivateTab(tab) => self.activate_tab(*tab),
             Request::FocusPane(pane) => self.focus_pane(*pane),
             Request::MoveTab { tab, window, index } => self.move_tab(*tab, *window, *index),
@@ -2053,7 +2107,28 @@ impl FakeHost {
 
     /// Owes the plugin the workspace's `event`.
     fn changed(&mut self, event: WorkspaceEvent) {
+        // A tab that comes between two of a group joins it, and the groups
+        // settle as their window's tabs change, as the app's.
+        let placed = match &event {
+            WorkspaceEvent::TabCreated { tab, .. } | WorkspaceEvent::TabMoved { tab, .. } => {
+                Some(*tab)
+            }
+            _ => None,
+        };
+        let settles = matches!(
+            event,
+            WorkspaceEvent::TabCreated { .. }
+                | WorkspaceEvent::TabClosed { .. }
+                | WorkspaceEvent::TabMoved { .. }
+                | WorkspaceEvent::WindowClosed { .. }
+        );
         self.owed.push(Event::Workspace(event));
+        if let Some(tab) = placed {
+            self.join_between(tab);
+        }
+        if settles {
+            self.settle_groups();
+        }
     }
 
     /// Whether the plugin reads the processes, as a first-party one does.
@@ -2116,6 +2191,7 @@ impl FakeHost {
             agent_message: marks.agent_message.clone().filter(|_| reads),
             status: marks.status.clone().filter(|_| reads),
             pinned: marks.pinned,
+            group: tab.group,
         })
     }
 
@@ -2196,6 +2272,7 @@ impl FakeHost {
                 title: None,
                 color: None,
                 marks: TabMarks::default(),
+                group: None,
             },
         );
         self.panes.insert(
@@ -2285,6 +2362,7 @@ impl FakeHost {
             Left::Shows(window, tab) => {
                 self.shown(tab);
                 self.changed(WorkspaceEvent::TabActivated { tab, window });
+                self.unfold_group_of(tab);
             }
             Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed { window }),
         }
@@ -2509,6 +2587,7 @@ impl FakeHost {
     /// app's.
     fn tab_shown(&mut self, tab: TabId) {
         self.shown(tab);
+        self.unfold_group_of(tab);
         let before = self.look(tab);
         if let Some(shown) = self.tabs.get_mut(&tab) {
             shown.marks.activity = false;
@@ -2615,6 +2694,365 @@ impl FakeHost {
         self.tell_left(left);
     }
 
+    /// The tabs of `group`, in its window's order, as the app's.
+    fn group_tabs(&self, group: GroupId) -> Vec<TabId> {
+        let Some(window) = self
+            .groups
+            .get(&group)
+            .and_then(|shown| self.windows.get(&shown.window))
+        else {
+            return Vec::new();
+        };
+        window
+            .tabs
+            .iter()
+            .copied()
+            .filter(|tab| {
+                self.tabs
+                    .get(tab)
+                    .is_some_and(|shown| shown.group == Some(group))
+            })
+            .collect()
+    }
+
+    /// The groups of `window`'s tabs, in the order of their tabs, as a read
+    /// of them tells.
+    fn group_infos(&self, window: WindowId) -> Vec<GroupInfo> {
+        let mut found: Vec<GroupInfo> = Vec::new();
+        let Some(shown) = self.windows.get(&window) else {
+            return found;
+        };
+        for tab in &shown.tabs {
+            let Some(id) = self.tabs.get(tab).and_then(|shown| shown.group) else {
+                continue;
+            };
+            if found.iter().any(|known| known.id == id) {
+                continue;
+            }
+            if let Some(group) = self.groups.get(&id) {
+                found.push(GroupInfo {
+                    id,
+                    window: group.window,
+                    name: group.name.clone(),
+                    color: group.color,
+                    folded: group.folded,
+                    tabs: self.group_tabs(id),
+                });
+            }
+        }
+        found
+    }
+
+    /// Makes the group `id` of `tabs`, as the app does: its tabs next to
+    /// one another at the first's place, each out of its group; nothing of
+    /// a tab not there or pinned, or of tabs of several windows.
+    fn new_group(&mut self, id: GroupId, tabs: &[TabId], name: &str, color: Option<Color>) {
+        let Some(window) = tabs
+            .first()
+            .and_then(|tab| self.tabs.get(tab))
+            .map(|shown| shown.window)
+        else {
+            return;
+        };
+        let mut members: Vec<TabId> = Vec::new();
+        for &tab in tabs {
+            let Some(shown) = self.tabs.get(&tab) else {
+                return;
+            };
+            if shown.window != window || shown.marks.pinned {
+                return;
+            }
+            if !members.contains(&tab) {
+                members.push(tab);
+            }
+        }
+        if self.groups.contains_key(&id) || !self.windows.contains_key(&window) {
+            return;
+        }
+        for &tab in &members {
+            self.leave_group(tab);
+        }
+        let Some(order) = self.windows.get(&window).map(|shown| shown.tabs.clone()) else {
+            return;
+        };
+        members.sort_by_key(|tab| order.iter().position(|id| id == tab));
+        let Some(at) = order.iter().position(|&tab| tab == members[0]) else {
+            return;
+        };
+        for (k, &tab) in members.iter().enumerate() {
+            self.move_tab(tab, window, at + k);
+        }
+        for tab in &members {
+            if let Some(shown) = self.tabs.get_mut(tab) {
+                shown.group = Some(id);
+            }
+        }
+        let color = color.filter(|color| matches!(color, Color::Rgb(..)));
+        self.groups.insert(
+            id,
+            FakeGroup {
+                window,
+                name: name.to_owned(),
+                color,
+                folded: false,
+            },
+        );
+        self.group_changed(id, window);
+    }
+
+    /// Puts `tab` at the end of `group`'s tabs, as the app does.
+    fn add_to_group(&mut self, tab: TabId, group: GroupId) {
+        let Some(window) = self.groups.get(&group).map(|shown| shown.window) else {
+            return;
+        };
+        let Some(shown) = self.tabs.get(&tab) else {
+            return;
+        };
+        if shown.marks.pinned || shown.group == Some(group) {
+            return;
+        }
+        self.leave_group(tab);
+        let Some(&last) = self.group_tabs(group).last() else {
+            return;
+        };
+        let Some(order) = self.windows.get(&window).map(|shown| shown.tabs.clone()) else {
+            return;
+        };
+        let Some(last_at) = order.iter().position(|&id| id == last) else {
+            return;
+        };
+        let index = match order.iter().position(|&id| id == tab) {
+            Some(at) if at < last_at => last_at,
+            _ => last_at + 1,
+        };
+        self.move_tab(tab, window, index);
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            shown.group = Some(group);
+        }
+        self.group_changed(group, window);
+    }
+
+    /// Takes `tab` out of its group, right after the group's tabs, as the
+    /// app does; a group of no tab left goes.
+    fn leave_group(&mut self, tab: TabId) {
+        let Some((group, window)) = self
+            .tabs
+            .get(&tab)
+            .and_then(|shown| Some((shown.group?, shown.window)))
+        else {
+            return;
+        };
+        let run = self.group_tabs(group);
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return;
+        };
+        shown.group = None;
+        if let Some(&last) = run.last()
+            && last != tab
+            && run.contains(&tab)
+            && let Some(last_at) = self
+                .windows
+                .get(&window)
+                .and_then(|shown| shown.tabs.iter().position(|&id| id == last))
+        {
+            self.move_tab(tab, window, last_at);
+        }
+        let window = self.groups.get(&group).map_or(window, |shown| shown.window);
+        if self.group_tabs(group).is_empty() {
+            self.groups.remove(&group);
+        }
+        self.group_changed(group, window);
+    }
+
+    /// Folds `group`, or unfolds it, as the app does.
+    fn fold_group(&mut self, group: GroupId, folded: bool) {
+        let Some((window, was)) = self
+            .groups
+            .get(&group)
+            .map(|shown| (shown.window, shown.folded))
+        else {
+            return;
+        };
+        if was == folded {
+            return;
+        }
+        if folded {
+            let tabs = self.group_tabs(group);
+            let Some((order, active)) = self
+                .windows
+                .get(&window)
+                .map(|shown| (shown.tabs.clone(), shown.active))
+            else {
+                return;
+            };
+            if tabs.len() >= order.len() {
+                return;
+            }
+            if let Some(shown) = self.groups.get_mut(&group) {
+                shown.folded = true;
+            }
+            if tabs.contains(&active) {
+                let position = |tab: &TabId| order.iter().position(|id| id == tab);
+                let after = tabs.last().and_then(position).map(|at| at + 1);
+                let before = tabs
+                    .first()
+                    .and_then(position)
+                    .and_then(|at| at.checked_sub(1));
+                let next = after
+                    .and_then(|at| order.get(at))
+                    .or_else(|| before.and_then(|at| order.get(at)));
+                if let Some(&next) = next {
+                    self.activate_tab(next);
+                }
+            }
+        } else if let Some(shown) = self.groups.get_mut(&group) {
+            shown.folded = false;
+        }
+        self.group_changed(group, window);
+    }
+
+    /// Unfolds the group of `tab`, which its window shows, if it is folded.
+    fn unfold_group_of(&mut self, tab: TabId) {
+        let Some(group) = self.tabs.get(&tab).and_then(|shown| shown.group) else {
+            return;
+        };
+        if let Some(shown) = self.groups.get_mut(&group)
+            && shown.folded
+        {
+            shown.folded = false;
+            let window = shown.window;
+            self.group_changed(group, window);
+        }
+    }
+
+    /// `tab`, which came to its place, joins the group of the tabs on both
+    /// sides of it, as the app's.
+    fn join_between(&mut self, tab: TabId) {
+        let Some(shown) = self.tabs.get(&tab) else {
+            return;
+        };
+        if shown.marks.pinned {
+            return;
+        }
+        let before = shown.group;
+        let Some(order) = self.windows.get(&shown.window).map(|shown| &shown.tabs) else {
+            return;
+        };
+        let Some(at) = order.iter().position(|&id| id == tab) else {
+            return;
+        };
+        let group_at = |index: usize| {
+            order
+                .get(index)
+                .and_then(|id| self.tabs.get(id))
+                .and_then(|shown| shown.group)
+        };
+        let (Some(left), Some(right)) = (at.checked_sub(1).and_then(group_at), group_at(at + 1))
+        else {
+            return;
+        };
+        if left != right || before == Some(left) {
+            return;
+        }
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            shown.group = Some(left);
+        }
+        if let Some(window) = self.groups.get(&left).map(|group| group.window) {
+            self.group_changed(left, window);
+        }
+        if let Some(before) = before
+            && !self.group_tabs(before).is_empty()
+            && let Some(window) = self.groups.get(&before).map(|group| group.window)
+        {
+            self.group_changed(before, window);
+        }
+    }
+
+    /// Settles the groups as their windows' tabs changed, as the app does.
+    fn settle_groups(&mut self) {
+        let mut changed: Vec<(GroupId, WindowId)> = Vec::new();
+        for shown in self.tabs.values_mut() {
+            if let Some(group) = shown.group
+                && (shown.marks.pinned || !self.groups.contains_key(&group))
+            {
+                shown.group = None;
+                if let Some(known) = self.groups.get(&group) {
+                    changed.push((group, known.window));
+                }
+            }
+        }
+        let mut runs: BTreeMap<GroupId, Vec<(WindowId, Vec<TabId>)>> = BTreeMap::new();
+        for (&window, shown) in &self.windows {
+            let mut last = None;
+            for &tab in &shown.tabs {
+                let group = self.tabs.get(&tab).and_then(|shown| shown.group);
+                if let Some(group) = group {
+                    let found = runs.entry(group).or_default();
+                    match found.last_mut() {
+                        Some((_, run)) if last == Some(group) => run.push(tab),
+                        _ => found.push((window, vec![tab])),
+                    }
+                }
+                last = group;
+            }
+        }
+        let ids: Vec<GroupId> = self.groups.keys().copied().collect();
+        for id in ids {
+            let Some(window) = self.groups.get(&id).map(|group| group.window) else {
+                continue;
+            };
+            let Some(found) = runs.remove(&id) else {
+                self.groups.remove(&id);
+                changed.push((id, window));
+                continue;
+            };
+            let longest = |own: bool| {
+                found
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (place, _))| !own || *place == window)
+                    .max_by_key(|(index, (_, run))| (run.len(), std::cmp::Reverse(*index)))
+                    .map(|(index, _)| index)
+            };
+            let Some(keeper) = longest(true).or_else(|| longest(false)) else {
+                continue;
+            };
+            let mut moved = false;
+            for (index, (place, run)) in found.iter().enumerate() {
+                if index == keeper {
+                    if *place != window
+                        && let Some(group) = self.groups.get_mut(&id)
+                    {
+                        group.window = *place;
+                        moved = true;
+                    }
+                    continue;
+                }
+                for tab in run {
+                    if let Some(shown) = self.tabs.get_mut(tab) {
+                        shown.group = None;
+                    }
+                }
+                moved = true;
+            }
+            if moved && let Some(group) = self.groups.get(&id) {
+                changed.push((id, group.window));
+            }
+        }
+        let mut told: Vec<GroupId> = Vec::new();
+        for (group, window) in changed {
+            if !told.contains(&group) {
+                told.push(group);
+                self.group_changed(group, window);
+            }
+        }
+    }
+
+    /// Owes the plugin that `group`, of `window`, changed, or went.
+    fn group_changed(&mut self, group: GroupId, window: WindowId) {
+        self.changed(WorkspaceEvent::GroupChanged { group, window });
+    }
+
     /// How many of `window`'s tabs are pinned, which its first tabs are.
     fn pinned_in(&self, window: WindowId) -> usize {
         self.windows.get(&window).map_or(0, |shown| {
@@ -2638,6 +3076,9 @@ impl FakeHost {
             .is_none_or(|shown| shown.marks.pinned == pinned)
         {
             return;
+        }
+        if pinned {
+            self.leave_group(tab);
         }
         let others = self.pinned_in(window).saturating_sub(usize::from(!pinned));
         let before = self.look(tab);
@@ -2708,6 +3149,7 @@ impl FakeHost {
                 title: None,
                 color: None,
                 marks: TabMarks::default(),
+                group: None,
             },
         );
         if let Some(moved) = self.panes.get_mut(&pane) {
@@ -3283,7 +3725,7 @@ impl Calling<'_> {
             Opened::Tab(_, opened) | Opened::Pane(opened) => *opened == pane,
             // A quick window's pane opens with the window, as the app opens
             // it after the call.
-            Opened::Nothing | Opened::Quick(..) => false,
+            Opened::Nothing | Opened::Quick(..) | Opened::Group(_) => false,
         })
     }
 
@@ -3312,6 +3754,51 @@ impl Calling<'_> {
             Opened::Tab(opened, pane) if *opened == tab => Some(*pane),
             _ => None,
         })
+    }
+
+    /// The window of `tab`, which a group takes: held, or opened by the
+    /// call's writes so far, and not pinned.
+    fn groupable(&self, tab: TabId) -> Result<WindowId, Error> {
+        self.known_tab(tab)?;
+        let opened = self
+            .writes
+            .iter()
+            .find_map(|(request, opened)| match (request, opened) {
+                (Request::NewTab { window, .. }, Opened::Tab(id, _)) if *id == tab => Some(*window),
+                _ => None,
+            });
+        if let Some(window) = opened {
+            return Ok(window);
+        }
+        let Some(shown) = self.host.tabs.get(&tab) else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("there is no tab {}", tab.0),
+            ));
+        };
+        if shown.marks.pinned {
+            return Err(Error::new(
+                Code::Failed,
+                format!("the tab {} is pinned, which no group takes", tab.0),
+            ));
+        }
+        Ok(shown.window)
+    }
+
+    /// Whether `group` is held, or the call's writes so far make it;
+    /// `not-found` otherwise.
+    fn known_group(&self, group: GroupId) -> Result<(), Error> {
+        let made = self
+            .writes
+            .iter()
+            .any(|(_, opened)| *opened == Opened::Group(group));
+        if made || self.host.groups.contains_key(&group) {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::NotFound,
+            format!("there is no group {}", group.0),
+        ))
     }
 
     /// Whether `pane` is held, or the call's writes so far open it;
@@ -3658,6 +4145,15 @@ impl Calling<'_> {
                     }
                 }
                 Response::Tabs(infos)
+            }
+            Request::Groups(window) => {
+                if !host.windows.contains_key(window) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ));
+                }
+                Response::Groups(host.group_infos(*window))
             }
             Request::RecentTabs(window) => {
                 let Some(recent) = host.recent_tabs(*window) else {
@@ -4331,6 +4827,44 @@ impl Calling<'_> {
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))
             }
+            Request::NewGroup { tabs, name, color } => {
+                check_group(name, *color)?;
+                let Some(&first) = tabs.first() else {
+                    return Err(Error::new(Code::Failed, "a group has one tab at least"));
+                };
+                let window = self.groupable(first)?;
+                for &tab in &tabs[1..] {
+                    if self.groupable(tab)? != window {
+                        return Err(Error::new(Code::Failed, "a group's tabs are of one window"));
+                    }
+                }
+                let id = GroupId(self.host.next_id());
+                opened = Opened::Group(id);
+                Response::Group(id)
+            }
+            Request::AddToGroup { tab, group } => {
+                self.groupable(*tab)?;
+                self.known_group(*group)?;
+                Response::Done
+            }
+            Request::RemoveFromGroup(tab) => {
+                self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::RenameGroup { group, name } => {
+                check_group(name, None)?;
+                self.known_group(*group)?;
+                Response::Done
+            }
+            Request::SetGroupColor { group, color } => {
+                check_group("", *color)?;
+                self.known_group(*group)?;
+                Response::Done
+            }
+            Request::FoldGroup { group, .. } | Request::Ungroup(group) => {
+                self.known_group(*group)?;
+                Response::Done
+            }
             Request::OpenPanel { id, options } => {
                 if id.0.is_empty() {
                     return Err(Error::new(Code::InvalidName, "a panel's id is not empty"));
@@ -4982,3 +5516,9 @@ pub fn font_styles(family: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests;
+
+/// Whether a group's `name` and `color` are a group's, as the app checks
+/// them.
+fn check_group(name: &str, color: Option<Color>) -> Result<(), Error> {
+    host::check_group(name, color).map_err(|message| Error::new(Code::Failed, message))
+}

@@ -4368,8 +4368,11 @@ impl<B: Backend> App<B> {
             WorkspaceEvent::PaneCreated { tab, .. }
             | WorkspaceEvent::PaneFocused { tab, .. }
             | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
-            // A tab's label and color, which the plugins' views show.
-            WorkspaceEvent::TabChanged { .. } | WorkspaceEvent::PaneChanged { .. } => return,
+            // A tab's label and color, and a group, which the plugins'
+            // views show.
+            WorkspaceEvent::TabChanged { .. }
+            | WorkspaceEvent::PaneChanged { .. }
+            | WorkspaceEvent::GroupChanged { .. } => return,
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 self.close_strayed_panels(platform);
                 vec![of_tab(self, from), of_tab(self, tab)]

@@ -107,6 +107,7 @@ export type Cx = {
     windows: () -> ({ WindowInfo }?, string?, number?),
     tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
     recent_tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
+    groups: (window: WindowId) -> ({ GroupInfo }?, string?, number?),
     layout: (tab: TabId) -> (Layout?, string?, number?),
     new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, string?, number?),
@@ -116,6 +117,13 @@ export type Cx = {
     set_tab_title: (tab: TabId, title: string?) -> (true?, string?, number?),
     set_tab_color: (tab: TabId, color: Color?) -> (true?, string?, number?),
     set_tab_pinned: (tab: TabId, pinned: boolean) -> (true?, string?, number?),
+    new_group: (tabs: { TabId }, name: string?, color: Color?) -> (GroupId?, string?, number?),
+    add_to_group: (tab: TabId, group: GroupId) -> (true?, string?, number?),
+    remove_from_group: (tab: TabId) -> (true?, string?, number?),
+    rename_group: (group: GroupId, name: string) -> (true?, string?, number?),
+    set_group_color: (group: GroupId, color: Color?) -> (true?, string?, number?),
+    fold_group: (group: GroupId, folded: boolean) -> (true?, string?, number?),
+    ungroup: (group: GroupId) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
     set_focus_follows_mouse: (on: boolean) -> (true?, string?, number?),
@@ -167,6 +175,7 @@ export type Event =
     | { kind: "layout-changed", tab: TabId }
     | { kind: "tab-changed", tab: TabId }
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
+    | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
@@ -539,6 +548,17 @@ export type Found = {
     matches: { SearchMatch },
     count: number,
     done: boolean,
+}
+
+export type GroupId = number
+
+export type GroupInfo = {
+    id: GroupId,
+    window: WindowId,
+    name: string,
+    color: Color?,
+    folded: boolean?,
+    tabs: { TabId },
 }
 
 export type Hover = {
@@ -928,6 +948,7 @@ export type TabInfo = {
     agent_message: string?,
     status: TabStatus?,
     pinned: boolean?,
+    group: GroupId?,
 }
 
 export type TabKind =

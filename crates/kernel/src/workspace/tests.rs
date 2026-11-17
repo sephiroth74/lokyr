@@ -1184,9 +1184,11 @@ mod told {
         /// layouts it changed into `laid_out`.
         fn take(&mut self, change: &Change, laid_out: &mut BTreeSet<sdk::TabId>) {
             match *change {
-                // A tab's look and a pane's title, which the model does not
-                // keep.
-                Change::TabChanged { .. } | Change::PaneChanged { .. } => {}
+                // A tab's look, a pane's title and a group, which the model
+                // does not keep.
+                Change::TabChanged { .. }
+                | Change::PaneChanged { .. }
+                | Change::GroupChanged { .. } => {}
                 Change::WindowOpened { window } => {
                     assert!(self.windows.insert(window, Window::default()).is_none());
                 }
@@ -2680,4 +2682,124 @@ fn a_pinned_tab_behind_the_settings_tab_unpins_of_no_underflow() {
     assert!(workspace.set_tab_pinned(other, false));
     assert!(!workspace.tab(other).unwrap().marks().pinned);
     assert_eq!(workspace.window(window).unwrap().tabs(), [other, settings]);
+}
+
+/// The groups that `workspace`'s events since the last take told of.
+fn told_groups(workspace: &mut Workspace) -> Vec<sdk::GroupId> {
+    workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Changed(Change::GroupChanged { group, .. }) => Some(group),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_group_is_made_changed_folded_and_taken_apart_its_tabs_together() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let a = workspace.window(window).unwrap().active_tab();
+    let b = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.open_tab(window, pane("sleep 30"), 2).unwrap();
+    let d = workspace.open_tab(window, pane("sleep 30"), 3).unwrap();
+    let tabs = |workspace: &Workspace| workspace.window(window).unwrap().tabs().to_vec();
+    workspace.take_events();
+    // Of two tabs apart: next to one another at the first's place.
+    let group = workspace.new_group(&[c, a], "", None).unwrap();
+    assert_eq!(tabs(&workspace), [a, c, b, d]);
+    assert_eq!(workspace.group_tabs(group), [a, c]);
+    assert_eq!(workspace.tab(c).unwrap().group(), Some(group));
+    assert_eq!(told_groups(&mut workspace), [group.into()]);
+    // Named and colored.
+    assert!(workspace.rename_group(group, "work"));
+    let red = Rgb::new(200, 30, 40);
+    assert!(workspace.set_group_color(group, Some(red)));
+    let shown = workspace.groups_of(window);
+    assert_eq!(shown.len(), 1);
+    assert_eq!((shown[0].name(), shown[0].color()), ("work", Some(red)));
+    assert_eq!(told_groups(&mut workspace).len(), 2);
+    // Folded, its shown tab gives way to the tab after it; shown again, it
+    // unfolds.
+    assert_eq!(workspace.window(window).unwrap().active_tab(), a);
+    assert!(workspace.fold_group(group, true));
+    assert!(workspace.group(group).unwrap().folded());
+    assert_eq!(workspace.window(window).unwrap().active_tab(), b);
+    assert!(workspace.activate_tab(c));
+    assert!(!workspace.group(group).unwrap().folded());
+    // A tab added goes to its end; one taken out right after it.
+    assert!(workspace.add_to_group(d, group));
+    assert_eq!(tabs(&workspace), [a, c, d, b]);
+    assert!(workspace.remove_from_group(a));
+    assert_eq!(tabs(&workspace), [c, d, a, b]);
+    assert_eq!(workspace.group_tabs(group), [c, d]);
+    // Pinned, a tab leaves it.
+    assert!(workspace.set_tab_pinned(c, true));
+    assert_eq!(workspace.group_tabs(group), [d]);
+    assert_eq!(workspace.tab(c).unwrap().group(), None);
+    // A group of the window's every tab folds not.
+    let all = workspace.new_group(&[d, a, b], "all", None).unwrap();
+    assert_eq!(workspace.group(group), None, "its last tab left it");
+    assert!(workspace.set_tab_pinned(c, false));
+    assert_eq!(workspace.group_tabs(all), [d, a, b]);
+    assert!(workspace.add_to_group(c, all));
+    assert_eq!(workspace.group_tabs(all).len(), 4);
+    assert!(!workspace.fold_group(all, true));
+    assert!(!workspace.group(all).unwrap().folded());
+    // Of a tab out of it, it folds.
+    assert!(workspace.remove_from_group(c));
+    assert!(workspace.fold_group(all, true));
+    // Taken apart, its tabs stay.
+    workspace.take_events();
+    assert!(workspace.ungroup(all));
+    assert!(workspace.groups_of(window).is_empty());
+    assert_eq!(workspace.tab(a).unwrap().group(), None);
+    assert_eq!(told_groups(&mut workspace), [all.into()]);
+    // Of a pinned tab, none.
+    assert!(workspace.set_tab_pinned(a, true));
+    assert_eq!(workspace.new_group(&[a, b], "", None), None);
+}
+
+#[test]
+fn a_group_keeps_its_tabs_together_through_moves_and_goes_with_its_last() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let a = workspace.window(window).unwrap().active_tab();
+    let b = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.open_tab(window, pane("sleep 30"), 2).unwrap();
+    let d = workspace.open_tab(window, pane("sleep 30"), 3).unwrap();
+    let e = workspace.open_tab(window, pane("sleep 30"), 4).unwrap();
+    let group = workspace.new_group(&[b, c, d], "", None).unwrap();
+    // A tab moved between two of its tabs joins it.
+    assert!(workspace.move_tab(e, window, 2));
+    assert_eq!(workspace.group_tabs(group), [b, e, c, d]);
+    // One moved out of its run leaves it.
+    assert!(workspace.move_tab(c, window, 0));
+    assert_eq!(workspace.group_tabs(group), [b, e, d]);
+    assert_eq!(workspace.tab(c).unwrap().group(), None);
+    // Moved within it, it stays.
+    assert!(workspace.move_tab(d, window, 2));
+    assert_eq!(workspace.group_tabs(group), [d, b, e]);
+    // A tab opened between two of its tabs joins it.
+    let f = workspace.open_tab(window, pane("sleep 30"), 3).unwrap();
+    assert_eq!(workspace.group_tabs(group), [d, f, b, e]);
+    // A group of one tab goes with it to another window; one of several
+    // moved there leaves it.
+    let alone = workspace.new_group(&[a], "alone", None).unwrap();
+    let other = workspace.tab_to_new_window(a).unwrap();
+    assert_eq!(workspace.group(alone).unwrap().window(), other);
+    assert_eq!(workspace.group_tabs(alone), [a]);
+    assert!(workspace.move_tab(f, other, 1));
+    assert_eq!(workspace.tab(f).unwrap().group(), None);
+    assert_eq!(workspace.group_tabs(group), [d, b, e]);
+    // Its tabs closed, it goes; its window closed, its groups go.
+    workspace.take_events();
+    for tab in [d, b, e] {
+        assert!(workspace.close_tab(tab));
+    }
+    assert_eq!(workspace.group(group), None);
+    assert!(told_groups(&mut workspace).contains(&group.into()));
+    assert!(workspace.close_window(other));
+    assert_eq!(workspace.group(alone), None);
 }

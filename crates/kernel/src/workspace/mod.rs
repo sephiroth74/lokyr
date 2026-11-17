@@ -19,6 +19,7 @@
 //! embedder takes them.
 
 pub mod agent;
+mod groups;
 mod layout;
 mod pane;
 #[cfg(test)]
@@ -35,6 +36,7 @@ use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
 pub use agent::{Agent, AgentSettings, Hooked};
 use agent::{HOOKED, Told};
+pub use groups::Group;
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
     ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
@@ -84,6 +86,10 @@ id!(
     /// A pane of a tab.
     PaneId
 );
+id!(
+    /// A group of a window's tabs.
+    GroupId
+);
 
 impl WindowId {
     /// The id of the number `id`, as a plugin's handle gives it, which may
@@ -109,6 +115,20 @@ impl From<WindowId> for sdk::WindowId {
 
 impl From<TabId> for sdk::TabId {
     fn from(id: TabId) -> Self {
+        Self(id.0)
+    }
+}
+
+impl GroupId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no group's.
+    pub fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<GroupId> for sdk::GroupId {
+    fn from(id: GroupId) -> Self {
         Self(id.0)
     }
 }
@@ -215,6 +235,9 @@ pub struct Tab {
     /// When it last showed, of the workspace's count of uses, which orders
     /// a window's tabs by their use; 0 of a tab that never showed.
     used: u64,
+    /// The group that it is in, its tabs next to one another in their
+    /// window.
+    group: Option<GroupId>,
 }
 
 /// What a tab bar marks a tab of: what came in it while it did not show,
@@ -311,6 +334,11 @@ impl Tab {
     /// What a tab bar marks it of.
     pub fn marks(&self) -> Marks {
         self.marks.clone()
+    }
+
+    /// The group that it is in, if it is in one.
+    pub fn group(&self) -> Option<GroupId> {
+        self.group
     }
 
     /// The layout of its panes.
@@ -441,6 +469,8 @@ pub struct Workspace {
     /// The tabs closed that it keeps for a while, to give back, the last
     /// closed last.
     closed: Vec<Closed>,
+    /// The groups of the windows' tabs, each of one tab at least.
+    groups: BTreeMap<GroupId, Group>,
 }
 
 /// A tab closed that the workspace keeps, out of every window, its panes'
@@ -557,7 +587,28 @@ impl Workspace {
             | WorkspaceEvent::TabCreated { tab, .. } => Some(TabId::of(tab.0)),
             _ => None,
         };
+        // A tab that comes between two of a group joins it, and the groups
+        // settle as their window's tabs change.
+        let placed = match &event {
+            WorkspaceEvent::TabCreated { tab, .. } | WorkspaceEvent::TabMoved { tab, .. } => {
+                Some(TabId::of(tab.0))
+            }
+            _ => None,
+        };
+        let settles = matches!(
+            event,
+            WorkspaceEvent::TabCreated { .. }
+                | WorkspaceEvent::TabClosed { .. }
+                | WorkspaceEvent::TabMoved { .. }
+                | WorkspaceEvent::WindowClosed { .. }
+        );
         self.events.push(Event::Changed(event));
+        if let Some(tab) = placed {
+            self.join_between(tab);
+        }
+        if settles {
+            self.settle_groups();
+        }
         if let Some(tab) = progressed {
             let progress = self.tab_progress(tab);
             let status = self.tab_status(tab);
@@ -1189,6 +1240,10 @@ impl Workspace {
         {
             return self.tabs.contains_key(&tab);
         }
+        // Pinned, it leaves its group first, right after the group's tabs.
+        if pinned {
+            self.leave_group(tab);
+        }
         // Its place among the others, of the pinned ones but itself, which
         // a tab not pinned before it, as the settings tab, leaves out.
         let others = self.pinned_in(window).saturating_sub(usize::from(!pinned));
@@ -1221,6 +1276,7 @@ impl Workspace {
                 zoomed: None,
                 marks: Marks::default(),
                 used: 0,
+                group: None,
             },
         );
         self.take_active_look(tab);
@@ -1736,6 +1792,7 @@ impl Workspace {
         if !self.order_held {
             self.used(tab);
         }
+        self.unfold_group_of(tab);
         let panes = self
             .tabs
             .get(&tab)

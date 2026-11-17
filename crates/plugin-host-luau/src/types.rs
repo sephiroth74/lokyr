@@ -567,6 +567,7 @@ fn param_name(ty: &str, at: usize) -> String {
         "PaneId" => "pane",
         "TabId" => "tab",
         "WindowId" => "window",
+        "GroupId" => "group",
         "PanelId" => "panel",
         "ViewId" => "view",
         "Command" => "command",
