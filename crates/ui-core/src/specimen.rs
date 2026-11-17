@@ -3,17 +3,19 @@
 //! panes draw theirs: prompts and commands that ran, failed and run, an
 //! `ls` of colors and a link, the 16 colors as text and as backgrounds,
 //! bold, faint, italic, underlined, curly, struck and inverse text, a
-//! selection, the find's matches, an error and a warning, and a block
-//! cursor over a character on the cursor guide's row.
+//! selection, the find's matches, a hint's label over the link, an error
+//! and a warning, and a block cursor over a character on the cursor guide's
+//! row.
 
 use lokyr_render_core::{CellBatch, Shape};
 use lokyr_text_core::CellMetrics;
+use lokyr_vt_core::page::Underline;
 use lokyr_vt_core::parser::Parser;
-use lokyr_vt_core::terminal::{Colors, Options, Snapshot, Terminal};
+use lokyr_vt_core::terminal::{Colors, Label, Look, Options, Snapshot, Terminal};
 
 use crate::paint;
 use crate::pane::{self, CursorLook, Glyphs, Selection, TextLook};
-use crate::theme::{MatchColors, SelectionColors, Tokens};
+use crate::theme::{LabelColors, MatchColors, SelectionColors, Tokens};
 
 /// The specimen's columns.
 pub const COLUMNS: u16 = 52;
@@ -36,6 +38,9 @@ pub fn natural((width, height): (f32, f32)) -> (f32, f32) {
 
 /// The row of the selected text, and its columns.
 const SELECTED: (u16, std::ops::Range<u16>) = (7, 0..13);
+
+/// The link of the `ls`, its row and its columns, which a hint labels.
+const LINK: (u16, std::ops::RangeInclusive<u16>) = (1, 32..=40);
 
 /// The find's match, and its current one, on the selected text's row.
 const MATCHED: std::ops::Range<u16> = 15..20;
@@ -74,6 +79,8 @@ pub struct Specimen {
     pub selection: SelectionColors,
     /// The find's matches' colors.
     pub matches: MatchColors,
+    /// The hints' labels' colors.
+    pub labels: LabelColors,
     /// The text's look.
     pub text: TextLook,
     /// The cursor's look.
@@ -85,6 +92,19 @@ fn snapshot(colors: &Colors) -> Snapshot {
     let mut terminal = Terminal::new(COLUMNS, ROWS, Options::default());
     terminal.set_default_colors(colors.clone());
     Parser::new().advance(&mut terminal, SAMPLE.as_bytes());
+    // A hint over the link, as the hints label it.
+    let (row, columns) = LINK;
+    let hint = Look {
+        underline: Underline::Single,
+        label: Some(Label::new("a")),
+        ..Look::default()
+    };
+    terminal.decorate(
+        1,
+        (*columns.start(), i64::from(row)),
+        (*columns.end(), i64::from(row)),
+        hint,
+    );
     let mut snapshot = Snapshot::default();
     terminal.snapshot(&mut snapshot);
     snapshot
@@ -129,6 +149,8 @@ pub fn cells(
             }
         }
     }
+    pane::decorate(&mut batch, &snapshot, cell);
+    pane::labels(&mut batch, &snapshot, cell, specimen.labels, glyphs);
     let bars =
         pane::gutter_marks(&snapshot, origin, (padding, cell.height), scale, tokens).collect();
     (batch, bars)

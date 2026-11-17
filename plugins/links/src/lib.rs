@@ -98,6 +98,9 @@ pub struct Links {
     underlined: Option<(PaneId, Span, u64)>,
     hints: Option<Shown>,
     patterns: Vec<hints::Pattern>,
+    /// The letters of the labels, of the config's `alphabet`; the
+    /// default's of none.
+    alphabet: Option<String>,
 }
 
 /// The hints that a pane shows: the pane, each hint, and what a pick does.
@@ -425,7 +428,8 @@ impl Links {
         if found.is_empty() {
             return Ok(());
         }
-        let labels = hints::labels(found.len(), hints::ALPHABET);
+        let alphabet = self.alphabet.as_deref().unwrap_or(hints::ALPHABET);
+        let labels = hints::labels(found.len(), alphabet);
         let mut shown = Shown {
             pane,
             hints: Vec::new(),
@@ -535,8 +539,9 @@ impl Links {
 
 impl Links {
     /// Takes the patterns of its config's `hints`, each a table of its name
-    /// of a `pattern` and a `url`; a pattern that does not read is told in
-    /// a notice and left out.
+    /// of a `pattern` and a `url`, and its `alphabet`; a pattern that does
+    /// not read, and an alphabet of another character or of a letter twice,
+    /// are told in a notice and left out.
     fn configure(&mut self, cx: &mut Cx<'_>) {
         let Ok(config) = cx.config() else {
             return;
@@ -546,6 +551,19 @@ impl Links {
         for (name, error) in refused {
             let text = format!("The hint `{name}`'s pattern does not read: {error}");
             let _ = cx.notify(&text, NoticeLevel::Warning, None);
+        }
+        self.alphabet = None;
+        if let Data::Map(config) = &config
+            && let Some(Data::Text(alphabet)) = config.get("alphabet")
+        {
+            if hints::is_alphabet(alphabet) {
+                self.alphabet = Some(alphabet.clone());
+            } else {
+                let text = format!(
+                    "The hints' alphabet `{alphabet}` is not of lowercase letters and digits, each once: the hints keep the default"
+                );
+                let _ = cx.notify(&text, NoticeLevel::Warning, None);
+            }
         }
     }
 }

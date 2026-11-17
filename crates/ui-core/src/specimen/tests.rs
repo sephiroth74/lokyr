@@ -27,6 +27,7 @@ fn specimen(guide: Option<Color>) -> Specimen {
         colors: variant.colors.clone(),
         selection: variant.selection,
         matches: variant.match_colors(),
+        labels: variant.label_colors(),
         text: TextLook {
             cursor_guide: guide,
             ..TextLook::default()

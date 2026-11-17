@@ -56,6 +56,8 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
             "search.match",
             "search.match.current",
             "cursor.guide",
+            "hints.label.bg",
+            "hints.label.fg",
         ],
     ),
     (

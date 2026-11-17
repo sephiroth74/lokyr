@@ -1868,6 +1868,7 @@ impl<B: Backend> App<B> {
             colors: variant.colors.clone(),
             selection: variant.selection,
             matches: variant.match_colors(),
+            labels: variant.label_colors(),
             text: TextLook {
                 config: self.config.text,
                 blink_shown: true,

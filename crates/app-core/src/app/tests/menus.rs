@@ -143,7 +143,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Jump to Previous Prompt cmd+ArrowUp",
             "Jump to Next Prompt cmd+ArrowDown",
             "-",
-            "Show Hints",
+            "Show Hints shift+cmd+e",
             "-",
             "Show Cursor Guide alt+cmd+;",
             "-",
@@ -333,7 +333,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 132);
+    assert_eq!(app.keymap.bindings().len(), 133);
 }
 
 #[test]

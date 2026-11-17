@@ -1554,6 +1554,7 @@ fn a_part_of_a_theme_draws_in_it_beside_the_window_s_as_its_golden_images() {
                         colors: other.colors.clone(),
                         selection: other.selection,
                         matches: other.match_colors(),
+                        labels: other.label_colors(),
                         text: TextLook::default(),
                         cursor: CursorLook {
                             shape: CursorShape::Block,
@@ -1610,6 +1611,7 @@ fn the_theme_editor_s_previews_draw_in_the_theme_shown_as_their_golden_images() 
                         colors: other.colors.clone(),
                         selection: other.selection,
                         matches: other.match_colors(),
+                        labels: other.label_colors(),
                         text: TextLook::default(),
                         cursor: CursorLook {
                             shape: CursorShape::Block,

@@ -2009,6 +2009,7 @@ mod tests {
                         colors: light.colors.clone(),
                         selection: light.selection,
                         matches: light.match_colors(),
+                        labels: light.label_colors(),
                         text: crate::pane::TextLook::default(),
                         cursor: crate::pane::CursorLook {
                             shape: lokyr_render_core::CursorShape::Block,
@@ -2113,6 +2114,7 @@ mod tests {
                 colors: variant.colors.clone(),
                 selection: variant.selection,
                 matches: variant.match_colors(),
+                labels: variant.label_colors(),
                 text: crate::pane::TextLook::default(),
                 cursor: crate::pane::CursorLook {
                     shape: lokyr_render_core::CursorShape::Block,

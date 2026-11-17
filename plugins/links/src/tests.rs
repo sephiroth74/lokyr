@@ -882,3 +882,44 @@ fn a_pattern_of_the_config_labels_its_matches_which_open_its_url() {
         Request::Notify { text, .. } if text.contains("`broken`")
     )));
 }
+
+#[test]
+fn the_alphabet_of_the_config_gives_the_labels_and_one_that_is_none_is_told() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let alphabet = |letters: &str| {
+        Data::Map(std::collections::BTreeMap::from([(
+            "alphabet".to_owned(),
+            Data::Text(letters.to_owned()),
+        )]))
+    };
+    let lines = ["commit 4482b9e9", "commit 5582b9e9", "commit 6682b9e9"];
+    let mut host = screen(&lines);
+    host.set_config(alphabet("jk"));
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    // Of two letters, the nearest one of one, the others of two.
+    let mut shown: Vec<String> = labels(&host).into_iter().map(|(_, label)| label).collect();
+    shown.sort();
+    assert_eq!(shown, ["j", "kj", "kk"]);
+    // Of a letter twice or a capital, told, the default's letters.
+    for wrong in ["aa", "aB", "a"] {
+        let mut host = screen(&lines);
+        host.set_config(alphabet(wrong));
+        let mut links = Links::default();
+        host.take_done();
+        host.activate(&mut links).unwrap();
+        assert!(
+            host.take_done().iter().any(|request| matches!(
+                request,
+                Request::Notify { text, .. } if text.contains("alphabet")
+            )),
+            "{wrong}"
+        );
+        host.command(&mut links, HINTS, Args::new()).unwrap();
+        let mut shown: Vec<String> = labels(&host).into_iter().map(|(_, label)| label).collect();
+        shown.sort();
+        assert_eq!(shown, ["a", "d", "s"], "{wrong}");
+    }
+}

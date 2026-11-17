@@ -35,6 +35,7 @@ tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o s
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
 tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.
 tip-tab-groups = Fai clic destro su un tab e scegli Nuovo gruppo con il tab per raccogliere i tab sotto un nome e un colore. Fai clic sulla pillola del gruppo per comprimerlo, o trascina un tab subito dopo per metterlo dentro.
+tip-hints = Premi { $keys } per etichettare link, percorsi e hash sullo schermo, poi scrivi un'etichetta per aprirlo; in maiuscolo lo copi.
 tip-themes = Vista › Scegli tema… mostra in anteprima ogni tema mentre scorri l'elenco.
 tip-themes-folder = Metti un tema .toml o .itermcolors nella cartella che Vista › Apri la cartella dei temi mostra nel Finder, e Scegli tema… lo elenca.
 tip-new-theme = Nuovo… nella pagina Temi crea un tema con tutte le chiavi di quelli di Lokyr; Vista › Nuovo tema dall'attuale… uno dal tema in uso, e il menu contestuale di una scheda duplica qualsiasi tema.

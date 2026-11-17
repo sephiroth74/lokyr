@@ -259,6 +259,20 @@ fn is_ip(text: &str) -> bool {
         })
 }
 
+/// Whether `alphabet` is one of labels: two lowercase ASCII letters or
+/// digits at least, each once, as a label takes them and a capital copies.
+pub fn is_alphabet(alphabet: &str) -> bool {
+    let letters: Vec<char> = alphabet.chars().collect();
+    letters.len() >= 2
+        && letters
+            .iter()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && letters
+            .iter()
+            .enumerate()
+            .all(|(at, c)| !letters[at + 1..].contains(c))
+}
+
 /// The labels of `count` hints, of the letters of `alphabet`, none the
 /// start of another: one letter each while the letters go round, then of
 /// two, for the hints past the first ones, of letters that no label of one
@@ -386,5 +400,10 @@ mod tests {
         // As many as the pairs at most.
         assert_eq!(labels(1000, "ab").len(), 4);
         assert!(labels(3, "").is_empty());
+        // An alphabet of lowercase letters and digits, each once.
+        assert!(is_alphabet(ALPHABET) && is_alphabet("12"));
+        assert!(
+            !is_alphabet("a") && !is_alphabet("aa") && !is_alphabet("aB") && !is_alphabet("a-")
+        );
     }
 }

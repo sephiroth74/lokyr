@@ -234,6 +234,7 @@ align = "left"                       # left | center | right: where its pill sit
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
 
 [plugins.links]
+alphabet = "asdfghjklqwertyuiopzxcvbnm"   # the letters of the hints' labels, nearest first
 hints = { jira = { pattern = "PROJ-\\d+", url = "https://jira.example.com/browse/$0" } }   # a ticket's number to its page
 ```
 
@@ -1685,6 +1686,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
 | `alt+cmd+;` | `window.toggle-cursor-guide` | Shows the cursor guide, a band across the cursor's row, or hides it, in every window, as View › Show Cursor Guide does, until [`guide`](#guide) changes |
+| `cmd+shift+e` | `links.hints` | Labels what the pane shows that you may pick, as View › Show Hints does: URLs, paths, git's hashes, IP addresses and your [`hints`](#hints) |
 | `shift+cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
 | `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
 | `cmd+up` | `pane.prompt-previous` | Scrolls the view to the prompt above its top, of the commands that the shell marks, as [`shell-integration`](#shell-integration) has it, the prompt at the view's top |
@@ -2169,6 +2171,20 @@ The days between two tips as Lokyr starts.
 - It applies at the next start, as you save the file.
 
 ## `[plugins.links]`
+
+### `alphabet`
+
+<sub>Platforms: macOS</sub>
+
+The letters of the hints' labels, in the order that they take them: the first letters label the hints nearest the cursor, one letter each, and the hints past them take two.
+
+| Values | Default |
+|---|---|
+| lowercase letters and digits, each once, 2 at least | `"asdfghjklqwertyuiopzxcvbnm"` |
+
+- The home row's first, by default, so that the nearest hints are a key away. A capital, as Shift types it, copies the hint whatever its action.
+- A value of another character, or of a letter twice, is told in a notice, and the hints keep the default.
+- It applies as you save the file, to the next hints.
 
 ### `hints`
 

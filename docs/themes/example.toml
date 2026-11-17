@@ -119,6 +119,10 @@ box.border = "#ffffff1a"
 [cursor]                            # the cursor guide's band across the cursor's row
 guide = "foreground / 10%"
 
+[hints]                             # the hints' labels over what they pick
+label.bg = "accent"
+label.fg = "contrasting(hints.label.bg)"
+
 [gutter]                            # the bar beside each prompt of a command that ran
 running = "accent"
 succeeded = "#ffffff40"
