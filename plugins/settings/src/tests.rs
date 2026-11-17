@@ -28,6 +28,7 @@ fn key(name: &str, value: Option<Data>, default: Option<Data>, kind: SettingKind
         default,
         value,
         guide: Some(format!("https://lokyr.dev/guide#{name}")),
+        docs: None,
     }
 }
 
@@ -1847,6 +1848,7 @@ fn a_key_names_its_platforms_where_they_differ_and_links_its_text_in_the_guide()
     // A key of Linux alone, and one of no text in the guide.
     given.sections[0].keys[0].platforms = vec!["linux".to_owned()];
     given.sections[0].keys[1].guide = None;
+    given.sections[0].keys[0].docs = Some("https://lokyr.dev/docs/x.html#y".to_owned());
     host.set_settings(given);
     let mut plugin = SettingsPage::default();
     host.activate(&mut plugin).unwrap();
@@ -1867,6 +1869,20 @@ fn a_key_names_its_platforms_where_they_differ_and_links_its_text_in_the_guide()
     assert!(
         host.take_done()
             .contains(&Request::Open("https://lokyr.dev/guide#style".to_owned()))
+    );
+    // The documentation's page of a key's topic, a link beside it, of a key
+    // that has one alone.
+    assert!(find_node(&tree, "docs:style").is_none());
+    assert!(matches!(
+        &find_node(&tree, "docs:family").unwrap().kind,
+        Kind::Button(button) if button.link && button.label == "setting-docs"
+    ));
+    host.take_done();
+    host.ui_event(&mut plugin, &on("docs:family", UiEventKind::Click))
+        .unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::Open("https://lokyr.dev/docs/x.html#y".to_owned()))
     );
 }
 

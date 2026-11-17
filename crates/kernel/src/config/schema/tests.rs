@@ -767,3 +767,79 @@ fn the_bindings_in_force_are_the_defaults_that_the_config_leaves_then_its_own() 
         }
     }
 }
+
+#[test]
+fn a_key_s_docs_name_a_page_of_the_documentation_and_its_heading() {
+    use super::docs_of;
+
+    assert_eq!(
+        docs_of("shell-integration.md#set-it-up-by-hand").as_deref(),
+        Some("https://lokyr.dev/docs/shell-integration.html#set-it-up-by-hand")
+    );
+    assert_eq!(
+        docs_of("plugins/tabs.md").as_deref(),
+        Some("https://lokyr.dev/docs/plugins/tabs.html")
+    );
+    for refused in ["x.html", "../x.md", "/x.md", ".md"] {
+        assert_eq!(docs_of(refused), None, "{refused}");
+    }
+    // Every `x-docs` of the schemas, the kernel's and the plugins': a page
+    // of `docs/`, and of an anchor, one of its headings'.
+    fn walk<'a>(node: &'a Value, found: &mut Vec<&'a str>) {
+        match node {
+            Value::Object(map) => {
+                if let Some(Value::String(page)) = map.get("x-docs") {
+                    found.push(page);
+                }
+                map.values().for_each(|value| walk(value, found));
+            }
+            Value::Array(items) => items.iter().for_each(|value| walk(value, found)),
+            _ => {}
+        }
+    }
+    let schemas: Vec<Value> = std::iter::once(schema())
+        .chain(
+            PLUGINS
+                .iter()
+                .map(|(_, text)| serde_json::from_str(text).unwrap()),
+        )
+        .collect();
+    let mut pages = Vec::new();
+    for schema in &schemas {
+        walk(schema, &mut pages);
+    }
+    assert!(!pages.is_empty());
+    let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    for page in pages {
+        assert!(docs_of(page).is_some(), "{page}");
+        let (path, anchor) = page.split_once('#').unwrap_or((page, ""));
+        let text = std::fs::read_to_string(docs.join(path))
+            .unwrap_or_else(|_| panic!("x-docs names {path}, which docs/ has not"));
+        if anchor.is_empty() {
+            continue;
+        }
+        let slugs: Vec<String> = text
+            .lines()
+            .filter_map(|line| {
+                line.trim_start_matches('#')
+                    .strip_prefix(' ')
+                    .filter(|_| line.starts_with('#'))
+            })
+            .map(|heading| {
+                heading
+                    .to_lowercase()
+                    .chars()
+                    .filter_map(|c| match c {
+                        ' ' => Some('-'),
+                        c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+        assert!(
+            slugs.iter().any(|slug| slug == anchor),
+            "x-docs names #{anchor}, which {path} has no heading of"
+        );
+    }
+}

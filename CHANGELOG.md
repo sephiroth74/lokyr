@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- The settings link the documentation's page of a key's topic beside its More info, such as shell integration's, which tells how to add it by hand to macOS's own bash or to a shell that you start from another one.
 - A program that tells its status of OSC 7501, the Program Status Protocol, as Claude Code and Codex do, shows it exactly on its tab, whether `[agents] programs` lists it or not: at work, of its progress in the tab's ring; waiting for you, of what it asks for, a permission, an answer or a login, and of its message in the tab's tooltip; done, or failed of a red mark, until you look at its tab or type into its pane; idle, of no mark. Its output, its quiet and its bell no longer guess its state while it tells it, until it leaves the foreground; Lokyr answers the protocol's query, `OSC 7501 ; ?`, as such programs ask before they tell anything.
 - The plugin API reads what an agent that waits asks for, the `kind` of each agent of `cx.agents`, of a program that tells it.
 - A program's status of its session, as OSC 21337 tells it and Codex sends it: its tab shows a dot of its color, unless an agent's mark, and its text and detail in its tooltip; it goes as the program exits.

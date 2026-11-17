@@ -1701,6 +1701,10 @@ pub struct SettingKey {
     /// lacks, as a plugin's that is not Lokyr's own.
     #[serde(default)]
     pub guide: Option<String>,
+    /// The address of the documentation's page that tells its topic, of
+    /// its section, which a browser opens; none of a key of no such page.
+    #[serde(default)]
+    pub docs: Option<String>,
 }
 
 /// The values that a key of the settings takes.

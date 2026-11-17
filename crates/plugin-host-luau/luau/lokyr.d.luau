@@ -857,6 +857,7 @@ export type SettingKey = {
     default: Data?,
     value: Data?,
     guide: string?,
+    docs: string?,
 }
 
 export type SettingKind =

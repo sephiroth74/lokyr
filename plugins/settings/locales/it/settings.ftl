@@ -155,5 +155,6 @@ bindings-none = La tua config non assegna tasti suoi: valgono quelli predefiniti
 settings-file-error-at = Il tuo file di configurazione non si legge alla riga { $line }, colonna { $column }: { $message }. Le impostazioni sono quelle applicate per ultime, e la pagina non scrive nulla finché il file non si legge.
 settings-file-error = Il tuo file di configurazione non si legge: { $message }. Le impostazioni sono quelle applicate per ultime, e la pagina non scrive nulla finché il file non si legge.
 setting-more-info = Più informazioni
+setting-docs = Documentazione
 setting-list-remove = Rimuovi
 setting-list-add = Aggiungi un valore

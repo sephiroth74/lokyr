@@ -156,5 +156,6 @@ bindings-none = Your config binds no keys of its own: the defaults apply.
 settings-file-error-at = Your config file does not read at line { $line }, column { $column }: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
 settings-file-error = Your config file does not read: { $message }. The settings are those that applied last, and the page writes nothing until the file reads.
 setting-more-info = More info
+setting-docs = Documentation
 setting-list-remove = Remove
 setting-list-add = Add a value

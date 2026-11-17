@@ -179,6 +179,10 @@ const KEYS: &str = "keys";
 /// The prefix of the key of a key's link to its text in the guide.
 const GUIDE: &str = "guide:";
 
+/// The prefix of the key of a key's link to the documentation's page of its
+/// topic.
+const DOCS: &str = "docs:";
+
 /// The prefix of the key of a list's value's button that takes it away,
 /// `remove:<key>:<index>`.
 const REMOVE: &str = "remove:";
@@ -777,6 +781,10 @@ impl Plugin for SettingsPage {
                 self.write(cx, section, setting, None)
             }
             (UiEventKind::Click, GUIDE) => match &setting.guide {
+                Some(address) => cx.open(address),
+                None => Ok(()),
+            },
+            (UiEventKind::Click, DOCS) => match &setting.docs {
                 Some(address) => cx.open(address),
                 None => Ok(()),
             },
@@ -2030,20 +2038,29 @@ fn key_row(
                 .layout(wrapped()),
         );
     }
-    // Its text in the guide, which a browser opens.
+    // Its text in the guide, and the documentation's page of its topic,
+    // which a browser opens.
+    let link = |text: String, key: String| {
+        Node::button(text).key(key.as_str()).as_link().style(Style {
+            text_size: Some(TextSize::Small),
+            ..Style::default()
+        })
+    };
+    let mut links = Vec::new();
     if key.guide.is_some() {
-        about.push(row_of(
-            vec![
-                Node::button(message(cx, "setting-more-info", &[]))
-                    .key(format!("{GUIDE}{name}").as_str())
-                    .as_link()
-                    .style(Style {
-                        text_size: Some(TextSize::Small),
-                        ..Style::default()
-                    }),
-            ],
-            0.0,
+        links.push(link(
+            message(cx, "setting-more-info", &[]),
+            format!("{GUIDE}{name}"),
         ));
+    }
+    if key.docs.is_some() {
+        links.push(link(
+            message(cx, "setting-docs", &[]),
+            format!("{DOCS}{name}"),
+        ));
+    }
+    if !links.is_empty() {
+        about.push(row_of(links, 12.0));
     }
     // A list's values, under what it does.
     if matches!(key.kind, SettingKind::List { .. }) {

@@ -175,6 +175,7 @@ pub fn section(
                 default,
                 kind,
                 guide: guide_of(name, plugin.is_some(), key),
+                docs: node.get("x-docs").and_then(Ordered::text).and_then(docs_of),
             }
         })
         .collect();
@@ -297,6 +298,26 @@ const GUIDE_ADDRESS: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     "/docs/CONFIGURATION.md"
 );
+
+/// The documentation's site, whose pages a key's `x-docs` names.
+const DOCS_ADDRESS: &str = "https://lokyr.dev/docs";
+
+/// The address of the documentation's page `page`, of `docs/` and of its
+/// anchor, as a key's `x-docs` names it, `shell-integration.md#limits`: the
+/// site's page of it; none of a page that is not of Markdown.
+pub fn docs_of(page: &str) -> Option<String> {
+    let (path, anchor) = page.split_once('#').unwrap_or((page, ""));
+    let stem = path.strip_suffix(".md")?;
+    if stem.is_empty() || stem.contains("..") || stem.starts_with('/') {
+        return None;
+    }
+    let anchor = if anchor.is_empty() {
+        String::new()
+    } else {
+        format!("#{anchor}")
+    };
+    Some(format!("{DOCS_ADDRESS}/{stem}.html{anchor}"))
+}
 
 /// The address of the text of the key `key` of the section `section`, a
 /// plugin's of its namespace where `plugin`, in the config guide: of the
