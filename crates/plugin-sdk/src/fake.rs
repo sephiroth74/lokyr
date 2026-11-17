@@ -1145,6 +1145,8 @@ impl FakeHost {
         if self.focused == Some(window) {
             self.given_focus = Some(None);
         }
+        // Its tabs go before its groups settle, as the app's go with it.
+        self.settle();
         self.changed(WorkspaceEvent::WindowClosed { window });
         self
     }
@@ -2393,6 +2395,17 @@ impl FakeHost {
             tab,
             window: dropped.window,
         });
+        self.lost_from_group(dropped.group);
+    }
+
+    /// Owes that `group`, which a tab that closed was of, lost it, where it
+    /// stays, as the app does.
+    fn lost_from_group(&mut self, group: Option<GroupId>) {
+        if let Some(group) = group
+            && let Some(window) = self.groups.get(&group).map(|shown| shown.window)
+        {
+            self.group_changed(group, window);
+        }
     }
 
     /// Owes what a tab's leaving did to its window.
@@ -2400,9 +2413,8 @@ impl FakeHost {
         match left {
             Left::Kept => {}
             Left::Shows(window, tab) => {
-                self.shown(tab);
                 self.changed(WorkspaceEvent::TabActivated { tab, window });
-                self.unfold_group_of(tab);
+                self.tab_shown(tab);
             }
             Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed { window }),
         }
@@ -2436,6 +2448,8 @@ impl FakeHost {
             self.changed(WorkspaceEvent::PaneClosed { pane, tab });
         }
         self.changed(WorkspaceEvent::TabClosed { tab, window });
+        let group = kept.group;
+        self.lost_from_group(group);
         self.closed_tabs.push((tab, kept, panes, window, index));
         let past = self
             .closed_tabs
@@ -2482,6 +2496,8 @@ impl FakeHost {
             window,
             index: placed,
         });
+        let group = self.tabs.get(&tab).and_then(|shown| shown.group);
+        self.lost_from_group(group);
         for pane in ids {
             self.changed(WorkspaceEvent::PaneCreated { pane, tab });
         }
@@ -2809,7 +2825,11 @@ impl FakeHost {
         if self.groups.contains_key(&id) || !self.windows.contains_key(&window) {
             return;
         }
-        for &tab in &members {
+        // The last first, so that they keep their order, as the app's.
+        if let Some(before) = self.windows.get(&window).map(|shown| shown.tabs.clone()) {
+            members.sort_by_key(|tab| before.iter().position(|id| id == tab));
+        }
+        for &tab in members.iter().rev() {
             self.leave_group(tab);
         }
         let Some(order) = self.windows.get(&window).map(|shown| shown.tabs.clone()) else {
@@ -2870,6 +2890,20 @@ impl FakeHost {
             shown.group = Some(group);
         }
         self.group_changed(group, window);
+        self.unfold_if_shown(tab);
+    }
+
+    /// Unfolds the group of `tab` where its window shows it, as the app
+    /// does.
+    fn unfold_if_shown(&mut self, tab: TabId) {
+        let shown = self
+            .tabs
+            .get(&tab)
+            .and_then(|shown| self.windows.get(&shown.window))
+            .is_some_and(|window| window.active == tab);
+        if shown {
+            self.unfold_group_of(tab);
+        }
     }
 
     /// Takes `tab` out of its group, right after the group's tabs, as the
@@ -3000,6 +3034,7 @@ impl FakeHost {
         if let Some(window) = self.groups.get(&left).map(|group| group.window) {
             self.group_changed(left, window);
         }
+        self.unfold_if_shown(tab);
         if let Some(before) = before
             && !self.group_tabs(before).is_empty()
             && let Some(window) = self.groups.get(&before).map(|group| group.window)
@@ -4873,6 +4908,13 @@ impl Calling<'_> {
             }
             Request::NewGroup { tabs, name, color } => {
                 check_group(name, *color)?;
+                // Each tab once, in its order, as the app's.
+                let mut seen = BTreeSet::new();
+                let tabs: Vec<TabId> = tabs
+                    .iter()
+                    .copied()
+                    .filter(|tab| seen.insert(*tab))
+                    .collect();
                 let Some(&first) = tabs.first() else {
                     return Err(Error::new(Code::Failed, "a group has one tab at least"));
                 };

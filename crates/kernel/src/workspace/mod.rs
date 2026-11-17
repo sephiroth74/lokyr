@@ -560,6 +560,7 @@ impl Workspace {
         let Some(dropped) = self.tabs.remove(&tab) else {
             return;
         };
+        let group = dropped.group;
         for pane in dropped.layout.panes() {
             self.tab_of.remove(&pane);
             let gone = self.panes.remove(&pane);
@@ -574,6 +575,17 @@ impl Workspace {
             tab: tab.into(),
             window: dropped.window.into(),
         });
+        self.lost_from_group(group);
+    }
+
+    /// Tells that `group`, which a tab that closed was of, lost it, where
+    /// it stays.
+    fn lost_from_group(&mut self, group: Option<GroupId>) {
+        if let Some(group) = group
+            && let Some(window) = self.group(group).map(groups::Group::window)
+        {
+            self.group_changed(group, window);
+        }
     }
 
     /// Records `event`, for the embedder.
@@ -1548,6 +1560,7 @@ impl Workspace {
             tab: tab.into(),
             window: window.into(),
         });
+        self.lost_from_group(kept.group);
         self.closed.push(Closed {
             tab: kept,
             panes,
@@ -1607,6 +1620,9 @@ impl Workspace {
             shown.tabs.insert(index, id);
         }
         self.created(id, &ids);
+        // Its group takes it back, where it stays.
+        let group = self.tabs.get(&id).and_then(|shown| shown.group);
+        self.lost_from_group(group);
         // Its agents come back to the windows, before its tab shows, which
         // sees those that are done.
         for &pane in &ids {

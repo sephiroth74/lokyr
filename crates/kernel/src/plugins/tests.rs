@@ -5529,3 +5529,41 @@ fn a_plugin_of_packages_hears_the_plugins_change_and_another_cannot_subscribe() 
     assert!(plugins.deliver(&mut app.context()).is_empty());
     assert_eq!(*log.borrow(), ["plugins-changed"]);
 }
+
+#[test]
+fn a_new_group_of_a_tab_given_again_and_again_takes_it_once() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let made = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&made);
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "grouper",
+            scripted(
+                |cx| cx.register_command(command("grouper.go")),
+                move |cx, _, _| {
+                    // Two hundred thousand of the same tab, which a plugin
+                    // may give, of no cost but one tab's.
+                    let tabs = vec![host::TabId(tab.get()); 200_000];
+                    *seen.borrow_mut() = Some(cx.new_group(&tabs, "many", None)?);
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let started = Instant::now();
+    plugins
+        .run("grouper.go", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        started.elapsed()
+    );
+    let group = made.borrow().expect("a group");
+    let group = crate::workspace::GroupId::of(group.0);
+    assert_eq!(app.workspace.group_tabs(group), [tab]);
+}

@@ -452,6 +452,17 @@ impl Plugin for Tabs {
                 let tabs = cx.tabs(*window)?;
                 let groups = cx.groups(*window)?;
                 let (at, group) = bar::drop_place(&tabs, &groups, tab, *index);
+                // A pinned tab, of the window that it comes from, joins no
+                // group.
+                let mut pinned = false;
+                for shown in cx.windows()? {
+                    if let Some(found) = cx.tabs(shown.id)?.into_iter().find(|info| info.id == tab)
+                    {
+                        pinned = found.pinned;
+                        break;
+                    }
+                }
+                let group = group.filter(|_| !pinned);
                 cx.move_tab(tab, *window, at)?;
                 if let Some(group) = group {
                     cx.add_to_group(tab, group)?;

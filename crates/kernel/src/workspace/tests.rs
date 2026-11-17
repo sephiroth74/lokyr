@@ -2762,6 +2762,83 @@ fn a_group_is_made_changed_folded_and_taken_apart_its_tabs_together() {
 }
 
 #[test]
+fn the_shown_tab_that_joins_a_folded_group_unfolds_it() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let a = workspace.window(window).unwrap().active_tab();
+    let b = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.open_tab(window, pane("sleep 30"), 2).unwrap();
+    let group = workspace.new_group(&[b, c], "", None).unwrap();
+    workspace.activate_tab(a);
+    assert!(workspace.fold_group(group, true));
+    // `a`, shown, moved between the group's tabs: it joins, and the group
+    // unfolds, as a folded group would hide it.
+    assert!(workspace.move_tab(a, window, 1));
+    assert_eq!(workspace.group_tabs(group), [b, a, c]);
+    assert!(!workspace.group(group).unwrap().folded());
+    // Taken out, the group folded again, then added to it, shown: the
+    // same.
+    assert!(workspace.remove_from_group(a));
+    assert!(workspace.fold_group(group, true));
+    assert_eq!(workspace.window(window).unwrap().active_tab(), a);
+    assert!(workspace.add_to_group(a, group));
+    assert!(!workspace.group(group).unwrap().folded());
+    // A tab that its window does not show leaves a folded group folded.
+    let d = workspace.open_tab(window, pane("sleep 30"), 4).unwrap();
+    workspace.activate_tab(d);
+    assert!(workspace.fold_group(group, true));
+    let e = workspace.open_tab(window, pane("sleep 30"), 5).unwrap();
+    workspace.activate_tab(d);
+    assert!(workspace.add_to_group(e, group));
+    assert!(workspace.group(group).unwrap().folded());
+}
+
+#[test]
+fn a_group_is_told_of_the_tabs_that_close_and_come_back() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let a = workspace.window(window).unwrap().active_tab();
+    let b = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.open_tab(window, pane("sleep 30"), 2).unwrap();
+    let d = workspace.open_tab(window, pane("sleep 30"), 3).unwrap();
+    let group = workspace.new_group(&[b, c, d], "", None).unwrap();
+    workspace.activate_tab(a);
+    workspace.take_events();
+    // A tab closed: its group, which stays, is told.
+    assert!(workspace.close_tab(d));
+    assert_eq!(told_groups(&mut workspace), [group.into()]);
+    // Closed and kept, then given back: told each time.
+    assert!(workspace.close_tab_kept(c, Instant::now() + Duration::from_secs(60)));
+    assert_eq!(told_groups(&mut workspace), [group.into()]);
+    assert_eq!(workspace.group_tabs(group), [b]);
+    assert_eq!(workspace.reopen_tab(window), Some(c));
+    assert_eq!(workspace.group_tabs(group), [b, c]);
+    assert!(told_groups(&mut workspace).contains(&group.into()));
+}
+
+#[test]
+fn a_new_group_keeps_the_order_of_the_tabs_that_it_takes_from_another() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let a = workspace.window(window).unwrap().active_tab();
+    let b = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.open_tab(window, pane("sleep 30"), 2).unwrap();
+    let d = workspace.open_tab(window, pane("sleep 30"), 3).unwrap();
+    let old = workspace.new_group(&[a, b, c], "", None).unwrap();
+    // All of it, in another order given.
+    let new = workspace.new_group(&[c, a, b], "", None).unwrap();
+    assert_eq!(workspace.window(window).unwrap().tabs(), [a, b, c, d]);
+    assert_eq!(workspace.group_tabs(new), [a, b, c]);
+    assert_eq!(workspace.group(old), None);
+    // Some of it: they leave it after its tabs, in their order.
+    let again = workspace.new_group(&[a, b, c], "", None).unwrap();
+    let part = workspace.new_group(&[b, a], "", None).unwrap();
+    assert_eq!(workspace.group_tabs(part), [a, b]);
+    assert_eq!(workspace.group_tabs(again), [c]);
+    assert_eq!(workspace.window(window).unwrap().tabs(), [c, a, b, d]);
+}
+
+#[test]
 fn a_group_keeps_its_tabs_together_through_moves_and_goes_with_its_last() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane("sleep 30"));

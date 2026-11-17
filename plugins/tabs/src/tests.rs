@@ -1254,6 +1254,58 @@ fn close_other_tabs_spares_the_pinned_tabs() {
 }
 
 #[test]
+fn a_pinned_tab_dropped_into_another_window_s_group_joins_none() {
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    // Another window, of two tabs in a group.
+    let other = WindowId(7);
+    for id in [9, 10] {
+        let pane = host.pane(PaneId(id));
+        pane.window = other;
+        pane.tab = TabId(id);
+    }
+    let group = host.add_group(&[TabId(9), TabId(10)], "ops", None);
+    // The second tab pinned.
+    host.focus(Some(PaneId(2)));
+    host.command(&mut plugin, "tabs.toggle-pin", Args::new())
+        .unwrap();
+    let view = ViewId::TabBar(WINDOW);
+    host.render(&mut plugin, &view)
+        .expect("a bar of three tabs");
+    host.take_done();
+    // Dropped between the group's tabs: it moves there, of no group, as a
+    // pinned tab joins none, rather than failing the drop.
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view,
+            key: "tab-2".into(),
+            kind: UiEventKind::DropOnBar {
+                window: other,
+                index: 2,
+            },
+        },
+    )
+    .unwrap();
+    let done = host.take_done();
+    assert!(
+        done.iter()
+            .any(|request| matches!(request, Request::MoveTab { tab: TabId(2), window, .. } if *window == other)),
+        "{done:?}"
+    );
+    assert!(
+        !done
+            .iter()
+            .any(|request| matches!(request, Request::AddToGroup { .. })),
+        "{done:?}"
+    );
+    let groups = host.groups(other);
+    assert_eq!(
+        groups.iter().find(|shown| shown.id == group).unwrap().tabs,
+        [TabId(9), TabId(10)]
+    );
+}
+
+#[test]
 fn a_tab_dragged_into_a_group_joins_it_out_of_it_leaves_it_and_a_click_folds_it() {
     let (mut host, mut plugin) = host(&[1, 1, 1, 1, 1], 1);
     let group = host.add_group(&[TabId(2), TabId(3)], "work", None);

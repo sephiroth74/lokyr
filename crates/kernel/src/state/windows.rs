@@ -338,7 +338,13 @@ impl Window {
                 .map(|&(tab, _)| tab)
                 .collect();
             let color = group.color.as_deref().and_then(rgb);
-            if let Some(made) = workspace.new_group(&members, &group.name, color)
+            // A name that the file holds as no plugin could write it goes.
+            let name = if lokyr_plugin_sdk::host::check_group(&group.name, None).is_ok() {
+                group.name.as_str()
+            } else {
+                ""
+            };
+            if let Some(made) = workspace.new_group(&members, name, color)
                 && group.folded
             {
                 workspace.fold_group(made, true);

@@ -46,6 +46,11 @@ pub fn check_group(name: &str, color: Option<Color>) -> Result<(), String> {
     if name.chars().any(char::is_control) {
         return Err("a group's name holds no control character".to_owned());
     }
+    if name.chars().any(crate::text::is_hidden) {
+        return Err(
+            "a group's name holds no character that hides or moves the text around it".to_owned(),
+        );
+    }
     if matches!(color, Some(Color::Palette(_))) {
         return Err("a group's color is an RGB one, not one of the palette's".to_owned());
     }
@@ -2041,6 +2046,15 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_group_s_name_holds_no_control_nor_hidden_character() {
+        assert_eq!(check_group("work", None), Ok(()));
+        assert_eq!(check_group("عمل\u{200F}", None), Ok(()));
+        for refused in ["w\nork", "w\u{202E}ork", "w\u{200B}ork", "w\u{2028}ork"] {
+            assert!(check_group(refused, None).is_err(), "{refused:?}");
+        }
+    }
 
     #[test]
     fn a_label_is_of_one_to_three_letters_or_digits_and_written_as_its_text() {

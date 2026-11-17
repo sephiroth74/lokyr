@@ -2080,6 +2080,71 @@ fn a_plugin_keeps_the_mac_awake_of_its_capability_as_its_call_returns() {
 }
 
 #[test]
+fn the_fake_s_groups_settle_as_the_app_s() {
+    use super::TabMarks;
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::WorkspaceWrite]);
+    // A window of a first tab, which the others follow.
+    let window = WindowId(1);
+    host.pane(PaneId(1)).window = window;
+    let (a, a_pane) = host.add_tab(window);
+    let (b, b_pane) = host.add_tab(window);
+    let (c, _) = host.add_tab(window);
+    let (d, _) = host.add_tab(window);
+    let group = host.add_group(&[b, c], "work", None);
+    let tabs_of = |host: &mut FakeHost| {
+        host.groups(window)
+            .into_iter()
+            .find(|shown| shown.id == group)
+            .map(|shown| (shown.tabs, shown.folded))
+    };
+    // The shown tab that joins a folded group unfolds it.
+    host.focus(Some(a_pane));
+    let mut fold = Probe::new(move |cx, _| cx.fold_group(group, true));
+    host.command(&mut fold, "probe.go", Args::new()).unwrap();
+    assert_eq!(tabs_of(&mut host), Some((vec![b, c], true)));
+    let mut join = Probe::new(move |cx, _| cx.add_to_group(a, group));
+    host.command(&mut join, "probe.go", Args::new()).unwrap();
+    assert_eq!(tabs_of(&mut host), Some((vec![b, c, a], false)));
+    // A tab that closes tells its group, which stays.
+    host.take_done();
+    let mut close = Probe::new(move |cx, _| cx.close_tab(c, false));
+    host.command(&mut close, "probe.go", Args::new()).unwrap();
+    assert_eq!(tabs_of(&mut host), Some((vec![b, a], false)));
+    // The tab shown after a close loses its bell and its activity.
+    host.set_tab_marks(
+        a,
+        TabMarks {
+            bell: true,
+            activity: true,
+            ..TabMarks::default()
+        },
+    );
+    host.focus(Some(b_pane));
+    let mut close = Probe::new(move |cx, _| cx.close_tab(b, false));
+    host.command(&mut close, "probe.go", Args::new()).unwrap();
+    let marks = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let seen = std::rc::Rc::clone(&marks);
+    let mut look = Probe::new(move |cx, _| {
+        let shown = cx.tabs(window)?.into_iter().find(|info| info.id == a);
+        *seen.borrow_mut() = shown.map(|info| (info.bell, info.activity));
+        Ok(())
+    });
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    assert_eq!(*marks.borrow(), Some((false, false)));
+    assert_eq!(host.focused_tab().map(|(_, tab)| tab), Some(a));
+    let _ = d;
+    // Its window closed, its groups go.
+    host.close_window(window);
+    let mut rename = Probe::new(move |cx, _| cx.rename_group(group, "gone"));
+    assert_eq!(
+        host.command(&mut rename, "probe.go", Args::new())
+            .unwrap_err()
+            .code,
+        Code::NotFound
+    );
+}
+
+#[test]
 fn a_plugin_hears_the_double_tap_of_the_modifier_that_it_watches_alone() {
     use crate::host::Modifier;
     let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::GlobalHotkey]);

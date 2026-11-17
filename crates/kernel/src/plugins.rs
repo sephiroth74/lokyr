@@ -6190,6 +6190,14 @@ impl Host<'_, '_> {
             }
             Asked::NewGroup { tabs, name, color } => {
                 check_group(name, *color)?;
+                // Each tab once, in its order: a tab given again adds
+                // nothing, however many times.
+                let mut seen = std::collections::HashSet::new();
+                let tabs: Vec<host::TabId> = tabs
+                    .iter()
+                    .copied()
+                    .filter(|tab| seen.insert(tab.0))
+                    .collect();
                 let Some(&first) = tabs.first() else {
                     return Err(Error::new(Code::Failed, "a group has one tab at least"));
                 };

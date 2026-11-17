@@ -129,7 +129,11 @@ impl Workspace {
         if self.groups.contains_key(&id) || !self.windows.contains_key(&window) {
             return None;
         }
-        for &tab in &members {
+        // Each leaves its group for the place right after the group's
+        // tabs: the last first, so that they keep their order there.
+        let before = self.windows.get(&window)?.tabs.clone();
+        members.sort_by_key(|tab| before.iter().position(|id| id == tab));
+        for &tab in members.iter().rev() {
             self.leave_group(tab);
         }
         let order = self.windows.get(&window)?.tabs.clone();
@@ -194,6 +198,7 @@ impl Workspace {
             shown.group = Some(group);
         }
         self.group_changed(group, window);
+        self.unfold_if_shown(tab);
         true
     }
 
@@ -300,6 +305,20 @@ impl Workspace {
         true
     }
 
+    /// Unfolds the group of `tab` where its window shows it, as a tab that
+    /// joins a folded group may be the one that its window shows, which a
+    /// folded group would hide.
+    fn unfold_if_shown(&mut self, tab: TabId) {
+        let shown = self
+            .tabs
+            .get(&tab)
+            .and_then(|shown| self.windows.get(&shown.window))
+            .is_some_and(|window| window.active == tab);
+        if shown {
+            self.unfold_group_of(tab);
+        }
+    }
+
     /// Unfolds the group of `tab`, which its window shows, if it is folded.
     pub(super) fn unfold_group_of(&mut self, tab: TabId) {
         let Some(group) = self.tabs.get(&tab).and_then(|shown| shown.group) else {
@@ -383,6 +402,7 @@ impl Workspace {
         if let Some(window) = self.groups.get(&left).map(|group| group.window) {
             self.group_changed(left, window);
         }
+        self.unfold_if_shown(tab);
         if let Some(before) = before
             && !self.group_tabs(before).is_empty()
             && let Some(window) = self.groups.get(&before).map(|group| group.window)
@@ -481,7 +501,7 @@ impl Workspace {
     }
 
     /// Tells that `group`, of `window`, changed, or went.
-    fn group_changed(&mut self, group: GroupId, window: WindowId) {
+    pub(super) fn group_changed(&mut self, group: GroupId, window: WindowId) {
         self.changed(WorkspaceEvent::GroupChanged {
             group: group.into(),
             window: window.into(),

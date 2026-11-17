@@ -1605,6 +1605,65 @@ fn groups(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![fresh.clone()],
             },
+            // A tab of the group that closes, kept or not, and one given
+            // back: the group is told each time.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(3),
+                            pane: pane(3),
+                        },
+                    ),
+                    (
+                        Request::AddToGroup {
+                            tab: tab(3),
+                            group: group(1),
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::CloseTab {
+                        tab: tab(3),
+                        ask: false,
+                        keep: 60,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(Request::ReopenTab(w), Response::Done)],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::CloseTab {
+                        tab: tab(3),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
             Step {
                 wait: 0,
                 asks: vec![

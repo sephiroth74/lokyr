@@ -300,6 +300,18 @@ fn a_workspace_kept_opens_again_as_it_was() {
 }
 
 #[test]
+fn a_kept_group_s_name_of_a_hidden_character_opens_of_none() {
+    let mut kept = sample();
+    // A name that no plugin could write, as a hand's edit of the file may.
+    kept.windows[0].groups[0].name = "w\u{202E}ork".to_owned();
+    let mut workspace = Workspace::new();
+    let window = kept.windows[0].open(&mut workspace, |_| pane()).unwrap();
+    let groups = workspace.groups_of(window);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].name(), "");
+}
+
+#[test]
 fn the_settings_tab_is_not_kept_and_its_window_keeps_the_tab_before_it() {
     let kept = sample();
     let mut workspace = Workspace::new();
