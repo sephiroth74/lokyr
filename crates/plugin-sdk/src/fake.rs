@@ -1852,7 +1852,11 @@ impl FakeHost {
                 .tabs
                 .retain(|tab| tabs.get(tab).is_some_and(|tab| tab.window == id));
         }
+        let mut opened = Vec::new();
         for (&id, tab) in tabs.iter() {
+            if !windows.contains_key(&tab.window) {
+                opened.push(tab.window);
+            }
             let window = windows.entry(tab.window).or_insert_with(|| FakeWindow {
                 tabs: Vec::new(),
                 active: id,
@@ -1866,6 +1870,14 @@ impl FakeHost {
             if !window.tabs.contains(&window.active) {
                 window.active = window.tabs[0];
             }
+        }
+        // A window that opens shows its first tab, used last, as the app's.
+        let shown: Vec<TabId> = opened
+            .iter()
+            .filter_map(|window| windows.get(window).map(|window| window.active))
+            .collect();
+        for tab in shown {
+            self.shown(tab);
         }
         match self.given_focus.take() {
             Some(Some(pane)) => {
@@ -2487,16 +2499,22 @@ impl FakeHost {
             && shown.active != tab
         {
             shown.active = tab;
-            self.shown(tab);
             self.changed(WorkspaceEvent::TabActivated { tab, window });
-            // Shown, it loses its activity and its bell, as the app's.
-            let before = self.look(tab);
-            if let Some(shown) = self.tabs.get_mut(&tab) {
-                shown.marks.activity = false;
-                shown.marks.bell = false;
-            }
-            self.looked(tab, &before);
+            self.tab_shown(tab);
         }
+    }
+
+    /// `tab` shows in its window: its window's tab used last, unless the
+    /// order of use holds, and it loses its activity and its bell, as the
+    /// app's.
+    fn tab_shown(&mut self, tab: TabId) {
+        self.shown(tab);
+        let before = self.look(tab);
+        if let Some(shown) = self.tabs.get_mut(&tab) {
+            shown.marks.activity = false;
+            shown.marks.bell = false;
+        }
+        self.looked(tab, &before);
     }
 
     /// `tab` shows in its window: its window's tab used last, unless the
@@ -2621,7 +2639,7 @@ impl FakeHost {
         {
             return;
         }
-        let others = self.pinned_in(window) - usize::from(!pinned);
+        let others = self.pinned_in(window).saturating_sub(usize::from(!pinned));
         let before = self.look(tab);
         if let Some(shown) = self.tabs.get_mut(&tab) {
             shown.marks.pinned = pinned;
@@ -2643,6 +2661,7 @@ impl FakeHost {
         );
         self.place_tab(tab, window);
         self.changed(WorkspaceEvent::WindowOpened { window });
+        self.tab_shown(tab);
         window
     }
 
@@ -3763,10 +3782,6 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::SetTabPinned { tab, .. } => {
-                self.known_tab(*tab)?;
-                Response::Done
-            }
             Request::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;
                 if matches!(color, Some(Color::Palette(_))) {
@@ -3981,7 +3996,7 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::CloseTab { keep, .. } if *keep > 86_400 => {
+            Request::CloseTab { keep, .. } if *keep > host::MOST_KEEP => {
                 return Err(Error::new(
                     Code::Failed,
                     format!("a closed tab is kept a day at most, not {keep} seconds"),
@@ -3993,6 +4008,7 @@ impl Calling<'_> {
             }
             Request::CloseTab { tab, .. }
             | Request::ActivateTab(tab)
+            | Request::SetTabPinned { tab, .. }
             | Request::TabToNewWindow { tab, .. }
             | Request::Equalize(tab) => {
                 self.known_tab(*tab)?;

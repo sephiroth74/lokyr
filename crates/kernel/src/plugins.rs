@@ -447,9 +447,6 @@ pub enum Closing {
     Pane(PaneId),
 }
 
-/// The most seconds that a closed tab is kept to give back: a day.
-pub const MOST_KEPT: u32 = 86_400;
-
 /// The clipboard, which the app reaches through its platform.
 pub trait Clipboard {
     /// Its text, if it holds any.
@@ -3863,7 +3860,16 @@ impl Kept {
         state.gutter_marks = self.gutter_marks;
         state.held_cursors = self.held_cursors;
         state.quick_windows = self.quick_windows;
-        state.question = self.question;
+        // The question that the call asked goes, as it never showed; one
+        // that the user answered meanwhile stays answered, as a call of a
+        // plugin's thread runs beside the main thread's answers, and the
+        // call asked none while another waited.
+        if state
+            .question
+            .is_some_and(|asked| Some(asked) != self.question)
+        {
+            state.question = None;
+        }
         // The timers that the call started go, and those that it cancelled
         // come back; the others stay as they are, of the firings that came
         // meanwhile, as a call of a plugin's thread runs beside the main
@@ -6067,7 +6073,7 @@ impl Host<'_, '_> {
                     ));
                 }
             }
-            Asked::CloseTab { keep, .. } if *keep > MOST_KEPT => {
+            Asked::CloseTab { keep, .. } if *keep > host::MOST_KEEP => {
                 return Err(Error::new(
                     Code::Failed,
                     format!("a closed tab is kept a day at most, not {keep} seconds"),

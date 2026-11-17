@@ -114,6 +114,9 @@ fn a_report_of_no_state_or_past_a_bound_or_of_bad_text_is_ignored_whole() {
         format!("state=working:id={}", "s".repeat(33)),
         format!("state=working:id={}", ["a"; 9].join("/")),
         "state=working:id=a//b".to_owned(),
+        "state=working:id=a!x".to_owned(),
+        "state=working:id=build test".to_owned(),
+        "state=working:id=é".to_owned(),
         format!("state=working:msg={}", "A".repeat(4100)),
     ] {
         assert_eq!(
@@ -164,11 +167,14 @@ fn records_of_ids_form_a_tree_whose_clear_takes_a_branch_and_whose_app_is_inheri
         .map(|status| status.id.as_str())
         .collect();
     assert_eq!(ids, ["", "builder"]);
-    // A clear of nothing tells nothing; of the root, everything.
+    // A clear of nothing tells nothing; of an id of a byte that no value
+    // takes, nothing, whole, rather than the root; of the root, everything.
     assert_eq!(
         fed(&mut terminal, "\x1b]7501;state=clear:id=none\x1b\\"),
         []
     );
+    assert_eq!(fed(&mut terminal, "\x1b]7501;state=clear:id=a!x\x1b\\"), []);
+    assert_eq!(terminal.statuses().len(), 2);
     fed(&mut terminal, "\x1b]7501;state=clear\x1b\\");
     assert!(terminal.statuses().is_empty());
 }

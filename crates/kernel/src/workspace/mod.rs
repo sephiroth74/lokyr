@@ -1189,8 +1189,9 @@ impl Workspace {
         {
             return self.tabs.contains_key(&tab);
         }
-        // Its place among the others, of the pinned ones but itself.
-        let others = self.pinned_in(window) - usize::from(!pinned);
+        // Its place among the others, of the pinned ones but itself, which
+        // a tab not pinned before it, as the settings tab, leaves out.
+        let others = self.pinned_in(window).saturating_sub(usize::from(!pinned));
         self.mark(tab, |marks| marks.pinned = pinned);
         self.move_tab(tab, window, others)
     }

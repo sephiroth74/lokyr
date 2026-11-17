@@ -2662,3 +2662,22 @@ fn past_the_most_closed_tabs_kept_the_oldest_is_due_at_once() {
     assert!(workspace.keeps_closed_pane(closing[1].1));
     assert_eq!(workspace.next_closed_due(), Some(until));
 }
+
+#[test]
+fn a_pinned_tab_behind_the_settings_tab_unpins_of_no_underflow() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let other = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    assert!(workspace.set_tab_pinned(first, true));
+    assert!(workspace.set_tab_pinned(other, true));
+    workspace.activate_tab(first);
+    // The settings tab after the first, the other pinned one behind it,
+    // which the first's close leaves first of no pinned tab before it.
+    let settings = workspace.open_settings(window, "Settings").unwrap();
+    assert!(workspace.close_tab(first));
+    assert_eq!(workspace.window(window).unwrap().tabs(), [settings, other]);
+    assert!(workspace.set_tab_pinned(other, false));
+    assert!(!workspace.tab(other).unwrap().marks().pinned);
+    assert_eq!(workspace.window(window).unwrap().tabs(), [other, settings]);
+}

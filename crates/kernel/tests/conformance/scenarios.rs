@@ -890,6 +890,13 @@ fn tabs(world: &World) -> Scenario {
         status: None,
         pinned: false,
     };
+    let other = |id, active, pane| TabInfo {
+        id,
+        active,
+        focused: pane,
+        panes: vec![pane],
+        ..info("", None)
+    };
     let red = Color::Rgb(200, 30, 40);
     let answer = Event::Answered {
         id: 0,
@@ -1135,6 +1142,104 @@ fn tabs(world: &World) -> Scenario {
                     Response::Text(None),
                 ),
             ]),
+            // The tabs in the order of their use: one before the window's
+            // first, never shown; one after it, shown; and one that went to
+            // a window of its own, which showed it, and came back behind
+            // the shown one; the window's first, used as its window opened,
+            // before the one never shown.
+            ask(vec![
+                (
+                    Request::NewTab {
+                        window: w,
+                        index: Some(0),
+                        directory: None,
+                    },
+                    Response::Tab {
+                        tab: tab(0),
+                        pane: pane(0),
+                    },
+                ),
+                (
+                    Request::NewTab {
+                        window: w,
+                        index: None,
+                        directory: None,
+                    },
+                    Response::Tab {
+                        tab: tab(1),
+                        pane: pane(1),
+                    },
+                ),
+                (
+                    Request::NewTab {
+                        window: w,
+                        index: None,
+                        directory: None,
+                    },
+                    Response::Tab {
+                        tab: tab(2),
+                        pane: pane(2),
+                    },
+                ),
+                (Request::ActivateTab(tab(1)), Response::Done),
+            ]),
+            ask(vec![(
+                Request::TabToNewWindow {
+                    tab: tab(2),
+                    at: None,
+                },
+                Response::Done,
+            )]),
+            ask(vec![(
+                Request::MoveTab {
+                    tab: tab(2),
+                    window: w,
+                    index: 3,
+                },
+                Response::Done,
+            )]),
+            ask(vec![
+                (
+                    Request::RecentTabs(w),
+                    Response::Tabs(vec![
+                        other(tab(2), false, pane(2)),
+                        other(tab(1), true, pane(1)),
+                        TabInfo {
+                            active: false,
+                            ..info("", None)
+                        },
+                        other(tab(0), false, pane(0)),
+                    ]),
+                ),
+                (
+                    Request::CloseTab {
+                        tab: tab(0),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::CloseTab {
+                        tab: tab(1),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::CloseTab {
+                        tab: tab(2),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                ),
+            ]),
+            ask(vec![(
+                Request::Tabs(w),
+                Response::Tabs(vec![info("", None)]),
+            )]),
         ],
     }
 }

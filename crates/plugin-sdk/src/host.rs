@@ -497,6 +497,9 @@ pub const MOST_DELAY: u64 = 24 * 60 * 60 * 1000;
 /// good.
 pub const MOST_CLOSED_TABS: usize = 16;
 
+/// The most seconds that the host keeps a closed tab to give back: a day.
+pub const MOST_KEEP: u32 = 24 * 60 * 60;
+
 /// What a search of a pane's terminal looks for, through its scrollback
 /// too: the text of each logical line, its soft-wrapped rows joined, of
 /// spaces for the cells without a character, without the spaces that end

@@ -232,3 +232,104 @@ fn another_s_plugin_reads_a_theme_s_files_by_name_and_is_told_of_no_config_to_th
         "{asked:?}"
     );
 }
+
+/// A plugin of a thread of its own whose commands ask a question of
+/// buttons, `stepper.ask`, and read the windows, then wait for `go` and
+/// fail, `stepper.slow`, `read` set once the read came back.
+struct Stepper {
+    read: Arc<AtomicBool>,
+    go: Arc<AtomicBool>,
+}
+
+impl Plugin for Stepper {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["ask", "slow"] {
+            cx.register_command(command(&format!("stepper.{name}")))?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "stepper.ask" {
+            return cx
+                .ask_choice(None, ("Use it?", ""), &["Use", "Cancel"])
+                .map(|_| ());
+        }
+        cx.windows()?;
+        self.read.store(true, Ordering::SeqCst);
+        let start = Instant::now();
+        while !self.go.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        Err(Error::new(Code::Failed, "on purpose"))
+    }
+}
+
+#[test]
+fn a_call_on_a_plugin_s_thread_that_fails_across_an_answer_leaves_its_plugin_free_to_ask() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let (read, go) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let (made_read, made_go) = (Arc::clone(&read), Arc::clone(&go));
+    let manifest = Manifest::parse(
+        "[plugin]\nname = \"acme/stepper\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n",
+    )
+    .unwrap();
+    plugins
+        .add_installed(
+            manifest,
+            Box::new(move || {
+                Box::new(Stepper {
+                    read: Arc::clone(&made_read),
+                    go: Arc::clone(&made_go),
+                })
+            }),
+            (&[], &[]),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let serve_until = |plugins: &mut Plugins, app: &mut App, done: &dyn Fn(&Plugins) -> bool| {
+        let start = Instant::now();
+        while !done(plugins) {
+            plugins.serve(&mut app.context());
+            assert!(start.elapsed() < Duration::from_secs(10), "a call hangs");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    serve_until(&mut plugins, &mut app, &|plugins| !plugins.waiting());
+    let asked = |plugins: &mut Plugins| -> Vec<u64> {
+        plugins
+            .take_requests()
+            .into_iter()
+            .filter_map(|request| match request {
+                Request::AskChoice { id, .. } => Some(id),
+                _ => None,
+            })
+            .collect()
+    };
+    let name = plugins.entries[0].state.name.clone();
+    plugins
+        .run("stepper.ask", Args::new(), &mut app.context())
+        .unwrap();
+    serve_until(&mut plugins, &mut app, &|plugins| !plugins.waiting());
+    let first = asked(&mut plugins);
+    assert_eq!(first.len(), 1);
+    // A call reads, the user answers the question, and the call fails.
+    plugins
+        .run("stepper.slow", Args::new(), &mut app.context())
+        .unwrap();
+    serve_until(&mut plugins, &mut app, &|_| read.load(Ordering::SeqCst));
+    plugins.chosen(&name, first[0], Some(0));
+    go.store(true, Ordering::SeqCst);
+    serve_until(&mut plugins, &mut app, &|plugins| !plugins.waiting());
+    // The answered question stays answered: the plugin asks again.
+    assert_eq!(plugins.entries[0].state.question, None);
+    plugins
+        .run("stepper.ask", Args::new(), &mut app.context())
+        .unwrap();
+    serve_until(&mut plugins, &mut app, &|plugins| !plugins.waiting());
+    assert_eq!(asked(&mut plugins).len(), 1);
+}

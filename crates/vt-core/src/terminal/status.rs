@@ -116,7 +116,8 @@ impl Terminal {
 
     /// OSC 7501 of `fields`, the string after `7501;`: the query answered,
     /// as it ended; a report kept, or the records that it clears taken
-    /// away; one that does not read, or past a bound, ignored whole.
+    /// away; one that does not read, past a bound, or of an `id` of a byte
+    /// that no value takes, ignored whole.
     pub(super) fn report_status(&mut self, fields: &[u8], end: StringEnd) {
         if fields.trim_ascii() == b"?" {
             self.reply_osc(ANSWER, end);
@@ -189,11 +190,16 @@ fn read(fields: &[u8]) -> Option<Report> {
         if key.len() > MOST_KEY {
             return None;
         }
-        // A malformed pair is skipped, the rest of the report applying.
-        if key.is_empty()
-            || !key.iter().all(u8::is_ascii_lowercase)
-            || !value.iter().all(|&byte| is_value_byte(byte))
-        {
+        // A malformed pair is skipped, the rest of the report applying; but
+        // an `id` of a byte that no value takes throws the report away
+        // whole, as without it the report would name the root, every task.
+        if key.is_empty() || !key.iter().all(u8::is_ascii_lowercase) {
+            continue;
+        }
+        if !value.iter().all(|&byte| is_value_byte(byte)) {
+            if key == b"id" {
+                return None;
+            }
             continue;
         }
         // A repeated key takes its last value.
