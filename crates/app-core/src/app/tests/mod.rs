@@ -3929,12 +3929,32 @@ fn two_spellings_of_the_same_keys_read_of_a_notice_that_a_fixed_file_takes_away(
 /// prompt and `echo hello` typed, the cursor at its end; it prints in
 /// hexadecimal, on a line of its own, the first bytes that come.
 fn prompt_shell(options: &str) -> Program {
+    prompt_program(options, &as_zsh())
+}
+
+/// [`prompt_shell`] of the program at `perl`: a shell in the terminal's
+/// foreground as Lokyr tells one by its name, as [`as_zsh`] names it, or
+/// a program that is none.
+fn prompt_program(options: &str, perl: &str) -> Program {
     shell(&format!(
-        "exec perl -e '$| = 1; system(\"stty raw -echo\"); print \"ready\\r\\n\"; \
+        "exec {perl} -e '$| = 1; system(\"stty raw -echo\"); print \"ready\\r\\n\"; \
          print \"\\e]133;A{options}\\a\\$ \\e]133;B\\aecho hello\"; \
          select(undef, undef, undef, 0.3) until sysread(STDIN, $b, 256); \
          print \"\\e]133;C\\a\\r\\nsent \", unpack(\"H*\", $b), \"\\r\\n\"; sleep 30'"
     ))
+}
+
+/// Perl by the name `zsh`, a link to it in a folder of the tests' own, so
+/// that the terminal's foreground shows a shell, which a click and a key
+/// over the command line's selection go to alone.
+fn as_zsh() -> String {
+    let folder = std::env::temp_dir().join(format!("lokyr-as-zsh-{}", std::process::id()));
+    let link = folder.join("zsh");
+    if !link.exists() {
+        let _ = std::fs::create_dir_all(&folder);
+        let _ = std::os::unix::fs::symlink("/usr/bin/perl", &link);
+    }
+    link.display().to_string()
 }
 
 /// The screen's row of `window` that shows the prompt of [`prompt_shell`],
@@ -3963,6 +3983,51 @@ fn a_plain_click_in_the_command_line_sends_the_arrows_to_its_character() {
     run_until(&mut fake, &mut app, |_, app| {
         shows(app, window, &format!("sent {left}"))
     });
+}
+
+#[test]
+fn a_click_or_a_key_over_the_selection_goes_to_a_shell_in_front_alone() {
+    // A program that is no shell, as `cat` of a file of a prompt's marks,
+    // takes no arrow of a click: the next key that it reads is the one
+    // typed.
+    let (mut fake, mut app, window) = configured("", prompt_program(";cl=line", "perl"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    let at = cell(4, row);
+    fake.send(&mut app, window, click(true, at, Modifiers::default(), 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::default(), 1));
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyX, "x", Modifiers::default(), true),
+    );
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent 78"));
+    // Nor arrows and Backspaces of a key over a selection of the command
+    // line: the Backspace alone.
+    let (mut fake, mut app, window) = configured("", prompt_program(";cl=line", "perl"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let row = prompt_row(&app, window);
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        typed(lokyr_platform_core::KeyCode::Backspace, "\u{7f}", false),
+    );
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "sent 7f"));
 }
 
 #[test]

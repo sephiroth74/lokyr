@@ -1126,6 +1126,18 @@ impl Pane {
             .unwrap_or_default()
     }
 
+    /// Whether a shell is in the terminal's foreground, whose line editor
+    /// a click or a key over the command line's selection may move: not a
+    /// program that it runs, whose output may hold prompts' marks of its
+    /// own, as `cat` of a file or a remote shell over `ssh`; nor tmux or
+    /// screen, whose panes' prompts reach no terminal's marks.
+    pub fn shell_in_front(&self) -> bool {
+        self.foreground_names().iter().any(|name| {
+            let name = name.trim_start_matches('-');
+            is_shell(name) && !matches!(name, "login" | "tmux" | "screen")
+        })
+    }
+
     /// Whether the terminal hides what is typed, as a password's prompt
     /// does, while the program runs.
     pub fn hides_input(&self) -> bool {

@@ -127,14 +127,15 @@ impl<B: Backend> App<B> {
                     return;
                 };
                 // A key that deletes or types over a selection of the
-                // command line takes its place, as the shell announced; of
-                // no selection that the pointer made, a click's included,
-                // the terminal is not looked at.
+                // command line takes its place, as the shell in front
+                // announced; of no selection that the pointer made, a
+                // click's included, the terminal is not looked at.
                 if let [key] = &keys[..]
                     && self.config.cursor.click_to_move
                     && state.selecting.as_ref().is_some_and(Selecting::selects)
                     && replaces_selection(key, options)
                     && let Some(event) = keys::terminal_key(key)
+                    && pane.shell_in_front()
                     && pane.replace_selection(&event, options)
                 {
                     state.selecting = None;
@@ -891,6 +892,7 @@ impl<B: Backend> App<B> {
                 && selecting.plain
                 && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none()
                 && let Some(pane) = self.workspace.focused(state.window)
+                && pane.shell_in_front()
             {
                 pane.prompt_click(selecting.anchor.col, selecting.anchor.row);
             }

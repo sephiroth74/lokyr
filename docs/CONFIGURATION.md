@@ -694,6 +694,7 @@ Whether a click in your shell's command line moves its cursor there, as in a tex
 
 - It needs a shell that announces it at its prompt: zsh, bash and fish of Lokyr's shell integration ([`shell-integration`](#shell-integration)), and any shell that announces it of its own. Lokyr sends the shell the left and right arrow keys to the clicked character, or the click itself, as the shell asks.
 - A plain click alone moves the cursor, of no modifier, while the shell edits its command line: a drag still selects, a click on the prompt or below the command moves nothing, and one past the command's end moves the cursor to its end.
+- Lokyr sends the keys of a click or a selection to a shell in front of the pane alone: a program that it runs, such as `cat` of a file or a remote shell over `ssh`, gets none, whatever prompts' marks its output holds.
 - Backspace or Delete over a selection of the command line takes it away, and a typed character takes its place, of the arrow keys to the selection's end and as many Backspaces.
 - `false` sends the shell nothing of either: a click selects nothing, and a key over a selection goes to the shell as it is.
 - It applies at once, as you save the file.

@@ -28,7 +28,7 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
 - **Hear when a long command ends**: a notification tells you when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
 - **New tabs in the same folder**: a new tab or a split starts in the folder that its pane's shell reported last, as [`[window] new-directory`](CONFIGURATION.md#new-directory) says.
-- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Backspace or Delete to remove it, or type to replace it. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
+- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Backspace or Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
 - **Tabs that know what runs**: when a command starts, its tab's title and marks follow the program that it runs, however late it starts.
 
 ## Turn it off
@@ -88,7 +88,8 @@ The integration adds its marks after your prompt is drawn, at each prompt, so a 
 ## Limits
 
 - **macOS's `/bin/bash`** gets no integration unless you add it by hand.
-- **Remote shells** over `ssh` get no integration: their commands get no marks.
+- **Remote shells** over `ssh` get no integration: their commands get no marks, and a click in their command line moves nothing, as `ssh` is the program in front.
+- **A program that a shell runs**, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone.
 - **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks, and a click in its command line moves nothing.
 - **A program that takes the whole screen**, such as an editor, shows no prompts and gets no marks while it runs.
 
@@ -118,7 +119,7 @@ You should see `1`. In fish, `echo $version` should print 4 or later, or `functi
 
 ### A click in the command line doesn't move the cursor
 
-**Why**: [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) is `false`, the shell has no integration, or a bash older than 4.4 has a DEBUG trap of its own.
+**Why**: [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) is `false`, the shell has no integration, the program in front is not a shell, such as `ssh`, or a bash older than 4.4 has a DEBUG trap of its own.
 
 **Fix**: set `click-to-move` to `true`, or use a bash of version 4.4 or later, such as Homebrew's.
 

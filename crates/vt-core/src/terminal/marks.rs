@@ -361,26 +361,39 @@ impl Terminal {
     pub(super) fn prompts_in(&self, top: i64, bottom: i64) -> Vec<(i64, GutterKind)> {
         let rows = &self.primary.rows;
         let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        // The rows' indexes of one walk of the list's pages, for every
+        // command of the call.
+        let index = rows.row_indexes();
         let index_of = |pin: Option<PinId>| {
             let position = rows.pin_position(pin?)?;
-            rows.row_index(position.page, position.row)
+            index(position.page, position.row)
         };
         let row_of = |marked: &Marked| Some(first.saturating_add(index_of(marked.prompt)? as i64));
         // The prompt's first row of text, from its start to its input's row,
         // a few rows at most, as a theme's prompt may print an empty line
-        // first; its start's where none holds text.
+        // first, read from the start's own place on; its start's where none
+        // holds text.
         let shown_row = |marked: &Marked, row: i64| {
-            let (Some(start), Some(input)) = (index_of(marked.prompt), index_of(marked.input))
+            let Some(place) = marked.prompt.and_then(|pin| rows.pin_position(pin)) else {
+                return row;
+            };
+            let (Some(start), Some(input)) = (index(place.page, place.row), index_of(marked.input))
             else {
                 return row;
             };
-            (start..=input.min(start + MOST_PROMPT_ROWS))
-                .find(|&index| {
-                    rows.row_at(index)
-                        .and_then(|(page, row)| rows.row_of(page, row))
-                        .is_some_and(holds_text)
+            let rows_seen = input.saturating_sub(start).min(MOST_PROMPT_ROWS) + 1;
+            (0..rows_seen)
+                .find(|&at| {
+                    // The start's page's rows, of no walk; a row past it
+                    // through the list's rows, as a prompt seldom crosses
+                    // a page.
+                    let shown = u16::try_from(at)
+                        .ok()
+                        .and_then(|at| rows.row_of(place.page, place.row.checked_add(at)?))
+                        .or_else(|| rows.rows_from(start + at).next());
+                    shown.is_some_and(holds_text)
                 })
-                .map_or(row, |index| first.saturating_add(index as i64))
+                .map_or(row, |at| first.saturating_add((start + at) as i64))
         };
         // The commands are in their prompts' order, those whose prompts left
         // the list first: a binary search finds the view's first, as each
