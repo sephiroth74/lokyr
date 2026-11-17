@@ -1,7 +1,9 @@
-//! Hints: what a line's text holds that the keyboard may pick, a URL, a
-//! path, its line too, a hash of git's or an IP address, each of its
-//! characters; and the labels of one or two letters that pick them, the
-//! shortest for the first.
+//! Hints: what a line's text holds that the keyboard may pick, a match of
+//! a pattern of the config, a URL, a path, its line too, a hash of git's or
+//! an IP address, each of its characters; and the labels of one or two
+//! letters that pick them, the shortest for the first.
+
+use regex_automata::meta::Regex;
 
 use crate::scan::{self, Found};
 
@@ -19,6 +21,18 @@ pub enum Kind {
     Hash,
     /// An IPv4 address, and its port after it.
     Ip,
+    /// A match of a pattern of the config, and the URL that it opens, of
+    /// its template, if it has one.
+    Pattern(Option<String>),
+}
+
+/// A pattern of the config: what it matches, and the template of the URL
+/// that a match opens, if it has one, of `$0` for the whole match and `$1`
+/// to `$9` for its groups.
+#[derive(Clone, Debug)]
+pub struct Pattern {
+    pub regex: Regex,
+    pub url: Option<String>,
 }
 
 /// A hint of a line's text: its characters, from `first` to the one before
@@ -31,11 +45,12 @@ pub struct LineHint {
     pub kind: Kind,
 }
 
-/// The hints of `text`, a line's, in their order, none over another: in
-/// each word between spaces, a URL or a path, else a hash of git's or an
-/// IPv4 address.
-pub fn in_line(text: &str) -> Vec<LineHint> {
+/// The hints of `text`, a line's, in their order, none over another: the
+/// matches of `patterns` first, then, in each word between spaces, a URL or
+/// a path, else a hash of git's or an IPv4 address, over none of them.
+pub fn in_line(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
     let chars: Vec<char> = text.chars().collect();
+    let matched = matches(text, patterns);
     let mut found: Vec<LineHint> = Vec::new();
     let mut at = 0;
     while at < chars.len() {
@@ -50,6 +65,9 @@ pub fn in_line(text: &str) -> Vec<LineHint> {
         let hint = link(text, &chars, at, end).or_else(|| word(&chars, at, end));
         if let Some(hint) = hint
             && found.last().is_none_or(|last| last.end <= hint.first)
+            && !matched
+                .iter()
+                .any(|other| other.first < hint.end && hint.first < other.end)
         {
             at = hint.end.max(end);
             found.push(hint);
@@ -57,7 +75,88 @@ pub fn in_line(text: &str) -> Vec<LineHint> {
         }
         at = end;
     }
+    found.extend(matched);
+    found.sort_by_key(|hint| hint.first);
     found
+}
+
+/// The matches of `patterns` in `text`, none over another, the first
+/// pattern's before the later's.
+fn matches(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
+    // The index of the character at each byte that starts one.
+    let mut chars_at = vec![0; text.len() + 1];
+    for (index, (byte, _)) in text.char_indices().enumerate() {
+        chars_at[byte] = index;
+    }
+    chars_at[text.len()] = text.chars().count();
+    let mut found: Vec<LineHint> = Vec::new();
+    for pattern in patterns {
+        let mut caps = pattern.regex.create_captures();
+        let mut at = 0;
+        while at <= text.len() {
+            let input = regex_automata::Input::new(text).span(at..text.len());
+            pattern.regex.search_captures(&input, &mut caps);
+            let Some(whole) = caps.get_match() else {
+                break;
+            };
+            let (start, end) = (whole.start(), whole.end());
+            // A match of nothing moves on a character.
+            at = if end > start {
+                end
+            } else {
+                text[end..]
+                    .chars()
+                    .next()
+                    .map_or(text.len() + 1, |c| end + c.len_utf8())
+            };
+            if end == start {
+                continue;
+            }
+            let (first, last) = (chars_at[start], chars_at[end]);
+            if found
+                .iter()
+                .any(|other| other.first < last && first < other.end)
+            {
+                continue;
+            }
+            let group = |index: usize| {
+                caps.get_group(index)
+                    .map_or("", |span| &text[span.start..span.end])
+            };
+            found.push(LineHint {
+                first,
+                end: last,
+                text: text[start..end].to_owned(),
+                kind: Kind::Pattern(pattern.url.as_deref().map(|url| expand(url, group))),
+            });
+        }
+    }
+    found
+}
+
+/// `template` of each `$0` to `$9` the text of `group` of its number, the
+/// whole match of 0, and of `$$` a `$`.
+pub fn expand<'a>(template: &str, group: impl Fn(usize) -> &'a str) -> String {
+    let mut expanded = String::new();
+    let mut chars = template.chars().peekable();
+    while let Some(character) = chars.next() {
+        if character != '$' {
+            expanded.push(character);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('$') => {
+                chars.next();
+                expanded.push('$');
+            }
+            Some(digit @ '0'..='9') => {
+                chars.next();
+                expanded.push_str(group(digit as usize - '0' as usize));
+            }
+            _ => expanded.push('$'),
+        }
+    }
+    expanded
 }
 
 /// The URL or the path of the word of `chars` from `first` to `end`, the
@@ -198,7 +297,10 @@ mod tests {
     use super::*;
 
     fn texts(line: &str) -> Vec<String> {
-        in_line(line).into_iter().map(|hint| hint.text).collect()
+        in_line(line, &[])
+            .into_iter()
+            .map(|hint| hint.text)
+            .collect()
     }
 
     #[test]
@@ -223,8 +325,45 @@ mod tests {
         // digit, an address of a part past 255.
         assert!(texts("just words, 1234567 cafebabe 10.0.0.256 a.b").is_empty());
         // Its characters' places.
-        let hint = &in_line("x <https://a.io/b> y")[0];
+        let hint = &in_line("x <https://a.io/b> y", &[])[0];
         assert_eq!((hint.first, hint.end), (3, 17));
+    }
+
+    #[test]
+    fn a_pattern_s_matches_come_first_of_their_url_and_over_the_others() {
+        let jira = Pattern {
+            regex: Regex::new(r"PROJ-(\d+)").unwrap(),
+            url: Some("https://jira.example.com/browse/$0?n=$1&x=$$".to_owned()),
+        };
+        let plain = Pattern {
+            regex: Regex::new(r"[a-f0-9]{8}").unwrap(),
+            url: None,
+        };
+        let found = in_line("fix PROJ-42 in deadbee1, see é PROJ-7", &[jira, plain]);
+        let shown: Vec<(&str, usize, &Kind)> = found
+            .iter()
+            .map(|hint| (hint.text.as_str(), hint.first, &hint.kind))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (
+                    "PROJ-42",
+                    4,
+                    &Kind::Pattern(Some(
+                        "https://jira.example.com/browse/PROJ-42?n=42&x=$".to_owned()
+                    ))
+                ),
+                ("deadbee1", 15, &Kind::Pattern(None)),
+                (
+                    "PROJ-7",
+                    31,
+                    &Kind::Pattern(Some(
+                        "https://jira.example.com/browse/PROJ-7?n=7&x=$".to_owned()
+                    ))
+                ),
+            ]
+        );
     }
 
     #[test]

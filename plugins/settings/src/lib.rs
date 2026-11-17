@@ -1869,6 +1869,7 @@ fn icon_of(section: &SettingsSection) -> &'static str {
             "search" => "search",
             "command-header" => "pinned",
             "quick-tips" => "lightbulb",
+            "links" => "link",
             _ => "extensions",
         };
     }

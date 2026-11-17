@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lokyr/links",
+  "type": "object",
+  "description": "The links that a ⌘-click opens, and the hints that the keyboard picks.",
+  "properties": {
+    "hints": {
+      "description": "Patterns of your own that the hints label, each a table of its name of a regular expression and the URL that a match opens.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "description": "The regular expression that the hint matches.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "url": {
+            "description": "The URL that a match opens, `$0` the whole match and `$1` to `$9` its groups.",
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": ["pattern"],
+        "additionalProperties": false
+      },
+      "default": {},
+      "x-platforms": ["macos"],
+      "x-guide": "Patterns of your own that View › Show Hints labels too, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself.\n\n| Values | Default |\n|---|---|\n| tables of a `pattern` and a `url` | none |\n\n- Each is a table of its name, under `[plugins.links.hints]`, of a `pattern`, a regular expression, and of a `url` that a hint's opening opens, where `$0` is the whole match and `$1` to `$9` its groups, as a ticket's number to its page. A pattern without a `url` is a hint that its opening copies.\n- A match of your patterns comes before what the hints find by themselves, as one of its text; a pattern that does not read is told in a notice and left out.\n- It applies as you save the file, to the next hints.",
+      "x-example": "{ jira = { pattern = \"PROJ-\\\\d+\", url = \"https://jira.example.com/browse/$0\" } }",
+      "x-example-comment": "a ticket's number to its page"
+    }
+  },
+  "additionalProperties": false
+}

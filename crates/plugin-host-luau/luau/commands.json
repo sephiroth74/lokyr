@@ -334,13 +334,39 @@
       "terminal-read",
       "process-read",
       "decorate",
-      "pane-view"
+      "pane-view",
+      "open",
+      "clipboard-write",
+      "pty-write"
     ],
     "category": "view",
     "name": "links.hints",
-    "params": [],
+    "params": [
+      {
+        "default": {
+          "string": "open"
+        },
+        "kind": "string",
+        "name": "action"
+      }
+    ],
     "plugin": "lokyr/links",
     "title": "Show Hints",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "view",
+    "name": "links.hints-action",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "delta"
+      }
+    ],
+    "plugin": "lokyr/links",
+    "title": "Next Hint Action",
     "when": null
   },
   {

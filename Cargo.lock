@@ -1149,6 +1149,7 @@ name = "lokyr-links"
 version = "1.2.0"
 dependencies = [
  "lokyr-plugin-sdk",
+ "regex-automata",
 ]
 
 [[package]]

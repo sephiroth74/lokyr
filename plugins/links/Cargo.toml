@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["unstable"] }
+regex-automata.workspace = true
 
 [dev-dependencies]
 lokyr-plugin-sdk = { workspace = true, features = ["fake"] }

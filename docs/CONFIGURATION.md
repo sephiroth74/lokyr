@@ -232,6 +232,9 @@ align = "left"                       # left | center | right: where its pill sit
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
+
+[plugins.links]
+hints = { jira = { pattern = "PROJ-\\d+", url = "https://jira.example.com/browse/$0" } }   # a ticket's number to its page
 ```
 
 ## `config_version`
@@ -1696,6 +1699,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+shift+g` | `search.previous` | Makes the previous match the current one, the one below, the first after the last |
 | `cmd+shift+p` | `command-palette.open` | Opens the command palette, whose field ranks the commands as you type |
 | `up`, `down` | `command-palette.move` | In the command palette, while its field has the keys: moves the selection up or down the list |
+| `tab`, `shift+tab` | `links.hints-action` | While the hints show, as their field has the keys: moves what a pick does through open, copy, type and select, and back |
 | `cmd+shift+c` | `copy-mode.toggle` | Starts the copy mode in the pane, or ends it, as Edit › Copy Mode does: a cursor of its own, at the terminal's, or at the view's last row while the view is up in the scrollback, which the keys below move and select with, through the scrollback and the screen, without the mouse; a badge at the pane's bottom right tells the mode. While it runs, the keys that no binding takes go nowhere, rather than to the program, and ⌘C copies its selection, as always. It ends as another pane of the tab takes the keyboard, as a program such as vim shows its own screen, where it does not start, and as a resize lays the rows out anew; a click on the badge ends it too |
 | `h`, `left`, `l`, `right`, `k`, `up`, `j`, `down` | `copy-mode.move` | In the copy mode: moves its cursor a cell left or right, or a row up or down, `to` `left`, `right`, `up` or `down`, as far as the scrollback's first row and the screen's last; the view follows the cursor |
 | `w`, `b`, `e`, `shift+w`, `shift+b`, `shift+e` | `copy-mode.move` | To the next word's start, `word-next`, the start of the word before, `word-previous`, or the word's end, `word-end`: a word is of letters, digits and `_`, or of punctuation; with Shift, of anything but blanks, `big-word-next`, `big-word-previous` and `big-word-end`. A line's end parts two words, and a row that wraps does not |
@@ -2163,3 +2167,19 @@ The days between two tips as Lokyr starts.
 - A tip shows at a start once that many days passed since the last one at a start, as Lokyr keeps its day, and none while a notice of Lokyr's shows; Help › Show a Tip does not count.
 - Don't show again stops them whatever the days; Help › Show a Tip still shows one.
 - It applies at the next start, as you save the file.
+
+## `[plugins.links]`
+
+### `hints`
+
+<sub>Platforms: macOS</sub>
+
+Patterns of your own that View › Show Hints labels too, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself.
+
+| Values | Default |
+|---|---|
+| tables of a `pattern` and a `url` | none |
+
+- Each is a table of its name, under `[plugins.links.hints]`, of a `pattern`, a regular expression, and of a `url` that a hint's opening opens, where `$0` is the whole match and `$1` to `$9` its groups, as a ticket's number to its page. A pattern without a `url` is a hint that its opening copies.
+- A match of your patterns comes before what the hints find by themselves, as one of its text; a pattern that does not read is told in a notice and left out.
+- It applies as you save the file, to the next hints.

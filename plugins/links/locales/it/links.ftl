@@ -4,5 +4,11 @@ command-links-copy = Copia indirizzo link
 command-links-new-window = Nuova finestra nella cartella
 command-links-new-tab = Nuovo tab nella cartella
 command-links-hints = Mostra le etichette dei link
+command-links-hints-action = Azione successiva delle etichette
 
 hints-placeholder = Scrivi un'etichetta
+
+hints-action-open = Apri
+hints-action-copy = Copia
+hints-action-type = Scrivi
+hints-action-select = Seleziona

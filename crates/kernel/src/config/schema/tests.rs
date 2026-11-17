@@ -15,7 +15,7 @@ use super::SCHEMA;
 const OWN: [&str; 3] = ["config_version", "keys", "plugins"];
 
 /// The plugins' schemas, of their sections in the guide's example.
-const PLUGINS: [(&str, &str); 6] = [
+const PLUGINS: [(&str, &str); 7] = [
     (
         "tabs",
         include_str!("../../../../../plugins/tabs/tabs.schema.json"),
@@ -39,6 +39,10 @@ const PLUGINS: [(&str, &str); 6] = [
     (
         "quick-tips",
         include_str!("../../../../../plugins/quick-tips/quick-tips.schema.json"),
+    ),
+    (
+        "links",
+        include_str!("../../../../../plugins/links/links.schema.json"),
     ),
 ];
 

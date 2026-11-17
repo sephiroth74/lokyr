@@ -52,8 +52,9 @@ kind = "allow-only"
 description = "Built-in plugins depend only on the plugin SDK (plus the utility crates listed here), which proves the public API is enough to build them."
 crates = ["plugins/*"]
 # `unicode-width`: the cells that a text takes, as a command's output is cut
-# at its cells.
-allowed = ["crates/plugin-sdk", "unicode-width"]
+# at its cells. `regex-automata`: the hints' patterns of the config, the
+# engine that the search already brings into the app.
+allowed = ["crates/plugin-sdk", "unicode-width", "regex-automata"]
 
 [[rule]]
 name = "kernel-only-in-app"

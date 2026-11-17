@@ -20,7 +20,8 @@ mod scan;
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{DecorationLook, PaneId, Underline, file_host};
+use lokyr_plugin_sdk::host::{DecorationLook, NoticeLevel, PaneId, Underline, file_host};
+use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
@@ -42,8 +43,11 @@ const NEW_WINDOW: &str = "links.new-window";
 /// Opens a tab after the others, as [`NEW_WINDOW`] does a window.
 const NEW_TAB: &str = "links.new-tab";
 /// Labels what the focused pane shows that the keyboard may pick, which
-/// the letters typed pick.
+/// the letters typed pick, to do its `action`: open, copy, type or select.
 const HINTS: &str = "links.hints";
+/// Moves the hints' action by its `delta` through open, copy, type and
+/// select, around, while the hints show.
+const HINTS_ACTION: &str = "links.hints-action";
 
 /// The panel of the hints, whose field takes the letters typed, and its
 /// field's key.
@@ -87,28 +91,93 @@ type Span = ((u16, i64), (u16, i64));
 type Candidate = (String, Option<Span>, Option<Place>);
 
 /// The plugin of the links, and the link that it underlines, while
-/// Command is held over it: its pane, its cells and its decoration; and
-/// the hints that it shows.
+/// Command is held over it: its pane, its cells and its decoration; the
+/// hints that it shows; and the patterns of its config.
 #[derive(Debug, Default)]
 pub struct Links {
     underlined: Option<(PaneId, Span, u64)>,
     hints: Option<Shown>,
+    patterns: Vec<hints::Pattern>,
 }
 
-/// The hints that a pane shows: the pane, and each hint.
+/// The hints that a pane shows: the pane, each hint, and what a pick does.
 #[derive(Debug)]
 struct Shown {
     pane: PaneId,
     hints: Vec<Hint>,
+    action: Action,
 }
 
-/// A hint that a pane shows: its label, its cells, and its decoration
-/// while it shows.
+/// A hint that a pane shows: its label, its cells, its text, what it
+/// opens, and its decoration while it shows.
 #[derive(Debug)]
 struct Hint {
     label: String,
     span: Span,
+    text: String,
+    opens: Opens,
     decoration: Option<u64>,
+}
+
+/// What a hint opens: a URL, of a pattern's template too, or a path that
+/// is there and its place; nothing, as a hash or an address, which its
+/// opening copies.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Opens {
+    Url(String),
+    Path(String, Option<Place>),
+    Nothing,
+}
+
+/// What a hint's pick does: opens it, as a ⌘-click; copies its text;
+/// types it into the pane, as the keyboard would; or selects it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Action {
+    #[default]
+    Open,
+    Copy,
+    Type,
+    Select,
+}
+
+impl Action {
+    /// The actions, in the order that the hints' action moves through.
+    const ALL: [Self; 4] = [Self::Open, Self::Copy, Self::Type, Self::Select];
+
+    /// Its name, as `links.hints`' `action` gives it.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::Copy => "copy",
+            Self::Type => "type",
+            Self::Select => "select",
+        }
+    }
+
+    /// The action of `name`, if it is one's.
+    fn of(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|action| action.name() == name)
+    }
+
+    /// Its title's message, and its title in English.
+    fn title(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Open => ("hints-action-open", "Open"),
+            Self::Copy => ("hints-action-copy", "Copy"),
+            Self::Type => ("hints-action-type", "Type"),
+            Self::Select => ("hints-action-select", "Select"),
+        }
+    }
+
+    /// The action `delta` places from it, around.
+    fn moved(self, delta: i64) -> Self {
+        let count = Self::ALL.len() as i64;
+        let at = Self::ALL
+            .iter()
+            .position(|&action| action == self)
+            .unwrap_or(0) as i64;
+        Self::ALL[(at + delta).rem_euclid(count) as usize]
+    }
 }
 
 impl Plugin for Links {
@@ -149,11 +218,32 @@ impl Plugin for Links {
                 Capability::ProcessRead,
                 Capability::Decorate,
                 Capability::PaneView,
+                Capability::Open,
+                Capability::ClipboardWrite,
+                Capability::PtyWrite,
             ],
-            params: Vec::new(),
+            params: vec![Param {
+                name: "action".to_owned(),
+                kind: Kind::String,
+                default: Some(Value::String(Action::Open.name().to_owned())),
+            }],
             when: None,
         })?;
+        // Of a delta that the keys give, so that no menu lists it.
+        cx.register_command(Command {
+            name: HINTS_ACTION.to_owned(),
+            title: "Next Hint Action".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: vec![param("delta")],
+            when: None,
+        })?;
+        self.configure(cx);
         cx.subscribe(&[POINTER])
+    }
+
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(include_str!("../links.schema.json").into())
     }
 
     fn catalogs(&self) -> lokyr_plugin_sdk::plugin::Catalogs {
@@ -168,6 +258,12 @@ impl Plugin for Links {
             |event| matches!(event, Event::PanelClosed(id) if *id == PanelId::from(HINTS_PANEL)),
         ) {
             self.end_hints(cx);
+        }
+        if events
+            .iter()
+            .any(|event| matches!(event, Event::ConfigChanged))
+        {
+            self.configure(cx);
         }
         let Some((pane, at, mods)) = events.iter().rev().find_map(|event| match event {
             Event::Pointer { pane, at, mods } => Some((*pane, *at, *mods)),
@@ -216,7 +312,29 @@ impl Plugin for Links {
                 let (tab, _) = cx.new_tab_in(window, None, &folder)?;
                 cx.activate_tab(tab)
             }
-            HINTS => self.show_hints(cx),
+            HINTS => {
+                let action = match args.get("action") {
+                    Some(Value::String(name)) => Action::of(name).ok_or_else(|| {
+                        Error::new(
+                            Code::Failed,
+                            format!("`{name}` is not a hints' action: open, copy, type or select"),
+                        )
+                    })?,
+                    _ => Action::Open,
+                };
+                self.show_hints(cx, action)
+            }
+            HINTS_ACTION => {
+                let Some(shown) = &mut self.hints else {
+                    return Ok(());
+                };
+                let delta = match args.get("delta") {
+                    Some(&Value::Integer(delta)) => delta,
+                    _ => 1,
+                };
+                shown.action = shown.action.moved(delta);
+                cx.request_render(ViewId::Panel(PanelId::from(HINTS_PANEL)))
+            }
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("links has no command `{name}`"),
@@ -232,6 +350,7 @@ impl Plugin for Links {
             OPEN | COPY => opening(cx, args).ok().flatten().is_some(),
             NEW_WINDOW | NEW_TAB => folder(cx, args).ok().flatten().is_some(),
             HINTS => cx.focused_pane().is_some(),
+            HINTS_ACTION => self.hints.is_some(),
             _ => false,
         }
     }
@@ -242,13 +361,22 @@ impl Plugin for Links {
         if *view != ViewId::Panel(PanelId::from(HINTS_PANEL)) || self.hints.is_none() {
             return None;
         }
-        let placeholder = cx
-            .message("hints-placeholder", &[])
-            .ok()
-            .filter(|text| text != "hints-placeholder")
-            .unwrap_or_else(|| "Type a hint".to_owned());
+        let action = self
+            .hints
+            .as_ref()
+            .map_or(Action::Open, |shown| shown.action);
+        let mut message = |id: &str, english: &str| {
+            cx.message(id, &[])
+                .ok()
+                .filter(|text| text != id)
+                .unwrap_or_else(|| english.to_owned())
+        };
+        let placeholder = message("hints-placeholder", "Type a hint");
+        let (id, english) = action.title();
+        let title = format!("{} ▸", message(id, english));
         Some(
             Node::container(vec![
+                Node::text(title.as_str()).key("action"),
                 Node::field(placeholder.as_str())
                     .key(HINTS_FIELD)
                     .layout(Layout {
@@ -257,6 +385,8 @@ impl Plugin for Links {
                     }),
             ])
             .layout(Layout {
+                gap: 6.0,
+                align: lokyr_plugin_sdk::view::Align::Center,
                 padding: Edges::all(6.0),
                 ..Layout::default()
             })
@@ -286,12 +416,12 @@ impl Links {
     /// keyboard may pick, labeled, the shortest labels for the hints
     /// nearest the cursor; and the panel of the letters typed. Of none,
     /// nothing.
-    fn show_hints(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+    fn show_hints(&mut self, cx: &mut Cx<'_>, action: Action) -> Result<(), Error> {
         self.end_hints(cx);
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
-        let found = screen_hints(cx, pane)?;
+        let found = screen_hints(cx, pane, &self.patterns)?;
         if found.is_empty() {
             return Ok(());
         }
@@ -299,11 +429,14 @@ impl Links {
         let mut shown = Shown {
             pane,
             hints: Vec::new(),
+            action,
         };
-        for (span, label) in found.into_iter().zip(labels) {
+        for ((span, text, opens), label) in found.into_iter().zip(labels) {
             shown.hints.push(Hint {
                 label,
                 span,
+                text,
+                opens,
                 decoration: None,
             });
         }
@@ -329,19 +462,34 @@ impl Links {
     }
 
     /// The letters `text` typed in the hints' field, of its `revision`: the
-    /// hint of their label picked; the labels that start with them shown,
-    /// the others hidden; of none that does, the field emptied and every
-    /// label shown again.
+    /// hint of their label picked, to do the hints' action, or, of a
+    /// capital letter, as ⇧ types it, copied; the labels that start with
+    /// them shown, the others hidden; of none that does, the field emptied
+    /// and every label shown again.
     fn typed(&mut self, cx: &mut Cx<'_>, text: &str, revision: u64) -> Result<(), Error> {
         let Some(shown) = &mut self.hints else {
             return Ok(());
         };
-        let typed = text.trim().to_lowercase();
-        if let Some(hint) = shown.hints.iter().find(|hint| hint.label == typed) {
-            let (pane, span) = (shown.pane, hint.span);
+        let text = text.trim();
+        let typed = text.to_lowercase();
+        if let Some(at) = shown.hints.iter().position(|hint| hint.label == typed) {
+            let action = if text.chars().any(char::is_uppercase) {
+                Action::Copy
+            } else {
+                shown.action
+            };
+            let pane = shown.pane;
+            let hint = &shown.hints[at];
+            let picked = Hint {
+                label: hint.label.clone(),
+                span: hint.span,
+                text: hint.text.clone(),
+                opens: hint.opens.clone(),
+                decoration: None,
+            };
             self.end_hints(cx);
             let _ = cx.close_panel(HINTS_PANEL);
-            return cx.select_cells(pane, span.0, span.1);
+            return pick(cx, pane, &picked, action);
         }
         let any = shown
             .hints
@@ -385,6 +533,69 @@ impl Links {
     }
 }
 
+impl Links {
+    /// Takes the patterns of its config's `hints`, each a table of its name
+    /// of a `pattern` and a `url`; a pattern that does not read is told in
+    /// a notice and left out.
+    fn configure(&mut self, cx: &mut Cx<'_>) {
+        let Ok(config) = cx.config() else {
+            return;
+        };
+        let (patterns, refused) = patterns_of(&config);
+        self.patterns = patterns;
+        for (name, error) in refused {
+            let text = format!("The hint `{name}`'s pattern does not read: {error}");
+            let _ = cx.notify(&text, NoticeLevel::Warning, None);
+        }
+    }
+}
+
+/// Does `action` of `hint`, of `pane`: opens what it opens, as a ⌘-click,
+/// a path at its line, or copies a hint that opens nothing; copies its
+/// text; types it into the pane; or selects it.
+fn pick(cx: &mut Cx<'_>, pane: PaneId, hint: &Hint, action: Action) -> Result<(), Error> {
+    match (action, &hint.opens) {
+        (Action::Open, Opens::Url(url)) => cx.open(url),
+        (Action::Open, Opens::Path(target, Some(place))) => {
+            cx.open_at(target, place.line, place.column)
+        }
+        (Action::Open, Opens::Path(target, None)) => cx.open(target),
+        (Action::Open, Opens::Nothing) | (Action::Copy, _) => cx.set_clipboard_text(&hint.text),
+        (Action::Type, _) => cx.send_text(pane, &hint.text),
+        (Action::Select, _) => cx.select_cells(pane, hint.span.0, hint.span.1),
+    }
+}
+
+/// The patterns of `config`'s `hints`, in the order of their names, and
+/// the names of those that do not read, each of its error.
+fn patterns_of(config: &Data) -> (Vec<hints::Pattern>, Vec<(String, String)>) {
+    let mut patterns = Vec::new();
+    let mut refused = Vec::new();
+    let Data::Map(config) = config else {
+        return (patterns, refused);
+    };
+    let Some(Data::Map(hints)) = config.get("hints") else {
+        return (patterns, refused);
+    };
+    for (name, hint) in hints {
+        let Data::Map(hint) = hint else {
+            continue;
+        };
+        let Some(Data::Text(pattern)) = hint.get("pattern") else {
+            continue;
+        };
+        let url = match hint.get("url") {
+            Some(Data::Text(url)) if !url.is_empty() => Some(url.clone()),
+            _ => None,
+        };
+        match regex_automata::meta::Regex::new(pattern) {
+            Ok(regex) => patterns.push(hints::Pattern { regex, url }),
+            Err(error) => refused.push((name.clone(), error.to_string())),
+        }
+    }
+    (patterns, refused)
+}
+
 /// How a hint looks: underlined, of its label over its first cells.
 fn hint_look(label: &str) -> DecorationLook {
     DecorationLook {
@@ -394,14 +605,18 @@ fn hint_look(label: &str) -> DecorationLook {
     }
 }
 
-/// The hints of what the view of `pane` shows, each of its cells, the
-/// nearest the cursor first, [`MOST_HINTS`] at most: of each
+/// The hints of what the view of `pane` shows, of `patterns` too, each of
+/// its cells, its text and what it opens, the nearest the cursor first, [`MOST_HINTS`] at most: of each
 /// logical line that the view shows, its URLs, its paths that are there,
 /// its hashes of git's and its IP addresses, which start in the view.
-fn screen_hints(cx: &mut Cx<'_>, pane: PaneId) -> Result<Vec<Span>, Error> {
+fn screen_hints(
+    cx: &mut Cx<'_>,
+    pane: PaneId,
+    patterns: &[hints::Pattern],
+) -> Result<Vec<(Span, String, Opens)>, Error> {
     let view = cx.viewport(pane)?;
     let (top, bottom) = (view.top, view.top + i64::from(view.rows));
-    let mut found: Vec<Span> = Vec::new();
+    let mut found: Vec<(Span, String, Opens)> = Vec::new();
     let mut read_to = top;
     let mut directory: Option<Option<String>> = None;
     for row in top..bottom {
@@ -418,42 +633,50 @@ fn screen_hints(cx: &mut Cx<'_>, pane: PaneId) -> Result<Vec<Span>, Error> {
             .map(|&(_, at)| at + 1)
             .max()
             .unwrap_or(row + 1);
-        for hint in hints::in_line(&line.text) {
+        for hint in hints::in_line(&line.text, patterns) {
             let span = cells_of(&line.cells, hint.first, hint.end);
             if !(top..bottom).contains(&span.0.1) {
                 continue;
             }
             // A path that is there, from the working directory of a
             // relative one.
-            if let hints::Kind::Link(Found::Path(path, _)) = &hint.kind {
-                let target = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
-                    normal(path)
-                } else {
-                    let directory = match &directory {
-                        Some(known) => known.clone(),
-                        None => {
-                            let known = cx.working_directory(pane)?;
-                            directory = Some(known.clone());
-                            known
-                        }
-                    };
-                    let Some(directory) = directory else {
-                        continue;
-                    };
-                    normal(&format!("{directory}/{path}"))
-                };
-                if !cx.opens(&target)? {
-                    continue;
+            let opens = match &hint.kind {
+                hints::Kind::Link(Found::Url(url)) | hints::Kind::Pattern(Some(url)) => {
+                    Opens::Url(url.clone())
                 }
-            }
-            found.push(span);
+                hints::Kind::Link(Found::Path(path, place)) => {
+                    let target = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
+                        normal(path)
+                    } else {
+                        let directory = match &directory {
+                            Some(known) => known.clone(),
+                            None => {
+                                let known = cx.working_directory(pane)?;
+                                directory = Some(known.clone());
+                                known
+                            }
+                        };
+                        let Some(directory) = directory else {
+                            continue;
+                        };
+                        normal(&format!("{directory}/{path}"))
+                    };
+                    if !cx.opens(&target)? {
+                        continue;
+                    }
+                    Opens::Path(target, place.clone())
+                }
+                hints::Kind::Hash | hints::Kind::Ip | hints::Kind::Pattern(None) => Opens::Nothing,
+            };
+            found.push((span, hint.text, opens));
         }
     }
     // The nearest the cursor first: of the fewest rows from it, then of the
     // fewest columns.
     if let Some((column, row)) = cx.cursor_cell(pane)? {
-        found
-            .sort_by_key(|(first, _)| (first.1.abs_diff(row), u32::from(first.0.abs_diff(column))));
+        found.sort_by_key(|((first, _), ..)| {
+            (first.1.abs_diff(row), u32::from(first.0.abs_diff(column)))
+        });
     }
     found.truncate(MOST_HINTS);
     Ok(found)

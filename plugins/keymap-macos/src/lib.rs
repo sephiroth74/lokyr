@@ -137,7 +137,7 @@ pub const DIRECTED: [(&str, &str, &str); 10] = [
 /// The bindings of a command of an argument, a whole number, that hold
 /// while a plugin's panel has the keyboard, after the others: each of its
 /// keys, the command, the argument's name and its value, and the context.
-pub const IN_PANELS: [(&str, &str, &str, i64, &str); 2] = [
+pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
     // The command palette's arrows, through its list while its field has
     // the keys.
     (
@@ -153,6 +153,16 @@ pub const IN_PANELS: [(&str, &str, &str, i64, &str); 2] = [
         "delta",
         1,
         "command-palette.focused",
+    ),
+    // The hints' action, through open, copy, type and select, while their
+    // field has the keys.
+    ("tab", "links.hints-action", "delta", 1, "links.focused"),
+    (
+        "shift+tab",
+        "links.hints-action",
+        "delta",
+        -1,
+        "links.focused",
     ),
 ];
 

@@ -161,8 +161,17 @@ fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
             (
                 HINTS,
                 Category::View,
-                of(&["terminal-read", "process-read", "decorate", "pane-view"])
+                of(&[
+                    "terminal-read",
+                    "process-read",
+                    "decorate",
+                    "pane-view",
+                    "open",
+                    "clipboard-write",
+                    "pty-write"
+                ])
             ),
+            (HINTS_ACTION, Category::View, of(&[])),
         ]
     );
     for command in host.commands() {
@@ -171,14 +180,16 @@ fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
             .iter()
             .map(|param| (param.name.as_str(), param.kind, param.default.as_ref()))
             .collect();
-        // The hints of none: of the focused pane's view.
-        let wanted: &[(&str, Kind, Option<&Value>)] = if command.name == HINTS {
-            &[]
-        } else {
-            &[
+        // The hints of their action, open by default, and their action's
+        // move of its delta.
+        let open = Value::String("open".to_owned());
+        let wanted: &[(&str, Kind, Option<&Value>)] = match command.name.as_str() {
+            HINTS => &[("action", Kind::String, Some(&open))],
+            HINTS_ACTION => &[("delta", Kind::Integer, None)],
+            _ => &[
                 ("column", Kind::Integer, None),
                 ("row", Kind::Integer, None),
-            ]
+            ],
         };
         assert_eq!(params, wanted);
         // Every title in both languages.
@@ -658,17 +669,13 @@ fn hints_label_what_the_screen_shows_the_nearest_the_cursor_first_and_a_label_pi
         request,
         Request::OpenPanel { id, options } if id.0 == HINTS_PANEL && options.close_escape
     )));
-    // `s` picks the address, which it selects; its labels go.
+    // `s` picks the address, which opens nothing, so that its opening
+    // copies it; its labels go.
     host.take_done();
     host.ui_event(&mut links, &typing("s")).unwrap();
     let done = host.take_done();
     assert!(
-        done.contains(&Request::SelectCells {
-            pane: PANE,
-            first: (19, 2),
-            last: (30, 2),
-            kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
-        }),
+        done.contains(&Request::SetClipboardText("192.168.1.20".to_owned())),
         "{done:?}"
     );
     assert!(done.contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL))));
@@ -722,4 +729,156 @@ fn letters_narrow_the_labels_of_two_and_escape_leaves() {
             .iter()
             .any(|request| matches!(request, Request::OpenPanel { .. }))
     );
+}
+
+/// What a pick of the hint of `label` does, of `host`'s screen, the hints
+/// shown of `args`, after `tabs` presses of Tab; the requests of the pick
+/// alone, the decorations' and the panel's aside.
+fn picked(host: &mut FakeHost, args: Args, tabs: i64, label: &str) -> Vec<Request> {
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, args).unwrap();
+    host.render(&mut links, &ViewId::Panel(PanelId::from(HINTS_PANEL)))
+        .expect("the hints' field");
+    if tabs != 0 {
+        let delta = Args::from([("delta".to_owned(), Value::Integer(tabs))]);
+        host.command(&mut links, HINTS_ACTION, delta).unwrap();
+    }
+    host.take_done();
+    host.ui_event(&mut links, &typing(label)).unwrap();
+    host.take_done()
+        .into_iter()
+        .filter(|request| {
+            !matches!(
+                request,
+                Request::Undecorate { .. } | Request::ClosePanel(_) | Request::RequestRender(_)
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_pick_opens_copies_types_or_selects_as_its_action_and_a_capital_copies() {
+    let lines = [
+        "see https://lokyr.dev/docs ok",
+        "   --> /work/lokyr/src/main.rs:42:7",
+        "commit 4482b9e9",
+    ];
+    let action = |name: &str| Args::from([("action".to_owned(), Value::String(name.to_owned()))]);
+    // The hash `a`, the path `s`, the URL `d`.
+    let url = "https://lokyr.dev/docs".to_owned();
+    assert_eq!(
+        picked(&mut screen(&lines), Args::new(), 0, "d"),
+        [Request::Open(url.clone())]
+    );
+    assert_eq!(
+        picked(&mut screen(&lines), Args::new(), 0, "s"),
+        [Request::OpenAt {
+            target: "/work/lokyr/src/main.rs".to_owned(),
+            line: 42,
+            column: Some(7)
+        }]
+    );
+    // A capital, as ⇧ types it, copies whatever the action.
+    assert_eq!(
+        picked(&mut screen(&lines), Args::new(), 0, "D"),
+        [Request::SetClipboardText(url.clone())]
+    );
+    assert_eq!(
+        picked(&mut screen(&lines), action("type"), 0, "d"),
+        [Request::SendText {
+            pane: PANE,
+            text: url.clone()
+        }]
+    );
+    assert_eq!(
+        picked(&mut screen(&lines), action("select"), 0, "a"),
+        [Request::SelectCells {
+            pane: PANE,
+            first: (7, 2),
+            last: (14, 2),
+            kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
+        }]
+    );
+    // Tab moves the action, around, as the field shows it: open, copy,
+    // type, select; back of ⇧Tab.
+    assert_eq!(
+        picked(&mut screen(&lines), Args::new(), 2, "d"),
+        [Request::SendText {
+            pane: PANE,
+            text: url.clone()
+        }]
+    );
+    assert_eq!(
+        picked(&mut screen(&lines), Args::new(), -3, "d"),
+        [Request::SetClipboardText(url)]
+    );
+    let mut host = screen(&lines);
+    let mut links = Links::default();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let delta = Args::from([("delta".to_owned(), Value::Integer(1))]);
+    host.command(&mut links, HINTS_ACTION, delta).unwrap();
+    let field = host
+        .render(&mut links, &ViewId::Panel(PanelId::from(HINTS_PANEL)))
+        .unwrap();
+    assert!(
+        matches!(&field.children[0].kind, lokyr_plugin_sdk::view::Kind::Text(text) if text == "Copy ▸")
+    );
+    // An action that is none refused.
+    let error = screen(&lines)
+        .command(&mut Links::default(), HINTS, action("paste"))
+        .unwrap_err();
+    assert_eq!(error.code, Code::Failed);
+}
+
+#[test]
+fn a_pattern_of_the_config_labels_its_matches_which_open_its_url() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let hint = |pattern: &str, url: Option<&str>| {
+        let mut table = std::collections::BTreeMap::from([(
+            "pattern".to_owned(),
+            Data::Text(pattern.to_owned()),
+        )]);
+        if let Some(url) = url {
+            table.insert("url".to_owned(), Data::Text(url.to_owned()));
+        }
+        Data::Map(table)
+    };
+    let config = Data::Map(std::collections::BTreeMap::from([(
+        "hints".to_owned(),
+        Data::Map(std::collections::BTreeMap::from([
+            (
+                "jira".to_owned(),
+                hint(r"PROJ-(\d+)", Some("https://jira.example.com/browse/$0")),
+            ),
+            ("broken".to_owned(), hint("(", None)),
+        ])),
+    )]));
+    let mut host = screen(&["fixed in PROJ-42 today"]);
+    host.set_config(config);
+    host.take_done();
+    let done = picked(&mut host, Args::new(), 0, "a");
+    assert_eq!(
+        done,
+        [Request::Open(
+            "https://jira.example.com/browse/PROJ-42".to_owned()
+        )]
+    );
+    // The pattern that does not read, told in a notice as the plugin
+    // activated.
+    let mut host = screen(&["x"]);
+    host.set_config(Data::Map(std::collections::BTreeMap::from([(
+        "hints".to_owned(),
+        Data::Map(std::collections::BTreeMap::from([(
+            "broken".to_owned(),
+            hint("(", None),
+        )])),
+    )])));
+    host.take_done();
+    host.activate(&mut Links::default()).unwrap();
+    assert!(host.take_done().iter().any(|request| matches!(
+        request,
+        Request::Notify { text, .. } if text.contains("`broken`")
+    )));
 }

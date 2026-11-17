@@ -743,16 +743,17 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = tree.kind(list) else {
         panic!("a list");
     };
-    // The config's 18 sections, then the 6 of the plugins of a schema,
+    // The config's 18 sections, then the 7 of the plugins of a schema,
     // the bindings of keys a page of their own.
     let titles: Vec<&str> = sections
         .items
         .iter()
         .map(|item| item.texts[1].as_str())
         .collect();
-    assert_eq!(titles.len(), 24, "{titles:?}");
+    assert_eq!(titles.len(), 25, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
-    assert_eq!(titles[18], "Tabs");
+    // The plugins' in the order that they register, the links' first.
+    assert_eq!(&titles[18..20], ["Link Hints", "Tabs"]);
     assert!(!titles.contains(&"Keys"), "{titles:?}");
     assert_eq!(
         app.settings
@@ -779,8 +780,8 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
         .unwrap();
     let list = view.surface.tree.by_key(&"sections".into()).unwrap();
     assert!(state.focus.focus(view.id, &view.surface.tree, list));
-    // The config's sections, then the plugins'.
-    for _ in 0..18 {
+    // The config's sections, then the plugins', past the links' hints.
+    for _ in 0..19 {
         tap(
             &mut fake,
             &mut app,

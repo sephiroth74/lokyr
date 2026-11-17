@@ -98,6 +98,7 @@ section-plugin-quick-terminal = Terminale rapido
 section-plugin-search = Trova
 section-plugin-command-header = Intestazione del comando
 section-plugin-quick-tips = Suggerimenti rapidi
+section-plugin-links = Etichette dei link
 
 # Una chiave.
 settings-plugin = Del plugin { $plugin }
