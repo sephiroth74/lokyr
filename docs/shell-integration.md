@@ -26,10 +26,10 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 - **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
 - **The command you're reading**: when a command's line scrolls away, the [command header](plugins/command-header.md) shows it at the pane's top.
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
-- **Hear when a long command ends**: a notification tells you when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
+- **Hear when a long command ends**: a notification lets you know when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
 - **New tabs in the same folder**: a new tab or a split starts in the folder that its pane's shell reported last, as [`[window] new-directory`](CONFIGURATION.md#new-directory) says.
-- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Backspace or Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
-- **Tabs that know what runs**: when a command starts, its tab's title and marks follow the program that it runs, however late it starts.
+- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Backspace or Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane, in zsh, in bash, in fish 3 and in fish 4.1 or later. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
+- **Tabs that know what runs**: when a command starts, its tab's title and marks follow the program that it runs. Lokyr looks for the program from the command's start until 4 seconds later, and again when the program prints something.
 
 ## Turn it off
 
@@ -47,14 +47,14 @@ Lokyr loads the integration into your login shell, the shell that every new pane
 | Shell | What Lokyr does |
 |---|---|
 | zsh | Loads it through `ZDOTDIR`, which it sets back to yours at once, so that your `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` load as usual |
-| bash | Starts bash in POSIX mode, which reads only `ENV`. The integration leaves POSIX mode, then reads your `.bash_profile` or `.bashrc` itself |
+| bash | Starts bash in POSIX mode, which reads only `ENV`. The integration leaves POSIX mode, then reads your startup files itself, as a login bash does: `/etc/profile`, then the first of `.bash_profile`, `.bash_login` and `.profile` |
 | fish | Adds its folder to `XDG_DATA_DIRS`, whose `vendor_conf.d` fish reads, and takes it away again as fish starts. fish 4 and later report their prompts themselves |
 
 A shell that reports its prompts on its own, such as Nushell, works too, with nothing to set up.
 
 ## Set it up by hand
 
-macOS's own bash, `/bin/bash`, is version 3.2: it reads your files but not `ENV` in POSIX mode, so it gets no integration. A later bash, such as Homebrew's, gets it. To add it to `/bin/bash`, add this line to your `.bashrc`:
+macOS's own bash, `/bin/bash`, is version 3.2: it reads your files but not `ENV` in POSIX mode, so it gets no integration. A later bash, such as Homebrew's, gets it. To add it to `/bin/bash`, which starts as a login shell in a new pane and reads `~/.bash_profile`, add this line to `~/.bash_profile`:
 
 ```sh
 [ -n "$LOKYR_RESOURCES_DIR" ] && source "$LOKYR_RESOURCES_DIR/shell-integration/bash/lokyr.bash"
@@ -66,7 +66,7 @@ A shell that you start from another one, such as `bash` typed in a zsh pane, get
 [ -n "$LOKYR_RESOURCES_DIR" ] && source "$LOKYR_RESOURCES_DIR/shell-integration/zsh/lokyr-integration"
 ```
 
-For bash, the line above, in `~/.bashrc`. For fish 3, in `~/.config/fish/config.fish`; fish 4 and later need nothing:
+For bash, the line above, in `~/.bashrc`, which a bash that you start from another shell reads. For fish 3, in `~/.config/fish/config.fish`; fish 4 and later need nothing:
 
 ```fish
 set -q LOKYR_RESOURCES_DIR; and source "$LOKYR_RESOURCES_DIR/shell-integration/fish/vendor_conf.d/lokyr-shell-integration.fish"
@@ -78,12 +78,12 @@ Loading a script twice does no harm, so a shell that Lokyr already set up can ke
 
 At each prompt and around each command, your shell prints escape codes that Lokyr reads and never shows:
 
-- **OSC 133**, [semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md): `A` where the prompt starts, `B` where your input starts, `C` where the command's output starts, and `D` with the exit status where it ends. zsh adds the command line as you typed it to `C`, so that the header and the notification show it without a right prompt's text.
+- **OSC 133**, [semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md): `A` where the prompt starts, `B` where your input starts, `C` where the command's output starts, and `D` with the exit status where it ends. zsh and fish 4 add the command line as you typed it to `C`, so that the header and the notification show it without a right prompt's text.
 - **OSC 7**: the shell's folder, as a `file` URL of this Mac.
 
 In bash 4.4 and later, the output's mark comes from `PS0`, so the integration sets no trap: your own DEBUG trap, `$_` and the commands that your keys run through `bind -x`, such as fzf's, stay as they are. An older bash marks the output from a DEBUG trap, unless you have one of your own.
 
-The integration adds its marks after your prompt is drawn, at each prompt, so a prompt theme that sets `PS1` keeps working.
+At each prompt, after your own prompt commands run and before the shell draws the prompt, the integration puts its marks around your prompt, so a prompt theme that sets `PS1` keeps working.
 
 ## Limits
 
@@ -91,6 +91,7 @@ The integration adds its marks after your prompt is drawn, at each prompt, so a 
 - **Remote shells** over `ssh` get no integration: their commands get no marks, and a click in their command line moves nothing, as `ssh` is the program in front.
 - **A program that a shell runs**, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone.
 - **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks, and a click in its command line moves nothing.
+- **fish 4.0** reports its prompts without saying that it takes clicks, so a click in its command line moves nothing. fish 3, with the integration, and fish 4.1 and later take them. · not released yet
 - **A program that takes the whole screen**, such as an editor, shows no prompts and gets no marks while it runs.
 
 ## Troubleshooting
@@ -115,13 +116,15 @@ You should see `1`. In fish, `echo $version` should print 4 or later, or `functi
 
 **Fix**: source your shell's script in that shell, as [above](#set-it-up-by-hand), or make it your login shell.
 
-**Check**: in that shell, `echo "${_lokyr_integration-none}"` prints `none` without the integration, and `1` once you source it.
+**Check**: in zsh or bash, `echo "${_lokyr_integration-none}"` prints `none` without the integration, and `1` once you source it. In fish 3, `functions -q __lokyr_prompt_start; and echo 1` prints `1` once you source it.
 
 ### A click in the command line doesn't move the cursor
 
-**Why**: [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) is `false`, the shell has no integration, the program in front is not a shell, such as `ssh`, or a bash older than 4.4 has a DEBUG trap of its own.
+<sub>Platforms: macOS · not released yet</sub>
 
-**Fix**: set `click-to-move` to `true`, or use a bash of version 4.4 or later, such as Homebrew's.
+**Why**: [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) is `false`, the shell has no integration, the program in front is not a shell, such as `ssh`, the shell is fish 4.0, or a bash older than 4.4 has a DEBUG trap of its own.
+
+**Fix**: set `click-to-move` to `true`, or use bash 4.4 or later, such as Homebrew's, or fish 4.1 or later.
 
 **Check**: type `echo hello world`, click on the `w`, then type `X`: the line reads `echo hello Xworld`.
 
@@ -135,10 +138,10 @@ You should see `1`. In fish, `echo $version` should print 4 or later, or `functi
 
 To have Lokyr understand your shell or your prompt, print these codes. Each ends with the string terminator, `\033\\`; the bell character, `\a`, works too.
 
-At the prompt's start, `cl=line` if your line editor moves its cursor with the left and right arrows within the line:
+At the prompt's start:
 
 ```sh
-printf '\033]133;A;cl=line\033\\'
+printf '\033]133;A\033\\'
 ```
 
 Where the input starts, after the prompt:
@@ -159,18 +162,28 @@ As the command ends, with its exit status:
 printf '\033]133;D;%s\033\\' "$?"
 ```
 
-The shell's folder, as a `file` URL, percent-encoded:
+The shell's folder, as a `file` URL, its path percent-encoded but for its letters, digits and `/._~-`. In bash:
 
-```sh
-printf '\033]7;file://%s%s\033\\' "$(hostname)" "$PWD"
+```bash
+lokyr_report_folder() {
+    local LC_ALL=C url= byte i
+    for ((i = 0; i < ${#PWD}; i++)); do
+        byte=${PWD:i:1}
+        case $byte in
+            [A-Za-z0-9/._~-]) url+=$byte ;;
+            *) printf -v byte '%%%02X' "'$byte"; url+=$byte ;;
+        esac
+    done
+    printf '\033]7;file://%s%s\033\\' "$HOSTNAME" "$url"
+}
 ```
 
-Other options of `A`:
+Other options of `A`, and the right prompt:
 
+- **`cl=line`** for a line editor that moves its cursor with the left and right arrows within the line, so that a click in the command line moves the cursor. · not released yet
 - **`cl=m`** for a line editor that moves across the lines of a command of several lines with the arrows; Lokyr then counts each line's end as one arrow. · not released yet
-- **`click_events=1`** hands Lokyr's clicks in the command line to the shell itself, in the mouse's SGR encoding, at their row on the screen; `click_events=2` counts the row from the prompt's first, as the [click events' specification](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) describes. · not released yet
-
-A right prompt, such as zsh's `RPROMPT`, starts with `OSC 133 ; P ; k=r` and ends with `B`, so that its text is no part of the command line that a click counts.
+- **`click_events=1`** hands Lokyr's clicks in the command line to the shell itself, in the mouse's SGR encoding, at their row on the screen; `click_events=2` counts the row from the row of the prompt's `A`, as the [click events' specification](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) describes. · not released yet
+- **A right prompt**, such as zsh's `RPROMPT`, starts with `OSC 133 ; P ; k=r` and ends with `B`, so that its text is no part of the command line that a click counts. · not released yet
 
 ## See also
 

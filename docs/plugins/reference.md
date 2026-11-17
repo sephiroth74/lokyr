@@ -66,7 +66,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `window-focus` | A window takes the keyboard's focus, or loses it | — |
 | `tab-created`, `tab-closed`, `tab-activated`, `tab-moved` | A tab opens, closes, shows or moves | — |
 | `tab-changed` | A tab's title, color, place or marks change | Its programs', progress' and agents' fields of `process-read` |
-| `group-changed` | A group of tabs is made, renamed, colored, folded or unfolded, takes or loses a tab, or goes; a read of the window's groups tells it | — |
+| `group-changed` | A group of tabs is made, renamed, colored, folded or unfolded, takes or loses a tab, or goes; a read of the window's groups reports it · not released yet | — |
 | `tab-bar-resized` | The tab bar's column is dragged to another width | — |
 | `pane-created`, `pane-closed`, `pane-focused`, `pane-moved` | A pane opens, closes, takes the keyboard or moves. A tab closed and kept for Reopen Closed Tab tells `pane-closed` of each pane, whose decorations, gutter marks, cursor shown and searches Lokyr takes away; given back, it tells `tab-created` and `pane-created` as a tab opened anew | — |
 | `pane-changed` | A pane's title or header changes | `process-read` |
@@ -86,7 +86,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `panel-closed` | One of the plugin's panels closes | — |
 | `page-shown`, `page-hidden` | One of the plugin's pages of the settings window shows, or hides as another shows or the window closes; Lokyr's own plugins alone have pages | — |
 | `timer` | One of the plugin's timers fires | — |
-| `double-tapped` | The modifier that the plugin watches, `watch_double_tap`, is tapped twice, alone, from any app | `global-hotkey` |
+| `double-tapped` | The modifier that the plugin watches, `watch_double_tap`, is tapped twice, alone, from any app · not released yet | `global-hotkey` |
 | `package`, `packages-ended` | A job of the packages' service tells a line, or ends | `packages` |
 | `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes; or the installed plugins are taken anew, whatever their list holds, as of a package that Lokyr refused | `packages` |
 | `settings-changed` | The config applies anew, of other values, or a plugin of a config schema is installed, updated or removed | `config` |

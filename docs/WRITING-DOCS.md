@@ -6,15 +6,16 @@ This guide is for anyone who writes or changes a page of Lokyr's documentation. 
 
 Each page covers one topic, named the way a reader would name it: "Shell integration", "Keyboard", "Links". Don't name a page after a crate or a plugin, unless the plugin is the whole feature, such as the quick terminal or copy mode.
 
-Every page belongs to one of five groups:
+Every page belongs to one of the summary's groups:
 
 | Group | What it holds |
 |---|---|
 | Start | The documentation's home, installing Lokyr, a first tour |
-| Use | A page a topic: what a feature does, how to use it, what goes wrong |
+| Use | A page for each topic: what a feature does, how to use it, what goes wrong |
 | Reference | Lists to look things up: the config's keys, the commands, the escape codes |
-| Help | Troubleshooting and common questions |
 | Internals | How Lokyr is built, for contributors |
+
+A Help group, for troubleshooting and common questions, joins them between Reference and Internals with its first page.
 
 - **List a new page in [`docs/SUMMARY.md`](SUMMARY.md)**, in its group, where a reader would look for it. The site's build fails when a public page is missing from the summary. The measurements in `docs/bench/` and the release notes in `docs/releases/` are the exception: the page of their folder that the summary lists links each of them, which the build checks too.
 - **Name a new page in lowercase**, with hyphens, such as `shell-integration.md`. The older pages in uppercase keep their names, because links from elsewhere point to them.
@@ -34,6 +35,7 @@ Every page belongs to one of five groups:
 - **Say what a feature costs**, in memory, wakeups or latency, where it costs something.
 - **Name no other terminal emulator.** Name a protocol by its number and what it does, and link its specification: "OSC 8, hyperlinks". Programs and tools that are not terminals can be named, such as vim, Gradle or Claude Code.
 - **Leave out the project's plans**: no phases, no task identifiers, no decision records, and nobody's choices.
+- **The Internals pages are the exception** to the last two: the design documents keep what they say, the terminals that they compare and the phases of the roadmap among it, and the measurements' file names keep their identifiers.
 
 ## The topic page
 

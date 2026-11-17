@@ -259,7 +259,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
 | Settings and state | `config`, `state`, `set_state`, `keeps_state` |
-| Time and the modifiers | `start_timer`, `cancel_timer`, `day`, `watch_double_tap` |
+| Time and the modifiers | `start_timer`, `cancel_timer`, `day`, and `watch_double_tap` · not released yet |
 | The Mac | `keep_awake` |
 | Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
 
