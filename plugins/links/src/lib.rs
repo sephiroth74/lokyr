@@ -10,7 +10,8 @@
 //! that the keyboard may pick, URLs, paths, a path's line, hashes of git's
 //! and IP addresses, of one or two letters each, the shortest for those
 //! nearest the cursor, which the letters typed pick and Escape leaves.
-//! Like every built-in plugin, it depends only on the plugin SDK.
+//! It depends on the plugin SDK, and on `regex-automata` for the hints'
+//! patterns of the config.
 
 #![forbid(unsafe_code)]
 
@@ -20,7 +21,10 @@ mod scan;
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{DecorationLook, NoticeLevel, PaneId, Underline, file_host};
+use lokyr_plugin_sdk::host::{
+    DecorationLook, LONGEST_NOTICE, NoticeLevel, OPEN_SCHEMES, PaneId, Underline, file_host,
+    scheme_opens, url_scheme,
+};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::message::{Event, POINTER};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -68,6 +72,46 @@ static CATALOGS: [(&str, &str); 2] = [
     ("it", include_str!("../locales/it/links.ftl")),
 ];
 
+/// The English of the messages that the plugin shows, where the host gives
+/// none, as English's catalog has them.
+const ENGLISH: [(&str, &str); 9] = [
+    ("hints-placeholder", "Type a hint"),
+    ("hints-action-open", "Open"),
+    ("hints-action-copy", "Copy"),
+    ("hints-action-type", "Type"),
+    ("hints-action-select", "Select"),
+    (
+        "hints-pattern-refused",
+        "The hint `{ $name }` has a pattern that doesn't read: { $error }",
+    ),
+    (
+        "hints-url-refused",
+        "The hint `{ $name }` has a URL that doesn't open: only { $schemes } URLs open",
+    ),
+    (
+        "hints-alphabet-refused",
+        "The hints' alphabet `{ $alphabet }` isn't lowercase letters and digits, each once: the hints keep the default",
+    ),
+    (
+        "hints-pick-failed",
+        "Couldn't use the hint `{ $hint }`: { $error }",
+    ),
+];
+
+/// The capabilities of the hints' commands: their reads of the screen and
+/// of the folder, their labels and their panel, and what a pick does.
+fn hints_capabilities() -> Vec<Capability> {
+    vec![
+        Capability::TerminalRead,
+        Capability::ProcessRead,
+        Capability::Decorate,
+        Capability::PaneView,
+        Capability::Open,
+        Capability::ClipboardWrite,
+        Capability::PtyWrite,
+    ]
+}
+
 /// How a link under the pointer looks while Command is held: underlined,
 /// in its text's color, with the pointing hand over it.
 const UNDERLINED: DecorationLook = DecorationLook {
@@ -93,14 +137,24 @@ type Candidate = (String, Option<Span>, Option<Place>);
 /// The plugin of the links, and the link that it underlines, while
 /// Command is held over it: its pane, its cells and its decoration; the
 /// hints that it shows; and the patterns of its config.
+///
+/// A call that fails loses its writes, and the plugin's state stays as the
+/// call found it: each call changes the state last, once nothing more can
+/// fail.
 #[derive(Debug, Default)]
 pub struct Links {
     underlined: Option<(PaneId, Span, u64)>,
     hints: Option<Shown>,
+    /// The closes of the hints' panel that the plugin made itself, whose
+    /// events it skips, as the hints that show then are new ones.
+    closing: usize,
     patterns: Vec<hints::Pattern>,
     /// The letters of the labels, of the config's `alphabet`; the
     /// default's of none.
     alphabet: Option<String>,
+    /// The notice of the config's problems last shown, which a change of
+    /// the config shows again only when they change.
+    told: Option<String>,
 }
 
 /// The hints that a pane shows: the pane, each hint, what a pick does, and
@@ -164,13 +218,13 @@ impl Action {
         Self::ALL.into_iter().find(|action| action.name() == name)
     }
 
-    /// Its title's message, and its title in English.
-    fn title(self) -> (&'static str, &'static str) {
+    /// Its title's message.
+    fn title(self) -> &'static str {
         match self {
-            Self::Open => ("hints-action-open", "Open"),
-            Self::Copy => ("hints-action-copy", "Copy"),
-            Self::Type => ("hints-action-type", "Type"),
-            Self::Select => ("hints-action-select", "Select"),
+            Self::Open => "hints-action-open",
+            Self::Copy => "hints-action-copy",
+            Self::Type => "hints-action-type",
+            Self::Select => "hints-action-select",
         }
     }
 
@@ -218,15 +272,7 @@ impl Plugin for Links {
             name: HINTS.to_owned(),
             title: "Show Hints".to_owned(),
             category: Category::View,
-            capabilities: vec![
-                Capability::TerminalRead,
-                Capability::ProcessRead,
-                Capability::Decorate,
-                Capability::PaneView,
-                Capability::Open,
-                Capability::ClipboardWrite,
-                Capability::PtyWrite,
-            ],
+            capabilities: hints_capabilities(),
             params: vec![Param {
                 name: "action".to_owned(),
                 kind: Kind::String,
@@ -234,12 +280,13 @@ impl Plugin for Links {
             }],
             when: None,
         })?;
-        // Of a delta that the keys give, so that no menu lists it.
+        // Of a delta that the keys give, so that no menu lists it; of the
+        // hints' capabilities, as the action that it moves picks with them.
         cx.register_command(Command {
             name: HINTS_ACTION.to_owned(),
             title: "Next Hint Action".to_owned(),
             category: Category::View,
-            capabilities: Vec::new(),
+            capabilities: hints_capabilities(),
             params: vec![param("delta")],
             when: None,
         })?;
@@ -258,10 +305,17 @@ impl Plugin for Links {
     /// The pointer over a link that opens, with Command held, underlines
     /// it, as long as both stay; the underline goes as either does.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
-        // The hints' panel closed, of Escape or a click away: they go.
-        if events.iter().any(
-            |event| matches!(event, Event::PanelClosed(id) if *id == PanelId::from(HINTS_PANEL)),
-        ) {
+        // The hints' panel closed, of Escape or a click away: they go. The
+        // closes that the plugin made come first, of the hints before.
+        let closed = events
+            .iter()
+            .filter(
+                |event| matches!(event, Event::PanelClosed(id) if *id == PanelId::from(HINTS_PANEL)),
+            )
+            .count();
+        let skipped = closed.min(self.closing);
+        self.closing -= skipped;
+        if closed > skipped {
             self.end_hints(cx);
         }
         if events
@@ -370,15 +424,8 @@ impl Plugin for Links {
             .hints
             .as_ref()
             .map_or(Action::Open, |shown| shown.action);
-        let mut message = |id: &str, english: &str| {
-            cx.message(id, &[])
-                .ok()
-                .filter(|text| text != id)
-                .unwrap_or_else(|| english.to_owned())
-        };
-        let placeholder = message("hints-placeholder", "Type a hint");
-        let (id, english) = action.title();
-        let title = format!("{} ▸", message(id, english));
+        let placeholder = message(cx, "hints-placeholder", &[]);
+        let title = format!("{} ▸", message(cx, action.title(), &[]));
         Some(
             Node::container(vec![
                 Node::text(title.as_str()).key("action"),
@@ -425,21 +472,30 @@ impl Links {
         // Shown already, of their panel open: shown anew, of the screen and
         // the config of now, in the same panel where the pane is the same,
         // as a panel of an id open is none to open again, which would fail
-        // the call and drop its writes.
-        let open = self
-            .hints
-            .as_ref()
-            .map(|shown| (shown.pane, shown.revision));
-        self.end_hints(cx);
+        // the call and drop its writes. The hints of before stay the
+        // plugin's until nothing more can fail, so that a failed call,
+        // whose writes go, leaves them as they show.
         let pane = cx.focused_pane();
         let found = match pane {
             Some(pane) => screen_hints(cx, pane, &self.patterns)?,
             None => Vec::new(),
         };
+        let open = self
+            .hints
+            .as_ref()
+            .map(|shown| (shown.pane, shown.revision));
+        if let Some(shown) = &self.hints {
+            for id in shown.hints.iter().filter_map(|hint| hint.decoration) {
+                // A pane that closed took its decorations.
+                let _ = cx.undecorate(shown.pane, id);
+            }
+        }
         let (Some(pane), false) = (pane, found.is_empty()) else {
             if open.is_some() {
                 cx.close_panel(HINTS_PANEL)?;
+                self.closing += 1;
             }
+            self.hints = None;
             return Ok(());
         };
         let alphabet = self.alphabet.as_deref().unwrap_or(hints::ALPHABET);
@@ -451,31 +507,34 @@ impl Links {
             revision: 0,
         };
         for ((span, text, opens), label) in found.into_iter().zip(labels) {
+            let decoration = cx.decorate(pane, span.0, span.1, hint_look(&label))?;
             shown.hints.push(Hint {
                 label,
                 span,
                 text,
                 opens,
-                decoration: None,
+                decoration: Some(decoration),
             });
         }
-        for hint in &mut shown.hints {
-            hint.decoration =
-                Some(cx.decorate(pane, hint.span.0, hint.span.1, hint_look(&hint.label))?);
-        }
         let panel = ViewId::Panel(PanelId::from(HINTS_PANEL));
+        let mut closed = 0;
         match open {
             Some((shown_in, revision)) if shown_in == pane => {
                 shown.revision = revision;
-                self.hints = Some(shown);
                 cx.set_text(panel.clone(), HINTS_FIELD, "", revision)?;
                 cx.request_render(panel.clone())?;
-                return cx.focus_node(panel, HINTS_FIELD);
+                cx.focus_node(panel, HINTS_FIELD)?;
+                self.hints = Some(shown);
+                return Ok(());
             }
-            Some(_) => cx.close_panel(HINTS_PANEL)?,
+            // Its close comes as an event after the call, of the hints of
+            // before, which the plugin skips.
+            Some(_) => {
+                cx.close_panel(HINTS_PANEL)?;
+                closed = 1;
+            }
             None => {}
         }
-        self.hints = Some(shown);
         cx.open_panel(
             HINTS_PANEL,
             PanelOptions {
@@ -489,7 +548,10 @@ impl Links {
                 takes_keys: false,
                 close_typing: false,
             },
-        )
+        )?;
+        self.closing += closed;
+        self.hints = Some(shown);
+        Ok(())
     }
 
     /// The letters `text` typed in the hints' field, of its `revision`: the
@@ -498,20 +560,18 @@ impl Links {
     /// them shown, the others hidden; of none that does, the field emptied
     /// and every label shown again.
     fn typed(&mut self, cx: &mut Cx<'_>, text: &str, revision: u64) -> Result<(), Error> {
-        let Some(shown) = &mut self.hints else {
+        let Some(shown) = &self.hints else {
             return Ok(());
         };
-        shown.revision = revision;
         let text = text.trim();
         let typed = text.to_lowercase();
-        if let Some(at) = shown.hints.iter().position(|hint| hint.label == typed) {
+        if let Some(hint) = shown.hints.iter().find(|hint| hint.label == typed) {
             let action = if text.chars().any(char::is_uppercase) {
                 Action::Copy
             } else {
                 shown.action
             };
             let pane = shown.pane;
-            let hint = &shown.hints[at];
             let picked = Hint {
                 label: hint.label.clone(),
                 span: hint.span,
@@ -520,8 +580,21 @@ impl Links {
                 decoration: None,
             };
             self.end_hints(cx);
-            let _ = cx.close_panel(HINTS_PANEL);
-            return pick(cx, pane, &picked, action);
+            if cx.close_panel(HINTS_PANEL).is_ok() {
+                self.closing += 1;
+            }
+            // A pick that fails, as a URL of a scheme that does not open,
+            // is told, and the call ends well, so that the labels and the
+            // panel go all the same.
+            if let Err(error) = pick(cx, pane, &picked, action) {
+                let text = message(
+                    cx,
+                    "hints-pick-failed",
+                    &[("hint", &picked.text), ("error", &error.message)],
+                );
+                let _ = cx.notify(&notice_text(&text), NoticeLevel::Warning, None);
+            }
+            return Ok(());
         }
         let any = shown
             .hints
@@ -531,24 +604,29 @@ impl Links {
             let panel = ViewId::Panel(PanelId::from(HINTS_PANEL));
             cx.set_text(panel, HINTS_FIELD, "", revision)?;
         }
+        // The labels' changes, kept once every one is made.
         let pane = shown.pane;
-        for hint in &mut shown.hints {
+        let mut changed = Vec::new();
+        for (at, hint) in shown.hints.iter().enumerate() {
             let wanted = !any || hint.label.starts_with(&typed);
             match (wanted, hint.decoration) {
                 (true, None) => {
-                    hint.decoration = Some(cx.decorate(
-                        pane,
-                        hint.span.0,
-                        hint.span.1,
-                        hint_look(&hint.label),
-                    )?);
+                    let id = cx.decorate(pane, hint.span.0, hint.span.1, hint_look(&hint.label))?;
+                    changed.push((at, Some(id)));
                 }
                 (false, Some(id)) => {
                     let _ = cx.undecorate(pane, id);
-                    hint.decoration = None;
+                    changed.push((at, None));
                 }
                 _ => {}
             }
+        }
+        let Some(shown) = &mut self.hints else {
+            return Ok(());
+        };
+        shown.revision = revision;
+        for (at, decoration) in changed {
+            shown.hints[at].decoration = decoration;
         }
         Ok(())
     }
@@ -568,17 +646,29 @@ impl Links {
 impl Links {
     /// Takes the patterns of its config's `hints`, each a table of its name
     /// of a `pattern` and a `url`, and its `alphabet`; a pattern that does
-    /// not read, and an alphabet of another character or of a letter twice,
-    /// are told in a notice and left out.
+    /// not read, a URL of a scheme that does not open, and an alphabet of
+    /// another character or of a letter twice, are left out and told in a
+    /// notice, once while the config keeps them.
     fn configure(&mut self, cx: &mut Cx<'_>) {
         let Ok(config) = cx.config() else {
             return;
         };
         let (patterns, refused) = patterns_of(&config);
         self.patterns = patterns;
-        for (name, error) in refused {
-            let text = format!("The hint `{name}`'s pattern does not read: {error}");
-            let _ = cx.notify(&text, NoticeLevel::Warning, None);
+        let mut problems = Vec::new();
+        for refusal in refused {
+            problems.push(match refusal {
+                Refusal::Pattern(name, error) => message(
+                    cx,
+                    "hints-pattern-refused",
+                    &[("name", &name), ("error", &error)],
+                ),
+                Refusal::Url(name) => message(
+                    cx,
+                    "hints-url-refused",
+                    &[("name", &name), ("schemes", &OPEN_SCHEMES.join(", "))],
+                ),
+            });
         }
         self.alphabet = None;
         if let Data::Map(config) = &config
@@ -587,13 +677,67 @@ impl Links {
             if hints::is_alphabet(alphabet) {
                 self.alphabet = Some(alphabet.clone());
             } else {
-                let text = format!(
-                    "The hints' alphabet `{alphabet}` is not of lowercase letters and digits, each once: the hints keep the default"
-                );
-                let _ = cx.notify(&text, NoticeLevel::Warning, None);
+                problems.push(message(
+                    cx,
+                    "hints-alphabet-refused",
+                    &[("alphabet", alphabet)],
+                ));
             }
         }
+        // One notice of them all, as a plugin's notices come a second
+        // apart at least.
+        let told = (!problems.is_empty()).then(|| notice_text(&problems.join(" · ")));
+        if told != self.told
+            && let Some(text) = &told
+        {
+            let _ = cx.notify(text, NoticeLevel::Warning, None);
+        }
+        self.told = told;
     }
+}
+
+/// The text of the message `id` of `args`, in the language shown, or
+/// English's where the host gives none, its arguments in their places.
+fn message(cx: &mut Cx<'_>, id: &str, args: &[(&str, &str)]) -> String {
+    let data: Vec<(&str, Data)> = args
+        .iter()
+        .map(|&(name, value)| (name, Data::Text(value.to_owned())))
+        .collect();
+    if let Ok(text) = cx.message(id, &data)
+        && text != id
+    {
+        return text;
+    }
+    let english = ENGLISH
+        .iter()
+        .find(|(english, _)| *english == id)
+        .map_or(id, |(_, text)| *text);
+    args.iter().fold(english.to_owned(), |text, (name, value)| {
+        text.replace(&format!("{{ ${name} }}"), value)
+    })
+}
+
+/// `text` as a notice shows it: each control character, as an error's
+/// lines end, and each that hides the text around it a space, the spaces
+/// of a run one, and cut to the longest notice.
+fn notice_text(text: &str) -> String {
+    let mut shown = String::new();
+    for word in text
+        .split(|c: char| {
+            c.is_whitespace() || c.is_control() || lokyr_plugin_sdk::text::is_hidden(c)
+        })
+        .filter(|word| !word.is_empty())
+    {
+        if !shown.is_empty() {
+            shown.push(' ');
+        }
+        shown.push_str(word);
+    }
+    if shown.chars().count() > LONGEST_NOTICE {
+        shown = shown.chars().take(LONGEST_NOTICE - 1).collect();
+        shown.push('…');
+    }
+    shown
 }
 
 /// Does `action` of `hint`, of `pane`: opens what it opens, as a ⌘-click,
@@ -612,9 +756,20 @@ fn pick(cx: &mut Cx<'_>, pane: PaneId, hint: &Hint, action: Action) -> Result<()
     }
 }
 
+/// Why a pattern of the config is left out: of its name, a pattern that
+/// does not read, of its error, or a URL of a scheme that does not open.
+#[derive(Debug, PartialEq, Eq)]
+enum Refusal {
+    Pattern(String, String),
+    Url(String),
+}
+
 /// The patterns of `config`'s `hints`, in the order of their names, and
-/// the names of those that do not read, each of its error.
-fn patterns_of(config: &Data) -> (Vec<hints::Pattern>, Vec<(String, String)>) {
+/// those left out, each of why: a pattern that does not read, or a URL
+/// whose template starts with a scheme that does not open, as its opening
+/// would fail. A template that starts with a match's text is left to its
+/// opening.
+fn patterns_of(config: &Data) -> (Vec<hints::Pattern>, Vec<Refusal>) {
     let mut patterns = Vec::new();
     let mut refused = Vec::new();
     let Data::Map(config) = config else {
@@ -634,9 +789,17 @@ fn patterns_of(config: &Data) -> (Vec<hints::Pattern>, Vec<(String, String)>) {
             Some(Data::Text(url)) if !url.is_empty() => Some(url.clone()),
             _ => None,
         };
+        if url
+            .as_deref()
+            .and_then(url_scheme)
+            .is_some_and(|scheme| !scheme_opens(scheme))
+        {
+            refused.push(Refusal::Url(name.clone()));
+            continue;
+        }
         match regex_automata::meta::Regex::new(pattern) {
             Ok(regex) => patterns.push(hints::Pattern { regex, url }),
-            Err(error) => refused.push((name.clone(), error.to_string())),
+            Err(error) => refused.push(Refusal::Pattern(name.clone(), error.to_string())),
         }
     }
     (patterns, refused)

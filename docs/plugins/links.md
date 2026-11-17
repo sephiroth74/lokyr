@@ -16,7 +16,7 @@ A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, 
 
 <sub>Platforms: macOS · not released yet</sub>
 
-Press ⇧⌘E, or choose View › Show Hints: every URL, path that exists, path with its line, git hash and IP address that the pane shows gets a label of one or two letters, drawn over its first letters in the theme's accent, the nearest the cursor of one letter. Type a label to pick its hint:
+Press ⇧⌘E, or choose View › Show Hints: every URL, every path that exists, with or without a line after it, every git hash and every IP address that the pane shows gets a label of one or two letters, drawn over its first letters in the theme's accent, the nearest the cursor of one letter. Type a label to pick its hint:
 
 - **Open**, by default: as a ⌘-click opens it, a path at its line in your editor; a hash or an address, which open nothing, is copied.
 - **A capital**, as Shift types it, copies the hint instead.
@@ -32,7 +32,7 @@ pattern = "PROJ-\\d+"
 url = "https://jira.example.com/browse/$0"
 ```
 
-`$0` is the whole match and `$1` to `$9` its groups; a pattern without a `url` is a hint that its opening copies. The [`hints`](../CONFIGURATION.md#hints) and [`alphabet`](../CONFIGURATION.md#alphabet) keys of the configuration guide tell more. The labels' colors are the theme's `hints.label.bg` and `hints.label.fg`.
+`$0` is the whole match and `$1` to `$9` its groups; a pattern without a `url` is a hint that its opening copies. A `url` opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`: a pattern whose `url` starts with another scheme, such as `vscode:`, is left out, and a notice reports it. A pick that fails, such as a match that expands to a URL that doesn't open, shows a notice, and the labels go. The [`hints`](../CONFIGURATION.md#hints) and [`alphabet`](../CONFIGURATION.md#alphabet) keys of the configuration guide tell more. The labels' colors are the theme's `hints.label.bg` and `hints.label.fg`.
 
 ## Commands
 

@@ -5136,11 +5136,7 @@ fn deepen(requests: &mut [Request], chain: Chain) {
     }
 }
 
-/// The schemes of the URLs that a plugin can open: none that starts another
-/// application on the user's behalf.
-const SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
-
-/// What opening `target` opens: a URL of one of [`SCHEMES`], a `file`
+/// What opening `target` opens: a URL of one of [`host::OPEN_SCHEMES`], a `file`
 /// URL of this machine alone, as OSC 7 takes its folder, or a path,
 /// absolute or from `~`, which becomes the home directory.
 fn opening(target: &str) -> Result<String, String> {
@@ -5158,22 +5154,11 @@ fn opening(target: &str) -> Result<String, String> {
         let home = std::env::home_dir().ok_or("there is no home directory")?;
         return Ok(format!("{}{}", home.to_string_lossy(), &target[1..]));
     }
-    let scheme = target
-        .split_once(':')
-        .map(|(scheme, _)| scheme)
-        .filter(|scheme| {
-            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-                && scheme
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
-        });
-    match scheme {
-        Some(scheme) if SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) => {
-            Ok(target.to_owned())
-        }
+    match host::url_scheme(target) {
+        Some(scheme) if host::scheme_opens(scheme) => Ok(target.to_owned()),
         Some(scheme) => Err(format!(
             "`{scheme}:` does not open: only {}",
-            SCHEMES.join(", ")
+            host::OPEN_SCHEMES.join(", ")
         )),
         None => Err(format!(
             "`{target}` is neither a URL nor a path that is absolute or from `~`"
@@ -5182,7 +5167,7 @@ fn opening(target: &str) -> Result<String, String> {
 }
 
 /// Whether opening `target` would open something: a URL of one of
-/// [`SCHEMES`], or a path, absolute or from `~`, that is there, as a link
+/// [`host::OPEN_SCHEMES`], or a path, absolute or from `~`, that is there, as a link
 /// that leads somewhere. A path on a volume whose file system may not
 /// answer, as a network's, is left alone, of no look that would hold the
 /// plugin's thread, the main one's for most: not known to be there, as a

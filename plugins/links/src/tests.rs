@@ -171,7 +171,20 @@ fn the_commands_of_a_cell_register_open_s_bound_to_cmd_click() {
                     "pty-write"
                 ])
             ),
-            (HINTS_ACTION, Category::View, of(&[])),
+            // Of the hints' capabilities, as it moves what a pick does.
+            (
+                HINTS_ACTION,
+                Category::View,
+                of(&[
+                    "terminal-read",
+                    "process-read",
+                    "decorate",
+                    "pane-view",
+                    "open",
+                    "clipboard-write",
+                    "pty-write"
+                ])
+            ),
         ]
     );
     for command in host.commands() {
@@ -611,6 +624,52 @@ fn screen(lines: &[&str]) -> FakeHost {
     host
 }
 
+/// Fills `pane` of `host` with `lines`, as [`screen`] does its focused
+/// pane's, of the same grid and folder.
+fn fill(host: &mut FakeHost, pane: PaneId, lines: &[&str]) {
+    let pane = host.pane(pane);
+    pane.directory = Some("/work/lokyr".to_owned());
+    pane.grid = (80, 40);
+    pane.held = 0..40;
+    for (row, line) in (0..).zip(lines) {
+        let cells = (0..line.chars().count())
+            .map(|at| (u16::try_from(at).unwrap(), row))
+            .collect();
+        pane.lines.insert(
+            row,
+            LineText {
+                text: (*line).to_owned(),
+                cells,
+            },
+        );
+    }
+    pane.cursor = (0, i64::try_from(lines.len()).unwrap());
+}
+
+/// The config of the hints' patterns `hints`, each of its name, its
+/// pattern and its URL, if it has one.
+fn hints_config(hints: &[(&str, &str, Option<&str>)]) -> lokyr_plugin_sdk::message::Data {
+    use lokyr_plugin_sdk::message::Data;
+    use std::collections::BTreeMap;
+
+    let table = |pattern: &str, url: Option<&str>| {
+        let mut table = BTreeMap::from([("pattern".to_owned(), Data::Text(pattern.to_owned()))]);
+        if let Some(url) = url {
+            table.insert("url".to_owned(), Data::Text(url.to_owned()));
+        }
+        Data::Map(table)
+    };
+    Data::Map(BTreeMap::from([(
+        "hints".to_owned(),
+        Data::Map(
+            hints
+                .iter()
+                .map(|&(name, pattern, url)| (name.to_owned(), table(pattern, url)))
+                .collect(),
+        ),
+    )]))
+}
+
 /// The hints' field's typing of `text`.
 fn typing(text: &str) -> UiEvent {
     UiEvent {
@@ -981,5 +1040,199 @@ fn hints_shown_again_take_the_config_of_now_in_their_open_panel_and_escape_takes
         host.take_done()
             .contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL)))
     );
+    assert!(host.decorations().is_empty());
+}
+
+#[test]
+fn a_pick_that_fails_is_told_and_its_labels_and_panel_go_all_the_same() {
+    // A template of the match alone, which a scheme that does not open
+    // starts.
+    let mut host = screen(&["fixed in jira:PROJ-42 today"]);
+    host.set_config(hints_config(&[("ticket", r"jira:PROJ-\d+", Some("$0"))]));
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    assert_eq!(labels(&host), [((9, 0), "a".to_owned())]);
+    host.take_done();
+    host.ui_event(&mut links, &typing("a")).unwrap();
+    let done = host.take_done();
+    assert!(
+        done.contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL))),
+        "{done:?}"
+    );
+    assert!(host.decorations().is_empty());
+    assert!(links.hints.is_none());
+    let notice = &host.notices().last().expect("the pick's notice").text;
+    assert!(
+        notice.contains("`jira:PROJ-42`") && notice.contains("`jira:` does not open"),
+        "{notice}"
+    );
+    // Shown again before the close's event comes, the plugin's own, which
+    // ends nothing more.
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    host.deliver(&mut links).unwrap();
+    assert_eq!(labels(&host), [((9, 0), "a".to_owned())]);
+    assert!(links.hints.is_some());
+    assert_eq!(links.closing, 0);
+}
+
+#[test]
+fn a_pattern_of_a_url_that_does_not_open_is_left_out_and_told_once_a_change() {
+    let config = hints_config(&[
+        ("editor", r"\w+\.rs", Some("vscode://file/work/$0")),
+        (
+            "jira",
+            r"PROJ-\d+",
+            Some("https://jira.example.com/browse/$0"),
+        ),
+        ("notes", r"note-\d+", Some("~/notes/$0.md")),
+        ("matched", r"https?://\S+", Some("$0")),
+    ]);
+    let mut host = screen(&["main.rs PROJ-42"]);
+    host.set_config(config.clone());
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    // Every pattern but the editor's, whose scheme does not open; one of
+    // a path, and one of the match, left to their opening.
+    assert_eq!(links.patterns.len(), 3);
+    let notices: Vec<&str> = host
+        .notices()
+        .iter()
+        .map(|notice| notice.text.as_str())
+        .collect();
+    assert_eq!(
+        notices,
+        ["The hint `editor` has a URL that doesn't open: only http, https, mailto, file URLs open"]
+    );
+    // The config changed, of the same problem: no notice.
+    let lokyr_plugin_sdk::message::Data::Map(mut changed) = config else {
+        unreachable!()
+    };
+    changed.insert(
+        "alphabet".to_owned(),
+        lokyr_plugin_sdk::message::Data::Text("jkl".to_owned()),
+    );
+    host.advance(std::time::Duration::from_secs(2));
+    host.set_config(lokyr_plugin_sdk::message::Data::Map(changed));
+    host.deliver(&mut links).unwrap();
+    assert_eq!(links.alphabet.as_deref(), Some("jkl"));
+    assert_eq!(host.notices().len(), 1);
+    // A pattern that does not read, of an error of several lines, beside
+    // it: one notice of both, of one line.
+    host.set_config(hints_config(&[
+        ("editor", r"\w+\.rs", Some("vscode://file/work/$0")),
+        ("broken", "(", None),
+    ]));
+    host.deliver(&mut links).unwrap();
+    let notice = &host.notices().last().unwrap().text;
+    assert_eq!(host.notices().len(), 2);
+    assert!(
+        notice.contains("`broken`") && notice.contains("`editor`") && !notice.contains('\n'),
+        "{notice}"
+    );
+    // Of none left, no notice, and the next problem told again.
+    host.advance(std::time::Duration::from_secs(2));
+    host.set_config(hints_config(&[]));
+    host.deliver(&mut links).unwrap();
+    assert_eq!(host.notices().len(), 2);
+    assert!(links.told.is_none());
+}
+
+#[test]
+fn hints_shown_again_in_another_pane_survive_the_close_that_moved_them() {
+    const OTHER: PaneId = PaneId(5);
+    let mut host = screen(&["commit 4482b9e9"]);
+    fill(&mut host, OTHER, &["commit 5582b9e9", "commit 6682b9e9"]);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let panes = |host: &FakeHost| -> Vec<PaneId> {
+        host.decorations().iter().map(|laid| laid.pane).collect()
+    };
+    assert_eq!(panes(&host), [PANE]);
+    // In the other pane: the panel closed and opened again at its corner.
+    host.focus(Some(OTHER));
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let done = host.take_done();
+    assert!(done.contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL))));
+    assert!(
+        done.iter()
+            .any(|request| matches!(request, Request::OpenPanel { .. }))
+    );
+    assert_eq!(panes(&host), [OTHER, OTHER]);
+    // The close's event comes, of the hints of before: those of now stay.
+    host.deliver(&mut links).unwrap();
+    host.render(&mut links, &ViewId::Panel(PanelId::from(HINTS_PANEL)))
+        .expect("the hints' field");
+    assert_eq!(links.hints.as_ref().map(|shown| shown.pane), Some(OTHER));
+    assert_eq!(panes(&host), [OTHER, OTHER]);
+    // A third time, in the same pane: shown anew in the panel open.
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let done = host.take_done();
+    assert!(
+        !done
+            .iter()
+            .any(|request| matches!(request, Request::OpenPanel { .. } | Request::ClosePanel(_))),
+        "{done:?}"
+    );
+    assert_eq!(panes(&host), [OTHER, OTHER]);
+    // Escape takes them away.
+    host.close_panel(&PanelId::from(HINTS_PANEL));
+    host.deliver(&mut links).unwrap();
+    assert!(host.decorations().is_empty());
+    assert!(links.hints.is_none());
+}
+
+#[test]
+fn the_english_of_the_messages_is_english_s_catalog() {
+    let catalog = CATALOGS[0].1;
+    for (id, english) in ENGLISH {
+        let line = format!("{id} = {english}");
+        assert!(catalog.lines().any(|known| known == line), "{line}");
+    }
+}
+
+#[test]
+fn a_notice_s_text_is_of_one_line_of_its_bound() {
+    assert_eq!(notice_text("a\n  b\tc\u{202e}d "), "a b c d");
+    let long = notice_text(&"x ".repeat(LONGEST_NOTICE));
+    assert_eq!(long.chars().count(), LONGEST_NOTICE);
+    assert!(long.ends_with('…'));
+    assert!(lokyr_plugin_sdk::host::check_notice(&long, None).is_ok());
+}
+
+#[test]
+fn hints_shown_again_by_a_call_that_fails_stay_as_they_show() {
+    let mut host = screen(&["commit 4482b9e9", "commit 5582b9e9"]);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let ids = |links: &Links| -> Vec<u64> {
+        let mut ids: Vec<u64> = links
+            .hints
+            .iter()
+            .flat_map(|shown| shown.hints.iter().filter_map(|hint| hint.decoration))
+            .collect();
+        ids.sort_unstable();
+        ids
+    };
+    let shown = |host: &FakeHost| -> Vec<u64> {
+        let mut ids: Vec<u64> = host.decorations().iter().map(|laid| laid.id).collect();
+        ids.sort_unstable();
+        ids
+    };
+    let before = ids(&links);
+    assert_eq!(before.len(), 2);
+    assert_eq!(shown(&host), before);
+    // Of a panel that drew no field yet, the focus fails the call, whose
+    // writes go: the plugin keeps the hints that show.
+    assert!(host.command(&mut links, HINTS, Args::new()).is_err());
+    assert_eq!(ids(&links), before);
+    assert_eq!(shown(&host), before);
+    // Escape takes them away, every label with them.
+    host.close_panel(&PanelId::from(HINTS_PANEL));
+    host.deliver(&mut links).unwrap();
     assert!(host.decorations().is_empty());
 }

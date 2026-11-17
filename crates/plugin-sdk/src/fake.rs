@@ -5230,15 +5230,12 @@ impl host::Host for Calling<'_> {
     }
 }
 
-/// The schemes of the URLs that open, as the app's host has them.
-const SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
-
 /// The name of the machine that the fake host is, which a `file` URL's
 /// host names, as the app's host takes its own.
 pub const HOST_NAME: &str = "fake-mac";
 
 /// Whether `target` opens, as the app's host takes it: a URL of one of
-/// [`SCHEMES`], a `file` URL of this machine alone, or a path from `/` or
+/// [`OPEN_SCHEMES`](crate::host::OPEN_SCHEMES), a `file` URL of this machine alone, or a path from `/` or
 /// `~`; the error of what does not.
 fn opening(target: &str) -> Result<(), String> {
     if let Some(host) = crate::host::file_host(target)
@@ -5251,11 +5248,11 @@ fn opening(target: &str) -> Result<(), String> {
     if target.starts_with('/') || target == "~" || target.starts_with("~/") {
         return Ok(());
     }
-    match target.split_once(':') {
-        Some((scheme, _)) if SCHEMES.contains(&scheme.to_ascii_lowercase().as_str()) => Ok(()),
-        Some((scheme, _)) => Err(format!(
+    match crate::host::url_scheme(target) {
+        Some(scheme) if crate::host::scheme_opens(scheme) => Ok(()),
+        Some(scheme) => Err(format!(
             "`{scheme}:` does not open: only {}",
-            SCHEMES.join(", ")
+            crate::host::OPEN_SCHEMES.join(", ")
         )),
         None => Err(format!(
             "`{target}` is neither a URL nor a path that is absolute or from `~`"

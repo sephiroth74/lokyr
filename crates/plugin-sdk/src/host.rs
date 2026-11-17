@@ -1245,6 +1245,33 @@ pub fn is_local_host(host: &str, name: &str) -> bool {
                 || short(host).eq_ignore_ascii_case(name)))
 }
 
+/// The schemes of the URLs that a plugin can open: none that starts another
+/// application on the user's behalf.
+pub const OPEN_SCHEMES: [&str; 4] = ["http", "https", "mailto", "file"];
+
+/// The scheme of the URL `target`, before its first `:`, of RFC 3986's
+/// syntax: a letter, then letters, digits, `+`, `-` and `.`; `None` when
+/// it has none.
+pub fn url_scheme(target: &str) -> Option<&str> {
+    target
+        .split_once(':')
+        .map(|(scheme, _)| scheme)
+        .filter(|scheme| {
+            scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+                && scheme
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        })
+}
+
+/// Whether a URL of `scheme` opens, as [`OPEN_SCHEMES`] says, whatever
+/// its case.
+pub fn scheme_opens(scheme: &str) -> bool {
+    OPEN_SCHEMES
+        .iter()
+        .any(|opens| opens.eq_ignore_ascii_case(scheme))
+}
+
 /// The host of `target`, if it is a `file` URL: what comes between its
 /// `//` and its path, empty of none, as `file:///tmp` has.
 pub fn file_host(target: &str) -> Option<&str> {

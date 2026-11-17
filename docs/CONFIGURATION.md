@@ -2212,5 +2212,6 @@ Patterns of your own that View › Show Hints labels too, beside the URLs, the p
 | tables of a `pattern` and a `url` | none |
 
 - Each is a table of its name, under `[plugins.links.hints]`, of a `pattern`, a regular expression, and of a `url` that a hint's opening opens, where `$0` is the whole match and `$1` to `$9` its groups, as a ticket's number to its page. A pattern without a `url` is a hint that its opening copies.
+- A `url` opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`: a pattern whose `url` starts with another scheme, such as `vscode:`, is told in a notice and left out.
 - A match of your patterns comes before what the hints find by themselves, as one of its text; a pattern that does not read is told in a notice and left out.
 - It applies as you save the file, to the next hints.

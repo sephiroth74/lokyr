@@ -15,3 +15,13 @@ hints-action-open = Open
 hints-action-copy = Copy
 hints-action-type = Type
 hints-action-select = Select
+
+# The notice of the config's hints that are left out: a pattern that
+# doesn't read, of its name and its error; a URL whose scheme doesn't
+# open, of the schemes that do; an alphabet that isn't one.
+hints-pattern-refused = The hint `{ $name }` has a pattern that doesn't read: { $error }
+hints-url-refused = The hint `{ $name }` has a URL that doesn't open: only { $schemes } URLs open
+hints-alphabet-refused = The hints' alphabet `{ $alphabet }` isn't lowercase letters and digits, each once: the hints keep the default
+
+# The notice of a pick that failed, of the hint's text and the error.
+hints-pick-failed = Couldn't use the hint `{ $hint }`: { $error }
