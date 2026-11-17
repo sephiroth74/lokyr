@@ -68,13 +68,16 @@ pub enum DoubleTaps {
     /// The system's leave to see the modifiers in other apps is not given:
     /// the platform asked for it, and watches once it is given.
     NotAllowed,
+    /// The leave is given, but the platform could not watch them, as the
+    /// system gave it no tap of the modifiers, which its log tells.
+    Failed,
 }
 
 /// Finds the double taps in the changes of the modifiers held: a tap is a
 /// modifier pressed alone, of none held before, and let go of within the
 /// interval, with no key nor click meanwhile; a second tap of the same
-/// modifier pressed within the interval of the first's press, of no key
-/// nor click since the first ended, makes the double tap, as it ends.
+/// modifier, of no key nor click since the first ended, makes the double
+/// tap, as it ends within the interval of the first's press.
 #[derive(Clone, Debug)]
 pub struct DoubleTap {
     interval: Duration,
@@ -119,6 +122,13 @@ impl DoubleTap {
         self.interval = interval;
     }
 
+    /// Forgets the modifiers held and the tap under way, as the changes
+    /// that it takes start anew, of a new tap of the system's.
+    pub fn reset(&mut self) {
+        self.held = Held::NONE;
+        self.state = State::Idle;
+    }
+
     /// Takes the change of the modifiers to `held` at `now`, of no key nor
     /// click of any app for `idle`, as the system tells it: gives the
     /// modifier tapped twice, as its second tap ends, after which a third
@@ -159,10 +169,13 @@ impl DoubleTap {
                     first,
                 },
             ) if held.is_empty() && modifier == pressed && within(at) && still(at) => match first {
-                Some(_) => {
+                // The whole double tap within the interval of its first
+                // press.
+                Some(first) if within(first) => {
                     tapped = Some(modifier);
                     State::Idle
                 }
+                Some(_) => State::Idle,
                 None => State::Tapped {
                     modifier,
                     first: at,
@@ -202,6 +215,10 @@ mod tests {
         command: true,
         ..NONE
     };
+    const SHIFT: Held = Held {
+        shift: true,
+        ..NONE
+    };
     const CONTROL_SHIFT: Held = Held {
         shift: true,
         ..CONTROL
@@ -236,14 +253,83 @@ mod tests {
         let command =
             quick.map(|(at, held, idle)| (at, if held.is_empty() { NONE } else { COMMAND }, idle));
         assert_eq!(taps(&command), [(280, Modifier::Command)]);
-        // The second press at the interval's end still counts.
+        // The second let go of at the interval's end still counts.
         let late = [
             (0, CONTROL, LONG),
             (80, NONE, LONG),
-            (500, CONTROL, LONG),
-            (560, NONE, LONG),
+            (420, CONTROL, LONG),
+            (500, NONE, LONG),
         ];
-        assert_eq!(taps(&late), [(560, Modifier::Control)]);
+        assert_eq!(taps(&late), [(500, Modifier::Control)]);
+    }
+
+    #[test]
+    fn the_whole_double_tap_holds_within_the_interval_of_its_first_press() {
+        // The second press in time, let go of past the interval.
+        let past = [
+            (0, CONTROL, LONG),
+            (80, NONE, LONG),
+            (450, CONTROL, LONG),
+            (520, NONE, LONG),
+        ];
+        assert!(taps(&past).is_empty());
+        // Which a quick third and fourth make up.
+        let again = [
+            (0, CONTROL, LONG),
+            (80, NONE, LONG),
+            (450, CONTROL, LONG),
+            (520, NONE, LONG),
+            (600, CONTROL, LONG),
+            (660, NONE, LONG),
+            (720, CONTROL, LONG),
+            (780, NONE, LONG),
+        ];
+        assert_eq!(taps(&again), [(780, Modifier::Control)]);
+    }
+
+    #[test]
+    fn a_scroll_between_the_taps_or_while_held_makes_none() {
+        // Control and the wheel, as macOS zooms the screen: a scroll while
+        // the modifier is held, each time, as the system tells the time
+        // since the last input.
+        let zoom = [
+            (0, CONTROL, LONG),
+            (90, NONE, ms(20)),
+            (200, CONTROL, ms(130)),
+            (290, NONE, ms(20)),
+        ];
+        assert!(taps(&zoom).is_empty());
+        // A scroll between the taps, 40 ms before the second press.
+        let between = [
+            (0, CONTROL, LONG),
+            (80, NONE, LONG),
+            (200, CONTROL, ms(40)),
+            (280, NONE, ms(120)),
+        ];
+        assert!(taps(&between).is_empty());
+    }
+
+    #[test]
+    fn a_reset_forgets_the_modifiers_held_and_the_tap_under_way() {
+        let start = Instant::now();
+        let mut finder = DoubleTap::new(INTERVAL);
+        assert_eq!(finder.change(CONTROL, start, LONG), None);
+        assert_eq!(finder.change(NONE, start + ms(60), LONG), None);
+        // A new tap of the system's: the first tap counts no more.
+        finder.reset();
+        assert_eq!(finder.change(CONTROL, start + ms(120), LONG), None);
+        assert_eq!(finder.change(NONE, start + ms(180), LONG), None);
+        // Held as a tap ended, which the new one never saw let go of.
+        let mut finder = DoubleTap::new(INTERVAL);
+        assert_eq!(finder.change(SHIFT, start, LONG), None);
+        finder.reset();
+        assert_eq!(finder.change(CONTROL, start + ms(10), LONG), None);
+        assert_eq!(finder.change(NONE, start + ms(60), LONG), None);
+        assert_eq!(finder.change(CONTROL, start + ms(120), LONG), None);
+        assert_eq!(
+            finder.change(NONE, start + ms(180), LONG),
+            Some(Modifier::Control)
+        );
     }
 
     #[test]

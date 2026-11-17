@@ -8,7 +8,7 @@
 
 use std::ffi::c_void;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError, mpsc};
 use std::time::{Duration, Instant};
 
@@ -58,6 +58,7 @@ unsafe extern "C" {
     fn CFRunLoopAddSource(run_loop: CfRunLoopRef, source: CfRunLoopSourceRef, mode: CfTypeRef);
     fn CFRunLoopRun();
     fn CFRunLoopStop(run_loop: CfRunLoopRef);
+    fn CFRunLoopWakeUp(run_loop: CfRunLoopRef);
     fn CFRetain(object: CfTypeRef) -> CfTypeRef;
     fn CFRelease(object: CfTypeRef);
 }
@@ -81,8 +82,12 @@ const ALTERNATE: u64 = 0x0008_0000;
 const COMMAND: u64 = 0x0010_0000;
 /// The state of the keyboard and the mouse, of every app.
 const HID_SYSTEM: u32 = 1;
-/// A key's press, and the mouse's buttons' presses.
-const INPUTS: [u32; 4] = [10, 1, 3, 25];
+/// The inputs that break a tap: a key's press, the mouse's buttons'
+/// presses, the wheel's scrolls, as Control and the wheel zoom the screen,
+/// and the system's keys, as the brightness's and the volume's.
+const INPUTS: [u32; 6] = [10, 1, 3, 25, 22, 14];
+/// How long a start waits for its thread's tap.
+const START_WAIT: Duration = Duration::from_secs(2);
 
 /// What the tap's thread and the main thread share.
 struct Watch {
@@ -92,19 +97,30 @@ struct Watch {
     waker: Option<Waker>,
     /// The finder of the double taps.
     finder: DoubleTap,
-    /// The tap and its thread's run loop, retained, while it runs.
-    tap: usize,
-    run_loop: usize,
+    /// The tap that runs, of its thread, while it runs.
+    running: Option<Running>,
+    /// The number of the last start, whose thread alone may run its tap: a
+    /// thread of an earlier one, which gave up waiting, ends.
+    generation: u64,
     /// The double taps that ended since the main thread took them.
     tapped: Vec<Modifier>,
+}
+
+/// A tap that runs: the tap and its thread's run loop, each retained for
+/// the [`Watch`], and the start that made it.
+#[derive(Clone, Copy, Debug)]
+struct Running {
+    tap: usize,
+    run_loop: usize,
+    generation: u64,
 }
 
 static WATCH: Mutex<Watch> = Mutex::new(Watch {
     watched: Vec::new(),
     waker: None,
     finder: DoubleTap::new(Duration::from_millis(500)),
-    tap: 0,
-    run_loop: 0,
+    running: None,
+    generation: 0,
     tapped: Vec::new(),
 });
 
@@ -147,22 +163,21 @@ pub(crate) fn set(modifiers: &[Modifier], waker: Waker) -> DoubleTaps {
 
 /// Watches again as the app becomes active, where it watches some and
 /// the tap does not run, as the user may have allowed the app meanwhile,
-/// of the double-click interval of now.
-pub(crate) fn again() {
+/// of the double-click interval of now: the answer of its start, which the
+/// app hears, or none where it watches none or watches already.
+pub(crate) fn again() -> Option<DoubleTaps> {
     let watching = {
         let mut watch = watch();
         watch.finder.set_interval(interval());
-        !watch.watched.is_empty() && watch.tap == 0
+        !watch.watched.is_empty() && watch.running.is_none()
     };
-    if watching {
-        start();
-    }
+    watching.then(start)
 }
 
-/// Starts the tap on a thread of its own, unless it runs: watching, or
-/// not allowed.
+/// Starts the tap on a thread of its own, unless it runs: watching, not
+/// allowed, or failed, as the system gave no tap.
 fn start() -> DoubleTaps {
-    if watch().tap != 0 {
+    if watch().running.is_some() {
         return DoubleTaps::Watching;
     }
     // SAFETY: CoreGraphics' calls of no argument, of any thread.
@@ -173,47 +188,81 @@ fn start() -> DoubleTaps {
         }
         return DoubleTaps::NotAllowed;
     }
+    let generation = {
+        let mut watch = watch();
+        watch.generation += 1;
+        watch.generation
+    };
     let (started, taken) = mpsc::channel();
     let spawned = std::thread::Builder::new()
         .name("lokyr-double-taps".to_owned())
-        .spawn(move || run(&started));
+        .spawn(move || run(generation, &started));
     if let Err(error) = spawned {
-        eprintln!("lokyr: the double taps are not watched: {error}");
-        return DoubleTaps::NotAllowed;
+        eprintln!("lokyr: the double taps are not watched: no thread of their tap: {error}");
+        return DoubleTaps::Failed;
     }
-    match taken.recv_timeout(Duration::from_secs(2)) {
+    match taken.recv_timeout(START_WAIT) {
         Ok(true) => DoubleTaps::Watching,
-        _ => {
-            eprintln!("lokyr: the system gave no tap of the modifiers' changes");
-            DoubleTaps::NotAllowed
+        Ok(false) => {
+            eprintln!(
+                "lokyr: the double taps are not watched: the system gave no tap of the modifiers' changes"
+            );
+            DoubleTaps::Failed
+        }
+        Err(_) => {
+            // A thread that comes later finds its start given up, and ends;
+            // one that came meanwhile stops.
+            watch().generation += 1;
+            stop();
+            eprintln!(
+                "lokyr: the double taps are not watched: no tap of the modifiers' changes within {} s",
+                START_WAIT.as_secs()
+            );
+            DoubleTaps::Failed
         }
     }
 }
 
-/// Stops the tap, if it runs: its thread ends, and takes the tap away.
+/// Stops the tap, if it runs: invalidated, it leaves its thread's run
+/// loop, which ends, whether it runs yet or not, and its thread with it;
+/// the finder forgets what it saw.
 fn stop() {
-    let run_loop = {
+    let running = {
         let mut watch = watch();
-        watch.tap = 0;
-        std::mem::take(&mut watch.run_loop)
+        watch.finder.reset();
+        watch.running.take()
     };
-    if run_loop != 0 {
-        // SAFETY: the run loop, retained by its thread, which the stop
-        // ends, of any thread; released here, as the thread keeps no
-        // reference of its own past its run.
+    if let Some(running) = running {
+        // SAFETY: the tap and the run loop, each retained for the watch,
+        // which their thread may still use, of any thread: invalidating
+        // the tap takes its source away from the run loop, which then has
+        // none, and the stop and the wake end a run under way; released
+        // here, of the watch's references alone.
         unsafe {
-            CFRunLoopStop(run_loop as CfRunLoopRef);
-            CFRelease(run_loop as CfTypeRef);
+            CFMachPortInvalidate(running.tap as CfMachPortRef);
+            CFRunLoopStop(running.run_loop as CfRunLoopRef);
+            CFRunLoopWakeUp(running.run_loop as CfRunLoopRef);
+            CFRelease(running.tap as CfTypeRef);
+            CFRelease(running.run_loop as CfTypeRef);
         }
     }
 }
 
-/// The tap's thread: makes the tap, tells `started` whether it could, and
-/// runs its run loop until [`stop`] ends it, then takes the tap away.
-fn run(started: &mpsc::Sender<bool>) {
+/// The tap's thread, of the start `generation`: makes the tap, tells
+/// `started` whether it could, and runs its run loop until [`stop`] ends
+/// it, or the run loop ends by itself, then takes the tap away. A start
+/// that gave up waiting, or a later one, has it end at once.
+fn run(generation: u64, started: &mpsc::Sender<bool>) {
+    // The thread's own tap, which its callback turns on again as the
+    // system turns it off, and nothing of another thread's.
+    let own = Box::new(AtomicUsize::new(0));
+    let info = ptr::from_ref::<AtomicUsize>(&own)
+        .cast_mut()
+        .cast::<c_void>();
     // SAFETY: CoreGraphics' and CoreFoundation's calls on this thread, of
     // the tap and the source that they make, released at the end; the
-    // callback is a function of no captured state.
+    // callback's `info` is `own`, which outlives the run loop's run, the
+    // one place where the callback runs.
     unsafe {
         let tap = CGEventTapCreate(
             SESSION,
@@ -221,7 +270,7 @@ fn run(started: &mpsc::Sender<bool>) {
             LISTEN_ONLY,
             1 << FLAGS_CHANGED,
             changed,
-            ptr::null_mut(),
+            info,
         );
         if tap.is_null() {
             let _ = started.send(false);
@@ -234,20 +283,52 @@ fn run(started: &mpsc::Sender<bool>) {
             let _ = started.send(false);
             return;
         }
+        own.store(tap as usize, Ordering::Release);
         let run_loop = CFRunLoopGetCurrent();
         CFRunLoopAddSource(run_loop, source, kCFRunLoopCommonModes);
-        CGEventTapEnable(tap, true);
-        {
+        let current = {
             let mut watch = watch();
-            watch.tap = tap as usize;
-            watch.run_loop = CFRetain(run_loop.cast_const()) as usize;
+            let current = watch.generation == generation && watch.running.is_none();
+            if current {
+                watch.finder.reset();
+                watch.running = Some(Running {
+                    tap: CFRetain(tap.cast_const()) as usize,
+                    run_loop: CFRetain(run_loop.cast_const()) as usize,
+                    generation,
+                });
+            }
+            current
+        };
+        if current {
+            CGEventTapEnable(tap, true);
+            let _ = started.send(true);
+            CFRunLoopRun();
+            // A run that ended by itself leaves no tap behind; a stop took
+            // its own already.
+            let left = {
+                let mut watch = watch();
+                if watch
+                    .running
+                    .is_some_and(|running| running.generation == generation)
+                {
+                    watch.finder.reset();
+                    watch.running.take()
+                } else {
+                    None
+                }
+            };
+            if let Some(left) = left {
+                CFRelease(left.tap as CfTypeRef);
+                CFRelease(left.run_loop as CfTypeRef);
+            }
+        } else {
+            let _ = started.send(false);
         }
-        let _ = started.send(true);
-        CFRunLoopRun();
         CFMachPortInvalidate(tap);
         CFRelease(source.cast_const());
         CFRelease(tap.cast_const());
     }
+    drop(own);
 }
 
 /// How long since the last key or click of any app, as the system tells
@@ -270,19 +351,22 @@ fn idle() -> Duration {
 
 /// The tap's callback, on its thread: each change of the modifiers goes to
 /// the finder, and a double tap of a watched modifier wakes the main
-/// thread; a tap that the system turned off is turned on again. The event
-/// goes on as it came.
+/// thread; the thread's tap, of `info`, that the system turned off is
+/// turned on again. The event goes on as it came.
 extern "C" fn changed(
     _proxy: *mut c_void,
     kind: u32,
     event: CgEventRef,
-    _info: *mut c_void,
+    info: *mut c_void,
 ) -> CgEventRef {
     if kind == DISABLED_BY_TIMEOUT || kind == DISABLED_BY_USER_INPUT {
-        let tap = watch().tap;
+        // SAFETY: `info` is the thread's own cell of its tap, which lives
+        // while its run loop runs, as this callback does.
+        let tap = unsafe { info.cast::<AtomicUsize>().as_ref() }
+            .map_or(0, |own| own.load(Ordering::Acquire));
         if tap != 0 {
-            // SAFETY: the tap, which lives while its thread runs, as this
-            // callback does.
+            // SAFETY: the thread's tap, which lives while its run loop
+            // runs; turning on one that a stop invalidated does nothing.
             unsafe { CGEventTapEnable(tap as CfMachPortRef, true) };
         }
         return event;

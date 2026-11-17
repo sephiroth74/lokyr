@@ -143,6 +143,10 @@ pub enum AppEvent {
     /// [`Platform::watch_double_taps`](crate::Platform::watch_double_taps),
     /// was tapped twice.
     DoubleTap(crate::Modifier),
+    /// The platform watched the double taps that the app asked for again,
+    /// as the app became active, where they were not watched, as the user
+    /// may have given the system's leave meanwhile: its answer.
+    DoubleTapsWatched(crate::DoubleTaps),
     /// The user opened the app again, as from its icon in the Dock, while
     /// it shows no window, nor one minimized.
     Reopen,

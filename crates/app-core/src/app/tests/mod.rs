@@ -3242,6 +3242,30 @@ fn a_double_tap_of_the_quick_terminal_s_modifier_shows_and_hides_it_from_every_a
         "{}",
         shown.text
     );
+    // Given as the app was in the background, the watch again as it
+    // becomes active takes the notice away.
+    fake.allow_double_taps(true);
+    fake.watch_double_taps_again(&mut app);
+    assert!(app.diagnostics.shown_diagnostic().is_none());
+    // Of no tap that the system gives, with its leave, a notice that says
+    // so, and not where to give the leave; it goes as the watch works.
+    fake.fail_double_taps(true);
+    fake.watch_double_taps_again(&mut app);
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert_eq!(shown.about, About::DoubleTaps);
+    assert!(
+        shown.text.contains("double tap of Command is not watched")
+            && !shown.text.contains("Input Monitoring"),
+        "{}",
+        shown.text
+    );
+    fake.fail_double_taps(false);
+    fake.watch_double_taps_again(&mut app);
+    assert!(app.diagnostics.shown_diagnostic().is_none());
+    // A double tap takes a notice away too.
+    fake.allow_double_taps(false);
+    fake.watch_double_taps_again(&mut app);
+    assert!(app.diagnostics.shown_diagnostic().is_some());
     fake.allow_double_taps(true);
     fake.send_app(&mut app, AppEvent::DoubleTap(Modifier::Command));
     assert!(app.diagnostics.shown_diagnostic().is_none());

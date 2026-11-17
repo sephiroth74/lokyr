@@ -101,8 +101,11 @@ define_class!(
             // was in the background.
             crate::default_terminal::look_again();
             // The user may have allowed the double taps meanwhile, or
-            // changed the double-click interval.
-            crate::double_taps::again();
+            // changed the double-click interval: the app hears whether they
+            // are watched now.
+            if let Some(watching) = crate::double_taps::again() {
+                self.post(Pending::App(AppEvent::DoubleTapsWatched(watching)));
+            }
         }
 
         #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]

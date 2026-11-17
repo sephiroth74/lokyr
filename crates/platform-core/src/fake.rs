@@ -313,6 +313,8 @@ pub struct Fake {
     /// taps, of the Mac's default double-click interval.
     double_taps: Vec<Modifier>,
     taps_allowed: bool,
+    /// Whether the system gives the app no tap of the modifiers.
+    taps_failing: bool,
     taps: DoubleTap,
     last_id: u64,
     woken: Arc<AtomicBool>,
@@ -398,6 +400,7 @@ impl Fake {
             taken_keys: Vec::new(),
             double_taps: Vec::new(),
             taps_allowed: true,
+            taps_failing: false,
             taps: DoubleTap::new(std::time::Duration::from_millis(500)),
             last_id: 0,
             woken: Arc::new(AtomicBool::new(false)),
@@ -948,6 +951,35 @@ impl Fake {
         self.taps_allowed = allowed;
     }
 
+    /// Has the system give the app no tap of the modifiers, with its leave,
+    /// or give it again: the double taps' watch fails.
+    pub fn fail_double_taps(&mut self, failing: bool) {
+        self.taps_failing = failing;
+    }
+
+    /// Watches the double taps again, as the app becomes active, as the
+    /// Mac's platform does where it watches some: the app hears its answer,
+    /// [`AppEvent::DoubleTapsWatched`].
+    pub fn watch_double_taps_again(&mut self, handler: &mut dyn Handler) {
+        if !self.double_taps.is_empty() {
+            let answer = self.taps_answer();
+            self.send_app(handler, AppEvent::DoubleTapsWatched(answer));
+        }
+    }
+
+    /// What a watch of the double taps answers now.
+    fn taps_answer(&self) -> DoubleTaps {
+        if self.double_taps.is_empty() {
+            DoubleTaps::Off
+        } else if !self.taps_allowed {
+            DoubleTaps::NotAllowed
+        } else if self.taps_failing {
+            DoubleTaps::Failed
+        } else {
+            DoubleTaps::Watching
+        }
+    }
+
     /// Changes the modifiers held to `held` at `now`, of no key nor click
     /// for `idle`, as the system tells it: a double tap of a modifier that
     /// the app watches, with the system's leave, comes to it as
@@ -1231,13 +1263,7 @@ impl Platform for Fake {
 
     fn watch_double_taps(&mut self, modifiers: &[Modifier]) -> DoubleTaps {
         self.double_taps = modifiers.to_vec();
-        if modifiers.is_empty() {
-            DoubleTaps::Off
-        } else if self.taps_allowed {
-            DoubleTaps::Watching
-        } else {
-            DoubleTaps::NotAllowed
-        }
+        self.taps_answer()
     }
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {

@@ -2023,14 +2023,14 @@ It applies at once.
 
 <sub>Platforms: macOS · not released yet</sub>
 
-A modifier whose double tap shows or hides the quick terminal from any app, as its command does: press the modifier alone and let go of it, twice, within the system's double-click interval, as System Settings › Accessibility › Pointer Control sets it.
+A modifier whose double tap shows or hides the quick terminal from any app, as its command does: press the modifier alone and let go of it, twice, from the first press to the second release within the system's double-click interval, as System Settings › Accessibility › Pointer Control sets it.
 
 | Values | Default |
 |---|---|
 | `"none"`, `"ctrl"`, `"alt"` (Option), `"cmd"`, `"shift"` | `"none"` |
 
-- A key or a click while the modifier is held, or between the two taps, makes no double tap, so that Control-C twice is no double tap of Control; another modifier with it makes none either.
-- To see the modifiers while another app is in front, macOS asks you to allow Lokyr in System Settings › Privacy & Security › Input Monitoring, as you first set this key; until you allow it, a notice tells you where, and the double tap works once you come back to Lokyr. Lokyr reads the modifiers alone, never what you type.
+- A key, a click, a scroll or a media key while the modifier is held, or between the two taps, makes no double tap, so that Control-C twice, or Control and the wheel to zoom the screen, is no double tap of Control; another modifier with it makes none either.
+- To see the modifiers while another app is in front, macOS asks you to allow Lokyr in System Settings › Privacy & Security › Input Monitoring, as you first set this key; until you allow it, a notice tells you where, and the double tap works once you come back to Lokyr. Where macOS gives Lokyr no tap of the modifiers all the same, a notice says so, and Lokyr tries again as you come back to it. Lokyr reads the modifiers alone, never what you type.
 - What it costs: while it is set, each press and release of a modifier in any app wakes Lokyr for a moment, off the thread that draws; nothing at rest. With `"none"`, Lokyr watches nothing.
 - It applies at once.
 

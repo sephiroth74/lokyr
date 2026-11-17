@@ -2855,9 +2855,11 @@ impl<B: Backend> App<B> {
     /// Tells whether the double taps that the plugins hear are watched:
     /// where the system's leave to see the modifiers in other apps is not
     /// given, a notice tells where to give it, as the platform asked for
-    /// it; else the notice goes.
+    /// it; where the platform could not watch them all the same, a notice
+    /// tells it; else the notice goes.
     fn tell_double_taps(&mut self, platform: &mut dyn Platform, watching: DoubleTaps) {
-        if watching != DoubleTaps::NotAllowed {
+        if self.double_taps.is_empty() || matches!(watching, DoubleTaps::Off | DoubleTaps::Watching)
+        {
             self.resolve(platform, &About::DoubleTaps);
             return;
         }
@@ -2871,10 +2873,17 @@ impl<B: Backend> App<B> {
                 host::Modifier::Shift => "Shift",
             })
             .collect();
-        let text = format!(
-            "the double tap of {} needs Lokyr allowed in System Settings › Privacy & Security › Input Monitoring, to see the modifiers in other apps; it works once you allow it and come back to Lokyr",
-            named.join(", ")
-        );
+        let text = if watching == DoubleTaps::Failed {
+            format!(
+                "the double tap of {} is not watched: macOS gave Lokyr no tap of the modifiers' changes, as the log tells; it is tried again as you come back to Lokyr",
+                named.join(", ")
+            )
+        } else {
+            format!(
+                "the double tap of {} needs Lokyr allowed in System Settings › Privacy & Security › Input Monitoring, to see the modifiers in other apps; it works once you allow it and come back to Lokyr",
+                named.join(", ")
+            )
+        };
         let diagnostic = Diagnostic::new(Code::Unavailable, text, About::DoubleTaps);
         self.report(platform, diagnostic);
     }
@@ -5092,6 +5101,9 @@ impl<B: Backend> App<B> {
                 self.resolve(platform, &About::DoubleTaps);
                 self.plugins.double_tapped(host_modifier(modifier));
             }
+            // Watched again as the app became active: the notice goes once
+            // they are, or tells what holds them.
+            AppEvent::DoubleTapsWatched(watching) => self.tell_double_taps(platform, watching),
             AppEvent::Reopen => self.open_window(platform),
             AppEvent::QuitRequested => self.ask_quit(platform, true),
             // What woke the application changed what a window shows, ended
