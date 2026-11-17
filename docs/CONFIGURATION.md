@@ -236,7 +236,7 @@ every = 7                            # days, 0 to 365, between two tips as Lokyr
 
 [plugins.links]
 alphabet = "asdfghjklqwertyuiopzxcvbnm"   # the letters of the hints' labels, nearest first
-hints = { jira = { pattern = "PROJ-\\d+", url = "https://jira.example.com/browse/$0" } }   # a ticket's number to its page
+hints = { tickets = { pattern = 'PROJ-\d+', url = "https://jira.example.com/browse/$0" } }   # your tracker's ticket numbers, each to its page
 ```
 
 ## `config_version`
@@ -2205,13 +2205,21 @@ The letters of the hints' labels, in the order that they take them: the first le
 
 <sub>Platforms: macOS · not released yet</sub>
 
-Patterns of your own that View › Show Hints labels too, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself.
+Patterns of your own that View › Show Hints labels, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself, such as your issue tracker's ticket numbers, each opening a page of its own.
 
 | Values | Default |
 |---|---|
 | tables of a `pattern` and a `url` | none |
 
-- Each is a table of its name, under `[plugins.links.hints]`, of a `pattern`, a regular expression, and of a `url` that a hint's opening opens, where `$0` is the whole match and `$1` to `$9` its groups, as a ticket's number to its page. A pattern without a `url` is a hint that its opening copies.
-- A `url` opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`: a pattern whose `url` starts with another scheme, such as `vscode:`, is told in a notice and left out.
-- A match of your patterns comes before what the hints find by themselves, as one of its text; a pattern that does not read is told in a notice and left out.
-- It applies as you save the file, to the next hints.
+```toml
+# A ticket number, such as PROJ-1234, opens the ticket's page.
+[plugins.links.hints.tickets]
+pattern = 'PROJ-\d+'
+url = "https://jira.example.com/browse/$0"
+```
+
+- Each pattern is a table under `[plugins.links.hints]`, named as you like, `tickets` above: the name shows in the notices about it, and of two patterns that match the same text, the one whose name comes first in alphabetical order wins.
+- `pattern` is a regular expression, case-sensitive unless it starts with `(?i)`. Between single quotes, TOML keeps its backslashes as they are; between double quotes, double each one: `"PROJ-\\d+"`.
+- `url` is what picking the hint opens: `$0` stands for the whole text that the pattern matched, `$1` to `$9` for the parts of the pattern between parentheses, and `$$` for a `$`. It opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`; a `url` that starts with another scheme, such as `vscode:`, is left out, and a notice reports it. Without a `url`, picking the hint copies its text.
+- A pattern that doesn't read is left out, and a notice reports why. A match of your patterns comes before what the hints find by themselves.
+- It applies as you save the file, to the next hints. [Links](plugins/links.md#add-your-own-patterns) shows more examples.

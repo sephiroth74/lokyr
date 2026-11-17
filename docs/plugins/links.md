@@ -24,15 +24,57 @@ Press ⇧⌘E, or choose View › Show Hints: every URL, every path that exists,
 
 Typing a label's first letter keeps the labels that start with it; a letter that none follows with starts again. Escape, or a click elsewhere, takes the labels away.
 
-Your own patterns join them, as a ticket's number that opens its page:
+The labels' colors are the theme's `hints.label.bg` and `hints.label.fg`. The [`alphabet`](../CONFIGURATION.md#alphabet) key sets the labels' letters.
+
+### Add your own patterns
+
+<sub>Platforms: macOS · not released yet</sub>
+
+Besides URLs, paths, hashes and addresses, the hints can label text of your own, such as your issue tracker's ticket numbers, and open a page for each. Each pattern is a table of the config, under `[plugins.links.hints]`, named as you like:
 
 ```toml
-[plugins.links.hints.jira]
-pattern = "PROJ-\\d+"
+# A ticket number, such as PROJ-1234, opens the ticket's page.
+[plugins.links.hints.tickets]
+pattern = 'PROJ-\d+'
 url = "https://jira.example.com/browse/$0"
 ```
 
-`$0` is the whole match and `$1` to `$9` its groups; a pattern without a `url` is a hint that its opening copies. A `url` opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`: a pattern whose `url` starts with another scheme, such as `vscode:`, is left out, and a notice reports it. A pick that fails, such as a match that expands to a URL that doesn't open, shows a notice, and the labels go. The [`hints`](../CONFIGURATION.md#hints) and [`alphabet`](../CONFIGURATION.md#alphabet) keys of the configuration guide tell more. The labels' colors are the theme's `hints.label.bg` and `hints.label.fg`.
+- **The table's name**, `tickets` here, is yours to choose. Lokyr uses it in the notices about that pattern, and when two patterns match the same text, the one whose name comes first in alphabetical order wins.
+- **`pattern`** is a [regular expression](https://docs.rs/regex/latest/regex/#syntax). It is case-sensitive; start it with `(?i)` to ignore case. Write it between single quotes, as above, so that TOML keeps its backslashes as they are. Between double quotes, each backslash is doubled: `"PROJ-\\d+"`.
+- **`url`** is what picking the hint opens. In it, `$0` stands for the whole text that the pattern matched, `$1` to `$9` for the parts of the pattern between parentheses, and `$$` for a `$`. It must open an `http`, `https`, `mailto` or `file` URL, or a path from `/` or `~`. A `url` that starts with another scheme, such as `vscode:` or `jira:`, is left out, and a notice reports it.
+- **Without a `url`**, picking the hint copies its text.
+
+Try it: add the table above to your config and save it, then run this command and press ⇧⌘E:
+
+```sh
+echo "Fixed in PROJ-42, see PROJ-7 too"
+```
+
+`PROJ-42` and `PROJ-7` get a label each, and typing a label opens `https://jira.example.com/browse/PROJ-42` or `https://jira.example.com/browse/PROJ-7`.
+
+When only part of the match goes into the URL, put that part between parentheses and use `$1`. The ticket's number alone, for example:
+
+```toml
+# PROJ-1234 opens https://tracker.example.com/issue?id=1234.
+[plugins.links.hints.tracker]
+pattern = 'PROJ-(\d+)'
+url = "https://tracker.example.com/issue?id=$1"
+```
+
+More patterns:
+
+```toml
+# A GitHub issue, such as #128, of one repository.
+[plugins.links.hints.issues]
+pattern = '#(\d+)'
+url = "https://github.com/acme/app/issues/$1"
+
+# A UUID, which picking copies.
+[plugins.links.hints.uuids]
+pattern = '(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+```
+
+A pattern that doesn't read is left out, and a notice reports why. A pick that fails, such as a `url` that starts with `$0` and turns into a URL that doesn't open, shows a notice too, and the labels go. The [`hints`](../CONFIGURATION.md#hints) key of the configuration guide lists the same rules.
 
 ## Commands
 
