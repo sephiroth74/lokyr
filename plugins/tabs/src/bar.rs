@@ -33,10 +33,19 @@
 //! pressed, which the host draws and fades, with no render; its close
 //! button shows at its start under the pointer over the tab, as the config
 //! says.
+//!
+//! A group of tabs shows as a pill of its name and its color before its
+//! tabs, which take a tint of its color but the active one; a folded
+//! group, its pill alone, of the count of its tabs; down a column, a row of
+//! its color's dot and its name. A click on it folds or unfolds it; a tab
+//! dropped right after it, between two of its tabs or after its last joins
+//! it, and one dropped elsewhere leaves it.
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::host::{AgentState, BarPlace, COLUMN_WIDTHS, Color, TabInfo, TabProgress};
+use lokyr_plugin_sdk::host::{
+    AgentState, BarPlace, COLUMN_WIDTHS, Color, GroupId, GroupInfo, TabId, TabInfo, TabProgress,
+};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
     Align, Border, Direction, Easing, Edges, FontWeight, Hover, Justify, Kind, Layout, Length,
@@ -180,6 +189,11 @@ pub(crate) fn tab_key(id: u64) -> String {
     format!("tab-{id}")
 }
 
+/// The key of the pill of group `id`.
+pub(crate) fn group_key(id: u64) -> String {
+    format!("group-{id}")
+}
+
 /// The key of the close button of tab `id`.
 pub(crate) fn close_key(id: u64) -> String {
     format!("close-{id}")
@@ -259,6 +273,8 @@ struct Shown<'a> {
     tab: &'a TabInfo,
     title: String,
     keys: Option<&'a str>,
+    /// The group that it is in, which tints it.
+    group: Option<&'a GroupInfo>,
 }
 
 /// The bar's own texts, in the language that the app shows, of the
@@ -273,6 +289,8 @@ pub(crate) struct BarTexts {
     pub(crate) marks: MarkTexts,
     /// What accessibility calls a pinned tab's pin.
     pub(crate) pinned: String,
+    /// What accessibility calls a group of no name.
+    pub(crate) group: String,
 }
 
 impl Default for BarTexts {
@@ -283,6 +301,7 @@ impl Default for BarTexts {
             untitled: BTreeMap::new(),
             marks: MarkTexts::default(),
             pinned: "Pinned".to_owned(),
+            group: "Group".to_owned(),
         }
     }
 }
@@ -354,7 +373,7 @@ pub(crate) fn bar(
         keys: window,
         ..WindowOf::default()
     };
-    bar_with(tabs, keys, window, (settings, &BarTexts::default()))
+    bar_with(tabs, &[], keys, window, (settings, &BarTexts::default()))
 }
 
 /// The bar of `tabs`, a window's, each of the keys that select it of
@@ -364,6 +383,7 @@ pub(crate) fn bar(
 /// own as the system's would show it; `None` of no tabs.
 pub(crate) fn bar_with(
     tabs: &[TabInfo],
+    groups: &[GroupInfo],
     keys: &[Option<String>],
     window_of: WindowOf<'_>,
     (settings, texts): BarOf<'_>,
@@ -382,6 +402,7 @@ pub(crate) fn bar_with(
                 _ => tab.title.clone(),
             },
             keys: None,
+            group: None,
         };
         return Some(told(title(&shown, texts, window_of.inactive), shown.tab));
     }
@@ -399,6 +420,9 @@ pub(crate) fn bar_with(
                 .get(at)
                 .and_then(Option::as_deref)
                 .filter(|_| settings.show_index),
+            group: tab
+                .group
+                .and_then(|id| groups.iter().find(|group| group.id == id)),
         })
         .collect();
     let window = window.filter(|_| {
@@ -475,8 +499,12 @@ fn title(tab: &Shown<'_>, texts: &BarTexts, inactive: bool) -> Node {
 fn pills(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
     // Of the row's room, which scrolls past its tabs' least widths.
     let track = Node::scroll(
-        tabs.iter()
-            .map(|tab| tip(pill(tab, (settings, texts)), tab))
+        items(tabs)
+            .into_iter()
+            .map(|item| match item {
+                Item::Group(group, count) => keyed_group(badge(group, count, PILL), group, texts),
+                Item::Tab(tab) => tip(pill(tab, (settings, texts)), tab),
+            })
             .collect(),
     )
     .key(TRACK_KEY)
@@ -566,6 +594,7 @@ fn pill(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
         raised_in(settings.look)
     } else {
         Style {
+            background: tint(tab.group),
             color: Some(Token::from("tabs.inactive.fg")),
             ..Style::default()
         }
@@ -674,11 +703,31 @@ fn cells(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>)
     // The cells, a line between two, of the room left, which scrolls past
     // their least widths.
     let mut strip = Vec::new();
-    for (at, tab) in tabs.iter().enumerate() {
+    for (at, item) in items(tabs).into_iter().enumerate() {
         if at > 0 {
             strip.push(Node::separator());
         }
-        strip.push(tip(cell(tab, top, (settings, texts)), tab));
+        strip.push(match item {
+            Item::Group(group, count) => {
+                let content = Node::container(vec![badge(group, count, BADGE)]).layout(Layout {
+                    align: Align::Center,
+                    padding: Edges {
+                        top: 0.0,
+                        right: 8.0,
+                        bottom: 0.0,
+                        left: 8.0,
+                    },
+                    grow: 1.0,
+                    ..Layout::default()
+                });
+                keyed_group(
+                    lined(content, top, true, Layout::default()).style(veiled()),
+                    group,
+                    texts,
+                )
+            }
+            Item::Tab(tab) => tip(cell(tab, top, (settings, texts)), tab),
+        });
     }
     children.push(
         Node::scroll(strip)
@@ -788,7 +837,10 @@ fn cell(tab: &Shown<'_>, top: bool, (settings, texts): BarOf<'_>) -> Node {
     let (background, color) = if active {
         (None, "terminal.fg")
     } else {
-        (Some(Token::from(VEIL)), "tabs.inactive.fg")
+        (
+            tint(tab.group).or_else(|| Some(Token::from(VEIL))),
+            "tabs.inactive.fg",
+        )
     };
     let (width, least, grow) = if pinned {
         (PINNED, PINNED, 0.0)
@@ -855,9 +907,12 @@ fn lined(content: Node, top: bool, lined: bool, layout: Layout) -> Node {
 /// `window`, after them.
 fn column(tabs: &[Shown<'_>], window: Option<&str>, (settings, texts): BarOf<'_>) -> Node {
     let seamless = settings.look == Look::Seamless;
-    let mut rows: Vec<Node> = tabs
-        .iter()
-        .map(|tab| told(row(tab, (settings, texts)), tab.tab))
+    let mut rows: Vec<Node> = items(tabs)
+        .into_iter()
+        .map(|item| match item {
+            Item::Group(group, count) => group_row(group, count, (settings, texts)),
+            Item::Tab(tab) => told(row(tab, (settings, texts)), tab.tab),
+        })
         .collect();
     rows.push(
         Node::container(vec![Node::icon("add")])
@@ -992,7 +1047,7 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
             ..raised()
         },
         (false, _) => Style {
-            background: seamless.then(|| Token::from(VEIL)),
+            background: tint(tab.group).or_else(|| seamless.then(|| Token::from(VEIL))),
             color: Some(Token::from("tabs.inactive.fg")),
             ..Style::default()
         },
@@ -1019,6 +1074,259 @@ fn row(tab: &Shown<'_>, (settings, texts): BarOf<'_>) -> Node {
             ..Layout::default()
         })
         .style(tab_style(style, row_radius(settings.look), active))
+}
+
+/// The color of a group of none of its own, macOS's system gray, which
+/// reads in either appearance.
+const NO_GROUP_COLOR: &str = "#8e8e93";
+
+/// The alpha of a group's tint over its tabs, of 255.
+const TINT: &str = "33";
+
+/// A group's pill's height in a seamless cell, in points.
+const BADGE: f32 = 20.0;
+
+/// An item of a bar's row of tabs, in its order: a group's pill, of the
+/// count of its tabs, before them, or a tab.
+enum Item<'s, 'a> {
+    Group(&'a GroupInfo, usize),
+    Tab(&'s Shown<'a>),
+}
+
+/// The items of the row of `tabs`: a group's pill before its first tab,
+/// and the tabs, but those of a folded group, as [`placed`] lists them.
+fn items<'s, 'a>(tabs: &'s [Shown<'a>]) -> Vec<Item<'s, 'a>> {
+    let mut found = Vec::new();
+    let mut last: Option<GroupId> = None;
+    for (at, tab) in tabs.iter().enumerate() {
+        let Some(group) = tab.group else {
+            last = None;
+            found.push(Item::Tab(tab));
+            continue;
+        };
+        if last != Some(group.id) {
+            let count = tabs[at..]
+                .iter()
+                .take_while(|next| next.group.is_some_and(|of| of.id == group.id))
+                .count();
+            found.push(Item::Group(group, count));
+        }
+        last = Some(group.id);
+        if !group.folded {
+            found.push(Item::Tab(tab));
+        }
+    }
+    found
+}
+
+/// An item of a bar's row, as a drop's index counts them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Placed {
+    Group(GroupId),
+    Tab(TabId),
+}
+
+/// The items of a bar's row of `tabs`, of their `groups`, as the bar shows
+/// them: a group's pill before its first tab, and the tabs, but those of a
+/// folded group.
+pub(crate) fn placed(tabs: &[TabInfo], groups: &[GroupInfo]) -> Vec<Placed> {
+    let group_of = |tab: &TabInfo| {
+        tab.group
+            .and_then(|id| groups.iter().find(|group| group.id == id))
+    };
+    let mut found = Vec::new();
+    let mut last: Option<GroupId> = None;
+    for tab in tabs {
+        let Some(group) = group_of(tab) else {
+            last = None;
+            found.push(Placed::Tab(tab.id));
+            continue;
+        };
+        if last != Some(group.id) {
+            found.push(Placed::Group(group.id));
+        }
+        last = Some(group.id);
+        if !group.folded {
+            found.push(Placed::Tab(tab.id));
+        }
+    }
+    found
+}
+
+/// Where `dragged`, dropped at `index` of the row of `tabs` and `groups`
+/// among its other items, goes: its place among the window's other tabs,
+/// and the group that it goes in. Right after a group's pill, between two
+/// of its tabs or after its last, it is in the group; elsewhere, in none,
+/// and after a folded group's pill, past the group's tabs.
+pub(crate) fn drop_place(
+    tabs: &[TabInfo],
+    groups: &[GroupInfo],
+    dragged: TabId,
+    index: usize,
+) -> (usize, Option<GroupId>) {
+    let items: Vec<Placed> = placed(tabs, groups)
+        .into_iter()
+        .filter(|item| *item != Placed::Tab(dragged))
+        .collect();
+    let others: Vec<&TabInfo> = tabs.iter().filter(|tab| tab.id != dragged).collect();
+    let folded = |id: GroupId| groups.iter().any(|group| group.id == id && group.folded);
+    let before = index.checked_sub(1).and_then(|at| items.get(at)).copied();
+    match before {
+        None => (0, None),
+        Some(Placed::Tab(tab)) => {
+            let at = others.iter().position(|other| other.id == tab);
+            let group = others
+                .iter()
+                .find(|other| other.id == tab)
+                .and_then(|other| other.group);
+            (at.map_or(0, |at| at + 1), group)
+        }
+        Some(Placed::Group(group)) if folded(group) => {
+            let last = others.iter().rposition(|other| other.group == Some(group));
+            (last.map_or(0, |at| at + 1), None)
+        }
+        // A group of the dragged tab alone keeps its place.
+        Some(Placed::Group(group)) => {
+            let first = others
+                .iter()
+                .position(|other| other.group == Some(group))
+                .unwrap_or_else(|| tabs.iter().take_while(|tab| tab.id != dragged).count());
+            (first, Some(group))
+        }
+    }
+}
+
+/// The color of `group`, as a token: its own, or a gray of none.
+fn group_color(group: &GroupInfo) -> String {
+    match group.color {
+        Some(Color::Rgb(red, green, blue)) => format!("#{red:02x}{green:02x}{blue:02x}"),
+        _ => NO_GROUP_COLOR.to_owned(),
+    }
+}
+
+/// The tint of a tab of `group`, of its color, translucent; none of a tab
+/// of no group.
+fn tint(group: Option<&GroupInfo>) -> Option<Token> {
+    group.map(|group| Token::from(format!("{}{TINT}", group_color(group)).as_str()))
+}
+
+/// A group's pill of `height`: its name, and the count of its tabs while
+/// it is folded, white over its color; a dot of its color of neither.
+fn badge(group: &GroupInfo, count: usize, height: f32) -> Node {
+    let mut children = Vec::new();
+    if !group.name.is_empty() {
+        children.push(Node::text(group.name.as_str()));
+    }
+    if group.folded {
+        children.push(Node::text(count.to_string().as_str()).style(Style {
+            color: Some(Token::from("#ffffffb3")),
+            ..Style::default()
+        }));
+    }
+    Node::container(children)
+        .layout(Layout {
+            gap: 4.0,
+            align: Align::Center,
+            justify: Justify::Center,
+            padding: Edges {
+                top: 0.0,
+                right: 8.0,
+                bottom: 0.0,
+                left: 8.0,
+            },
+            min_width: Length::Points(height),
+            height: Length::Points(height),
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from(group_color(group).as_str())),
+            color: Some(Token::from("#ffffff")),
+            radius: height / 2.0,
+            font_weight: Some(FontWeight::Semibold),
+            clip: true,
+            ..Style::default()
+        })
+}
+
+/// `node`, the item of `group` in its bar: of its key, which a click
+/// folds or unfolds, among the tabs that a drag reorders, and of its name
+/// to accessibility, or `texts`' word of none.
+fn keyed_group(node: Node, group: &GroupInfo, texts: &BarTexts) -> Node {
+    let label = if group.name.is_empty() {
+        texts.group.as_str()
+    } else {
+        group.name.as_str()
+    };
+    let node = node
+        .key(group_key(group.id.0).as_str())
+        .reorderable()
+        .label(label);
+    Node {
+        style: Style {
+            pointer: Some(PointerShape::Arrow),
+            ..node.style
+        },
+        ..node
+    }
+}
+
+/// The row of `group` down a column: its color's dot, its name, and the
+/// count of its tabs while it is folded.
+fn group_row(group: &GroupInfo, count: usize, (settings, texts): BarOf<'_>) -> Node {
+    let seamless = settings.look == Look::Seamless;
+    let mut children = vec![
+        Node::container(Vec::new())
+            .style(Style {
+                background: Some(Token::from(group_color(group).as_str())),
+                radius: 4.0,
+                ..Style::default()
+            })
+            .layout(Layout {
+                width: Length::Points(8.0),
+                min_width: Length::Points(8.0),
+                height: Length::Points(8.0),
+                ..Layout::default()
+            }),
+    ];
+    let mut name = Node::text(if group.name.is_empty() {
+        texts.group.as_str()
+    } else {
+        group.name.as_str()
+    });
+    name.layout.grow = 1.0;
+    children.push(name);
+    if group.folded {
+        children.push(secondary(count.to_string().as_str()));
+    }
+    let inset = if settings.look == Look::Unified {
+        4.0
+    } else {
+        0.0
+    };
+    keyed_group(
+        Node::container(children)
+            .layout(Layout {
+                gap: 6.0,
+                align: Align::Center,
+                padding: Edges {
+                    top: 0.0,
+                    right: 10.0 + inset,
+                    bottom: 0.0,
+                    left: 8.0 + inset,
+                },
+                height: Length::Points(ROW),
+                ..Layout::default()
+            })
+            .style(Style {
+                background: seamless.then(|| Token::from(VEIL)),
+                color: Some(Token::from("tabs.inactive.fg")),
+                font_weight: Some(FontWeight::Semibold),
+                radius: row_radius(settings.look),
+                ..Style::default()
+            }),
+        group,
+        texts,
+    )
 }
 
 /// The radius of a row's corners down a column of `look`: none in the

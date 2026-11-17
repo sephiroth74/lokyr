@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    BarPlace, Color, MenuItem, MenuPlace, ScreenPoint, TabId, TabInfo, WindowId,
+    BarPlace, Color, GroupId, GroupInfo, MenuItem, MenuPlace, ScreenPoint, TabId, TabInfo, WindowId,
 };
 use lokyr_plugin_sdk::message::{Data, Event, KEYS_CHANGED, WINDOW_FOCUS};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -114,6 +114,7 @@ const NEW_TAB: &str = "bar-new-tab";
 const CLOSE_TAB: &str = "bar-close-tab";
 const UNTITLED: &str = "bar-untitled";
 const PINNED: &str = "bar-pinned";
+const GROUP: &str = "bar-group";
 
 /// The messages of what accessibility calls a tab's marks.
 const MARKS: [&str; 8] = [
@@ -178,6 +179,7 @@ const NUMBERED: usize = 9;
 #[doc(hidden)]
 pub fn tab_bar(
     tabs: &[TabInfo],
+    groups: &[GroupInfo],
     keys: &[Option<String>],
     window: Option<&str>,
     config: &Data,
@@ -193,7 +195,13 @@ pub fn tab_bar(
         ..bar::WindowOf::default()
     };
     (
-        bar::bar_with(tabs, keys, window, (&settings, &bar::BarTexts::default())),
+        bar::bar_with(
+            tabs,
+            groups,
+            keys,
+            window,
+            (&settings, &bar::BarTexts::default()),
+        ),
         place,
     )
 }
@@ -330,18 +338,51 @@ impl Plugin for Tabs {
             (UiEventKind::Click, _) if let Some(id) = id("close-") => {
                 cx.close_tab_kept(TabId(id), true, self.settings.reopen_seconds)
             }
+            (UiEventKind::Click, _) if let Some(id) = id("group-") => {
+                let groups = cx.groups(window)?;
+                match groups.iter().find(|group| group.id == GroupId(id)) {
+                    Some(group) => cx.fold_group(group.id, !group.folded),
+                    None => Ok(()),
+                }
+            }
             (UiEventKind::Click, Some(tab)) => cx.activate_tab(tab),
             (UiEventKind::MiddleClick, Some(tab)) => {
                 cx.close_tab_kept(tab, true, self.settings.reopen_seconds)
             }
             // A tab dragged to another place in its bar, which the bar's
-            // next render shows.
-            (UiEventKind::Reorder { index }, Some(tab)) => cx.move_tab(tab, window, *index),
+            // next render shows, into a group or out of one as it falls;
+            // a group's pill dragged moves nothing.
+            (UiEventKind::Reorder { index }, Some(tab)) => {
+                let tabs = cx.tabs(window)?;
+                let groups = cx.groups(window)?;
+                let (at, group) = bar::drop_place(&tabs, &groups, tab, *index);
+                let shown = tabs.iter().find(|shown| shown.id == tab);
+                let pinned = shown.is_some_and(|shown| shown.pinned);
+                let group = group.filter(|_| !pinned);
+                let was = shown.and_then(|shown| shown.group);
+                if was != group {
+                    if was.is_some() {
+                        cx.remove_from_group(tab)?;
+                    }
+                    if let Some(group) = group {
+                        cx.add_to_group(tab, group)?;
+                    }
+                }
+                cx.move_tab(tab, window, at)
+            }
             // A tab dragged out of its bar, into another window's, which
-            // shows it, or out of every window, into one of its own under
-            // the pointer, its window moving there of a tab alone.
+            // shows it, into a group there as it falls, or out of every
+            // window, into one of its own under the pointer, its window
+            // moving there of a tab alone.
             (UiEventKind::DropOnBar { window, index }, Some(tab)) => {
-                cx.move_tab(tab, *window, *index)?;
+                let tabs = cx.tabs(*window)?;
+                let groups = cx.groups(*window)?;
+                let (at, group) = bar::drop_place(&tabs, &groups, tab, *index);
+                cx.move_tab(tab, *window, at)?;
+                if let Some(group) = group {
+                    cx.add_to_group(tab, group)?;
+                    cx.move_tab(tab, *window, at)?;
+                }
                 cx.activate_tab(tab)
             }
             // Into a pane of another tab, beside it, at its edge.
@@ -562,6 +603,7 @@ impl Tabs {
             return None;
         };
         let mut tabs = cx.tabs(*window).ok()?;
+        let groups = cx.groups(*window).unwrap_or_default();
         let shown = cx
             .windows()
             .ok()?
@@ -616,6 +658,7 @@ impl Tabs {
             new_tab: message(cx, NEW_TAB, &[]).unwrap_or(english.new_tab),
             close_tab: message(cx, CLOSE_TAB, &[]).unwrap_or(english.close_tab),
             pinned: message(cx, PINNED, &[]).unwrap_or(english.pinned),
+            group: message(cx, GROUP, &[]).unwrap_or(english.group),
             untitled: (1..)
                 .zip(&tabs)
                 .filter(|(_, tab)| tab.title.is_empty())
@@ -630,7 +673,7 @@ impl Tabs {
             title: shown.as_ref().map(|shown| shown.title.as_str()),
             inactive: self.inactive.contains(window),
         };
-        bar::bar_with(&tabs, &keys, window_of, (&self.settings, &texts))
+        bar::bar_with(&tabs, &groups, &keys, window_of, (&self.settings, &texts))
     }
 
     /// The context menu of a tab: its rename, its color, its move to a

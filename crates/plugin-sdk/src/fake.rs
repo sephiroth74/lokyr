@@ -820,6 +820,22 @@ impl FakeHost {
         (tab, pane)
     }
 
+    /// Makes a group of `tabs`, of one window and none pinned, of `name`
+    /// and `color`, as the app makes one, of a new id of the host's, whose
+    /// events the plugin hears at the next delivery: its id.
+    pub fn add_group(&mut self, tabs: &[TabId], name: &str, color: Option<Color>) -> GroupId {
+        self.settle();
+        let id = GroupId(self.next_id());
+        self.new_group(id, tabs, name, color);
+        id
+    }
+
+    /// The groups of `window`'s tabs, as the plugin's writes left them.
+    pub fn groups(&mut self, window: WindowId) -> Vec<GroupInfo> {
+        self.settle();
+        self.group_infos(window)
+    }
+
     /// Holds the order of the tabs' use, as the app does while Control is
     /// held, or lets it go, as Control is released: the tab that each window
     /// shows then is its tab used last.

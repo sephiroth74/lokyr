@@ -1244,3 +1244,72 @@ fn close_other_tabs_spares_the_pinned_tabs() {
         .collect();
     assert_eq!(closed, [TabId(3)]);
 }
+
+#[test]
+fn a_tab_dragged_into_a_group_joins_it_out_of_it_leaves_it_and_a_click_folds_it() {
+    let (mut host, mut plugin) = host(&[1, 1, 1, 1, 1], 1);
+    let group = host.add_group(&[TabId(2), TabId(3)], "work", None);
+    host.deliver(&mut plugin).unwrap();
+    let bar = ViewId::TabBar(WINDOW);
+    host.render(&mut plugin, &bar).expect("a bar of five tabs");
+    let mut on = |key: &str, kind| {
+        host.take_done();
+        host.ui_event(
+            &mut plugin,
+            &UiEvent {
+                view: bar.clone(),
+                key: key.into(),
+                kind,
+            },
+        )
+        .unwrap();
+        host.take_done()
+            .into_iter()
+            .filter(|request| {
+                !matches!(
+                    request,
+                    Request::Tabs(_) | Request::Groups(_) | Request::Message { .. }
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // The fifth, dropped right after the group's pill: its first.
+    assert_eq!(
+        on("tab-5", UiEventKind::Reorder { index: 2 }),
+        [
+            Request::AddToGroup {
+                tab: TabId(5),
+                group
+            },
+            Request::MoveTab {
+                tab: TabId(5),
+                window: WINDOW,
+                index: 1
+            }
+        ]
+    );
+    // The third, dropped first, before the pill: out of it.
+    assert_eq!(
+        on("tab-3", UiEventKind::Reorder { index: 0 }),
+        [
+            Request::RemoveFromGroup(TabId(3)),
+            Request::MoveTab {
+                tab: TabId(3),
+                window: WINDOW,
+                index: 0
+            }
+        ]
+    );
+    // A click on the pill folds it, and again unfolds it.
+    assert_eq!(
+        on(&format!("group-{}", group.0), UiEventKind::Click),
+        [Request::FoldGroup {
+            group,
+            folded: true
+        }]
+    );
+    let groups = host.groups(WINDOW);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].tabs, [TabId(5), TabId(2)]);
+    assert!(groups[0].folded);
+}

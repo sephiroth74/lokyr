@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::host::{PaneId, TabId, WindowId};
+use lokyr_plugin_sdk::host::{PaneId, WindowId};
 use lokyr_plugin_sdk::view::Kind;
 
 use super::*;
@@ -690,7 +690,7 @@ fn a_single_tab_s_title_is_the_window_s_of_the_system_s_look() {
         title: Some("lokyr — zsh — 116×33"),
         inactive: false,
     };
-    let title = bar_with(&tabs, &[], window, (&settings, &BarTexts::default())).unwrap();
+    let title = bar_with(&tabs, &[], &[], window, (&settings, &BarTexts::default())).unwrap();
     assert_eq!(texts(&title), ["lokyr — zsh — 116×33"]);
     let text = title.children[1].children.last().unwrap();
     assert_eq!(text.style.font_weight, Some(FontWeight::Bold));
@@ -700,7 +700,7 @@ fn a_single_tab_s_title_is_the_window_s_of_the_system_s_look() {
         inactive: true,
         ..window
     };
-    let title = bar_with(&tabs, &[], inactive, (&settings, &BarTexts::default())).unwrap();
+    let title = bar_with(&tabs, &[], &[], inactive, (&settings, &BarTexts::default())).unwrap();
     assert_eq!(
         title.children[1].children.last().unwrap().style.color,
         Some(Token::from("text.secondary"))
@@ -709,6 +709,117 @@ fn a_single_tab_s_title_is_the_window_s_of_the_system_s_look() {
         title: Some(""),
         ..window
     };
-    let title = bar_with(&tabs, &[], untitled, (&settings, &BarTexts::default())).unwrap();
+    let title = bar_with(&tabs, &[], &[], untitled, (&settings, &BarTexts::default())).unwrap();
     assert_eq!(texts(&title), ["zsh"]);
+}
+
+/// Five tabs, the second and the third in the group 10, `work`, folded or
+/// not, and the group.
+fn grouped(folded: bool) -> (Vec<TabInfo>, Vec<GroupInfo>) {
+    let mut tabs: Vec<TabInfo> = (1..=5).map(|id| tab(id, "t", id == 1)).collect();
+    let group = GroupInfo {
+        id: GroupId(10),
+        window: WindowId(1),
+        name: "work".to_owned(),
+        color: Some(Color::Rgb(0x00, 0x7a, 0xff)),
+        folded,
+        tabs: vec![TabId(2), TabId(3)],
+    };
+    tabs[1].group = Some(group.id);
+    tabs[2].group = Some(group.id);
+    (tabs, vec![group])
+}
+
+#[test]
+fn a_group_shows_as_its_pill_before_its_tabs_and_folded_as_its_pill_alone() {
+    let (tabs, groups) = grouped(false);
+    use Placed::{Group, Tab};
+    let g = GroupId(10);
+    assert_eq!(
+        placed(&tabs, &groups),
+        [
+            Tab(TabId(1)),
+            Group(g),
+            Tab(TabId(2)),
+            Tab(TabId(3)),
+            Tab(TabId(4)),
+            Tab(TabId(5))
+        ]
+    );
+    let bar = bar_with(
+        &tabs,
+        &groups,
+        &[],
+        WindowOf::default(),
+        (&Settings::default(), &BarTexts::default()),
+    )
+    .unwrap();
+    let pill = keyed(&bar, "group-10").expect("the group's pill");
+    assert!(pill.reorderable && pill.carries.is_none());
+    assert_eq!(pill.label.as_deref(), Some("work"));
+    assert_eq!(texts(pill), ["work"]);
+    // Its tabs of its tint but the active one, the others of none.
+    let background = |key: &str| keyed(&bar, key).unwrap().style.background.clone();
+    assert_eq!(background("tab-2"), Some(Token::from("#007aff33")));
+    assert_eq!(background("tab-4"), None);
+    // Folded: its pill alone, of the count of its tabs.
+    let (tabs, groups) = grouped(true);
+    assert_eq!(
+        placed(&tabs, &groups),
+        [Tab(TabId(1)), Group(g), Tab(TabId(4)), Tab(TabId(5))]
+    );
+    let bar = bar_with(
+        &tabs,
+        &groups,
+        &[],
+        WindowOf::default(),
+        (&Settings::default(), &BarTexts::default()),
+    )
+    .unwrap();
+    assert!(keyed(&bar, "tab-2").is_none());
+    assert_eq!(texts(keyed(&bar, "group-10").unwrap()), ["work", "2"]);
+}
+
+#[test]
+fn a_tab_dropped_after_a_group_s_pill_or_among_its_tabs_joins_it_and_elsewhere_leaves_it() {
+    let (tabs, groups) = grouped(false);
+    let g = Some(GroupId(10));
+    // The fifth, of the items but itself: 1, the pill, 2, 3, 4.
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(5), 2),
+        (1, g),
+        "after the pill"
+    );
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(5), 3),
+        (2, g),
+        "between two"
+    );
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(5), 4),
+        (3, g),
+        "after the last"
+    );
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(5), 5),
+        (4, None),
+        "after 4"
+    );
+    // The third, of 1, the pill, 2, 4, 5: before the pill or first, out.
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(3), 1),
+        (1, None),
+        "before the pill"
+    );
+    assert_eq!(drop_place(&tabs, &groups, TabId(3), 0), (0, None), "first");
+    assert_eq!(
+        drop_place(&tabs, &groups, TabId(3), 2),
+        (1, g),
+        "the group's first"
+    );
+    // Past a folded group's pill, past its tabs, in none.
+    let (tabs, groups) = grouped(true);
+    assert_eq!(drop_place(&tabs, &groups, TabId(5), 2), (3, None));
+    // From another window, of no place among the tabs.
+    assert_eq!(drop_place(&tabs, &groups, TabId(99), 1), (1, None));
 }

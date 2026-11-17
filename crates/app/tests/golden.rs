@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use lokyr_font_coretext::CoreText;
-use lokyr_plugin_sdk::host::{Color, PaneId, TabId, TabInfo, WindowId};
+use lokyr_plugin_sdk::host::{Color, GroupId, GroupInfo, PaneId, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
     self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
@@ -1708,10 +1708,13 @@ const SIDEBAR_ROOM: (f32, f32) = (40.0, 84.0);
 /// The tabs of a bar's image: the three of [`bar_tabs`], of the keys of
 /// the default bindings; one alone, which the config shows a bar for;
 /// twelve, more than the keys' nine; the three, of keys of the user's
-/// bindings, one of none; four of their marks; or one alone, whose bar
-/// hides, of its title in the titlebar.
+/// bindings, one of none; four of their marks; one alone, whose bar
+/// hides, of its title in the titlebar; or five in groups, two of them
+/// named and colored, or one of them folded and one of no name nor color.
 #[derive(Clone, Copy)]
 enum BarTabs {
+    Grouped,
+    GroupedFolded,
     Three,
     One,
     Many,
@@ -1860,7 +1863,80 @@ impl BarTabs {
                 ];
                 (tabs, keys, Vec::new())
             }
+            Self::Grouped | Self::GroupedFolded => {
+                let titles = ["-zsh", "vim", "lokyr — cargo test", "htop", "ssh pi"];
+                let groups = self.groups();
+                let mut tabs = bar_tabs();
+                let model = tabs.swap_remove(1);
+                let tabs = titles
+                    .iter()
+                    .enumerate()
+                    .map(|(at, title)| {
+                        let id = at as u64 + 1;
+                        TabInfo {
+                            id: TabId(id),
+                            title: (*title).to_owned(),
+                            active: id == 2,
+                            panes: vec![PaneId(id)],
+                            focused: PaneId(id),
+                            group: groups
+                                .iter()
+                                .find(|group| group.tabs.contains(&TabId(id)))
+                                .map(|group| group.id),
+                            ..model.clone()
+                        }
+                    })
+                    .collect();
+                let keys = (1..=titles.len())
+                    .map(|at| Some(format!("⌘{at}")))
+                    .collect();
+                (tabs, keys, Vec::new())
+            }
         }
+    }
+
+    /// The groups of the tabs: of five, the second and the third in a blue
+    /// group, `work`, and the fourth in an orange one, `ops`, folded of
+    /// [`BarTabs::GroupedFolded`], whose fifth is in a group of no name nor
+    /// color; none of the others.
+    fn groups(self) -> Vec<GroupInfo> {
+        let group = |id: u64, name: &str, color, tabs: &[u64], folded| GroupInfo {
+            id: GroupId(id),
+            window: WindowId(1),
+            name: name.to_owned(),
+            color,
+            folded,
+            tabs: tabs.iter().map(|&id| TabId(id)).collect(),
+        };
+        let work = group(
+            10,
+            "work",
+            Some(Color::Rgb(0x00, 0x7a, 0xff)),
+            &[2, 3],
+            false,
+        );
+        let orange = Some(Color::Rgb(0xff, 0x95, 0x00));
+        match self {
+            Self::Grouped => vec![work, group(11, "ops", orange, &[4], false)],
+            Self::GroupedFolded => vec![
+                work,
+                group(11, "ops", orange, &[4], true),
+                group(12, "", None, &[5], false),
+            ],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The tabs that the bar shows of `tabs`: those of no folded group.
+    fn shown_tabs(self, tabs: &[TabInfo]) -> Vec<TabId> {
+        let groups = self.groups();
+        tabs.iter()
+            .filter(|tab| {
+                !tab.group
+                    .is_some_and(|id| groups.iter().any(|group| group.id == id && group.folded))
+            })
+            .map(|tab| tab.id)
+            .collect()
     }
 }
 
@@ -1879,7 +1955,56 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 25] = [
+const BARS: [Bar; 32] = [
+    (
+        "unified-groups",
+        "unified",
+        "top",
+        (860.0, Some(40.0)),
+        BarTabs::Grouped,
+    ),
+    (
+        "standard-bottom-groups-folded",
+        "standard",
+        "bottom",
+        (860.0, None),
+        BarTabs::GroupedFolded,
+    ),
+    (
+        "seamless-top-groups",
+        "seamless",
+        "top",
+        (860.0, Some(40.0)),
+        BarTabs::Grouped,
+    ),
+    (
+        "seamless-bottom-groups-folded",
+        "seamless",
+        "bottom",
+        (860.0, None),
+        BarTabs::GroupedFolded,
+    ),
+    (
+        "standard-left-groups",
+        "standard",
+        "left",
+        (200.0, Some(240.0)),
+        BarTabs::Grouped,
+    ),
+    (
+        "unified-left-groups-folded",
+        "unified",
+        "left",
+        (200.0, Some(240.0)),
+        BarTabs::GroupedFolded,
+    ),
+    (
+        "seamless-right-groups",
+        "seamless",
+        "right",
+        (200.0, Some(240.0)),
+        BarTabs::Grouped,
+    ),
     (
         "standard-top",
         "standard",
@@ -2080,7 +2205,8 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
     ]);
     config.extend(more.into_iter().map(|(key, value)| (key.to_owned(), value)));
     let config = Data::Map(config);
-    let (root, place) = lokyr_tabs::tab_bar(&tabs, &keys, Some("⌥⌘1"), &config);
+    let groups = shown.groups();
+    let (root, place) = lokyr_tabs::tab_bar(&tabs, &groups, &keys, Some("⌥⌘1"), &config);
     let mut tree = Tree::new();
     let changes = tree.update(&root.unwrap()).unwrap();
     let pixels = scale as f32;
@@ -2105,10 +2231,12 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
         &mut drawing.font,
     );
     let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
-    // Down a column, each row of its height, however many.
+    // Down a column, each row of its height, however many, but those of a
+    // folded group, which shows none.
+    let visible = shown.shown_tabs(&tabs);
     if matches!(position, "left" | "right") {
-        for tab in &tabs {
-            let key = view::Key::from(format!("tab-{}", tab.id.0).as_str());
+        for tab in &visible {
+            let key = view::Key::from(format!("tab-{}", tab.0).as_str());
             let row = tree.by_key(&key).and_then(|id| layout.frame(&tree, id));
             assert_eq!(row.map(|row| row.height), Some(28.0 * pixels), "{name}");
         }
@@ -2117,11 +2245,13 @@ fn check_tab_bar((name, style, position, (width, height), shown): Bar, (dark, sc
     // presses, the window's keys and the room around them the window's.
     if place == lokyr_plugin_sdk::host::BarPlace::Titlebar && height.is_some() {
         let areas = lokyr_ui_core::chrome::titlebar_areas(&tree, &layout);
-        // Of many tabs, those that the bar's scroll shows alone.
+        // Of many tabs, those that the bar's scroll shows alone; each
+        // group's pill too.
         if matches!(shown, BarTabs::Many) {
             assert!(areas.len() < tabs.len() + 1, "{name}: {areas:?}");
         } else {
-            assert_eq!(areas.len(), tabs.len() + 1, "{name}: {areas:?}");
+            let pills = groups.len();
+            assert_eq!(areas.len(), visible.len() + pills + 1, "{name}: {areas:?}");
         }
         assert!(areas.iter().all(|area| area.x > 0.0), "{name}: {areas:?}");
     }
