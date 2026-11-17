@@ -12,7 +12,7 @@ The progress that a program tells, as Gradle's, in a thin bar across the window'
 - **It slides** to a new percentage, and sweeps, as the window server moves it, so that a program that tells many percentages a second costs Lokyr no frames.
 - **It goes** as the program ends its task, and changes as another tab shows.
 
-The programs tell it with OSC 9;4. Some, as Gradle, cargo and Claude Code, send it only to the terminals that they know: the README's [Programs' progress](../../README.md#programs-progress) tells how to turn each on.
+The programs tell it with OSC 9;4. Some, as Gradle, cargo and Claude Code, send it only to the terminals that they know: the README's [Programs' progress](../progress-and-status.md#get-the-progress-of-gradle-claude-code-and-cargo) tells how to turn each on.
 
 ## Turning it off
 

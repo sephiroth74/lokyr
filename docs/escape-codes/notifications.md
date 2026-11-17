@@ -114,6 +114,7 @@ You should see:
 
 ## See also
 
+- [Notifications](../notifications.md), every kind that Lokyr shows, and how to allow them
 - [Escape codes](../escape-codes.md), every code that Lokyr reads
 - [Progress and status codes](progress-and-status.md)
 - [Shell integration](../shell-integration.md), and [`[notifications] long-command`](../CONFIGURATION.md#long-command) for a notification when a long command ends

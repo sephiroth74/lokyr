@@ -39,7 +39,7 @@ printf '\033]9;4;2;60\033\\'; sleep 2; printf '\033]9;4;0\033\\'
 
 The bar fills to 60% in red, then goes.
 
-**See**: [the `progress` plugin](../plugins/progress.md), [the `tabs` plugin](../plugins/tabs.md), and the README's [Programs' progress](../../README.md#programs-progress), for programs that send it only to terminals that they recognize.
+**See**: [the `progress` plugin](../plugins/progress.md), [the `tabs` plugin](../plugins/tabs.md), and [Progress and status](../progress-and-status.md), which tells how to get the progress of programs that send it only to terminals that they recognize.
 
 ## OSC 7501, a program's status
 

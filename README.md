@@ -163,17 +163,9 @@ background-blur = 20
 position = "top"
 ```
 
-## Programs' progress
+## Progress and notifications
 
-Lokyr shows the progress that a program reports with OSC 9;4 on the program's tab, round its outline, and in a thin bar across the window's top. Some programs send it only to the terminals that they recognize by their environment's variables, and do not recognize Lokyr yet, whose `TERM_PROGRAM` is `lokyr`. Until they do, turn their progress on as the table tells:
-
-| Program | Sends its progress by itself to | To get it in Lokyr |
-|---|---|---|
-| Gradle 9.8 | ConEmu, Ghostty, kitty, and iTerm2 from 3.6.6 | `export ConEmuPID=1` in your shell's profile, as Gradle has no setting of its own |
-| Claude Code 2.1 | ConEmu, Ghostty from 1.2, and iTerm2 from 3.6.6, while its `terminalProgressBarEnabled` is on, as it is by default | `export ConEmuPID=1` in your shell's profile |
-| cargo 1.99 | Ghostty, WezTerm, Windows Terminal and ConEmu | `term.progress.term-integration = true` in `~/.cargo/config.toml`, or `CARGO_TERM_PROGRESS_TERM_INTEGRATION=true` in the environment |
-
-`ConEmuPID` is the variable of ConEmu, a terminal for Windows: a program that reads it may take Lokyr for ConEmu, which is rare on macOS, but if a program behaves oddly, remove the variable first. Homebrew, npm, pip, uv, Go and Maven send no progress, in any terminal. The table holds the versions checked in November 2026: Gradle 9.8.2, Claude Code 2.1.318 and cargo 1.99.1.
+Lokyr shows the progress that a program reports on its tab, round its outline, and in a thin bar across the window's top: [Progress and status](docs/progress-and-status.md) tells how to get it from Gradle, Claude Code and cargo, which send it only to the terminals that they recognize. A program, an AI agent or a long command can also let you know when it needs you, in a notification of macOS's: [Notifications](docs/notifications.md) tells each kind and how to allow them.
 
 ## Documentation
 
