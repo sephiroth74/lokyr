@@ -719,3 +719,74 @@ fn the_tree_s_focus_is_a_field_s_that_has_the_keys_until_a_client_focuses_the_pa
     fake.send(&mut app, window, act(accesskit::Action::Focus, pane_node));
     assert!(app.windows[&window].pane_has_focus());
 }
+
+#[test]
+fn a_scroll_s_indicator_goes_of_a_frame_after_its_timer_late_or_of_reduced_motion() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    let key = lokyr_kernel::plugins::view::Key::from("rows");
+    let stamp = |app: &mut App, at: Instant| {
+        app.windows.get_mut(&window).unwrap().chrome[0]
+            .surface
+            .animations
+            .scrolled(&key, at);
+    };
+    let due = |app: &App, now: Instant| {
+        app.windows[&window].chrome[0]
+            .surface
+            .animations
+            .indicators_due(now)
+    };
+    let asked = |fake: &Fake| fake.window(window).unwrap().frames_asked;
+    // A timer that comes past the fade: a frame, which takes it away.
+    stamp(&mut app, Instant::now() - Duration::from_secs(5));
+    let before = asked(&fake);
+    app.tooltips_due(&mut fake);
+    assert!(asked(&fake) > before);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(!due(&app, Instant::now()));
+    // Of reduced motion, at its time, in what would be its fade: a frame,
+    // which takes it away at once.
+    fake.set_reduce_motion(true);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    stamp(&mut app, Instant::now() - Duration::from_millis(1050));
+    let before = asked(&fake);
+    app.tooltips_due(&mut fake);
+    assert!(asked(&fake) > before);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(!due(&app, Instant::now()));
+    assert_eq!(
+        app.windows[&window].chrome[0]
+            .surface
+            .animations
+            .indicator(Some(&key), Instant::now()),
+        0.0
+    );
+}
+
+#[test]
+fn a_scroll_s_events_keep_the_timer_of_its_indicator() {
+    let (mut fake, mut app, window, _) = widgets(reader(""));
+    let key = lokyr_kernel::plugins::view::Key::from("rows");
+    let scroll = |app: &mut App, fake: &mut Fake| {
+        app.windows.get_mut(&window).unwrap().chrome[0]
+            .surface
+            .animations
+            .scrolled(&key, Instant::now());
+        app.wake_for_tooltips(fake);
+    };
+    scroll(&mut app, &mut fake);
+    let (timer, at) = app.tooltip_timer.expect("the indicator's timer");
+    let timers = fake.timers().count();
+    // Later events move the fade later, and keep the timer, which comes
+    // first.
+    for _ in 0..5 {
+        scroll(&mut app, &mut fake);
+    }
+    assert_eq!(app.tooltip_timer, Some((timer, at)));
+    assert_eq!(fake.timers().count(), timers);
+    // As it fires, the timer of the last scroll's fade.
+    fake.fire_timers(&mut app, at);
+    let (later, next) = app.tooltip_timer.expect("the next timer");
+    assert_ne!(later, timer);
+    assert!(next > at);
+}

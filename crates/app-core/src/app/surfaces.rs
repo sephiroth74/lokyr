@@ -708,8 +708,13 @@ impl<B: Backend> App<B> {
             })
             .flatten()
             .min();
-        if self.tooltip_timer.map(|(_, at)| at) == deadline {
-            return;
+        // A timer that comes first stays, as its firing keeps the timer at
+        // the next time due: a scroll that moves its indicator's fade later
+        // at each of its events starts no timer of its own.
+        match (self.tooltip_timer, deadline) {
+            (Some((_, at)), Some(deadline)) if at <= deadline => return,
+            (None, None) => return,
+            _ => {}
         }
         if let Some((timer, _)) = self.tooltip_timer.take() {
             platform.cancel_timer(timer);
@@ -721,7 +726,8 @@ impl<B: Backend> App<B> {
 
     /// The tooltips' timer fired: those whose time came show, and the
     /// scroll's indicators whose time came start to fade, of the frames
-    /// that the fade asks.
+    /// that the fade asks, or go, of a frame, where the system reduces
+    /// motion or the timer came past their fade.
     pub(super) fn tooltips_due(&mut self, platform: &mut dyn Platform) {
         self.tooltip_timer = None;
         let now = Instant::now();
@@ -730,6 +736,7 @@ impl<B: Backend> App<B> {
             for view in &mut state.chrome {
                 shown |= view.surface.tooltip.tick(now);
                 shown |= view.surface.animations.running(now);
+                shown |= view.surface.animations.indicators_due(now);
             }
             if shown {
                 platform.request_frame(window);

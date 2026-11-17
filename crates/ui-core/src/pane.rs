@@ -1,6 +1,8 @@
 //! A pane's grid of cells, as a display list draws it, from a snapshot of
 //! its terminal.
 
+use std::collections::{BTreeMap, HashSet};
+
 use lokyr_render_core::{
     AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Rect,
     Shape, Texture,
@@ -373,7 +375,8 @@ pub fn decorate(batch: &mut CellBatch, snapshot: &Snapshot, cell: &CellMetrics) 
 /// [`cells_with`] laid it out: each decoration's label once, over the
 /// first cells of its first span that the view shows, one a character, of
 /// `colors`' background in place of theirs and its letters in place of
-/// their text; what goes past the right edge is left out.
+/// their text; what goes past the right edge is left out. Of one pass over
+/// the glyphs and the lines, whatever the labels.
 pub fn labels(
     batch: &mut CellBatch,
     snapshot: &Snapshot,
@@ -382,16 +385,22 @@ pub fn labels(
     glyphs: &mut dyn Glyphs,
 ) {
     let columns = batch.columns;
-    let mut drawn: Vec<u64> = Vec::new();
+    let index =
+        |row: u16, column: u16| usize::from(row) * usize::from(columns) + usize::from(column);
+    let mut drawn: HashSet<u64> = HashSet::new();
+    // The cells that the labels take, of their letters, a later label's in
+    // place of an earlier one's, and the columns that they take of each
+    // row, which the lines across them leave.
+    let mut letters: BTreeMap<usize, Option<CellGlyph>> = BTreeMap::new();
+    let mut cuts: BTreeMap<u16, Vec<std::ops::Range<u16>>> = BTreeMap::new();
     let mut text = String::new();
     for span in snapshot.decorations() {
         let Some(label) = span.look.label else {
             continue;
         };
-        if span.row >= batch.rows || span.first >= columns || drawn.contains(&span.id) {
+        if span.row >= batch.rows || span.first >= columns || !drawn.insert(span.id) {
             continue;
         }
-        drawn.push(span.id);
         let row = span.row;
         for (at, &character) in label.chars().iter().enumerate() {
             let Some(column) = u16::try_from(at)
@@ -401,11 +410,7 @@ pub fn labels(
             else {
                 break;
             };
-            batch
-                .glyphs
-                .retain(|glyph| glyph.row != row || glyph.column != column);
-            let index = usize::from(row) * usize::from(columns) + usize::from(column);
-            batch.backgrounds[index] = colors.background;
+            batch.backgrounds[index(row, column)] = colors.background;
             text.clear();
             text.push(character);
             let shown = CellText {
@@ -414,8 +419,10 @@ pub fn labels(
                 wide: false,
                 dark: luma(colors.background) < luma(colors.foreground),
             };
-            if let Some(found) = glyphs.glyph(&shown).filter(|found| found.region.width > 0) {
-                batch.glyphs.push(CellGlyph {
+            let letter = glyphs
+                .glyph(&shown)
+                .filter(|found| found.region.width > 0)
+                .map(|found| CellGlyph {
                     column,
                     row,
                     region: found.region,
@@ -424,11 +431,21 @@ pub fn labels(
                     color: colors.foreground,
                     smoothed: found.smoothed,
                 });
-            }
+            letters.insert(index(row, column), letter);
         }
         let end = span.first + u16::from(label.len).min(columns - span.first);
-        cut_lines(batch, row, span.first..end);
+        cuts.entry(row).or_default().push(span.first..end);
     }
+    if letters.is_empty() {
+        return;
+    }
+    batch.glyphs.retain(|glyph| {
+        glyph.row >= batch.rows
+            || glyph.column >= columns
+            || !letters.contains_key(&index(glyph.row, glyph.column))
+    });
+    batch.glyphs.extend(letters.into_values().flatten());
+    cut_lines_of(batch, &mut cuts);
 }
 
 /// The style of a label's letters: bold.
@@ -908,23 +925,46 @@ fn resolved(which: page::Color, colors: &Colors) -> Option<Color> {
 /// Takes the cells of `columns` on `row` out of `batch`'s lines: those
 /// that a composition covers, whose text it hides.
 fn cut_lines(batch: &mut CellBatch, row: u16, columns: std::ops::Range<u16>) {
+    let mut cuts = BTreeMap::from([(row, vec![columns])]);
+    cut_lines_of(batch, &mut cuts);
+}
+
+/// Takes the columns of `cuts`, of each row, away from `batch`'s lines
+/// across them, as a label's or a composition's cells show no line: a line
+/// that a cut meets keeps its parts before and after it. Of one pass over
+/// the lines.
+fn cut_lines_of(batch: &mut CellBatch, cuts: &mut BTreeMap<u16, Vec<std::ops::Range<u16>>>) {
+    for row in cuts.values_mut() {
+        row.sort_unstable_by_key(|cut| cut.start);
+    }
     let lines = std::mem::take(&mut batch.lines);
     for line in lines {
-        let end = line.column + line.columns;
-        if line.row != row || end <= columns.start || line.column >= columns.end {
+        let Some(row) = cuts.get(&line.row) else {
             batch.lines.push(line);
             continue;
+        };
+        let end = line.column + line.columns;
+        let mut start = line.column;
+        for cut in row {
+            if cut.start >= end {
+                break;
+            }
+            if cut.end <= start {
+                continue;
+            }
+            if cut.start > start {
+                batch.lines.push(CellLine {
+                    column: start,
+                    columns: cut.start - start,
+                    ..line
+                });
+            }
+            start = cut.end;
         }
-        if line.column < columns.start {
+        if start < end {
             batch.lines.push(CellLine {
-                columns: columns.start - line.column,
-                ..line
-            });
-        }
-        if end > columns.end {
-            batch.lines.push(CellLine {
-                column: columns.end,
-                columns: end - columns.end,
+                column: start,
+                columns: end - start,
                 ..line
             });
         }
@@ -2692,6 +2732,126 @@ mod tests {
             .map(|glyph| (glyph.column, glyph.color))
             .collect();
         assert_eq!(row, [(5, colors.foreground), (6, colors.foreground)]);
+    }
+
+    #[test]
+    fn labels_over_each_other_show_the_later_s_letters_and_cut_the_lines_once() {
+        use lokyr_vt_core::parser::Parser;
+        use lokyr_vt_core::terminal::{Label, Look, Options, Snapshot, Terminal};
+
+        let mut terminal = Terminal::new(8, 1, Options::default());
+        Parser::new().advance(&mut terminal, b"abcdefgh");
+        let look = |label: &str| Look {
+            underline: page::Underline::Single,
+            label: Some(Label::new(label)),
+            ..Look::default()
+        };
+        // An underline across the row, under labels at 1 and at 2, the
+        // second over the first's second cell, and one at 5.
+        assert!(terminal.decorate(
+            1,
+            (0, 0),
+            (7, 0),
+            Look {
+                underline: page::Underline::Single,
+                ..Look::default()
+            }
+        ));
+        assert!(terminal.decorate(2, (1, 0), (2, 0), look("ab")));
+        assert!(terminal.decorate(3, (2, 0), (3, 0), look("cd")));
+        assert!(terminal.decorate(4, (5, 0), (5, 0), look("e")));
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let mut asked = Vec::new();
+        let mut batch = cells(&shown, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        decorate(&mut batch, &shown, &cell());
+        let colors = LabelColors {
+            background: Color::from_rgb8(0, 0x7a, 0xff),
+            foreground: Color::from_rgb8(0xff, 0xff, 0xff),
+        };
+        labels(&mut batch, &shown, &cell(), colors, &mut atlas(&mut asked));
+        // A glyph a cell, the labels' of their color at 1 to 3 and 5.
+        let mut laid: Vec<(u16, bool)> = batch
+            .glyphs
+            .iter()
+            .map(|glyph| (glyph.column, glyph.color == colors.foreground))
+            .collect();
+        laid.sort_unstable();
+        assert_eq!(
+            laid,
+            [
+                (0, false),
+                (1, true),
+                (2, true),
+                (3, true),
+                (4, false),
+                (5, true),
+                (6, false),
+                (7, false)
+            ]
+        );
+        // The lines' parts out of the labels' cells: the row's underline,
+        // and each label's own, which its letters cover whole.
+        let mut lines: Vec<(u16, u16)> = batch
+            .lines
+            .iter()
+            .map(|line| (line.column, line.columns))
+            .collect();
+        lines.sort_unstable();
+        assert_eq!(lines, [(0, 1), (4, 1), (6, 2)]);
+    }
+
+    #[test]
+    fn the_labels_of_a_screen_of_hints_take_a_pass() {
+        use lokyr_vt_core::parser::Parser;
+        use lokyr_vt_core::terminal::{Label, Look, Options, Snapshot, Terminal};
+
+        // A grid of 200 columns by 60 rows of text, of 676 hints of a
+        // label of two letters and an underline each.
+        let mut terminal = Terminal::new(200, 60, Options::default());
+        let row = "x".repeat(200);
+        for _ in 0..59 {
+            Parser::new().advance(&mut terminal, row.as_bytes());
+        }
+        Parser::new().advance(&mut terminal, &row.as_bytes()[..199]);
+        for id in 0..676_u64 {
+            let at = u16::try_from(id).unwrap();
+            let (column, row) = ((at % 16) * 12, at / 16);
+            let look = Look {
+                underline: page::Underline::Single,
+                label: Some(Label::new("ka")),
+                ..Look::default()
+            };
+            assert!(terminal.decorate(
+                id + 1,
+                (column, i64::from(row)),
+                (column + 8, i64::from(row)),
+                look
+            ));
+        }
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let mut asked = Vec::new();
+        let mut batch = cells(&shown, &cell(), 0, 0, None, None, &mut atlas(&mut asked));
+        decorate(&mut batch, &shown, &cell());
+        let colors = LabelColors {
+            background: Color::from_rgb8(0, 0x7a, 0xff),
+            foreground: Color::from_rgb8(0xff, 0xff, 0xff),
+        };
+        let start = std::time::Instant::now();
+        labels(&mut batch, &shown, &cell(), colors, &mut atlas(&mut asked));
+        let took = start.elapsed();
+        let lettered = batch
+            .glyphs
+            .iter()
+            .filter(|glyph| glyph.color == colors.foreground)
+            .count();
+        assert_eq!(lettered, 676 * 2);
+        assert_eq!(batch.glyphs.len(), 200 * 60 - 1);
+        // Within a millisecond of an optimized build, and a debug build's
+        // slack.
+        let most = if cfg!(debug_assertions) { 60 } else { 1 };
+        assert!(took.as_millis() < most, "{took:?}");
     }
 
     #[test]

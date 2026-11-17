@@ -170,9 +170,15 @@ impl Animations {
         let rendered = self.revision != Some(tree.revision());
         self.revision = Some(tree.revision());
         self.reduced = reduced;
-        // The indicators that faded leave nothing behind.
+        // The indicators that faded leave nothing behind, at their time
+        // where the system reduces motion, which fades none.
+        let fades = if reduced {
+            Duration::ZERO
+        } else {
+            INDICATOR_FADES
+        };
         self.scrolls
-            .retain(|_, scrolled| now < *scrolled + INDICATOR_SHOWS + INDICATOR_FADES);
+            .retain(|_, scrolled| now < *scrolled + INDICATOR_SHOWS + fades);
         if rendered {
             self.hoverable.clear();
             self.pressable.clear();
@@ -312,6 +318,18 @@ impl Animations {
             .map(|scrolled| *scrolled + INDICATOR_SHOWS)
             .filter(|&due| due > now)
             .min()
+    }
+
+    /// Whether a scroll's indicator whose time came at `now` may show as
+    /// the last frame drew it, which the next frame fades or takes away:
+    /// as its fade starts, as the system reduces motion, which takes it
+    /// away at its time, and as a host's timer comes late, past its fade.
+    pub fn indicators_due(&self, now: Instant) -> bool {
+        !self.always_indicators
+            && self
+                .scrolls
+                .values()
+                .any(|scrolled| now >= *scrolled + INDICATOR_SHOWS)
     }
 
     /// Whether a scroll's indicator fades at `now`.

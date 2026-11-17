@@ -355,7 +355,15 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "process-read",
+      "decorate",
+      "pane-view",
+      "open",
+      "clipboard-write",
+      "pty-write"
+    ],
     "category": "view",
     "name": "links.hints-action",
     "params": [

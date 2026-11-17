@@ -4954,8 +4954,6 @@ impl<B: Backend> App<B> {
         self.appearance_changed(platform, appearance);
     }
 
-    /// The app's appearance is `appearance`: the panes take its theme's
-    /// variant, every pane of every tab, and the windows draw again.
     /// Follows a closed tab that came back, of `panes`: what their sessions
     /// told while they were kept, which no look took, is looked at as their
     /// wakes come, and they take the theme's colors of now where theirs
@@ -4973,6 +4971,8 @@ impl<B: Backend> App<B> {
         platform.waker().wake();
     }
 
+    /// The app's appearance is `appearance`: the panes take its theme's
+    /// variant, every pane of every tab, and the windows draw again.
     fn appearance_changed(&mut self, platform: &mut dyn Platform, appearance: Appearance) {
         // The plugins that read the theme's tokens read them anew.
         self.plugins.post(plugins::Event::ThemeChanged);
