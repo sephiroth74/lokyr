@@ -13,9 +13,19 @@ command-tabs-set-color = Imposta colore del tab
 command-tabs-detach = Sposta tab in una nuova finestra
 command-tabs-toggle-pin = Fissa tab
 command-tabs-reopen = Riapri tab chiuso
+command-tabs-new-group = Nuovo gruppo con il tab
+command-tabs-add-to-group = Aggiungi il tab a un gruppo
+command-tabs-remove-from-group = Togli il tab dal gruppo
+command-tabs-rename-group = Rinomina gruppo…
+command-tabs-set-group-color = Imposta colore del gruppo
+command-tabs-fold-group = Comprimi gruppo
+command-tabs-ungroup = Sciogli gruppo
 
 rename-message = Il titolo del tab
 rename-detail = Lascialo vuoto per quello del tab: il titolo del suo programma, o la sua cartella.
+
+group-rename-message = Il nome del gruppo
+group-rename-detail = Lascialo vuoto per un gruppo senza nome.
 
 bar-new-tab = Nuovo tab
 bar-close-tab = Chiudi tab
@@ -24,6 +34,8 @@ bar-group = Gruppo
 bar-untitled = Tab { $index }
 bar-close-others = Chiudi gli altri tab
 menu-unpin = Sblocca tab
+menu-add-group = Aggiungi al gruppo
+menu-unfold-group = Espandi gruppo
 
 menu-color = Colore
 menu-color-red = Rosso

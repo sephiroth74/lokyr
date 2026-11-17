@@ -73,6 +73,30 @@ const TOGGLE_PIN: &str = "tabs.toggle-pin";
 /// `reopen-seconds`.
 const REOPEN: &str = "tabs.reopen";
 
+/// Makes a group of the focused tab alone, of a system color that the
+/// window's groups have not, and asks for its name.
+const NEW_GROUP: &str = "tabs.new-group";
+
+/// Puts the focused tab at the end of the group of its `group` id; of none,
+/// the nearest group before it, or after it.
+const ADD_TO_GROUP: &str = "tabs.add-to-group";
+
+/// Takes the focused tab out of its group.
+const REMOVE_FROM_GROUP: &str = "tabs.remove-from-group";
+
+/// Gives the focused tab's group its `title`, or asks for one without it.
+const RENAME_GROUP: &str = "tabs.rename-group";
+
+/// Gives the focused tab's group its `color`, as `#rrggbb`, or none with an
+/// empty one.
+const SET_GROUP_COLOR: &str = "tabs.set-group-color";
+
+/// Folds the focused tab's group, the window showing the tab after it.
+const FOLD_GROUP: &str = "tabs.fold-group";
+
+/// Takes the focused tab's group apart.
+const UNGROUP: &str = "tabs.ungroup";
+
 /// The plugin's catalogs, of its commands' titles and its question's
 /// texts.
 /// A tab's context menu, a panel, and its items' keys; and the message of
@@ -87,6 +111,23 @@ const MENU_CLOSE_OTHERS: &str = "menu-close-others";
 /// items' keys' start, and the item of no color.
 const MENU_COLOR: &str = "menu-color";
 const MENU_COLOR_NONE: &str = "menu-color-none";
+/// The context menu's items of the tab's group: a new one, its leave, and
+/// the submenu of the window's other groups, whose items' keys end in
+/// their ids.
+const MENU_NEW_GROUP: &str = "menu-new-group";
+const MENU_REMOVE_GROUP: &str = "menu-remove-group";
+const MENU_ADD_GROUP: &str = "menu-add-group";
+
+/// A group's pill's context menu, a panel, and its items' keys: its
+/// rename, its colors, its fold and its taking apart.
+const GROUP_MENU: &str = "group-menu";
+const GROUP_RENAME: &str = "group-menu-rename";
+const GROUP_COLOR: &str = "group-menu-color";
+const GROUP_COLOR_NONE: &str = "group-menu-color-none";
+const GROUP_FOLD: &str = "group-menu-fold";
+const GROUP_UNGROUP: &str = "group-menu-ungroup";
+/// The message of the group menu's item that unfolds a folded group.
+const MENU_UNFOLD: &str = "menu-unfold-group";
 
 /// A color of a tab's context menu: its name, of its item's key and its
 /// message, its English title, the dot before it, as a menu of the system's
@@ -142,7 +183,7 @@ type Spec = (
 );
 
 /// The commands, in the order of the menus.
-fn commands() -> [Spec; 13] {
+fn commands() -> [Spec; 20] {
     let empty = || Some(Value::String(String::new()));
     [
         (NEW, "New Tab", None),
@@ -166,6 +207,25 @@ fn commands() -> [Spec; 13] {
         (DETACH, "Move Tab to New Window", None),
         (TOGGLE_PIN, "Pin Tab", None),
         (REOPEN, "Reopen Closed Tab", None),
+        (NEW_GROUP, "New Group with Tab", None),
+        (
+            ADD_TO_GROUP,
+            "Add Tab to Group",
+            Some(("group", Kind::Integer, Some(Value::Integer(0)))),
+        ),
+        (REMOVE_FROM_GROUP, "Remove Tab from Group", None),
+        (
+            RENAME_GROUP,
+            "Rename Group…",
+            Some(("title", Kind::String, empty())),
+        ),
+        (
+            SET_GROUP_COLOR,
+            "Set Group Color",
+            Some(("color", Kind::String, None)),
+        ),
+        (FOLD_GROUP, "Fold Group", None),
+        (UNGROUP, "Ungroup", None),
     ]
 }
 
@@ -214,6 +274,11 @@ pub fn tab_bar(
 #[derive(Debug, Default)]
 pub struct Tabs {
     renaming: BTreeMap<u64, (TabId, String)>,
+    /// The groups whose names it asked the user for, by their questions,
+    /// and the name that it asked with.
+    naming: BTreeMap<u64, (GroupId, String)>,
+    /// The group whose pill's context menu is open, of its window.
+    group_menu: Option<(WindowId, GroupId)>,
     /// The tab whose context menu is open, of its window.
     menu: Option<(WindowId, TabId)>,
     settings: Settings,
@@ -294,6 +359,9 @@ impl Plugin for Tabs {
         if *view == ViewId::Panel(PanelId::from(MENU)) {
             return Some(self.menu_tree(cx));
         }
+        if *view == ViewId::Panel(PanelId::from(GROUP_MENU)) {
+            return Some(self.group_menu_tree(cx));
+        }
         let node = self.tree(cx, view);
         if let ViewId::TabBar(window) = view {
             self.place_window(cx, *window);
@@ -323,6 +391,12 @@ impl Plugin for Tabs {
                 return Ok(());
             }
             return self.chosen(cx, key);
+        }
+        if event.view == ViewId::Panel(PanelId::from(GROUP_MENU)) {
+            if !matches!(event.kind, UiEventKind::Click | UiEventKind::Toggle { .. }) {
+                return Ok(());
+            }
+            return self.group_chosen(cx, key);
         }
         let ViewId::TabBar(window) = &event.view else {
             return Ok(());
@@ -397,6 +471,21 @@ impl Plugin for Tabs {
                     Some(shown) => self.rename(cx, window, &shown, &Args::new()),
                     None => Ok(()),
                 }
+            }
+            (UiEventKind::ContextMenu, _) if let Some(id) = id("group-") => {
+                self.group_menu = Some((window, GroupId(id)));
+                let _ = cx.close_panel(GROUP_MENU);
+                cx.open_panel(
+                    GROUP_MENU,
+                    PanelOptions {
+                        anchor: Anchor::Pointer(window),
+                        role: Role::Menu,
+                        close_outside: true,
+                        close_escape: true,
+                        takes_keys: false,
+                        close_typing: false,
+                    },
+                )
             }
             (UiEventKind::ContextMenu, Some(tab)) => {
                 self.menu = Some((window, tab));
@@ -488,6 +577,52 @@ impl Plugin for Tabs {
             }
             DETACH if tabs.len() > 1 => cx.tab_to_new_window(tab.id),
             DETACH => Ok(()),
+            NEW_GROUP if !tab.pinned => self.new_group(cx, window, tab.id),
+            ADD_TO_GROUP if !tab.pinned => {
+                let asked = integer(&args, "group");
+                let group = match u64::try_from(asked).ok().filter(|&id| id > 0) {
+                    Some(id) => Some(GroupId(id)),
+                    // The nearest group before it, or after it.
+                    None => tabs[..at]
+                        .iter()
+                        .rev()
+                        .chain(&tabs[at + 1..])
+                        .find_map(|other| other.group.filter(|&id| Some(id) != tab.group)),
+                };
+                match group {
+                    Some(group) => cx.add_to_group(tab.id, group),
+                    None => Ok(()),
+                }
+            }
+            NEW_GROUP | ADD_TO_GROUP => Ok(()),
+            REMOVE_FROM_GROUP | RENAME_GROUP | SET_GROUP_COLOR | FOLD_GROUP | UNGROUP => {
+                let Some(group) = tab.group else {
+                    return Ok(());
+                };
+                match name {
+                    REMOVE_FROM_GROUP => cx.remove_from_group(tab.id),
+                    RENAME_GROUP => self.rename_group(cx, window, group, &args),
+                    SET_GROUP_COLOR => {
+                        let text = match args.get("color") {
+                            Some(Value::String(text)) => text.trim(),
+                            _ => "",
+                        };
+                        let color = if text.is_empty() {
+                            None
+                        } else {
+                            Some(color(text).ok_or_else(|| {
+                                Error::new(
+                                    Code::Failed,
+                                    format!("`{text}` is not a color, as `#ff8800`"),
+                                )
+                            })?)
+                        };
+                        cx.set_group_color(group, color)
+                    }
+                    FOLD_GROUP => cx.fold_group(group, true),
+                    _ => cx.ungroup(group),
+                }
+            }
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("tabs has no command `{name}`"),
@@ -503,6 +638,18 @@ impl Plugin for Tabs {
         let mut shown = Vec::new();
         for event in events {
             match event {
+                // A group's name, which it asked for, empty for none; none
+                // leaves it as it was.
+                Event::Answered { id, text } if self.naming.contains_key(id) => {
+                    let (Some((group, asked)), Some(text)) = (self.naming.remove(id), text) else {
+                        continue;
+                    };
+                    let name = text.trim();
+                    if name != asked.trim() {
+                        // A group that went meanwhile takes nothing.
+                        let _ = cx.rename_group(group, name);
+                    }
+                }
                 Event::Answered { id, text } => {
                     let (Some((tab, asked)), Some(text)) = (self.renaming.remove(id), text) else {
                         continue;
@@ -689,6 +836,11 @@ impl Tabs {
                 .find(|shown| shown.id == tab)
         });
         let pinned = current.as_ref().is_some_and(|shown| shown.pinned);
+        let own_group = current.as_ref().and_then(|shown| shown.group);
+        let groups = self
+            .menu
+            .and_then(|(window, _)| cx.groups(window).ok())
+            .unwrap_or_default();
         let current = current.and_then(|shown| shown.color);
         let mut title = |id: &str, english: &str| {
             cx.message(id, &[])
@@ -719,15 +871,193 @@ impl Tabs {
         } else {
             title("command-tabs-toggle-pin", "Pin Tab")
         };
-        Node::container(vec![
+        // Its group's items, of no pinned tab: a new group or its leave,
+        // and the window's other groups to go to.
+        let mut grouping = Vec::new();
+        if !pinned {
+            grouping.push(Node::separator());
+            match own_group {
+                Some(_) => grouping.push(
+                    Node::button(title(
+                        "command-tabs-remove-from-group",
+                        "Remove Tab from Group",
+                    ))
+                    .key(MENU_REMOVE_GROUP),
+                ),
+                None => grouping.push(
+                    Node::button(title("command-tabs-new-group", "New Group with Tab"))
+                        .key(MENU_NEW_GROUP),
+                ),
+            }
+            let unnamed = title(GROUP, "Group");
+            let others: Vec<Node> = groups
+                .iter()
+                .filter(|group| Some(group.id) != own_group)
+                .map(|group| {
+                    let name = if group.name.is_empty() {
+                        unnamed.clone()
+                    } else {
+                        group.name.clone()
+                    };
+                    Node::button(name).key(format!("{MENU_ADD_GROUP}-{}", group.id.0).as_str())
+                })
+                .collect();
+            if !others.is_empty() {
+                let mut submenu = vec![Node::text(title(MENU_ADD_GROUP, "Add to Group"))];
+                submenu.extend(others);
+                grouping.push(Node::container(submenu));
+            }
+        }
+        let mut items = vec![
             Node::button(pin).key(MENU_PIN),
             Node::button(title("command-tabs-rename", "Rename Tab…")).key(MENU_RENAME),
             Node::container(colors),
             Node::button(title("command-tabs-detach", "Move Tab to New Window")).key(MENU_DETACH),
+        ];
+        items.extend(grouping);
+        items.extend([
             Node::separator(),
             Node::button(title("command-tabs-close", "Close Tab")).key(MENU_CLOSE),
             Node::button(title(CLOSE_OTHERS, "Close Other Tabs")).key(MENU_CLOSE_OTHERS),
+        ]);
+        Node::container(items)
+    }
+
+    /// The context menu of a group's pill: its rename, its color, its fold
+    /// and its taking apart, of their titles in the language shown.
+    fn group_menu_tree(&self, cx: &mut Cx<'_>) -> Node {
+        let group = self.group_menu.and_then(|(window, group)| {
+            cx.groups(window)
+                .ok()?
+                .into_iter()
+                .find(|shown| shown.id == group)
+        });
+        let folded = group.as_ref().is_some_and(|shown| shown.folded);
+        let current = group.and_then(|shown| shown.color);
+        let mut title = |id: &str, english: &str| {
+            cx.message(id, &[])
+                .ok()
+                .filter(|text| text != id)
+                .unwrap_or_else(|| english.to_owned())
+        };
+        let ticked = |label: String, on: bool, key: &str| {
+            Node::new(view::Kind::Toggle(view::Toggle {
+                label,
+                on,
+                ..view::Toggle::default()
+            }))
+            .key(key)
+        };
+        let mut colors = vec![Node::text(title(MENU_COLOR, "Color"))];
+        for (name, english, dot, (red, green, blue)) in COLORS {
+            let label = format!("{dot} {}", title(&format!("{MENU_COLOR}-{name}"), english));
+            let on = current == Some(Color::Rgb(red, green, blue));
+            colors.push(ticked(label, on, &format!("{GROUP_COLOR}-{name}")));
+        }
+        colors.push(Node::separator());
+        let none = title(MENU_COLOR_NONE, "No Color");
+        colors.push(ticked(none, current.is_none(), GROUP_COLOR_NONE));
+        let fold = if folded {
+            title(MENU_UNFOLD, "Unfold Group")
+        } else {
+            title("command-tabs-fold-group", "Fold Group")
+        };
+        Node::container(vec![
+            Node::button(title("command-tabs-rename-group", "Rename Group…")).key(GROUP_RENAME),
+            Node::container(colors),
+            Node::button(fold).key(GROUP_FOLD),
+            Node::separator(),
+            Node::button(title("command-tabs-ungroup", "Ungroup")).key(GROUP_UNGROUP),
         ])
+    }
+
+    /// The item `key` of a group's pill's context menu, chosen: of the
+    /// group that the menu opened over, if it is there still.
+    fn group_chosen(&mut self, cx: &mut Cx<'_>, key: &str) -> Result<(), Error> {
+        let Some((window, group)) = self.group_menu.take() else {
+            return Ok(());
+        };
+        let _ = cx.close_panel(GROUP_MENU);
+        let Some(shown) = cx
+            .groups(window)?
+            .into_iter()
+            .find(|shown| shown.id == group)
+        else {
+            return Ok(());
+        };
+        match key {
+            GROUP_RENAME => self.rename_group(cx, window, group, &Args::new()),
+            GROUP_FOLD => cx.fold_group(group, !shown.folded),
+            GROUP_UNGROUP => cx.ungroup(group),
+            GROUP_COLOR_NONE => cx.set_group_color(group, None),
+            _ => match COLORS.iter().find(|(name, ..)| {
+                key.strip_prefix(GROUP_COLOR)
+                    .and_then(|rest| rest.strip_prefix('-'))
+                    == Some(name)
+            }) {
+                Some(&(.., (red, green, blue))) => {
+                    cx.set_group_color(group, Some(Color::Rgb(red, green, blue)))
+                }
+                None => Ok(()),
+            },
+        }
+    }
+
+    /// Makes a group of `tab` alone, in `window`, of the first of the
+    /// system's colors that none of the window's groups has, and asks for
+    /// its name, unless another question waits.
+    fn new_group(&mut self, cx: &mut Cx<'_>, window: WindowId, tab: TabId) -> Result<(), Error> {
+        let taken: Vec<Option<Color>> = cx
+            .groups(window)?
+            .into_iter()
+            .map(|group| group.color)
+            .collect();
+        let free = COLORS
+            .iter()
+            .map(|&(.., (red, green, blue))| Color::Rgb(red, green, blue))
+            .find(|color| !taken.contains(&Some(*color)))
+            .unwrap_or(Color::Rgb(COLORS[0].3.0, COLORS[0].3.1, COLORS[0].3.2));
+        let group = cx.new_group(&[tab], "", Some(free))?;
+        self.ask_group_name(cx, window, group, "");
+        Ok(())
+    }
+
+    /// Gives `group` the `title` of `args`, or asks for one without it.
+    fn rename_group(
+        &mut self,
+        cx: &mut Cx<'_>,
+        window: WindowId,
+        group: GroupId,
+        args: &Args,
+    ) -> Result<(), Error> {
+        let title = match args.get("title") {
+            Some(Value::String(title)) => title.trim(),
+            _ => "",
+        };
+        if !title.is_empty() {
+            return cx.rename_group(group, title);
+        }
+        let name = cx
+            .groups(window)?
+            .into_iter()
+            .find(|shown| shown.id == group)
+            .map(|shown| shown.name)
+            .unwrap_or_default();
+        self.ask_group_name(cx, window, group, &name);
+        Ok(())
+    }
+
+    /// Asks for `group`'s name, which is `name` now, in `window`; nothing
+    /// while another question waits.
+    fn ask_group_name(&mut self, cx: &mut Cx<'_>, window: WindowId, group: GroupId, name: &str) {
+        if let Ok(id) = cx.ask_text(
+            Some(window),
+            "group-rename-message",
+            "group-rename-detail",
+            name,
+        ) {
+            self.naming.insert(id, (group, name.to_owned()));
+        }
     }
 
     /// The item `key` of a tab's context menu, chosen: of the tab that the
@@ -757,6 +1087,15 @@ impl Tabs {
                 Ok(())
             }
             MENU_COLOR_NONE => cx.set_tab_color(tab, None),
+            MENU_NEW_GROUP if !shown.pinned => self.new_group(cx, window, tab),
+            MENU_REMOVE_GROUP => cx.remove_from_group(tab),
+            _ if let Some(id) = key
+                .strip_prefix(MENU_ADD_GROUP)
+                .and_then(|rest| rest.strip_prefix('-'))
+                .and_then(|id| id.parse::<u64>().ok()) =>
+            {
+                cx.add_to_group(tab, GroupId(id))
+            }
             _ => match COLORS.iter().find(|(name, ..)| {
                 key.strip_prefix(MENU_COLOR)
                     .and_then(|rest| rest.strip_prefix('-'))

@@ -14,10 +14,21 @@ command-tabs-set-color = Set Tab Color
 command-tabs-detach = Move Tab to New Window
 command-tabs-toggle-pin = Pin Tab
 command-tabs-reopen = Reopen Closed Tab
+command-tabs-new-group = New Group with Tab
+command-tabs-add-to-group = Add Tab to Group
+command-tabs-remove-from-group = Remove Tab from Group
+command-tabs-rename-group = Rename Group…
+command-tabs-set-group-color = Set Group Color
+command-tabs-fold-group = Fold Group
+command-tabs-ungroup = Ungroup
 
 # The question of a tab's title.
 rename-message = The tab's title
 rename-detail = Leave it empty for the tab's own: its program's title, or its folder.
+
+# The question of a group's name.
+group-rename-message = The group's name
+group-rename-detail = Leave it empty for a group of no name.
 
 # The bar's own texts: the button of a new tab's label and tooltip, a
 # tab's close button's label, what accessibility calls a pinned tab's pin
@@ -30,6 +41,8 @@ bar-group = Group
 bar-untitled = Tab { $index }
 bar-close-others = Close Other Tabs
 menu-unpin = Unpin Tab
+menu-add-group = Add to Group
+menu-unfold-group = Unfold Group
 
 # The context menu's submenu of the tab's color, macOS's system colors,
 # and of none.

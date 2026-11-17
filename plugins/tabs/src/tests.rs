@@ -90,6 +90,13 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             (DETACH, vec![]),
             (TOGGLE_PIN, vec![]),
             (REOPEN, vec![]),
+            (NEW_GROUP, vec![]),
+            (ADD_TO_GROUP, vec![("group", Kind::Integer, true)]),
+            (REMOVE_FROM_GROUP, vec![]),
+            (RENAME_GROUP, vec![("title", Kind::String, true)]),
+            (SET_GROUP_COLOR, vec![("color", Kind::String, false)]),
+            (FOLD_GROUP, vec![]),
+            (UNGROUP, vec![]),
         ]
     );
     // Each title of its own catalogs, English's and Italian's alike.
@@ -385,6 +392,7 @@ fn a_tab_s_middle_click_double_click_and_context_menu_act_on_it() {
             "menu-pin",
             "menu-rename",
             "menu-detach",
+            "menu-new-group",
             "menu-close",
             "menu-close-others"
         ]
@@ -1312,4 +1320,189 @@ fn a_tab_dragged_into_a_group_joins_it_out_of_it_leaves_it_and_a_click_folds_it(
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].tabs, [TabId(5), TabId(2)]);
     assert!(groups[0].folded);
+}
+
+#[test]
+fn the_menus_and_the_commands_of_groups_make_change_and_take_them_apart() {
+    let (mut host, mut plugin) = host(&[1, 1, 1], 1);
+    host.deliver(&mut plugin).unwrap();
+    let bar = ViewId::TabBar(WINDOW);
+    let tab_menu = ViewId::Panel(PanelId::from("tab-menu"));
+    let group_menu = ViewId::Panel(PanelId::from("group-menu"));
+    host.render(&mut plugin, &bar).expect("a bar of three tabs");
+    let on = |host: &mut FakeHost, plugin: &mut Tabs, view: &ViewId, key: &str, kind| {
+        host.take_done();
+        host.ui_event(
+            plugin,
+            &UiEvent {
+                view: view.clone(),
+                key: key.into(),
+                kind,
+            },
+        )
+        .unwrap();
+        host.take_done()
+            .into_iter()
+            .filter(|request| {
+                matches!(
+                    request,
+                    Request::NewGroup { .. }
+                        | Request::AddToGroup { .. }
+                        | Request::RemoveFromGroup(_)
+                        | Request::RenameGroup { .. }
+                        | Request::SetGroupColor { .. }
+                        | Request::FoldGroup { .. }
+                        | Request::Ungroup(_)
+                        | Request::AskText { .. }
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    // The first tab's menu makes a group of it, of the first system color,
+    // and asks for its name, which it takes.
+    on(
+        &mut host,
+        &mut plugin,
+        &bar,
+        "tab-1",
+        UiEventKind::ContextMenu,
+    );
+    let done = on(
+        &mut host,
+        &mut plugin,
+        &tab_menu,
+        "menu-new-group",
+        UiEventKind::Click,
+    );
+    let red = Color::Rgb(0xFF, 0x3B, 0x30);
+    assert!(
+        matches!(&done[..], [Request::NewGroup { tabs, name, color: Some(color) }, Request::AskText { .. }]
+            if tabs == &[TabId(1)] && name.is_empty() && *color == red),
+        "{done:?}"
+    );
+    let groups = host.groups(WINDOW);
+    let first = groups[0].id;
+    let asked = *plugin.naming.keys().next().unwrap();
+    host.post(Event::Answered {
+        id: asked,
+        text: Some("work".to_owned()),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.groups(WINDOW)[0].name, "work");
+    // The second tab's menu offers the group, which it joins; the palette's
+    // command takes it out again, and adds it to the nearest group.
+    host.render(&mut plugin, &bar).expect("a bar");
+    on(
+        &mut host,
+        &mut plugin,
+        &bar,
+        "tab-2",
+        UiEventKind::ContextMenu,
+    );
+    let menu = host.render(&mut plugin, &tab_menu).expect("the menu");
+    let add = format!("menu-add-group-{}", first.0);
+    let heading = menu
+        .children
+        .iter()
+        .find_map(|item| match item.children.first() {
+            Some(Node {
+                kind: view::Kind::Text(text),
+                ..
+            }) => Some(text.clone()),
+            _ => None,
+        });
+    assert!(
+        menu.children.iter().any(|item| item
+            .children
+            .iter()
+            .any(|child| child.key.as_ref().is_some_and(|key| key.0 == add))),
+        "{menu:?}"
+    );
+    assert!(heading.is_some());
+    assert_eq!(
+        on(&mut host, &mut plugin, &tab_menu, &add, UiEventKind::Click),
+        [Request::AddToGroup {
+            tab: TabId(2),
+            group: first
+        }]
+    );
+    host.focus(Some(PaneId(2)));
+    host.keyboard();
+    assert_eq!(
+        run(&mut host, &mut plugin, REMOVE_FROM_GROUP, Args::new()),
+        [Request::RemoveFromGroup(TabId(2))]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, ADD_TO_GROUP, Args::new()),
+        [Request::AddToGroup {
+            tab: TabId(2),
+            group: first
+        }]
+    );
+    // Its pill's menu renames it, colors it, folds it and takes it apart.
+    let pill = format!("group-{}", first.0);
+    let group_item = |host: &mut FakeHost, plugin: &mut Tabs, key: &str| {
+        on(host, plugin, &bar, &pill, UiEventKind::ContextMenu);
+        on(host, plugin, &group_menu, key, UiEventKind::Click)
+    };
+    assert!(matches!(
+        &group_item(&mut host, &mut plugin, "group-menu-rename")[..],
+        [Request::AskText { .. }]
+    ));
+    assert_eq!(
+        group_item(&mut host, &mut plugin, "group-menu-color-blue"),
+        [Request::SetGroupColor {
+            group: first,
+            color: Some(Color::Rgb(0x00, 0x7A, 0xFF))
+        }]
+    );
+    assert_eq!(
+        group_item(&mut host, &mut plugin, "group-menu-fold"),
+        [Request::FoldGroup {
+            group: first,
+            folded: true
+        }]
+    );
+    assert_eq!(
+        group_item(&mut host, &mut plugin, "group-menu-ungroup"),
+        [Request::Ungroup(first)]
+    );
+    assert!(host.groups(WINDOW).is_empty());
+    plugin.naming.clear();
+    // The palette's commands of the focused tab's group.
+    let group = host.add_group(&[TabId(2)], "ops", None);
+    host.focus(Some(PaneId(2)));
+    host.keyboard();
+    assert_eq!(
+        run(&mut host, &mut plugin, RENAME_GROUP, text("title", "build")),
+        [Request::RenameGroup {
+            group,
+            name: "build".to_owned()
+        }]
+    );
+    assert_eq!(
+        run(
+            &mut host,
+            &mut plugin,
+            SET_GROUP_COLOR,
+            text("color", "#ff8800")
+        ),
+        [Request::SetGroupColor {
+            group,
+            color: Some(Color::Rgb(0xff, 0x88, 0x00))
+        }]
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, FOLD_GROUP, Args::new()),
+        [Request::FoldGroup {
+            group,
+            folded: true
+        }]
+    );
+    host.focus(Some(PaneId(2)));
+    host.keyboard();
+    assert_eq!(
+        run(&mut host, &mut plugin, UNGROUP, Args::new()),
+        [Request::Ungroup(group)]
+    );
 }

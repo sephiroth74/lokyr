@@ -800,6 +800,23 @@
   {
     "capabilities": [],
     "category": "tabs",
+    "name": "tabs.add-to-group",
+    "params": [
+      {
+        "default": {
+          "integer": 0
+        },
+        "kind": "integer",
+        "name": "group"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Add Tab to Group",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
     "name": "tabs.close",
     "params": [],
     "plugin": "lokyr/tabs",
@@ -813,6 +830,15 @@
     "params": [],
     "plugin": "lokyr/tabs",
     "title": "Move Tab to New Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.fold-group",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Fold Group",
     "when": null
   },
   {
@@ -857,6 +883,15 @@
   {
     "capabilities": [],
     "category": "tabs",
+    "name": "tabs.new-group",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "New Group with Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
     "name": "tabs.next",
     "params": [],
     "plugin": "lokyr/tabs",
@@ -875,6 +910,15 @@
   {
     "capabilities": [],
     "category": "tabs",
+    "name": "tabs.remove-from-group",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Remove Tab from Group",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
     "name": "tabs.rename",
     "params": [
       {
@@ -887,6 +931,23 @@
     ],
     "plugin": "lokyr/tabs",
     "title": "Rename Tab…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.rename-group",
+    "params": [
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "title"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Rename Group…",
     "when": null
   },
   {
@@ -916,6 +977,21 @@
   {
     "capabilities": [],
     "category": "tabs",
+    "name": "tabs.set-group-color",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "color"
+      }
+    ],
+    "plugin": "lokyr/tabs",
+    "title": "Set Group Color",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
     "name": "tabs.switch",
     "params": [],
     "plugin": "lokyr/tabs",
@@ -938,6 +1014,15 @@
     "params": [],
     "plugin": "lokyr/tabs",
     "title": "Pin Tab",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "tabs",
+    "name": "tabs.ungroup",
+    "params": [],
+    "plugin": "lokyr/tabs",
+    "title": "Ungroup",
     "when": null
   },
   {
