@@ -232,3 +232,19 @@ Versions and maturity must be rechecked when coding starts.
 | IPC socket | `$TMPDIR/lokyr-<uid>/` | `$XDG_RUNTIME_DIR/lokyr/` |
 
 On macOS too the config lives in `~/.config`, so it can be versioned with dotfiles, as Ghostty, Alacritty and kitty do.
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| **Kernel** | The core of the app. It owns the data model (windows, tabs, layouts, panes, sessions), commands, keymap, events, config and fast services. It decides nothing about how things look |
+| **First-party plugin** | One of our own plugins, statically linked into the binary. It uses only the public SDK |
+| **Third-party plugin** | A Luau plugin loaded from disk. It runs in its own sandboxed VM, with explicit capabilities |
+| **Distribution** | The list of first-party plugins compiled into the app (`dist/*.toml`) |
+| **Chrome** | Everything visible besides the terminal text: tab bar, dividers, find bar, palette |
+| **Pane** | An area that shows one terminal. A tab holds one or more panes, arranged by the layout tree |
+| **Session** | The PTY, the child process and the VT state of a pane |
+| **Pin** | A stable reference to a position in the grid. It stays valid across scrolling and reflow |
+| **Capability** | A permission that a third-party plugin must declare and that must be granted to it (e.g. `terminal-read`) |
+| **Slot** | A place in the UI where a plugin can render a view tree (e.g. `tab-bar`) |
+| **HostApi** | The plugin API: the requests, responses and events of `plugin-sdk`'s `message` module, which the kernel serves through `host::Host`. Both front ends, Rust's `Cx` and Luau's bindings, make its requests |

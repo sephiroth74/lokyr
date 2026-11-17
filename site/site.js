@@ -73,3 +73,35 @@
   }, { passive: true });
   look();
 })();
+
+// Each code block takes a button that copies its text, which tells that it
+// copied for a moment; where the clipboard is not the page's, as over plain
+// HTTP, the button does not come.
+(function () {
+  if (!navigator.clipboard || !window.isSecureContext) return;
+  document.querySelectorAll(".doc pre").forEach(function (pre) {
+    var code = pre.querySelector("code") || pre;
+    var box = document.createElement("div");
+    box.className = "code";
+    pre.parentNode.insertBefore(box, pre);
+    box.appendChild(pre);
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "copy";
+    button.textContent = "Copy";
+    button.setAttribute("aria-label", "Copy the code");
+    var timer = null;
+    button.addEventListener("click", function () {
+      navigator.clipboard.writeText(code.innerText.replace(/\n$/, "")).then(function () {
+        button.textContent = "Copied";
+        button.setAttribute("data-copied", "");
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+          button.textContent = "Copy";
+          button.removeAttribute("data-copied");
+        }, 1500);
+      });
+    });
+    box.appendChild(button);
+  });
+})();

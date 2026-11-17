@@ -25,7 +25,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail, ensure};
-use pulldown_cmark::{CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{BlockQuoteKind, CowStr, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::check_links::slug;
 
@@ -51,6 +51,18 @@ const DESCRIPTION_LEAST: usize = 50;
 
 /// The root's documents that the site holds beside `docs/`.
 const ROOT_DOCUMENTS: [&str; 3] = ["CHANGELOG.md", "CONTRIBUTING.md", "TRANSLATING.md"];
+
+/// The documentation's pages in their groups and order, which the site
+/// draws as its sidebar: every public page but itself is in it.
+const SUMMARY: &str = "docs/SUMMARY.md";
+
+/// The folders of dated reports, the measurements and the release notes,
+/// whose pages the summary covers by any one of them that it lists, as a
+/// list of each would drown the rest.
+const COLLECTIONS: [&str; 2] = ["docs/bench", "docs/releases"];
+
+/// The repository's editor of a file, which a page's footer links.
+const EDIT: &str = "https://github.com/sephiroth74/lokyr/edit/main";
 
 /// The files of the documents' folders that the site copies: their images.
 const IMAGES: [&str; 6] = ["svg", "png", "jpg", "jpeg", "gif", "webp"];
@@ -225,6 +237,7 @@ fn collect_pages(folder: &Path, pages: &mut Vec<PathBuf>) -> Result<()> {
 pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     let settings = settings(root)?;
     let documents = documents(root)?;
+    let summary = summary(root, &documents)?;
     if out.exists() {
         fs::remove_dir_all(out).with_context(|| format!("emptying {}", out.display()))?;
     }
@@ -270,7 +283,7 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     )
     .context("writing the releases' feed")?;
     for (document, text) in documents.iter().zip(&texts) {
-        let page = page(document, text, &settings, &titles);
+        let page = page(document, text, &settings, &titles, &summary);
         let target = out.join(page_path(document));
         if let Some(folder) = target.parent() {
             fs::create_dir_all(folder).with_context(|| format!("making {}", folder.display()))?;
@@ -304,7 +317,218 @@ fn documents(root: &Path) -> Result<Vec<PathBuf>> {
         .context("listing the documents that git tracks")?;
     ensure!(listed.status.success(), "git ls-files failed");
     let files = String::from_utf8(listed.stdout).context("git's list of files")?;
-    Ok(files.lines().map(PathBuf::from).collect())
+    Ok(files
+        .lines()
+        .filter(|file| *file != SUMMARY)
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// The documentation's pages in their groups, of the summary's sections,
+/// and order: each group of its entries, a page each, of its title, which
+/// may hold its own.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Summary {
+    groups: Vec<Group>,
+}
+
+/// A group of the summary: its name and its pages.
+#[derive(Debug, PartialEq, Eq)]
+struct Group {
+    name: String,
+    entries: Vec<Entry>,
+}
+
+/// A page of the summary: its title, its document, from the root, and the
+/// pages under it.
+#[derive(Debug, PartialEq, Eq)]
+struct Entry {
+    title: String,
+    document: PathBuf,
+    entries: Vec<Entry>,
+}
+
+impl Summary {
+    /// The summary of `text`, `docs/SUMMARY.md`'s: its title and what comes
+    /// before its first group passed over, each group a `## ` heading and
+    /// each page a list item of a link alone, `- [Title](page.md)`, two
+    /// spaces deeper under the page that holds it; anything else after the
+    /// first group refused, of its line.
+    fn parse(text: &str) -> Result<Self> {
+        let item = regex::Regex::new(r"^( *)- \[([^\]]+)\]\(([^)#\s]+)\)$").expect("the pattern");
+        let mut summary = Self::default();
+        for (at, line) in text.lines().enumerate() {
+            let number = at + 1;
+            if let Some(name) = line.strip_prefix("## ") {
+                summary.groups.push(Group {
+                    name: name.trim().to_owned(),
+                    entries: Vec::new(),
+                });
+                continue;
+            }
+            let Some(group) = summary.groups.last_mut() else {
+                continue;
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let Some(found) = item.captures(line) else {
+                bail!(
+                    "{SUMMARY}:{number}: a line of no page: `- [Title](page.md)`, under a `## ` group"
+                );
+            };
+            let depth = found[1].len();
+            ensure!(
+                depth % 2 == 0,
+                "{SUMMARY}:{number}: a page's list item two spaces deeper than the page that holds it"
+            );
+            let document = normalized(&Path::new("docs").join(&found[3]))
+                .with_context(|| format!("{SUMMARY}:{number}: a link past the repository"))?;
+            let entry = Entry {
+                title: found[2].to_owned(),
+                document,
+                entries: Vec::new(),
+            };
+            let mut entries = &mut group.entries;
+            for _ in 0..depth / 2 {
+                entries = &mut entries
+                    .last_mut()
+                    .with_context(|| {
+                        format!("{SUMMARY}:{number}: a page deeper than the page above it")
+                    })?
+                    .entries;
+            }
+            entries.push(entry);
+        }
+        Ok(summary)
+    }
+
+    /// Every page that it lists, in their order.
+    fn documents(&self) -> Vec<&Path> {
+        fn walk<'a>(entries: &'a [Entry], found: &mut Vec<&'a Path>) {
+            for entry in entries {
+                found.push(&entry.document);
+                walk(&entry.entries, found);
+            }
+        }
+        let mut found = Vec::new();
+        for group in &self.groups {
+            walk(&group.entries, &mut found);
+        }
+        found
+    }
+
+    /// What does not hold of the summary against the public `documents`:
+    /// a page that it lists twice or that is no public document, and a
+    /// public document that it leaves out, but a report of a collection of
+    /// which it lists a page.
+    fn problems(&self, documents: &[PathBuf]) -> Vec<String> {
+        let listed = self.documents();
+        let mut problems = Vec::new();
+        for (at, document) in listed.iter().enumerate() {
+            if listed[..at].contains(document) {
+                problems.push(format!("{SUMMARY} lists {} twice", document.display()));
+            }
+            if !documents.iter().any(|public| public == document) {
+                problems.push(format!(
+                    "{SUMMARY} lists {}, which is no public page",
+                    document.display()
+                ));
+            }
+        }
+        for document in documents {
+            if !listed.contains(&document.as_path()) && collection_of(document, &listed).is_none() {
+                problems.push(format!(
+                    "{} is in no group of {SUMMARY}: list it where a reader would look for it",
+                    document.display()
+                ));
+            }
+        }
+        problems
+    }
+}
+
+/// The page that the summary lists of the collection of `document`, a
+/// report that it does not list, if it lists one.
+fn collection_of<'a>(document: &Path, listed: &[&'a Path]) -> Option<&'a Path> {
+    let folder = COLLECTIONS
+        .iter()
+        .find(|folder| document.starts_with(folder))?;
+    listed.iter().find(|page| page.starts_with(folder)).copied()
+}
+
+/// The summary of the repository at `root`, which every public page of
+/// `documents` is in.
+fn summary(root: &Path, documents: &[PathBuf]) -> Result<Summary> {
+    let text =
+        fs::read_to_string(root.join(SUMMARY)).with_context(|| format!("reading {SUMMARY}"))?;
+    let summary = Summary::parse(&text)?;
+    let problems = summary.problems(documents);
+    if !problems.is_empty() {
+        bail!("{}", problems.join("\n"));
+    }
+    Ok(summary)
+}
+
+/// The sidebar of the documentation's pages, of `summary`, on the page of
+/// `document`, `up` from the root: beside the column on a wide screen,
+/// each group of its name and its pages, the page shown marked, and the
+/// pages under another a group that opens, open where it holds the page
+/// shown; and the same as a menu that opens, above the page, on a narrow
+/// one.
+fn navigation(summary: &Summary, document: &Path, up: &str) -> (String, String) {
+    let listed = summary.documents();
+    // The page shown, or the collection's page of a report.
+    let here = if listed.contains(&document) {
+        Some(document)
+    } else {
+        collection_of(document, &listed)
+    };
+    fn holds(entry: &Entry, here: Option<&Path>) -> bool {
+        here == Some(entry.document.as_path())
+            || entry.entries.iter().any(|inner| holds(inner, here))
+    }
+    fn list(entries: &[Entry], document: &Path, here: Option<&Path>, up: &str, out: &mut String) {
+        out.push_str("<ul>\n");
+        for entry in entries {
+            let current = if entry.document == document {
+                r#" aria-current="page""#
+            } else if here == Some(entry.document.as_path()) {
+                r#" aria-current="true""#
+            } else {
+                ""
+            };
+            let link = format!(
+                r#"<a href="{up}{}"{current}>{}</a>"#,
+                folder_form(&page_path(&entry.document).to_string_lossy()),
+                escaped(&entry.title)
+            );
+            if entry.entries.is_empty() {
+                let _ = writeln!(out, "<li>{link}</li>");
+                continue;
+            }
+            let open = if holds(entry, here) { " open" } else { "" };
+            let _ = write!(out, "<li><details{open}><summary>{link}</summary>");
+            list(&entry.entries, document, here, up, out);
+            out.push_str("</details></li>\n");
+        }
+        out.push_str("</ul>\n");
+    }
+    let mut groups = String::new();
+    for group in &summary.groups {
+        let _ = writeln!(
+            groups,
+            "<p class=\"pages-group\">{}</p>",
+            escaped(&group.name)
+        );
+        list(&group.entries, document, here, up, &mut groups);
+    }
+    (
+        format!("<nav class=\"pages\" aria-label=\"Documentation\">\n{groups}</nav>"),
+        format!(
+            "<details class=\"pages-inline\">\n<summary>Documentation</summary>\n<nav aria-label=\"Documentation\">\n{groups}</nav>\n</details>"
+        ),
+    )
 }
 
 /// The date, `YYYY-MM-DD`, of the last commit of each of the site's
@@ -543,13 +767,14 @@ pub(crate) fn page_path(document: &Path) -> PathBuf {
     }
 }
 
-/// The page of `document`, of its Markdown `text`, in the site's template:
-/// the search indexes its body.
+/// The page of `document`, of its Markdown `text`, in the site's template,
+/// beside the sidebar of `summary`'s pages: the search indexes its body.
 fn page(
     document: &Path,
     text: &str,
     settings: &Settings,
     titles: &HashMap<PathBuf, String>,
+    summary: &Summary,
 ) -> String {
     let Rendered {
         body,
@@ -558,8 +783,9 @@ fn page(
         headings,
     } = html(document, text);
     let depth = document.components().count().saturating_sub(1);
+    let up = "../".repeat(depth);
     let source = format!(
-        r#"<a href="{BLOB}/{}">This page's source</a>"#,
+        r#"<a href="{EDIT}/{}">Edit this page on GitHub</a>"#,
         document.display()
     );
     let description = description.unwrap_or_else(|| {
@@ -576,9 +802,9 @@ fn page(
             section: Section::of(document),
             structured: Some(&breadcrumbs(&crumbs(document, &title, titles))),
         },
-        &"../".repeat(depth),
+        &up,
         settings,
-        &contents(&body, &headings),
+        &contents(&body, &headings, &navigation(summary, document, &up)),
         &source,
         "",
     )
@@ -587,16 +813,17 @@ fn page(
 /// The least sections of a page that has a table of contents.
 const TOC_LEAST: usize = 4;
 
-/// A document's page's contents: its `main`, of its `body`, and, of
-/// `TOC_LEAST` sections or more, its table of contents of its `headings`:
-/// beside the column on a wide screen, each section a group that opens on
-/// its parts, and a short one of the sections alone, which opens, under
-/// the title on a narrow one. The search indexes the `main` alone.
-fn contents(body: &str, headings: &[Heading]) -> String {
+/// A document's page's contents: the documentation's sidebar, `pages`, its
+/// own and its menu's; its `main`, of its `body`; and, of `TOC_LEAST`
+/// sections or more, its table of contents of its `headings`: beside the
+/// column on a wide screen, each section a group that opens on its parts,
+/// and a short one of the sections alone, which opens, under the title on
+/// a narrower one. The search indexes the `main` alone.
+fn contents(body: &str, headings: &[Heading], (pages, menu): &(String, String)) -> String {
     let sections = headings.iter().filter(|heading| heading.level == 2).count();
     if sections < TOC_LEAST {
         return format!(
-            "<div class=\"wrap page\">\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
+            "<div class=\"wrap page has-nav\">\n{pages}\n{menu}\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
         );
     }
     let mut side = String::from(
@@ -647,7 +874,7 @@ fn contents(body: &str, headings: &[Heading]) -> String {
         None => format!("{inline}{body}"),
     };
     format!(
-        "<div class=\"wrap page has-toc\">\n{side}\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
+        "<div class=\"wrap page has-nav has-toc\">\n{pages}\n{menu}\n{side}\n<main class=\"doc\" id=\"main\" data-pagefind-body>\n{body}</main>\n</div>"
     )
 }
 
@@ -1038,11 +1265,14 @@ fn html(document: &Path, text: &str) -> Rendered {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_STRIKETHROUGH
         | Options::ENABLE_FOOTNOTES
-        | Options::ENABLE_TASKLISTS;
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_GFM;
     let events: Vec<Event> = Parser::new_ext(text, options).collect();
     // Each heading's text, of its anchor, a repeated one numbered as GitHub
     // numbers it.
     let mut ids = Vec::new();
+    // Each heading's weight in the search, where it is not Pagefind's own.
+    let mut weights = Vec::new();
     let mut seen: HashMap<String, usize> = HashMap::new();
     let mut title = None;
     let mut heading: Option<(HeadingLevel, String, Words)> = None;
@@ -1108,6 +1338,7 @@ fn html(document: &Path, text: &str) -> Rendered {
                     if title.is_none() && level == HeadingLevel::H1 {
                         title = Some(words.clone());
                     }
+                    weights.push(weight(level, &runs));
                     let base = slug(&words);
                     let count = seen.entry(base.clone()).or_insert(0);
                     let id = if *count == 0 {
@@ -1135,6 +1366,7 @@ fn html(document: &Path, text: &str) -> Rendered {
         }
     }
     let mut ids = ids.into_iter();
+    let mut weights = weights.into_iter();
     // The headings of their anchors, a section's and a part's of a `#` after
     // their words that links to them, for the pointer alone (the table of
     // contents is the keyboard's way), which the search leaves out.
@@ -1146,11 +1378,17 @@ fn html(document: &Path, text: &str) -> Rendered {
                 level,
                 id: None,
                 classes,
-                attrs,
+                mut attrs,
             }) => {
                 let id = ids.next();
                 if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) {
                     anchor.clone_from(&id);
+                }
+                if let Some(weight) = weights.next().flatten() {
+                    attrs.push((
+                        CowStr::from("data-pagefind-weight"),
+                        Some(CowStr::from(weight)),
+                    ));
                 }
                 rendered.push(Event::Start(Tag::Heading {
                     level,
@@ -1158,6 +1396,17 @@ fn html(document: &Path, text: &str) -> Rendered {
                     classes,
                     attrs,
                 }));
+            }
+            // GitHub's alerts, `> [!NOTE]` and the others, as callouts of
+            // their kind's title, as GitHub shows them.
+            Event::Start(Tag::BlockQuote(Some(kind))) => {
+                let (class, title) = callout(kind);
+                rendered.push(Event::Html(CowStr::from(format!(
+                    "<div class=\"callout callout-{class}\">\n<p class=\"callout-title\">{title}</p>\n"
+                ))));
+            }
+            Event::End(TagEnd::BlockQuote(Some(_))) => {
+                rendered.push(Event::Html(CowStr::from("</div>\n")));
             }
             Event::End(TagEnd::Heading(level)) => {
                 if let Some(id) = anchor.take() {
@@ -1205,9 +1454,34 @@ fn html(document: &Path, text: &str) -> Rendered {
     }
 }
 
+/// The weight in the search of a heading of `level` and of the words of
+/// `runs`, where Pagefind's own, of its level, is not enough: the page's
+/// title above every other heading, and a heading of code alone, as a
+/// key of the config's or a command, as high as a title.
+fn weight(level: HeadingLevel, runs: &Words) -> Option<&'static str> {
+    if level == HeadingLevel::H1 {
+        Some("10")
+    } else if !runs.is_empty() && runs.iter().all(|(code, _)| *code) {
+        Some("8")
+    } else {
+        None
+    }
+}
+
+/// The class and the title of a callout of `kind`.
+fn callout(kind: BlockQuoteKind) -> (&'static str, &'static str) {
+    match kind {
+        BlockQuoteKind::Note => ("note", "Note"),
+        BlockQuoteKind::Tip => ("tip", "Tip"),
+        BlockQuoteKind::Important => ("important", "Important"),
+        BlockQuoteKind::Warning => ("warning", "Warning"),
+        BlockQuoteKind::Caution => ("caution", "Caution"),
+    }
+}
+
 /// Where a link of `document` to `target` goes in the site: another
-/// document's page, of its anchor; a file of the repository on GitHub; the
-/// web, an anchor of the page or a mail as it is.
+/// document's page, of its anchor; a file of the repository on GitHub, the
+/// summary's too; the web, an anchor of the page or a mail as it is.
 pub(crate) fn linked(document: &Path, target: &str) -> String {
     if target.is_empty()
         || target.starts_with('#')
@@ -1224,7 +1498,10 @@ pub(crate) fn linked(document: &Path, target: &str) -> String {
     let Some(file) = normalized(&folder.join(path)) else {
         return target.to_owned();
     };
+    // The summary, which the sidebar shows, is no page: its file, on
+    // GitHub.
     let is_document = file.extension().is_some_and(|extension| extension == "md")
+        && file != Path::new(SUMMARY)
         && (file.starts_with("docs")
             || ROOT_DOCUMENTS
                 .iter()
@@ -1322,6 +1599,10 @@ mod tests {
         assert_eq!(linked(plugin, "README.md"), "./");
         assert_eq!(linked(plugin, "README.md#tabs"), "./#tabs");
         assert_eq!(linked(plugin, "../README.md"), "../");
+        assert_eq!(
+            linked(Path::new("CONTRIBUTING.md"), "docs/SUMMARY.md"),
+            "https://github.com/sephiroth74/lokyr/blob/main/docs/SUMMARY.md"
+        );
         assert_eq!(
             linked(Path::new("docs/README.md"), "plugins/README.md"),
             "plugins/"
@@ -1566,6 +1847,7 @@ mod tests {
             "# The bundled plugins\n\nEvery feature that you see comes from a plugin, and these come with Lokyr.\n",
             &settings,
             &HashMap::new(),
+            &Summary::default(),
         );
         assert!(shown.contains("<title>The bundled plugins — Lokyr</title>"));
         assert!(shown.contains(r#"<meta name="description" content="Every feature that you see comes from a plugin, and these come with Lokyr.">"#));
@@ -1588,6 +1870,7 @@ mod tests {
             "# Lokyr — the documentation\n",
             &settings,
             &HashMap::new(),
+            &Summary::default(),
         );
         assert!(named.contains("<title>Lokyr — the documentation</title>"));
         assert!(named.contains(r#"<meta name="description" content="Lokyr — the documentation, of the documentation of Lokyr"#));
@@ -1680,8 +1963,13 @@ mod tests {
                 ],
             }
         );
-        let shown = contents(&rendered.body, &rendered.headings);
-        assert!(shown.starts_with("<div class=\"wrap page has-toc\">\n<nav class=\"toc\""));
+        let shown = contents(
+            &rendered.body,
+            &rendered.headings,
+            &(String::new(), String::new()),
+        );
+        assert!(shown.starts_with("<div class=\"wrap page has-nav has-toc\">\n"));
+        assert!(shown.contains("\n<nav class=\"toc\""));
         assert!(shown.contains(r##"<li><details><summary><a href="#font"><code>[font]</code></a></summary><ul><li><a href="#family"><code>family</code></a></li><li><a href="#bold-style-italic-style"><code>bold-style</code>, <code>italic-style</code></a></li></ul></details></li>"##), "{shown}");
         assert!(shown.contains(r##"<li><a href="#text"><code>[text]</code></a></li>"##));
         // The short one, of the sections alone, right after the title.
@@ -1690,7 +1978,14 @@ mod tests {
         assert!(!inline[..inline.find("</details>").unwrap()].contains("#family\""));
         // Three sections have none.
         let short = html(Path::new("docs/y.md"), "# Y\n\n## A\n\n## B\n\n## C\n");
-        assert!(!contents(&short.body, &short.headings).contains("toc"));
+        assert!(
+            !contents(
+                &short.body,
+                &short.headings,
+                &(String::new(), String::new())
+            )
+            .contains("toc")
+        );
     }
 
     #[test]
@@ -1700,7 +1995,11 @@ mod tests {
             "# The `plugin.toml` guide\n\n## Limits\n\n## Limits\n\nSee [the guide](y.md#a).\n",
         );
         assert_eq!(title, "The plugin.toml guide");
-        assert!(body.contains(r#"<h1 id="the-plugintoml-guide">"#), "{body}");
+        // The title weighs most in the search.
+        assert!(
+            body.contains(r#"<h1 id="the-plugintoml-guide" data-pagefind-weight="10">"#),
+            "{body}"
+        );
         assert!(
             body.contains(r##"<h2 id="limits">Limits<a class="anchor" href="#limits" aria-hidden="true" tabindex="-1" data-pagefind-ignore>#</a></h2>"##),
             "{body}"
@@ -1711,6 +2010,152 @@ mod tests {
             "{body}"
         );
         assert!(body.contains(r#"<a href="y.html#a">"#), "{body}");
+    }
+
+    /// The summary of the tests: a home, a guide of two pages under it,
+    /// and the release notes' first page.
+    const SUMMARY_TEXT: &str = "# Summary\n\nWhat it holds.\n\n## Start\n\n- [Home](README.md)\n\n## Use\n\n- [Plugins](plugins/README.md)\n  - [Tabs](plugins/tabs.md)\n    - [Groups](plugins/groups.md)\n- [Changelog](../CHANGELOG.md)\n\n## Reference\n\n- [Release notes](releases/README.md)\n";
+
+    #[test]
+    fn the_summary_reads_its_groups_and_their_pages_under_one_another() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let names: Vec<&str> = summary
+            .groups
+            .iter()
+            .map(|group| group.name.as_str())
+            .collect();
+        assert_eq!(names, ["Start", "Use", "Reference"]);
+        let plugins = &summary.groups[1].entries[0];
+        assert_eq!(
+            (plugins.title.as_str(), plugins.document.as_path()),
+            ("Plugins", Path::new("docs/plugins/README.md"))
+        );
+        assert_eq!(
+            plugins.entries[0].entries[0].document,
+            Path::new("docs/plugins/groups.md")
+        );
+        // A root's document, of its path from the root.
+        assert_eq!(
+            summary.groups[1].entries[1].document,
+            Path::new("CHANGELOG.md")
+        );
+        assert_eq!(summary.documents().len(), 6);
+        // A line that is no page, a page an odd number of spaces deep, or
+        // deeper than the one above it, refused of its line.
+        for (text, told) in [
+            ("## A\n\nSome words.\n", "SUMMARY.md:3: a line of no page"),
+            (
+                "## A\n\n- [X](x.md)\n - [Y](y.md)\n",
+                "SUMMARY.md:4: a page's list item two spaces",
+            ),
+            ("## A\n\n    - [Y](y.md)\n", "SUMMARY.md:3: a page deeper"),
+            ("## A\n\n- [X](../../x.md)\n", "SUMMARY.md:3: a link past"),
+        ] {
+            let error = Summary::parse(text).unwrap_err().to_string();
+            assert!(error.contains(told), "{error}");
+        }
+    }
+
+    #[test]
+    fn every_public_page_is_in_the_summary_once_but_the_reports_of_a_listed_collection() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let mut documents: Vec<PathBuf> = summary
+            .documents()
+            .into_iter()
+            .map(Path::to_path_buf)
+            .collect();
+        documents.push(PathBuf::from("docs/releases/1.2.0.md"));
+        assert!(summary.problems(&documents).is_empty());
+        // A page that it leaves out, and a measurement of a collection that
+        // it does not list.
+        documents.push(PathBuf::from("docs/keyboard.md"));
+        documents.push(PathBuf::from("docs/bench/rest.md"));
+        let problems = summary.problems(&documents);
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(problems[0].starts_with("docs/keyboard.md is in no group of docs/SUMMARY.md"));
+        assert!(problems[1].starts_with("docs/bench/rest.md is in no group"));
+        // A page that it lists twice, or that is no public page.
+        let twice = Summary::parse(&format!("{SUMMARY_TEXT}- [Again](README.md)\n")).unwrap();
+        let problems = twice.problems(&documents[..7]);
+        assert_eq!(problems, ["docs/SUMMARY.md lists docs/README.md twice"]);
+        let problems = summary.problems(&documents[1..]);
+        assert!(
+            problems.contains(
+                &"docs/SUMMARY.md lists docs/README.md, which is no public page".to_owned()
+            ),
+            "{problems:?}"
+        );
+        // The repository's own summary holds every public page.
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let public = super::documents(&root).unwrap();
+        assert!(!public.iter().any(|document| document == Path::new(SUMMARY)));
+        summary_of(&root, &public);
+    }
+
+    /// The summary of the repository at `root`, which holds `public`.
+    fn summary_of(root: &Path, public: &[PathBuf]) -> Summary {
+        super::summary(root, public).unwrap()
+    }
+
+    #[test]
+    fn the_sidebar_marks_the_page_shown_and_opens_the_pages_that_hold_it() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let (side, menu) = navigation(&summary, Path::new("docs/plugins/tabs.md"), "../../");
+        assert!(side.starts_with("<nav class=\"pages\" aria-label=\"Documentation\">\n<p class=\"pages-group\">Start</p>\n<ul>\n<li><a href=\"../../docs/\">Home</a></li>"), "{side}");
+        // The page shown, marked, open in the page that holds it, its own
+        // pages too, the root's documents of their pages.
+        assert!(side.contains(r#"<li><details open><summary><a href="../../docs/plugins/">Plugins</a></summary><ul>"#), "{side}");
+        assert!(side.contains(r#"<li><details open><summary><a href="../../docs/plugins/tabs.html" aria-current="page">Tabs</a></summary>"#), "{side}");
+        assert!(side.contains(r#"<li><a href="../../changelog.html">Changelog</a></li>"#));
+        // The same, as a menu that opens.
+        assert!(menu.starts_with("<details class=\"pages-inline\">\n<summary>Documentation</summary>\n<nav aria-label=\"Documentation\">\n<p class=\"pages-group\">Start</p>"));
+        // A release's notes mark the collection's page.
+        let (side, _) = navigation(&summary, Path::new("docs/releases/1.2.0.md"), "../../");
+        assert!(
+            side.contains(
+                r#"<a href="../../docs/releases/" aria-current="true">Release notes</a>"#
+            ),
+            "{side}"
+        );
+        assert!(!side.contains("<details open>"));
+    }
+
+    #[test]
+    fn github_s_alerts_are_callouts_and_code_headings_weigh_more_in_the_search() {
+        let Rendered { body, .. } = html(
+            Path::new("docs/x.md"),
+            "# X\n\n> [!TIP]\n> Press ⌘U.\n\n> [!WARNING]\n> It costs.\n\n> A quote.\n\n## `background-opacity`\n\n## The `font`\n",
+        );
+        assert!(
+            body.contains("<div class=\"callout callout-tip\">\n<p class=\"callout-title\">Tip</p>\n<p>Press ⌘U.</p>\n</div>"),
+            "{body}"
+        );
+        assert!(body.contains(
+            "<div class=\"callout callout-warning\">\n<p class=\"callout-title\">Warning</p>"
+        ));
+        assert!(
+            body.contains("<blockquote>\n<p>A quote.</p>\n</blockquote>"),
+            "{body}"
+        );
+        assert!(
+            body.contains(r#"<h2 id="background-opacity" data-pagefind-weight="8">"#),
+            "{body}"
+        );
+        assert!(body.contains(r#"<h2 id="the-font">"#), "{body}");
+        // A page's footer links its source in GitHub's editor.
+        let shown = page(
+            Path::new("docs/plugins/tabs.md"),
+            "# Tabs\n",
+            &Settings::default(),
+            &HashMap::new(),
+            &Summary::parse(SUMMARY_TEXT).unwrap(),
+        );
+        assert!(shown.contains(r#"<a href="https://github.com/sephiroth74/lokyr/edit/main/docs/plugins/tabs.md">Edit this page on GitHub</a>"#));
+        assert!(shown.contains(r#"<div class="wrap page has-nav">"#));
+        assert!(shown.contains(r#"aria-current="page">Tabs</a>"#));
     }
 
     #[test]
@@ -1822,7 +2267,13 @@ mod tests {
                 x: String::new(),
             },
         };
-        let shown = page(Path::new("docs/x.md"), "# X\n", &settings, &HashMap::new());
+        let shown = page(
+            Path::new("docs/x.md"),
+            "# X\n",
+            &settings,
+            &HashMap::new(),
+            &Summary::default(),
+        );
         assert!(shown.contains(r#"<a href="https://bsky.app/profile/lokyr.dev">Bluesky</a>"#));
         assert!(!shown.contains(">X</a>"));
         let _ = fs::remove_dir_all(out);

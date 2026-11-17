@@ -178,22 +178,24 @@ body {
   padding: 34px 0 0;
 }
 
-/* A page of several sections: its table of contents beside the column on a
-   wide screen, sticky under the top bar, each section a group that opens on
-   its parts at its chevron, its link going to it; the part in view marked,
-   as the script follows the reading. On a narrow screen, a short one of the
-   sections alone, which opens, under the title. */
-.toc { display: none; }
+/* The documentation's pages: the sidebar of every page, in its groups, at
+   the left on a wide screen, sticky under the top bar, the page shown
+   marked and the pages that hold it open; on a narrower one, the same as a
+   menu that opens above the page. A page of several sections: its table of
+   contents at the right on the widest screens, sticky too, each section a
+   group that opens on its parts at its chevron, its link going to it; the
+   part in view marked, as the script follows the reading. Narrower, a short
+   one of the sections alone, which opens, under the title. */
+.pages, .toc { display: none; }
 @media (min-width: 1100px) {
-  .page.has-toc {
+  .page.has-nav {
     display: grid;
     grid-template-columns: 220px minmax(0, 700px);
     column-gap: 56px;
     justify-content: center;
   }
-  .page.has-toc .doc { margin: 0; }
-  .toc {
-    display: block;
+  .page.has-nav .doc { margin: 0; grid-column: 2; grid-row: 1; }
+  .pages, .toc {
     position: sticky;
     top: 64px;
     align-self: start;
@@ -203,16 +205,64 @@ body {
     scrollbar-width: thin;
     scrollbar-color: var(--line-strong) transparent;
   }
-  .toc-inline { display: none; }
+  .pages { display: block; grid-column: 1; grid-row: 1; }
+  .pages-inline { display: none; }
 }
+@media (min-width: 1360px) {
+  .wrap.page.has-nav.has-toc {
+    width: min(1320px, 100% - 48px);
+    grid-template-columns: 220px minmax(0, 700px) 200px;
+  }
+  .toc { display: block; grid-column: 3; grid-row: 1; padding: 44px 0 32px 4px; }
+  .doc .toc-inline { display: none; }
+  /* The top bar as wide as the page's three columns. */
+  body:has(.page.has-nav.has-toc) .top { width: min(1320px, 100% - 48px); }
+}
+.pages-group {
+  margin: 24px 0 6px;
+  color: var(--fg);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pages-group:first-child { margin-top: 0; }
+.pages-inline {
+  max-width: 700px;
+  margin: 28px auto 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(19, 16, 29, 0.6);
+}
+.pages-inline > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 16px;
+  color: var(--fg);
+  font-size: var(--t-s);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+}
+.pages-inline > summary::-webkit-details-marker { display: none; }
+.pages-inline > summary::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3.5 2l3 3-3 3' fill='none' stroke='%23857f9d' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat;
+  transition: transform 0.15s ease;
+}
+.pages-inline[open] > summary::before { transform: rotate(90deg); }
+.pages-inline nav { padding: 0 16px 16px; }
 .toc-title {
   margin: 0 0 10px;
   color: var(--fg);
   font-size: var(--t-s);
   font-weight: 600;
 }
-.toc ul { margin: 0; padding: 0; list-style: none; }
-.toc a {
+:is(.toc, .pages, .pages-inline nav) ul { margin: 0; padding: 0; list-style: none; }
+:is(.toc, .pages, .pages-inline nav) a {
   display: block;
   padding: 4px 8px 4px 12px;
   border-left: 1px solid var(--line);
@@ -221,20 +271,21 @@ body {
   line-height: 1.4;
   text-decoration: none;
 }
-.toc a:hover { color: var(--fg); }
-.toc a[aria-current] { color: var(--fg); border-left-color: var(--violet); }
-.toc a:focus-visible { outline-offset: -2px; border-radius: 4px; }
-.toc details ul a { padding-left: 24px; font-size: var(--t-xs); }
-.toc code { font: 0.95em var(--mono); color: inherit; }
-.toc summary {
+:is(.toc, .pages, .pages-inline nav) a:hover { color: var(--fg); }
+:is(.toc, .pages, .pages-inline nav) a[aria-current] { color: var(--fg); border-left-color: var(--violet); }
+:is(.toc, .pages, .pages-inline nav) a:focus-visible { outline-offset: -2px; border-radius: 4px; }
+:is(.toc, .pages, .pages-inline nav) details ul a { padding-left: 24px; font-size: var(--t-xs); }
+:is(.pages, .pages-inline nav) details details ul a { padding-left: 36px; }
+:is(.toc, .pages, .pages-inline nav) code { font: 0.95em var(--mono); color: inherit; }
+:is(.toc, .pages, .pages-inline nav) summary {
   display: flex;
   align-items: center;
   list-style: none;
   cursor: pointer;
 }
-.toc summary::-webkit-details-marker { display: none; }
-.toc summary a { flex: 1; min-width: 0; }
-.toc summary::after {
+:is(.toc, .pages, .pages-inline nav) summary::-webkit-details-marker { display: none; }
+:is(.toc, .pages, .pages-inline nav) summary a { flex: 1; min-width: 0; }
+:is(.toc, .pages, .pages-inline nav) summary::after {
   content: "";
   flex: none;
   width: 24px;
@@ -242,7 +293,7 @@ body {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M3.5 2l3 3-3 3' fill='none' stroke='%23857f9d' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 10px no-repeat;
   transition: transform 0.15s ease;
 }
-.toc details[open] > summary::after { transform: rotate(90deg); }
+:is(.toc, .pages, .pages-inline nav) details[open] > summary::after { transform: rotate(90deg); }
 .doc .toc-inline {
   margin: 0 0 32px;
   border: 1px solid var(--line-strong);
@@ -342,6 +393,27 @@ body {
   border-left: 2px solid var(--violet);
   color: var(--muted);
 }
+/* GitHub's alerts, as callouts of their kind's title and colour. */
+.doc .callout {
+  --callout: var(--violet);
+  margin: 24px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--callout);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--callout) 8%, transparent);
+}
+.doc .callout > :last-child { margin-bottom: 0; }
+.doc .callout-title + * { margin-top: 0; }
+.doc .callout-title {
+  margin: 0 0 4px;
+  color: var(--callout);
+  font-size: var(--t-s);
+  font-weight: 600;
+}
+.doc .callout-tip { --callout: #6fdc8c; }
+.doc .callout-important { --callout: var(--pink); }
+.doc .callout-warning { --callout: #f2c46d; }
+.doc .callout-caution { --callout: #ff7a7a; }
 
 /* Code, as the home page's terminal. */
 .doc code {
@@ -364,6 +436,27 @@ body {
   background: none;
   font-size: var(--t-s);
   line-height: 1.6;
+}
+/* A code block's copy button, which the script adds, at its top right:
+   shown as the pointer comes over the block, or always where there is no
+   pointer, and as it has the keyboard. */
+.doc .code { position: relative; }
+.doc .copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--muted);
+  font: 500 var(--t-xs)/1.4 var(--sans);
+  cursor: pointer;
+}
+.doc .copy:hover { color: var(--fg); }
+@media (hover: hover) {
+  .doc .copy { opacity: 0; transition: opacity 0.15s ease; }
+  .doc .code:hover .copy, .doc .copy:focus-visible, .doc .copy[data-copied] { opacity: 1; }
 }
 
 /* Tables, of lines between their rows. */
@@ -428,6 +521,8 @@ footer a:hover { color: var(--fg); }
   }
   .top nav { padding-block: 0; }
   .top nav a { padding-block: 12px; }
+  /* The documentation's menu's pages, each a target of 40 px or so. */
+  .pages-inline nav a { padding-block: 9px; }
   .top nav a:focus-visible { outline-offset: -4px; }
 }
 
