@@ -94,7 +94,12 @@ const PREVIEW_HEIGHT: f32 = 92.0;
 const SECTIONS: &str = "sections";
 
 /// The sidebar's width, in points.
-const SIDEBAR: f32 = 140.0;
+const SIDEBAR: f32 = 160.0;
+
+/// The padding of a row of the sidebar, at its left and at its right, in
+/// points: less at the left, beside the sidebar's own, and more at the
+/// right, which a long title keeps away from the edge.
+const ROW_PADDING: (f32, f32) = (4.0, 12.0);
 
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
@@ -1799,9 +1804,9 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         height: Length::Points(ROW),
         padding: Edges {
             top: 0.0,
-            right: 8.0,
+            right: ROW_PADDING.1,
             bottom: 0.0,
-            left: 8.0,
+            left: ROW_PADDING.0,
         },
         ..Layout::default()
     });
@@ -3135,9 +3140,9 @@ fn side_row(cx: &mut Cx<'_>, (word, title, icon): (&str, &str, &str), selected: 
         width: Length::Fraction(1.0),
         padding: Edges {
             top: 0.0,
-            right: 8.0,
+            right: ROW_PADDING.1,
             bottom: 0.0,
-            left: 8.0,
+            left: ROW_PADDING.0,
         },
         ..Layout::default()
     })

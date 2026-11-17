@@ -33,6 +33,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- The settings window's sidebar is wider, and its sections' names start closer to its left edge and stay further from its right one, so that a long name fits.
 - ⌃Tab and ⌃⇧Tab follow the order you used the tabs in, not the bar's order. ⇧⌘] and ⇧⌘[ still follow the bar.
 - An agent's notification tells the message that it told, as "claude: Claude needs your permission to use Bash", or, of none, what it asks for while it waits, as "codex asks for your permission".
 
