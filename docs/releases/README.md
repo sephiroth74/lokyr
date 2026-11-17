@@ -1,9 +1,14 @@
 # Release notes
 
-The notes of each release, which Sparkle's window shows with the new version: one file a release, `<X.Y.Z>.md`, in English, in Markdown. A candidate, `X.Y.Z-rc.N`, and a build of a date, `X.Y.Z-YYYYMMDD`, take their release's notes.
+What each release of Lokyr brought, the newest first. The [changelog](../../CHANGELOG.md) lists every change of each release.
 
-They tell the people who use Lokyr what changed: what is new, what works better, what was fixed, and what to know before updating, as a key of the config that changed. They name no task, phase or ADR.
-
-[CHANGELOG.md](../../CHANGELOG.md), at the repository's root, of the format of [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/), holds every release's changes, of which the notes tell what matters most: each change that someone using Lokyr can notice adds its line under `## [Unreleased]` as it is made, and a release moves them under `## [X.Y.Z] - YYYY-MM-DD`, of the release's day, and adds its link at the end; `cargo xtask release` refuses a version that the changelog has no section of, and `cargo xtask check-changelog`, in `just ci`, checks the format.
-
-The pages mark what no release has yet with `· not released yet`, and the config's schemas a key that no release has with `"x-since": "next"`. In the commit that prepares a release, `cargo xtask since X.Y.Z` turns each mark into `· Since X.Y`, or `· Since X.Y.Z` for a patch, and makes the configuration guide again; `cargo xtask release` refuses to release while a mark is left. A candidate keeps the marks, as its release is still to come.
+- [1.2.0](1.2.0.md), 16 November 2026: themes made in the app, of the Theme Editor, and the settings' Keys page.
+- [1.1.0](1.1.0.md), 14 November 2026: the settings in a window of their own.
+- [1.0.0](1.0.0.md), 13 November 2026: the first public release, of the AI agents on their tabs, inline images and the Homebrew cask.
+- [0.9.0](0.9.0.md), 12 November 2026: the plugins' registry, Sleip's search and publishing, and the first published plugins.
+- [0.8.0](0.8.0.md), 9 November 2026: third-party plugins in Luau, and Sleip in the app.
+- [0.7.0](0.7.0.md), 8 November 2026: themes, the command palette, shell integration, copy mode and the scroll bar.
+- [0.5.1](0.5.1.md), 7 November 2026: the tab bar, splits and the find bar.
+- [0.5.0](0.5.0.md), 5 November 2026: the plugins' slots and panels, and plugins on threads of their own.
+- [0.4.0](0.4.0.md), 4 November 2026: VoiceOver, Emoji & Symbols, and the weight of macOS's text.
+- [0.3.0](0.3.0.md), 2 November 2026: links under ⌘, updates, and the signed, notarized disk image.

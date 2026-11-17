@@ -16,7 +16,7 @@ Every page belongs to one of five groups:
 | Help | Troubleshooting and common questions |
 | Internals | How Lokyr is built, for contributors |
 
-- **List a new page in [`docs/SUMMARY.md`](SUMMARY.md)**, in its group, where a reader would look for it. The site's build fails when a public page is missing from the summary. The measurements in `docs/bench/` and the release notes in `docs/releases/` are the exception: their folder's first page lists them.
+- **List a new page in [`docs/SUMMARY.md`](SUMMARY.md)**, in its group, where a reader would look for it. The site's build fails when a public page is missing from the summary. The measurements in `docs/bench/` and the release notes in `docs/releases/` are the exception: the page of their folder that the summary lists links each of them, which the build checks too.
 - **Name a new page in lowercase**, with hyphens, such as `shell-integration.md`. The older pages in uppercase keep their names, because links from elsewhere point to them.
 - **Update a feature's page in the same commit** as the change to the feature. When a feature has no page yet, say so in the pull request.
 
@@ -197,7 +197,7 @@ Use `[!NOTE]` for something worth knowing, `[!TIP]` for a better way to do somet
 
 ## Generated pages
 
-Some pages, or parts of them, are made from their sources, so that they can't drift from the code. Change the source, never the page:
+Some pages, or parts of them, are made from their sources, so that they can't drift from the code. Change the source, never the page; a page made whole from a source links that source in its footer, in place of the page's editor:
 
 - **[The configuration guide](CONFIGURATION.md)** comes from the config's schemas and its template, by `cargo xtask config-guide`.
 - **The theme tokens' table** in [the theme authors' guide](themes/authoring.md) comes from the tokens' rules, by `cargo xtask theme-guide`.

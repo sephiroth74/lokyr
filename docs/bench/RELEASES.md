@@ -92,3 +92,51 @@ The window's motion was first measured of 0.5.0, in [a motion session of 6 Novem
 - **1.0.0**, the first public release: the AI agents on their tabs, their notifications, the Dock's badge and Claude Code's integration, a path opened at its line in the editor, a command's output copied or selected, inline images of iTerm2's and kitty's protocols, and the Homebrew cask. Against 0.9.0 in [1.0.0's session](ab-F3-85.md), every budget holds and no measure is worse beyond its spread: the latency's p50 0.9.0's and its p99 1.1 ms longer, within the rounds' deviation; the startup's gap 2.1 ms shorter; the footprint 0.5 MB larger, of a binary 0.5 MB larger; idle and the throughputs 0.9.0's. The window's motion was not measured.
 - **1.1.0**, the settings in a window of their own: every key of the config, the keys' bindings, the themes' previews and the plugins, without editing a file. Against 1.0.0 in [1.1.0's sessions](ab-F3b-20.md), of the new config and the built-in display at 120 Hz, no measure is worse beyond its spread: the latency's p50 0.5 ms shorter and its p99 1.0.0's; idle 1.0.0's; the footprint 0.4 MB larger, of a binary 1 MB larger; the throughputs within their runs' spread; a frame of ASCII 0.018 ms longer on the CPU, 5 %, of no throughput lost. The startup is 2.7 ms longer, of copies started as often, within the rounds' spread: the sessions found 6.6 and 9.7 ms of a new copy, which a binary that the system has seen little of starts slower, as 1.0.0 rebuilt of its tag did by 16 ms. The startup's gap to the minimal app and `cat`'s throughput held for neither version, of a minimal app 15 ms faster than in the sessions before and of the display at 120 Hz. The window's motion was not measured.
 - **1.2.0**, themes made in the app: the Theme Editor of every color of a theme, its values edited of a field or the system's color panel and written into the theme's file, and its previews of a window and of a plugin's panel in the theme edited; themes made, duplicated, converted and imported in the app; the interface's colors of rules that follow the theme's own; faint text, the cursor guide and the HDR cursor; the settings' Keys page; the settings window of Lokyr's own themes. Against 1.1.0 in [1.2.0's sessions](ab-F3b-29.md), of the display at 60 Hz, every budget holds but the startup's gap, which holds for neither version, and no measure is worse beyond its spread: the latency's p50 1.1 ms shorter, in seven rounds of eight, and its p99 1.1.0's; idle, the throughputs and the frames 1.1.0's; the footprint 0.5 MB larger, in each of four rounds, of the app's heap, of a binary 0.7 MB larger. The startup is 5.3 ms longer, of copies started as often, within the rounds' spread. The window's motion, measured of both in its session, is 1.1.0's: as many frames a second of a drag and of a resize, as many refreshes missed, the same CPU; the compositor's delay at the 95th percentile a refresh longer in more of 1.2.0's runs, in a session whose load rose, its median 13 ms for both.
+
+## Every report
+
+Every session's report, the newest first.
+
+| Date | Report |
+|---|---|
+| 16 November 2026 | [1.2.0 against 1.1.0](ab-F3b-29.md) |
+| 14 November 2026 | [1.1.0 against 1.0.0](ab-F3b-20.md) |
+| 13 November 2026 | [Lokyr against the other terminals, again](compare-F3-268.md) |
+| 13 November 2026 | [1.0.0 against 0.9.0](ab-F3-85.md) |
+| 12 November 2026 | [The inline images' cost when none shows](ab-F3-249.md) |
+| 11 November 2026 | [0.9.0 against 0.8.0](ab-F4-42.md) |
+| 9 November 2026 | [0.8.0's latency tail, startup and motion again, and `allow-jit`](rest-F4-58.md) |
+| 9 November 2026 | [0.8.0 against 0.7.0](ab-F4-25.md) |
+| 8 November 2026 | [The startup's gap at rest](startup-F3-228.md) |
+| 8 November 2026 | [The cursor's movement's cost](movement-F3-72.md) |
+| 8 November 2026 | [Lokyr again, against the other terminals of the first comparison](compare-F3-72.md) |
+| 8 November 2026 | [0.7.0 against 0.5.1](ab-F3-77.md) |
+| 7 November 2026 | [The search of 100 000 lines through the app's service](search-F3-52.md) |
+| 7 November 2026 | [0.5.1 against 0.5.0](ab-F3-190.md) |
+| 6 November 2026 | [The build of 6 November against 0.5.0, and the single tab's title](ab-F3-49.md) |
+| 5 November 2026 | [The window's motion, its resize and the cursor's fades](motion-F3-152.md) |
+| 5 November 2026 | [The latency beside a plugin on its own thread that renders without pause](latency-F3-35.md) |
+| 5 November 2026 | [The latency's tail and the startup of 0.5.0, bisected](latency-F3-163.md) |
+| 5 November 2026 | [0.5.0 against 0.4.0](ab-F3-40.md) |
+| 4 November 2026 | [The latency's tail of 0.4.0, a first session](latency-F3-135.md) |
+| 4 November 2026 | [0.4.0 against 0.3.0](ab-F3-29.md) |
+| 2 November 2026 | [The first frame a refresh later than 0.2.0's](startup-F3-105.md) |
+| 2 November 2026 | [0.3.0 against 0.2.0](ab-F3-83.md) |
+| 2 November 2026 | [The architecture of the MVP against the single pane's](ab-F3-13.md) |
+| 31 October 2026 | [Startup](startup-F2-53.md) |
+| 31 October 2026 | [CPU per frame and throughput on screen](onscreen-F2-56.md) |
+| 31 October 2026 | [Latency](latency-F2-54.md) |
+| 31 October 2026 | [A frame's new glyphs](glyphs-F2-146.md) |
+| 31 October 2026 | [Lokyr against the other terminals](compare-F2-134.md) |
+| 30 October 2026 | [Drawables at 60 Hz](drawables-F2-57.md) |
+| 29 October 2026 | [Idle, memory and GPU memory](idle-memory-F2-55.md) |
+| 25 October 2026 | [Throughput of the finished VT core](throughput-F1-56.md) |
+| 23 October 2026 | [Throughput after the performance fixes](throughput-F1-51.md) |
+| 23 October 2026 | [Throughput of the review fixes](throughput-F1-133.md) |
+| 20 October 2026 | [Instruction counts in CI](instructions-F1-52.md) |
+| 19 October 2026 | [Throughput of the VT core](throughput-F1-50.md) |
+| 19 October 2026 | [Search over the scrollback](search-F1-54.md) |
+| 18 October 2026 | [esctest, after the second compatibility fixes](esctest-F1-46.md) |
+| 18 October 2026 | [esctest, after the first compatibility fixes](esctest-F1-45.md) |
+| 18 October 2026 | [esctest, before the compatibility fixes](esctest-F1-44.md) |
+| 12 October 2026 | [The baseline of the existing terminals](baseline-F0.md) |

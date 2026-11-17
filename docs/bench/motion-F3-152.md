@@ -6,7 +6,7 @@ Measured on 2026-11-05, between 09:07 and 09:44, of the session's script, its an
 
 - **The probe**: `lokyr-bench motion` drags a window by its titlebar, or resizes it by its bottom-right corner, along a sine of 200 points and of 2 s, for 10 s, of the mouse's synthetic events at 120 Hz, as a hand would; Instruments' Animation Hitches records every process meanwhile, `xctrace record --all-processes`, and `tools/bench/motion_extract.py` reads the recording, of the motion less its first and its last 0.3 s: the frames that the display showed, the window server's surfaces' swaps, a second; those that it missed, as the gaps between two swaps longer than a refresh and a half count them; the compositor's delay of each, its median and its 95th percentile; and the window server's and the app's CPU, in percent of a core.
 - **Nine configurations**, each of Menlo 20 and 88 by 27 cells: Lokyr opaque, translucent, `background-opacity = 0.9`, and translucent with a blur of 10, each with the cursor's fades of the machine's own config, 100, 500, 500 and 100 ms, and without them, a switch of the same cycle, 600 and 600 ms; Ghostty 1.x in the same three, of the options of its command line alone, `--config-default-files=false`, its cursor a switch, as it has no fades. The display, the Dell P2721Q, ran at 60 Hz, every window on it.
-- **Two rounds**, the second in the reverse order.
+- **Two rounds**, the second in the reverse order, whose means are in [tables.md](motion-F3-152/tables.md).
 
 ## Results
 

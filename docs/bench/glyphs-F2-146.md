@@ -5,7 +5,7 @@ Measured on 2026-10-31, on the commits before and after the change, c56eeda and 
 ## Method
 
 - **A frame's layout**, outside the app: the font of the benches' config, Menlo at 13 points at a scale of 2, lays out a screen of 245 × 67 cells as a frame does, with the CoreText backend's calls timed: the faces' lookups, the shaping and the rasterization.
-- **On screen**: `lokyr --bench output --window 1920x1080` of a program that writes a file a screen at a time, 0.1 s apart: `cjk-all.txt`, the 32 164 CJK ideographs and Hangul syllables, 120 a line; `emoji-all.txt`, 1 178 emoji, 100 a line; `page.txt`, 60 lines of 110 characters of 600 ideographs, as a page of Chinese. The four workloads of [onscreen-F2-56](onscreen-F2-56.md), with `onscreen.py`, three runs each.
+- **On screen**: `lokyr --bench output --window 1920x1080` of a program that writes a file a screen at a time, 0.1 s apart: `cjk-all.txt`, the 32 164 CJK ideographs and Hangul syllables, 120 a line; `emoji-all.txt`, 1 178 emoji, 100 a line; `page.txt`, 60 lines of 110 characters of 600 ideographs, as a page of Chinese. The four workloads of [onscreen-F2-56](onscreen-F2-56.md), with `onscreen.py`, three runs each, and the VT core's throughput, [before](glyphs-F2-146/throughput-old.md) and [after](glyphs-F2-146/throughput-new.md).
 - **A screen's fill**: from the first frame that leaves glyphs for the frames after to the first that leaves none, as a build of the app that logs each frame told it.
 
 ## Where a frame of new glyphs went

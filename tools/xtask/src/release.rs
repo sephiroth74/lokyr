@@ -71,6 +71,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         notes.display()
     );
     let release = feed::release_of(&version);
+    let listed = fs::read_to_string(root.join("docs/releases/README.md"))
+        .context("reading docs/releases/README.md")?;
+    ensure!(
+        lists_notes(&listed, release),
+        "docs/releases/README.md does not list {release}'s notes: add `- [{release}]({release}.md), <date>: <what it brought>` at the top of its list"
+    );
     let changelog =
         fs::read_to_string(root.join("CHANGELOG.md")).context("reading CHANGELOG.md")?;
     ensure!(
@@ -226,6 +232,14 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// Whether `list`, the release notes' list, `docs/releases/README.md`'s,
+/// has an item that links the notes of `release`.
+fn lists_notes(list: &str, release: &str) -> bool {
+    let link = format!("- [{release}]({release}.md)");
+    list.lines()
+        .any(|line| line.trim_start().starts_with(&link))
+}
+
 /// Fails where `SOURCE_DATE_EPOCH` is set, to `epoch`, which would give the
 /// build its number in place of the commit's.
 fn epoch_unset(epoch: Option<&std::ffi::OsStr>) -> Result<()> {
@@ -340,6 +354,15 @@ fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_notes_list_names_a_release_of_its_item() {
+        let list = "# Release notes\n\n- [1.2.0](1.2.0.md), 16 November 2026: themes.\n- [1.1.0](1.1.0.md), 14 November 2026: settings.\n";
+        assert!(lists_notes(list, "1.2.0"));
+        assert!(lists_notes(list, "1.1.0"));
+        assert!(!lists_notes(list, "1.3.0"));
+        assert!(!lists_notes("See [1.2.0](1.2.0.md).", "1.2.0"));
+    }
 
     #[test]
     fn the_feed_s_latest_build_is_its_highest_number() {

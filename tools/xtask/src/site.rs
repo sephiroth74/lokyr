@@ -64,6 +64,14 @@ const COLLECTIONS: [&str; 2] = ["docs/bench", "docs/releases"];
 /// The repository's editor of a file, which a page's footer links.
 const EDIT: &str = "https://github.com/sephiroth74/lokyr/edit/main";
 
+/// The pages made of their sources, each of the source that a change goes
+/// to, which its footer links in place of the page's editor.
+const GENERATED: [(&str, &str, &str); 1] = [(
+    "docs/CONFIGURATION.md",
+    "crates/kernel/config.schema.json",
+    "the config's schema",
+)];
+
 /// The files of the documents' folders that the site copies: their images.
 const IMAGES: [&str; 6] = ["svg", "png", "jpg", "jpeg", "gif", "webp"];
 
@@ -418,11 +426,16 @@ impl Summary {
         found
     }
 
-    /// What does not hold of the summary against the public `documents`:
-    /// a page that it lists twice or that is no public document, and a
-    /// public document that it leaves out, but a report of a collection of
-    /// which it lists a page.
-    fn problems(&self, documents: &[PathBuf]) -> Vec<String> {
+    /// What does not hold of the summary against the public `documents`,
+    /// each of the documents that it `links`: a page that it lists twice or
+    /// that is no public document, and a public document that it leaves
+    /// out, but a report of a collection of which it lists a page, which
+    /// that page reaches through the collection's links.
+    fn problems(
+        &self,
+        documents: &[PathBuf],
+        links: &HashMap<PathBuf, Vec<PathBuf>>,
+    ) -> Vec<String> {
         let listed = self.documents();
         let mut problems = Vec::new();
         for (at, document) in listed.iter().enumerate() {
@@ -437,15 +450,71 @@ impl Summary {
             }
         }
         for document in documents {
-            if !listed.contains(&document.as_path()) && collection_of(document, &listed).is_none() {
-                problems.push(format!(
+            if listed.contains(&document.as_path()) {
+                continue;
+            }
+            match collection_of(document, &listed) {
+                None => problems.push(format!(
                     "{} is in no group of {SUMMARY}: list it where a reader would look for it",
                     document.display()
-                ));
+                )),
+                Some(page) if !reaches(page, document, links) => problems.push(format!(
+                    "{} is linked from no page of its collection: list it in {}",
+                    document.display(),
+                    page.display()
+                )),
+                Some(_) => {}
             }
         }
         problems
     }
+}
+
+/// Whether `page` reaches `document` through the links of `links`, within
+/// the folder of `page`'s collection.
+fn reaches(page: &Path, document: &Path, links: &HashMap<PathBuf, Vec<PathBuf>>) -> bool {
+    let Some(folder) = COLLECTIONS.iter().find(|folder| page.starts_with(folder)) else {
+        return false;
+    };
+    let mut seen: Vec<&Path> = vec![page];
+    let mut next = 0;
+    while let Some(&at) = seen.get(next) {
+        next += 1;
+        for linked in links.get(at).into_iter().flatten() {
+            if linked == document {
+                return true;
+            }
+            if linked.starts_with(folder) && !seen.contains(&linked.as_path()) {
+                seen.push(linked);
+            }
+        }
+    }
+    false
+}
+
+/// The documents that the Markdown `text` of `document` links, from the
+/// root, without their anchors: none of another site.
+fn document_links(document: &Path, text: &str) -> Vec<PathBuf> {
+    let folder = document.parent().unwrap_or(Path::new(""));
+    let mut found = Vec::new();
+    for event in Parser::new_ext(text, Options::all()) {
+        let Event::Start(Tag::Link { dest_url, .. }) = event else {
+            continue;
+        };
+        if dest_url.contains("://") || dest_url.starts_with("mailto:") {
+            continue;
+        }
+        let path = dest_url.split('#').next().unwrap_or_default();
+        if path.is_empty() {
+            continue;
+        }
+        if let Some(file) = normalized(&folder.join(path))
+            && !found.contains(&file)
+        {
+            found.push(file);
+        }
+    }
+    found
 }
 
 /// The page that the summary lists of the collection of `document`, a
@@ -463,7 +532,19 @@ fn summary(root: &Path, documents: &[PathBuf]) -> Result<Summary> {
     let text =
         fs::read_to_string(root.join(SUMMARY)).with_context(|| format!("reading {SUMMARY}"))?;
     let summary = Summary::parse(&text)?;
-    let problems = summary.problems(documents);
+    // The links of the collections' pages, which reach their reports.
+    let mut links = HashMap::new();
+    for document in documents {
+        if COLLECTIONS
+            .iter()
+            .any(|folder| document.starts_with(folder))
+        {
+            let text = fs::read_to_string(root.join(document))
+                .with_context(|| format!("reading {}", document.display()))?;
+            links.insert(document.clone(), document_links(document, &text));
+        }
+    }
+    let problems = summary.problems(documents, &links);
     if !problems.is_empty() {
         bail!("{}", problems.join("\n"));
     }
@@ -613,8 +694,11 @@ fn changed_pages(root: &Path, since: &str) -> Result<Vec<String>> {
 }
 
 /// The canonical addresses of the pages of the `changed` files among the
-/// site's `documents` and its home, or of every page.
+/// site's `documents` and its home, or of every page, `everything` or of
+/// the summary changed, which every page's sidebar shows, and which is no
+/// page itself.
 fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec<String> {
+    let everything = everything || changed.iter().any(|file| file == Path::new(SUMMARY));
     let home = Path::new("site/public/index.html");
     let mut pages = Vec::new();
     if everything || changed.iter().any(|file| file == home) {
@@ -622,6 +706,7 @@ fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec
     }
     for file in changed {
         let is_document = file.extension().is_some_and(|extension| extension == "md")
+            && file != Path::new(SUMMARY)
             && (file.starts_with("docs")
                 || ROOT_DOCUMENTS.iter().any(|root| file == Path::new(root)));
         if !everything && is_document {
@@ -784,10 +869,19 @@ fn page(
     } = html(document, text);
     let depth = document.components().count().saturating_sub(1);
     let up = "../".repeat(depth);
-    let source = format!(
-        r#"<a href="{EDIT}/{}">Edit this page on GitHub</a>"#,
-        document.display()
-    );
+    // A page made of a source links the source, which a change goes to.
+    let source = match GENERATED
+        .iter()
+        .find(|(page, ..)| document == Path::new(page))
+    {
+        Some((_, made_of, name)) => {
+            format!(r#"Made of <a href="{BLOB}/{made_of}">{name}</a>"#)
+        }
+        None => format!(
+            r#"<a href="{EDIT}/{}">Edit this page on GitHub</a>"#,
+            document.display()
+        ),
+    };
     let description = description.unwrap_or_else(|| {
         format!(
             "{title}, of the documentation of Lokyr, a fast, open-source terminal emulator for macOS."
@@ -1281,6 +1375,9 @@ fn html(document: &Path, text: &str) -> Rendered {
     // lists, quotes, tables and footnotes, whose paragraphs it passes over.
     let mut description = None;
     let mut paragraph: Option<String> = None;
+    // Whether the paragraph read is a marker line, of a `<sub>` alone,
+    // which the description passes over.
+    let mut marker = false;
     let mut nested = 0usize;
     // The first list item's text, the description of a document of no
     // paragraph of its own, as the release notes are.
@@ -1302,11 +1399,18 @@ fn html(document: &Path, text: &str) -> Rendered {
             ) => nested = nested.saturating_sub(1),
             Event::Start(Tag::Paragraph) if nested == 0 && description.is_none() => {
                 paragraph = Some(String::new());
+                marker = false;
+            }
+            Event::InlineHtml(html)
+                if paragraph.as_deref() == Some("")
+                    && html.trim().to_ascii_lowercase().starts_with("<sub") =>
+            {
+                marker = true;
             }
             Event::End(TagEnd::Paragraph) => {
                 if let Some(words) = paragraph.take() {
                     let words = words.split_whitespace().collect::<Vec<_>>().join(" ");
-                    if words.chars().count() >= DESCRIPTION_LEAST {
+                    if !marker && words.chars().count() >= DESCRIPTION_LEAST {
                         description = Some(words);
                     }
                 }
@@ -1658,7 +1762,7 @@ mod tests {
     fn a_page_s_description_is_its_first_paragraph_of_some_length() {
         let Rendered { description, .. } = html(
             Path::new("docs/x.md"),
-            "# X\n\n<sub>Platforms: macOS</sub>\n\n- a list's item that is long enough to be taken, yet passed over\n\n> A quote that is long enough to be taken, yet passed over too.\n\nThe guide to `x`, of [every key](y.md)\nthat the file holds, and of its values.\n\nA later paragraph that the description does not take.\n",
+            "# X\n\n<sub>macOS · zsh, bash, fish · on by default · [`[terminal] shell-integration`](CONFIGURATION.md#shell-integration)</sub>\n\n- a list's item that is long enough to be taken, yet passed over\n\n> A quote that is long enough to be taken, yet passed over too.\n\nThe guide to `x`, of [every key](y.md)\nthat the file holds, and of its values.\n\nA later paragraph that the description does not take.\n",
         );
         assert_eq!(
             description.as_deref(),
@@ -1736,6 +1840,16 @@ mod tests {
             ]
         );
         assert!(pages_of(&[PathBuf::from("Cargo.toml")], &documents, false).is_empty());
+        // The summary, which every page's sidebar shows, and no page.
+        let pages = pages_of(&[PathBuf::from(SUMMARY)], &documents, false);
+        assert_eq!(
+            pages,
+            [
+                "https://lokyr.dev/",
+                "https://lokyr.dev/docs/",
+                "https://lokyr.dev/changelog.html"
+            ]
+        );
         assert_eq!(
             pages_of(&[], &documents, true),
             [
@@ -2065,20 +2179,25 @@ mod tests {
             .map(Path::to_path_buf)
             .collect();
         documents.push(PathBuf::from("docs/releases/1.2.0.md"));
-        assert!(summary.problems(&documents).is_empty());
+        // The release notes' page lists the notes.
+        let links = HashMap::from([(
+            PathBuf::from("docs/releases/README.md"),
+            vec![PathBuf::from("docs/releases/1.2.0.md")],
+        )]);
+        assert!(summary.problems(&documents, &links).is_empty());
         // A page that it leaves out, and a measurement of a collection that
         // it does not list.
         documents.push(PathBuf::from("docs/keyboard.md"));
         documents.push(PathBuf::from("docs/bench/rest.md"));
-        let problems = summary.problems(&documents);
+        let problems = summary.problems(&documents, &links);
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems[0].starts_with("docs/keyboard.md is in no group of docs/SUMMARY.md"));
         assert!(problems[1].starts_with("docs/bench/rest.md is in no group"));
         // A page that it lists twice, or that is no public page.
         let twice = Summary::parse(&format!("{SUMMARY_TEXT}- [Again](README.md)\n")).unwrap();
-        let problems = twice.problems(&documents[..7]);
+        let problems = twice.problems(&documents[..7], &links);
         assert_eq!(problems, ["docs/SUMMARY.md lists docs/README.md twice"]);
-        let problems = summary.problems(&documents[1..]);
+        let problems = summary.problems(&documents[1..], &links);
         assert!(
             problems.contains(
                 &"docs/SUMMARY.md lists docs/README.md, which is no public page".to_owned()
@@ -2093,6 +2212,68 @@ mod tests {
         let public = super::documents(&root).unwrap();
         assert!(!public.iter().any(|document| document == Path::new(SUMMARY)));
         summary_of(&root, &public);
+    }
+
+    #[test]
+    fn a_report_of_a_listed_collection_is_reached_from_its_listed_page() {
+        let summary =
+            Summary::parse("# Summary\n\n## Reference\n\n- [Release notes](releases/README.md)\n")
+                .unwrap();
+        let documents = [
+            PathBuf::from("docs/releases/README.md"),
+            PathBuf::from("docs/releases/1.2.0.md"),
+            PathBuf::from("docs/releases/1.1.0.md"),
+            PathBuf::from("docs/releases/0.9.0.md"),
+        ];
+        // 1.2.0 listed, 1.1.0 of a link of 1.2.0's, 0.9.0 of none.
+        let readme = "# Release notes\n\n- [1.2.0](1.2.0.md#added), of [the changelog](../../CHANGELOG.md)\n- [GitHub](https://github.com/x/releases)\n";
+        let links = HashMap::from([
+            (documents[0].clone(), document_links(&documents[0], readme)),
+            (
+                documents[1].clone(),
+                document_links(&documents[1], "See [1.1.0](1.1.0.md)."),
+            ),
+        ]);
+        assert_eq!(
+            links[&documents[0]],
+            [
+                PathBuf::from("docs/releases/1.2.0.md"),
+                PathBuf::from("CHANGELOG.md")
+            ]
+        );
+        assert_eq!(
+            summary.problems(&documents, &links),
+            [
+                "docs/releases/0.9.0.md is linked from no page of its collection: list it in docs/releases/README.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_page_made_of_a_source_links_its_source_and_no_editor() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let settings = Settings::default();
+        let titles = HashMap::new();
+        let made = page(
+            Path::new("docs/CONFIGURATION.md"),
+            "# The configuration\n\nEvery key of the config, of its values and its default.\n",
+            &settings,
+            &titles,
+            &summary,
+        );
+        assert!(
+            made.contains(r#"Made of <a href="https://github.com/sephiroth74/lokyr/blob/main/crates/kernel/config.schema.json">the config's schema</a>"#),
+            "{made}"
+        );
+        assert!(!made.contains("Edit this page on GitHub"));
+        let written = page(
+            Path::new("docs/keyboard.md"),
+            "# Keyboard\n\nThe keys that Lokyr takes, and how to change them in the config.\n",
+            &settings,
+            &titles,
+            &summary,
+        );
+        assert!(written.contains(r#"<a href="https://github.com/sephiroth74/lokyr/edit/main/docs/keyboard.md">Edit this page on GitHub</a>"#));
     }
 
     /// The summary of the repository at `root`, which holds `public`.
