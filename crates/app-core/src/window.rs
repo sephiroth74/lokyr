@@ -181,6 +181,10 @@ pub(crate) struct Window<B: Backend> {
     /// Whether it floats above the other applications' windows, as the
     /// user chose.
     pub(crate) floating: bool,
+    /// Whether it shows opaque, of a config that makes it translucent, as
+    /// View › Use Transparency left it, until the config's opacity or blur
+    /// changes.
+    pub(crate) opaque: bool,
     /// The backdrop that the platform has for it, while it is translucent.
     pub(crate) backdrop: Option<Backdrop>,
     /// The mouse over it.
@@ -418,6 +422,7 @@ impl<B: Backend> Window<B> {
             notified_at: None,
             bell_marked: false,
             floating: false,
+            opaque: false,
             backdrop: None,
             mouse: Mouse::default(),
             mouse_moves: false,

@@ -474,6 +474,8 @@ The `core-actions` plugin:
 
 The app's own, of no plugin: Window › Float on Top, `window.toggle-float-on-top`, keeps a window above the other applications' windows, at AppKit's floating level, each window of its own, its item ticked as the window in front floats and dimmed for the quick terminal, which floats of its own; a window in full screen takes the normal level there, and floats again as it leaves it.
 
+View › Use Transparency, `window.toggle-opacity`, of ⌘U by default, shows a window that `[window] background-opacity` makes translucent opaque, of no backdrop, its background and the chrome's backgrounds whole, and translucent again, each window of its own, its item ticked as the window in front is translucent and dimmed for one that the config keeps opaque and for the settings window; the config's opacity and blur stay as they are, and a new value of either shows in every window, those shown opaque too.
+
 ## The pane's context menu
 
 A right click, or a Control click, opens a native menu at the pointer, after macOS's Terminal; a program that takes the mouse's clicks has them, but with Shift. The click selects first: within the selection it keeps it, on a word it selects the word, on a blank cell it takes the selection away. Its items are the commands that take the click's cell, then the clipboard's and the editing's; an item that would do nothing there is dimmed, as its context or its plugin tells.

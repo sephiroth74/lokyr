@@ -1896,6 +1896,15 @@ fn the_settings_window_is_opaque_whatever_the_config_s_opacity() {
         .map(|shown| shown.background)
         .expect("drawn");
     assert_eq!(background.alpha, 1.0);
+    // Nothing to show opaque there: View › Use Transparency dimmed, and
+    // the command does nothing to it.
+    assert!(!fake.command_enabled(OPACITY) && !fake.command_checked(OPACITY));
+    fake.send_app(&mut app, AppEvent::Command(OPACITY.to_owned()));
+    assert!(!app.windows[&own].opaque);
+    // The terminal's window in front again, the item enabled and ticked.
+    fake.send(&mut app, own, WindowEvent::Focused(false));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    assert!(fake.command_enabled(OPACITY) && fake.command_checked(OPACITY));
     let _ = std::fs::remove_dir_all(&directory);
 }
 

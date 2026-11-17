@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 48] = [
+pub const BINDINGS: [(&str, &str); 49] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -49,6 +49,8 @@ pub const BINDINGS: [(&str, &str); 48] = [
     ("cmd+0", "font.reset"),
     // The cursor guide, as iTerm2's.
     ("alt+cmd+;", "window.toggle-cursor-guide"),
+    // A translucent window shown opaque, and back.
+    ("cmd+u", "window.toggle-opacity"),
     // The scrollback's.
     ("shift+cmd+up", "pane.scroll-line-up"),
     ("shift+cmd+down", "pane.scroll-line-down"),

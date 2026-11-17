@@ -14,6 +14,7 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⌘C, ⌘V, ⌘A, ⌘K | `pane.copy`, `pane.paste`, `pane.select-all`, `pane.clear` |
 | ⌘=, ⌘+, ⌘-, ⌘0 | `font.bigger`, `font.smaller`, `font.reset` |
 | ⌥⌘; | `window.toggle-cursor-guide`: the band across the cursor's row |
+| ⌘U | `window.toggle-opacity`: a translucent window shown opaque, and back |
 | ⇧⌘E, and Tab and ⇧Tab in the hints | `links.hints`, `links.hints-action`: the hints of what the pane shows, and what a pick does |
 | ⇧⌘↑, ⇧⌘↓, ⌘Page Up, ⌘Page Down, ⌘Home, ⌘End | scrolling, by a line, a page, or to the top and the bottom |
 | ⌘↑, ⌘↓ | the previous prompt and the next, of the commands that the shell marks |

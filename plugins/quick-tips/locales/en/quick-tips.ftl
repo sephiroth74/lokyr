@@ -51,6 +51,7 @@ tip-services = In the Finder, right-click a folder and choose Services › New L
 tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock icon, to install its theme.
 tip-float = Window › Float on Top keeps the window above every other app's.
 tip-cursor-guide = Press { $keys }, or View › Show Cursor Guide, for a band across the cursor's row that shows where it is.
+tip-transparency = Press { $keys }, or View › Use Transparency, to show a translucent window opaque while you read, and again to see through it; your config stays as it is.
 tip-sleip = Plugins come from the registry: `sleip search` lists them, and `sleip add` installs one.
 tip-settings-window = Lokyr › Open Settings Window shows every setting by its section, the plugins' too, with what it does, and changes it in your config file, its comments kept.
 tip-settings-keys = On the settings window's Keys page, type in its filter to find a shortcut, click its keys and press the new ones, or Add a shortcut of your own: every default is there, and Restore gives one back.

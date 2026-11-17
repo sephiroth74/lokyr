@@ -87,19 +87,13 @@ impl<B: Backend> App<B> {
     /// clear, of the blur of what is behind it, as the frame draws the
     /// window's background of its opacity, under the chrome that takes its
     /// place; `None` for an opaque one, as the settings' window always is,
-    /// which is no terminal's.
+    /// which is no terminal's, and one that shows opaque.
     fn backdrop(&self, window: WindowId) -> Option<Backdrop> {
-        if self.shows_settings(window) {
-            return None;
-        }
-        let config = &self.config.window;
-        config
-            .background_opacity
-            .is_translucent()
-            .then(|| Backdrop {
-                color: [0.0; 4],
-                blur: f64::from(config.background_blur.points()),
-            })
+        let shown_opaque = self.windows.get(&window).is_some_and(|state| state.opaque);
+        (self.translucent_by_config(window) && !shown_opaque).then(|| Backdrop {
+            color: [0.0; 4],
+            blur: f64::from(self.config.window.background_blur.points()),
+        })
     }
 
     /// The grid that fits a window of `size`, less its padding, in the
@@ -881,7 +875,12 @@ impl<B: Backend> App<B> {
         // the terminal's colors of the pane's own, which a program, reverse
         // video or a man page's window change.
         let chrome_dark = own.map_or(dark, |own| own == Appearance::Dark);
-        let opacity = self.config.window.background_opacity.value();
+        // The window's opacity, of 1 while it shows opaque.
+        let opacity = if backdrop.is_some() {
+            self.config.window.background_opacity.value()
+        } else {
+            1.0
+        };
         let chrome_look = (chrome_dark, background, foreground, opacity);
         let reduced = platform.reduce_motion();
         let headroom = platform.screen_headroom(window);
@@ -1008,11 +1007,7 @@ impl<B: Backend> App<B> {
         // leave showing, and the titlebar too, unless the config keeps it
         // opaque: past a sidebar, which runs through it, its view's own.
         let laid_out = started.map(|_| Instant::now());
-        let opacity = if backdrop.is_some() {
-            chrome_look.3
-        } else {
-            1.0
-        };
+        let opacity = chrome_look.3;
         let sidebar = chrome::has_tab_bar(&state.chrome)
             && matches!(
                 chrome::tab_bar_place(&state.chrome, &self.plugins),

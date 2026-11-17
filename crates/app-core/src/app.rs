@@ -193,6 +193,11 @@ const FLOAT_ON_TOP: &str = "window.toggle-float-on-top";
 /// in every window, until the config's `[cursor] guide` changes.
 const CURSOR_GUIDE: &str = "window.toggle-cursor-guide";
 
+/// Shows a translucent window opaque, or translucent again, the config's
+/// opacity and blur unchanged, which the View menu's item ticks while the
+/// window in front is translucent.
+const OPACITY: &str = "window.toggle-opacity";
+
 /// The command that shows the system's definition of the selection, of
 /// one line, which the context menu alone shows, naming it.
 const LOOK_UP: &str = "pane.look-up";
@@ -2113,6 +2118,16 @@ impl<B: Backend> App<B> {
             self.cursor_guide = config.cursor.guide;
             platform.set_command_checked(CURSOR_GUIDE, self.cursor_guide);
         }
+        // A new opacity or blur shows in every window, those shown opaque
+        // too, as the config's new values are what it asks to see.
+        let translucency_changed = config.window.background_opacity
+            != self.config.window.background_opacity
+            || config.window.background_blur != self.config.window.background_blur;
+        if translucency_changed {
+            for state in self.windows.values_mut() {
+                state.opaque = false;
+            }
+        }
         let told = config.told != self.config.told;
         let agents = std::mem::replace(&mut self.config, config).agents;
         if told {
@@ -2120,6 +2135,10 @@ impl<B: Backend> App<B> {
         }
         if self.config.agents != agents {
             self.apply_agents(platform, &agents);
+        }
+        if translucency_changed {
+            let front = platform.focused_window();
+            self.show_opacity(platform, front);
         }
         // The plugins take their sections, and hear of their changes; those
         // that their sections turn off stop, and those turned on again
@@ -3346,6 +3365,17 @@ impl<B: Backend> App<B> {
                     self.request_frames(platform);
                     Ok(())
                 }
+                OPACITY => {
+                    if let Some(window) = self.acting.or_else(|| platform.focused_window())
+                        && self.translucent_by_config(window)
+                        && let Some(state) = self.windows.get_mut(&window)
+                    {
+                        state.opaque = !state.opaque;
+                        platform.request_frame(window);
+                        self.show_opacity(platform, Some(window));
+                    }
+                    Ok(())
+                }
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -4440,6 +4470,26 @@ impl<B: Backend> App<B> {
         platform.set_command_enabled(FLOAT_ON_TOP, state.is_some());
     }
 
+    /// Ticks the View menu's Use Transparency as `window`, the one in
+    /// front, shows translucent, dimmed for one that the config keeps
+    /// opaque, for the settings' window and without a window.
+    pub(super) fn show_opacity(&self, platform: &mut dyn Platform, window: Option<WindowId>) {
+        let translucent = window.filter(|&window| self.translucent_by_config(window));
+        let opaque = translucent
+            .and_then(|window| self.windows.get(&window))
+            .is_none_or(|state| state.opaque);
+        platform.set_command_checked(OPACITY, !opaque);
+        platform.set_command_enabled(OPACITY, translucent.is_some());
+    }
+
+    /// Whether the config makes `window` translucent, a terminal's of a
+    /// background's opacity below 1, whether or not it shows opaque.
+    pub(super) fn translucent_by_config(&self, window: WindowId) -> bool {
+        self.windows.contains_key(&window)
+            && !self.shows_settings(window)
+            && self.config.window.background_opacity.is_translucent()
+    }
+
     /// Gives `window` the title of its active tab, or Lokyr's when its
     /// program gives none, after 🔔 when its bell rang while it had no
     /// focus.
@@ -5410,6 +5460,7 @@ impl<B: Backend> App<B> {
                 self.settle_recording(platform);
                 if focused {
                     self.show_floating(platform, Some(window));
+                    self.show_opacity(platform, Some(window));
                 }
                 // The plugins hear it, but of a question on the window, which
                 // takes the focus as a part of it, and of the settings' window
@@ -5666,6 +5717,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             Category::Windows,
         ),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
+        (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
         (LOOK_UP, "pane-look-up", Category::Edit),
         (MAN_PAGE, "pane-man-page", Category::Windows),

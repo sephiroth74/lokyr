@@ -1153,6 +1153,15 @@
     "when": null
   },
   {
+    "capabilities": [],
+    "category": "view",
+    "name": "window.toggle-opacity",
+    "params": [],
+    "plugin": null,
+    "title": "Use Transparency",
+    "when": null
+  },
+  {
     "capabilities": [
       "global-hotkey"
     ],

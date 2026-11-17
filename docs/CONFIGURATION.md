@@ -848,6 +848,7 @@ The opacity of the window's background, from 0, clear, to 1, opaque: below 1, wh
 
 - Only the default background lets it show, with the padding and the title bar, which take it, and the tab bar's background and the active tab's, as a pane's header, each of the same opacity as the panes, rather than theirs over the window's: a background that a program colors, such as a status line's, stays opaque, as do the selection, the cursor and the text.
 - The settings window, which is no terminal's, stays opaque.
+- View › Use Transparency, bound to ⌘U by default, shows the window in front opaque, and translucent again, as its command, `window.toggle-opacity`, each window of its own, the config as it is; a new opacity or blur in the config shows in every window, those shown opaque too.
 - At `1` the window is opaque, as it is by default.
 
 ### `background-blur`
@@ -1686,6 +1687,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+-` | `font.smaller` | Makes the text a point smaller, down to 4 |
 | `cmd+0` | `font.reset` | Gives the text the size of [`size`](#size) again |
 | `alt+cmd+;` | `window.toggle-cursor-guide` | Shows the cursor guide, a band across the cursor's row, or hides it, in every window, as View › Show Cursor Guide does, until [`guide`](#guide) changes |
+| `cmd+u` | `window.toggle-opacity` | Shows the window in front opaque, of a translucent [`background-opacity`](#background-opacity), or translucent again, as View › Use Transparency does |
 | `cmd+shift+e` | `links.hints` | Labels what the pane shows that you may pick, as View › Show Hints does: URLs, paths, git's hashes, IP addresses and your [`hints`](#hints) |
 | `shift+cmd+up` | `pane.scroll-line-up` | Scrolls the view a line up |
 | `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |

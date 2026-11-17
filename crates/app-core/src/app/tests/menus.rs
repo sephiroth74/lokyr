@@ -146,6 +146,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Show Hints shift+cmd+e",
             "-",
             "Show Cursor Guide alt+cmd+;",
+            "Use Transparency cmd+u",
             "-",
             "Command Palette… shift+cmd+p",
             "Choose Theme…",
@@ -333,7 +334,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 133);
+    assert_eq!(app.keymap.bindings().len(), 134);
 }
 
 #[test]
@@ -439,6 +440,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "Float on Top",
                 Category::Windows
             ),
+            ("window.toggle-opacity", "Use Transparency", Category::View),
         ]
     );
     let texts = Texts::new("en", &CATALOGS);

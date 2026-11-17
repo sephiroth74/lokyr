@@ -1151,6 +1151,95 @@ fn a_translucent_window_s_chrome_shows_its_opacity_in_place_of_its_background() 
 }
 
 #[test]
+fn use_transparency_shows_a_translucent_window_opaque_and_back_each_window_of_its_own() {
+    let translucent = |opacity: f64| {
+        let mut config = unpadded();
+        config.window.background_opacity = opacity.try_into().unwrap();
+        config.window.background_blur = 12.0.try_into().unwrap();
+        config
+    };
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("echo ready; read line");
+    let mut app = App::new(Some(drawing), translucent(0.5), None).with_program(program);
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, first, "ready"));
+    // Two tabs, whose bar and active tab are knocked out to the window's
+    // background where it is translucent.
+    command(&mut fake, &mut app, first, "tabs.new");
+    // A window's backdrop's blur, its background's opacity, and whether
+    // its chrome takes the background's place.
+    let look = |fake: &Fake, app: &App, window: WindowId| {
+        (
+            fake.window(window)
+                .unwrap()
+                .translucent
+                .map(|backdrop| backdrop.blur),
+            app.windows[&window]
+                .shown
+                .as_ref()
+                .unwrap()
+                .background
+                .alpha,
+            drawn_shapes(app, window).iter().any(|shape| shape.knockout),
+        )
+    };
+    let item = |fake: &Fake| (fake.command_enabled(OPACITY), fake.command_checked(OPACITY));
+    // Translucent, as the config makes it, its item in the View menu, of
+    // its key, ticked.
+    let view = menu_items(&fake, 3);
+    assert!(
+        view.contains(&"Use Transparency cmd+u".to_owned()),
+        "{view:?}"
+    );
+    assert_eq!(look(&fake, &app, first), (Some(12.0), 0.5, true));
+    assert_eq!(item(&fake), (true, true));
+    // ⌘U shows it opaque: of no backdrop, its background whole and the
+    // chrome over it, the item unticked.
+    fake.send(&mut app, first, command_key(KeyCode::KeyU, "u"));
+    frames(&mut fake, &mut app, first);
+    assert_eq!(look(&fake, &app, first), (None, 1.0, false));
+    assert_eq!(item(&fake), (true, false));
+    // A new window is translucent, as the config makes it, the item
+    // ticked of the window in front; back in the first, unticked.
+    fake.send_app(&mut app, AppEvent::Command(NEW_WINDOW.to_owned()));
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    app.windows.get_mut(&second).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, first, WindowEvent::Focused(false));
+    fake.send(&mut app, second, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, second);
+    assert_eq!(look(&fake, &app, second).0, Some(12.0));
+    assert_eq!(item(&fake), (true, true));
+    fake.send(&mut app, second, WindowEvent::Focused(false));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    assert_eq!(item(&fake), (true, false));
+    // Again, translucent of the config's opacity and blur.
+    command(&mut fake, &mut app, first, OPACITY);
+    assert_eq!(look(&fake, &app, first), (Some(12.0), 0.5, true));
+    assert_eq!(item(&fake), (true, true));
+    // A new opacity in the config shows in a window shown opaque too.
+    command(&mut fake, &mut app, first, OPACITY);
+    assert_eq!(look(&fake, &app, first).0, None);
+    app.apply(&mut fake, translucent(0.7));
+    frames(&mut fake, &mut app, first);
+    let (blur, alpha, _) = look(&fake, &app, first);
+    assert_eq!(blur, Some(12.0));
+    assert!((alpha - 0.7).abs() < 1e-6, "{alpha}");
+    assert_eq!(item(&fake), (true, true));
+    // Of an opaque config, there is nothing to show opaque: the item
+    // dimmed and unticked, the command doing nothing.
+    app.apply(&mut fake, translucent(1.0));
+    frames(&mut fake, &mut app, first);
+    assert_eq!(item(&fake), (false, false));
+    command(&mut fake, &mut app, first, OPACITY);
+    assert!(!app.windows[&first].opaque);
+    assert_eq!(look(&fake, &app, first), (None, 1.0, false));
+}
+
+#[test]
 fn a_click_on_the_palette_s_selected_row_runs_it() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
