@@ -13,6 +13,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 - [AI agents](agents.md)
 - [Progress and status](progress-and-status.md)
 - [Notifications](notifications.md)
+- [Mouse and selection](mouse-and-selection.md)
 - [Plugins](plugins/README.md)
   - [Tab bar](plugins/tabs.md)
   - [Splits](plugins/splits.md)
