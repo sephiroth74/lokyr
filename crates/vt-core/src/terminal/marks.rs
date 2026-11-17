@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 use super::events::Events;
 use super::gutter::GutterKind;
 use super::{Event, Terminal};
-use crate::page::{PageList, PinId, Position};
+use crate::page::{Content, ListRow, PageList, PinId, Position};
 
 /// The most commands that a terminal keeps, its oldest going first, so
 /// that a program that marks prompts without end costs no more.
@@ -361,19 +361,39 @@ impl Terminal {
     pub(super) fn prompts_in(&self, top: i64, bottom: i64) -> Vec<(i64, GutterKind)> {
         let rows = &self.primary.rows;
         let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
-        let row_of = |marked: &Marked| {
-            let position = rows.pin_position(marked.prompt?)?;
-            let index = rows.row_index(position.page, position.row)?;
-            Some(first.saturating_add(index as i64))
+        let index_of = |pin: Option<PinId>| {
+            let position = rows.pin_position(pin?)?;
+            rows.row_index(position.page, position.row)
+        };
+        let row_of = |marked: &Marked| Some(first.saturating_add(index_of(marked.prompt)? as i64));
+        // The prompt's first row of text, from its start to its input's row,
+        // a few rows at most, as a theme's prompt may print an empty line
+        // first; its start's where none holds text.
+        let shown_row = |marked: &Marked, row: i64| {
+            let (Some(start), Some(input)) = (index_of(marked.prompt), index_of(marked.input))
+            else {
+                return row;
+            };
+            (start..=input.min(start + MOST_PROMPT_ROWS))
+                .find(|&index| {
+                    rows.row_at(index)
+                        .and_then(|(page, row)| rows.row_of(page, row))
+                        .is_some_and(holds_text)
+                })
+                .map_or(row, |index| first.saturating_add(index as i64))
         };
         // The commands are in their prompts' order, those whose prompts left
         // the list first: a binary search finds the view's first, as each
-        // row's number costs a walk of the list's pages.
+        // row's number costs a walk of the list's pages, from a few rows
+        // above the view, as a prompt's row of text may be below its start.
         let commands = &self.commands.list;
-        let from = commands.partition_point(|marked| row_of(marked).is_none_or(|row| row < top));
+        let above = top.saturating_sub(MOST_PROMPT_ROWS as i64);
+        let from = commands.partition_point(|marked| row_of(marked).is_none_or(|row| row < above));
         commands
             .range(from..)
             .map_while(|marked| Some((row_of(marked).filter(|&row| row < bottom)?, marked)))
+            .map(|(row, marked)| (shown_row(marked, row), marked))
+            .filter(|&(row, _)| row >= top && row < bottom)
             .filter_map(|(row, marked)| {
                 // A line of no command, which the shell ends at once
                 // without its output's mark, shows none.
@@ -404,6 +424,19 @@ impl Terminal {
             })
             .collect()
     }
+}
+
+/// The most rows below a prompt's start that its mark looks at for its
+/// first row of text.
+const MOST_PROMPT_ROWS: usize = 8;
+
+/// Whether `row` holds a character other than a space.
+fn holds_text(row: ListRow<'_>) -> bool {
+    row.cells().any(|cell| match cell.content() {
+        Content::Char(char) => char != '\0' && char != ' ',
+        Content::Grapheme(_) => true,
+        Content::BgPalette(_) | Content::BgRgb(_) => false,
+    })
 }
 
 impl Terminal {

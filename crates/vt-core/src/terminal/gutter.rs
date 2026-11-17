@@ -289,6 +289,46 @@ mod tests {
         assert_eq!(shown(&mut terminal).len(), 4);
     }
 
+    /// A command whose prompt starts with an empty line, as a theme's
+    /// prompt prints one, then its two rows, and that failed.
+    const SPACED: &str = "\x1b]133;A\x07\r\nuser ~/src\r\n$ \x1b]133;B\x07run\r\n\x1b]133;C\x07out\r\n\x1b]133;D;1\x07";
+
+    #[test]
+    fn a_prompt_s_mark_is_on_its_first_row_of_text() {
+        let mut terminal = Terminal::new(20, 14, Options::default());
+        feed(&mut terminal, SPACED);
+        // A prompt of text on its start's row keeps it.
+        feed(&mut terminal, &command(Some(0)));
+        // A prompt of no text up to its input keeps its start's row.
+        feed(
+            &mut terminal,
+            "\x1b]133;A\x07\r\n\x1b]133;B\x07\r\n\x1b]133;C\x07x\r\n\x1b]133;D;0\x07",
+        );
+        // A first line of spaces alone is as empty.
+        feed(
+            &mut terminal,
+            "\x1b]133;A\x07   \r\n$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07\x1b]133;D;0\x07",
+        );
+        assert_eq!(
+            shown(&mut terminal),
+            [
+                (1, GutterKind::Failed),
+                (4, GutterKind::Succeeded),
+                (6, GutterKind::Succeeded),
+                (10, GutterKind::Succeeded)
+            ]
+        );
+        // A prompt whose start is above the view and whose text is in it
+        // shows its mark.
+        let mut short = Terminal::new(20, 3, Options::default());
+        feed(&mut short, SPACED);
+        assert_eq!(short.origin().top, 2);
+        short.scroll_viewport(Scroll::Up(1));
+        assert_eq!(shown(&mut short), [(0, GutterKind::Failed)]);
+        // The jumps go to the prompts' starts, as before.
+        assert_eq!(terminal.prompt_indexes()[0], 0);
+    }
+
     #[test]
     fn the_view_shows_the_prompts_of_its_rows_alone() {
         let mut terminal = Terminal::new(20, 4, Options::default());

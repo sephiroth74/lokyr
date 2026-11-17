@@ -809,6 +809,7 @@ Whether each pane shows a gutter at the left of its cells, with a mark on the pr
 
 - The marks need the shell to mark its prompts and its commands, as the shells' integration does ([`shell-integration`](#shell-integration)): without it, the gutter shows nothing.
 - A command's mark shows its exit status: 0, or none that the shell told, is a success, any other a failure, as an interrupted command's.
+- The mark is on the prompt's first line of text, so that a prompt that starts with an empty line, as some prompt themes print, has it on the line after.
 - The gutter takes no column of the grid: it lies in the padding at the cells' left, which widens to 4 points, at the left and the right, if [`padding-x`](#padding-x-padding-y) is narrower.
 - The marks keep their lines as output scrolls them into the scrollback and a resize reflows them, and go with them, as the scrollback's limit or a clearing takes them.
 - A program of the full screen, as an editor's, shows no prompt's mark, as its screen has no shell's prompts.

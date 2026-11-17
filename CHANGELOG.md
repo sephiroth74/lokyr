@@ -40,6 +40,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A command's mark in the gutter shows on its prompt's first line of text, not on the empty line that some prompt themes print before the prompt.
 - A tab's context menu no longer runs the item that the pointer moves over, such as Rename Tab…: it waits for you to click an item.
 - The cursor no longer shows, as it blinks, the character of another cell, as a few moves at once, of a click in the command line or of quick output, find its drawing busy: it stays where it was drawn until its next frame draws it in its new cell.
 - A plugin whose command fails while you answer its earlier question can ask you again, rather than being refused every question until Lokyr starts again.

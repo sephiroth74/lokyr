@@ -18,12 +18,12 @@ Then this one:
 seq 1 200
 ```
 
-A red bar appears at the left of the first row of the prompt of `ls`, which failed, and a gray one at the first row of the prompt of `seq`. When a prompt starts with an empty line, its bar is on that line. While you read the numbers, with the line `seq 1 200` scrolled away, the command shows in a pill at the pane's top. Press ⌘↑: the view jumps up to the prompt of `seq`. Press ⌘↑ again to reach the prompt of `ls`, and ⌘↓ to come back down.
+A red bar appears at the left of the prompt of `ls`, which failed, and a gray one at the left of the prompt of `seq`, each on its prompt's first line of text. While you read the numbers, with the line `seq 1 200` scrolled away, the command shows in a pill at the pane's top. Press ⌘↑: the view jumps up to the prompt of `seq`. Press ⌘↑ again to reach the prompt of `ls`, and ⌘↓ to come back down.
 
 ## What it gives you
 
 - **Jump between prompts**: ⌘↑ and ⌘↓ (`pane.prompt-previous`, `pane.prompt-next`), as [copy, paste and scrolling](plugins/core-actions.md) lists them.
-- **A mark for each command**: a bar in the gutter at the left of its prompt's first row, gray when it succeeded, red when it failed, and in the accent color while it runs. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
+- **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
 - **The command you're reading**: when a command's line scrolls away, the [command header](plugins/command-header.md) shows it at the pane's top.
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
 - **Hear when a long command ends**: a notification tells you when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
