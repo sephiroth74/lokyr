@@ -923,3 +923,63 @@ fn the_alphabet_of_the_config_gives_the_labels_and_one_that_is_none_is_told() {
         assert_eq!(shown, ["a", "d", "s"], "{wrong}");
     }
 }
+
+#[test]
+fn hints_shown_again_take_the_config_of_now_in_their_open_panel_and_escape_takes_them_all() {
+    use lokyr_plugin_sdk::message::Data;
+
+    let lines = ["commit 4482b9e9", "commit 5582b9e9", "commit 6682b9e9"];
+    let mut host = screen(&lines);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let panel = ViewId::Panel(PanelId::from(HINTS_PANEL));
+    host.render(&mut links, &panel).expect("the hints' field");
+    let sorted = |host: &FakeHost| {
+        let mut shown: Vec<String> = labels(host).into_iter().map(|(_, label)| label).collect();
+        shown.sort();
+        shown
+    };
+    assert_eq!(sorted(&host), ["a", "d", "s"]);
+    // The config changes while they show; shown again, of its alphabet,
+    // in the panel open, its field emptied and of the keys again.
+    host.set_config(Data::Map(std::collections::BTreeMap::from([(
+        "alphabet".to_owned(),
+        Data::Text("jkl".to_owned()),
+    )])));
+    host.deliver(&mut links).unwrap();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let done = host.take_done();
+    assert!(
+        !done
+            .iter()
+            .any(|request| matches!(request, Request::OpenPanel { .. })),
+        "{done:?}"
+    );
+    assert!(done.iter().any(|request| matches!(
+        request,
+        Request::SetText { text, .. } if text.is_empty()
+    )));
+    assert!(
+        done.iter()
+            .any(|request| matches!(request, Request::FocusNode { .. }))
+    );
+    assert_eq!(sorted(&host), ["j", "k", "l"]);
+    // Escape takes every label away, none of before left.
+    host.post(Event::PanelClosed(PanelId::from(HINTS_PANEL)));
+    host.deliver(&mut links).unwrap();
+    assert!(host.decorations().is_empty());
+    // Shown again over a screen of nothing to pick, their panel closes.
+    let mut host = screen(&lines);
+    let mut links = Links::default();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    host.pane(PANE).lines.clear();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    assert!(
+        host.take_done()
+            .contains(&Request::ClosePanel(PanelId::from(HINTS_PANEL)))
+    );
+    assert!(host.decorations().is_empty());
+}

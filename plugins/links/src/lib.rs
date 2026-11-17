@@ -103,12 +103,14 @@ pub struct Links {
     alphabet: Option<String>,
 }
 
-/// The hints that a pane shows: the pane, each hint, and what a pick does.
+/// The hints that a pane shows: the pane, each hint, what a pick does, and
+/// the revision of the letters typed in their field.
 #[derive(Debug)]
 struct Shown {
     pane: PaneId,
     hints: Vec<Hint>,
     action: Action,
+    revision: u64,
 }
 
 /// A hint that a pane shows: its label, its cells, its text, what it
@@ -420,20 +422,33 @@ impl Links {
     /// nearest the cursor; and the panel of the letters typed. Of none,
     /// nothing.
     fn show_hints(&mut self, cx: &mut Cx<'_>, action: Action) -> Result<(), Error> {
+        // Shown already, of their panel open: shown anew, of the screen and
+        // the config of now, in the same panel where the pane is the same,
+        // as a panel of an id open is none to open again, which would fail
+        // the call and drop its writes.
+        let open = self
+            .hints
+            .as_ref()
+            .map(|shown| (shown.pane, shown.revision));
         self.end_hints(cx);
-        let Some(pane) = cx.focused_pane() else {
+        let pane = cx.focused_pane();
+        let found = match pane {
+            Some(pane) => screen_hints(cx, pane, &self.patterns)?,
+            None => Vec::new(),
+        };
+        let (Some(pane), false) = (pane, found.is_empty()) else {
+            if open.is_some() {
+                cx.close_panel(HINTS_PANEL)?;
+            }
             return Ok(());
         };
-        let found = screen_hints(cx, pane, &self.patterns)?;
-        if found.is_empty() {
-            return Ok(());
-        }
         let alphabet = self.alphabet.as_deref().unwrap_or(hints::ALPHABET);
         let labels = hints::labels(found.len(), alphabet);
         let mut shown = Shown {
             pane,
             hints: Vec::new(),
             action,
+            revision: 0,
         };
         for ((span, text, opens), label) in found.into_iter().zip(labels) {
             shown.hints.push(Hint {
@@ -447,6 +462,18 @@ impl Links {
         for hint in &mut shown.hints {
             hint.decoration =
                 Some(cx.decorate(pane, hint.span.0, hint.span.1, hint_look(&hint.label))?);
+        }
+        let panel = ViewId::Panel(PanelId::from(HINTS_PANEL));
+        match open {
+            Some((shown_in, revision)) if shown_in == pane => {
+                shown.revision = revision;
+                self.hints = Some(shown);
+                cx.set_text(panel.clone(), HINTS_FIELD, "", revision)?;
+                cx.request_render(panel.clone())?;
+                return cx.focus_node(panel, HINTS_FIELD);
+            }
+            Some(_) => cx.close_panel(HINTS_PANEL)?,
+            None => {}
         }
         self.hints = Some(shown);
         cx.open_panel(
@@ -474,6 +501,7 @@ impl Links {
         let Some(shown) = &mut self.hints else {
             return Ok(());
         };
+        shown.revision = revision;
         let text = text.trim();
         let typed = text.to_lowercase();
         if let Some(at) = shown.hints.iter().position(|hint| hint.label == typed) {
