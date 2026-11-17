@@ -492,6 +492,11 @@ pub const LEAST_DELAY: u64 = 10;
 /// The most delay of a timer, in milliseconds: a day.
 pub const MOST_DELAY: u64 = 24 * 60 * 60 * 1000;
 
+/// The most closed tabs that the host keeps to give back, each of its
+/// programs running and its scrollback: past them, the oldest closes for
+/// good.
+pub const MOST_CLOSED_TABS: usize = 16;
+
 /// What a search of a pane's terminal looks for, through its scrollback
 /// too: the text of each logical line, its soft-wrapped rows joined, of
 /// spaces for the cells without a character, without the spaces that end

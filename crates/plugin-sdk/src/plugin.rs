@@ -1240,7 +1240,9 @@ impl<'a> Cx<'a> {
     }
 
     /// Closes `tab` as [`Cx::close_tab`] does, but keeps it for `keep`
-    /// seconds, its panes' programs running, to give back.
+    /// seconds, its panes' programs running, to give back, as
+    /// [`Request::CloseTab`] says: not a tab whose close the user confirmed,
+    /// which ends its program.
     pub fn close_tab_kept(&mut self, tab: TabId, ask: bool, keep: u32) -> Result<(), Error> {
         self.done(Request::CloseTab { tab, ask, keep })
     }

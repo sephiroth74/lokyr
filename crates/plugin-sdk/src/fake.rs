@@ -2279,7 +2279,9 @@ impl FakeHost {
     }
 
     /// Closes `tab` as [`FakeHost::close_tab`] does, but keeps it to give
-    /// back, as the app does; a window's last tab closes as before.
+    /// back, as the app does, [`host::MOST_CLOSED_TABS`] at most, the
+    /// oldest gone for good past them; a window's last tab closes as
+    /// before.
     fn close_tab_kept(&mut self, tab: TabId) {
         let Some(window) = self.tabs.get(&tab).map(|shown| shown.window) else {
             return;
@@ -2305,6 +2307,11 @@ impl FakeHost {
         }
         self.changed(WorkspaceEvent::TabClosed { tab, window });
         self.closed_tabs.push((tab, kept, panes, window, index));
+        let past = self
+            .closed_tabs
+            .len()
+            .saturating_sub(host::MOST_CLOSED_TABS);
+        self.closed_tabs.drain(..past);
         self.tell_left(left);
     }
 

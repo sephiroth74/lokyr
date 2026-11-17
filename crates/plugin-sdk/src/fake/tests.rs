@@ -2176,3 +2176,36 @@ fn a_question_waits_for_its_answer_of_its_texts_bounded_and_another_s_plugin_rea
     assert!(host.command(&mut failing, "probe.go", Args::new()).is_err());
     assert_eq!(host.question(), None);
 }
+
+#[test]
+fn the_fake_keeps_the_most_closed_tabs_as_the_app_the_oldest_gone() {
+    let mut host = FakeHost::new("acme/probe");
+    host.pane(PaneId(1));
+    host.focus(Some(PaneId(1)));
+    let closing: Vec<TabId> = (0..=crate::host::MOST_CLOSED_TABS)
+        .map(|_| host.add_tab(WindowId(1)).0)
+        .collect();
+    let first = closing[0];
+    let mut probe = Probe::new(move |cx, _| {
+        for &tab in &closing {
+            cx.close_tab_kept(tab, false, 60)?;
+        }
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    // Each reopen gives one back, the last closed first, the oldest none.
+    let mut probe = Probe::new(|cx, _| {
+        for _ in 0..=crate::host::MOST_CLOSED_TABS {
+            cx.reopen_tab(WindowId(1))?;
+        }
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let mut probe = Probe::new(move |cx, _| {
+        let tabs = cx.tabs(WindowId(1))?;
+        assert_eq!(tabs.len(), 1 + crate::host::MOST_CLOSED_TABS);
+        assert!(tabs.iter().all(|tab| tab.id != first));
+        Ok(())
+    });
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+}

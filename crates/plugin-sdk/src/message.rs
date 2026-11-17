@@ -713,8 +713,11 @@ pub enum Request {
     /// while a program other than a shell runs in one of its panes, and
     /// closes it once the user confirms. Of `keep` seconds, the host keeps
     /// it for them, its panes' programs running, which
-    /// [`Request::ReopenTab`] gives back; but a window's last tab, which
-    /// closes its window.
+    /// [`Request::ReopenTab`] gives back,
+    /// [`MOST_CLOSED_TABS`](crate::host::MOST_CLOSED_TABS) at most, the
+    /// oldest closing for good past them; but a window's last tab, which
+    /// closes its window, and a tab whose close the user confirmed, which
+    /// ends its program, as the question says.
     CloseTab {
         /// The tab.
         tab: TabId,

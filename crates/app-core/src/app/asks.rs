@@ -158,6 +158,15 @@ impl<B: Backend> App<B> {
         }
         if let Some((window, closing)) = self.part_asks.remove(&alert) {
             if button == 0 && self.part_in(window, closing) {
+                // Confirmed while its program runs, it closes for good, as
+                // the question said that closing ends the program; one that
+                // ended meanwhile leaves a shell alone, kept as a close of
+                // no question.
+                if let Closing::Tab(tab) = closing
+                    && self.part_program(closing).is_some()
+                {
+                    self.kept_closes.remove(&tab);
+                }
                 self.close_part(platform, window, closing);
             }
             // A close not made keeps nothing.
@@ -708,14 +717,7 @@ impl<B: Backend> App<B> {
             }
             return;
         }
-        let panes = match closing {
-            Closing::Tab(tab) => self
-                .workspace
-                .tab(tab)
-                .map(|tab| tab.layout().panes())
-                .unwrap_or_default(),
-            Closing::Pane(pane) => vec![pane],
-        };
+        let panes = self.part_panes(closing);
         let Some(window) = panes.first().and_then(|&pane| self.window_of(pane)) else {
             return;
         };
@@ -732,10 +734,7 @@ impl<B: Backend> App<B> {
             self.ask_close(platform, window);
             return;
         }
-        let running = panes
-            .iter()
-            .find_map(|&pane| self.workspace.pane(pane).and_then(Pane::running));
-        let Some(program) = running else {
+        let Some(program) = self.part_program(closing) else {
             self.close_part(platform, window, closing);
             return;
         };
@@ -759,6 +758,26 @@ impl<B: Backend> App<B> {
         };
         let alert = platform.show_alert(Some(window), &alert);
         self.part_asks.insert(alert, (window, closing));
+    }
+
+    /// The panes of `closing`, a tab's or a pane alone.
+    fn part_panes(&self, closing: Closing) -> Vec<PaneId> {
+        match closing {
+            Closing::Tab(tab) => self
+                .workspace
+                .tab(tab)
+                .map(|tab| tab.layout().panes())
+                .unwrap_or_default(),
+            Closing::Pane(pane) => vec![pane],
+        }
+    }
+
+    /// The program other than a shell that runs in one of `closing`'s
+    /// panes, which closing it ends; none of a shell alone.
+    fn part_program(&self, closing: Closing) -> Option<String> {
+        self.part_panes(closing)
+            .into_iter()
+            .find_map(|pane| self.workspace.pane(pane).and_then(Pane::running))
     }
 
     /// Whether `closing`, a tab or a pane, is still open in `window`, as

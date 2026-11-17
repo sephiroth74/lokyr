@@ -2628,3 +2628,37 @@ fn a_closed_tab_kept_reads_its_output_and_comes_back_at_its_place_until_its_time
     assert!(workspace.window(window).is_none());
     assert!(!workspace.keeps_closed_tabs());
 }
+
+#[test]
+fn past_the_most_closed_tabs_kept_the_oldest_is_due_at_once() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let closing: Vec<(TabId, PaneId)> = (0..=sdk::MOST_CLOSED_TABS)
+        .map(|index| {
+            let kept = pane("sleep 30");
+            let id = kept.id();
+            (workspace.open_tab(window, kept, index + 1).unwrap(), id)
+        })
+        .collect();
+    let until = Instant::now() + Duration::from_secs(60);
+    for &(tab, _) in &closing[..sdk::MOST_CLOSED_TABS] {
+        assert!(workspace.close_tab_kept(tab, until));
+    }
+    // As many as it keeps: none due.
+    assert!(workspace.next_closed_due().is_some_and(|due| due == until));
+    // One more: the oldest is due now, the others kept for their time.
+    let (last, _) = closing[sdk::MOST_CLOSED_TABS];
+    assert!(workspace.close_tab_kept(last, until));
+    assert!(
+        workspace
+            .next_closed_due()
+            .is_some_and(|due| due <= Instant::now())
+    );
+    assert_eq!(
+        workspace.drop_closed_tabs(Instant::now(), false),
+        [closing[0].1]
+    );
+    assert!(!workspace.keeps_closed_pane(closing[0].1));
+    assert!(workspace.keeps_closed_pane(closing[1].1));
+    assert_eq!(workspace.next_closed_due(), Some(until));
+}

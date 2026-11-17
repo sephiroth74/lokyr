@@ -1402,3 +1402,82 @@ fn a_close_s_question_that_goes_unanswered_keeps_nothing() {
     assert!(app.kept_closes.is_empty());
     assert_eq!(app.workspace.window(shown).unwrap().tabs().len(), 2);
 }
+
+#[test]
+fn a_confirmed_close_of_a_running_program_ends_it_and_keeps_nothing() {
+    // Each tab's program waits for a line, then becomes `sleep`.
+    let program = shell("echo ready; read line; exec sleep 30");
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 3, program, "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let count = |app: &App| app.workspace.window(shown).unwrap().tabs().len();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(|pane| pane.line_text(0, 0))
+            .is_some_and(|(line, _)| line.starts_with("ready"))
+    });
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).and_then(Pane::running).is_some()
+    });
+    let program = app
+        .workspace
+        .pane(pane)
+        .and_then(Pane::foreground_group)
+        .unwrap();
+    // The close asks, and the question's Close closes it for good.
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    let id = fake.alerts()[0].id;
+    fake.answer_alert(&mut app, id, 0);
+    run_until(&mut fake, &mut app, |_, app| count(app) == 2);
+    assert!(!app.workspace.keeps_closed_tabs());
+    assert!(app.workspace.kept_pane(pane).is_none());
+    assert!(app.kept_closes.is_empty());
+    // Its program hung up.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let alive = || {
+        std::process::Command::new("kill")
+            .args(["-0", &program.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    };
+    while alive() {
+        assert!(Instant::now() < deadline, "the program runs on");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // Nothing to give back.
+    app.run(&mut fake, "tabs.reopen", Args::new());
+    settle(&mut fake, &mut app);
+    assert_eq!(count(&app), 2);
+}
+
+#[test]
+fn past_the_most_closed_tabs_kept_the_oldest_closes_for_good() {
+    let most = lokyr_kernel::plugins::host::MOST_CLOSED_TABS;
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", most + 2, idle(), "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let count = |app: &App| app.workspace.window(shown).unwrap().tabs().len();
+    let mut closed = Vec::new();
+    for left in (1..=most + 1).rev() {
+        let tab = app.workspace.window(shown).unwrap().active_tab();
+        closed.push(app.workspace.tab(tab).unwrap().active_pane());
+        fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+        run_until(&mut fake, &mut app, |_, app| count(app) == left);
+    }
+    // The oldest, due at once, closes for good as its timer fires.
+    let (timer, at) = app.closed_timer.expect("the closed tabs' timer");
+    assert!(at <= Instant::now());
+    fake.send_app(&mut app, AppEvent::Timer(timer));
+    assert!(app.workspace.kept_pane(closed[0]).is_none());
+    assert!(
+        closed[1..]
+            .iter()
+            .all(|&pane| app.workspace.kept_pane(pane).is_some())
+    );
+    assert!(app.closed_timer.is_some());
+}

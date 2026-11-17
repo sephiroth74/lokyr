@@ -76,7 +76,7 @@
       "x-example-comment": "recent | order: what Control-Tab steps through"
     },
     "reopen-seconds": {
-      "description": "How many seconds a tab that you close stays ready to come back with Reopen Closed Tab, its programs running; 0 for none.",
+      "description": "How many seconds a tab that you close stays ready to come back with Reopen Closed Tab, its programs running, 16 tabs at most; 0 for none.",
       "type": "integer",
       "minimum": 0,
       "maximum": 86400,
@@ -85,7 +85,7 @@
         "macos"
       ],
       "x-step": 1,
-      "x-guide": "How many seconds a tab that you close stays ready to come back with Shell \u203a Reopen Closed Tab, \u21e7\u2318T.\n\n| Values | Default |\n|---|---|\n| from `0` to `86400` | `10` |\n\n- While it waits, the tab is out of your window, but its programs keep running and their output is read, so it comes back as you left it, at its place. After its seconds, or when Lokyr quits, it closes for good and its programs end.\n- Every tab that you close is kept, with \u2318W, its close button, a middle click or its context menu. A tab whose program ends, the last tab of a window and a window that you close are not.\n- \u21e7\u2318T gives back the tab closed last; press it again for the one before.\n- A kept tab holds its memory, its scrollback too, until it closes: a few megabytes for a shell, more for a long scrollback. `0` keeps none.\n- It applies to the tabs that you close after you save the file.",
+      "x-guide": "How many seconds a tab that you close stays ready to come back with Shell \u203a Reopen Closed Tab, \u21e7\u2318T.\n\n| Values | Default |\n|---|---|\n| from `0` to `86400` | `10` |\n\n- While it waits, the tab is out of your window, but its programs keep running and their output is read, so it comes back as you left it, at its place. After its seconds, or when Lokyr quits, it closes for good and its programs end.\n- Every tab that you close is kept, with \u2318W, its close button, a middle click or its context menu. A tab whose program ends, the last tab of a window and a window that you close are not, nor a tab that you close while a program other than a shell runs there: Lokyr asks first, and closing it ends the program.\n- At most 16 closed tabs wait; closing another closes the oldest for good.\n- \u21e7\u2318T gives back the tab closed last; press it again for the one before.\n- A kept tab holds its memory, its scrollback too, until it closes: a few megabytes for a shell, more for a long scrollback. `0` keeps none.\n- It applies to the tabs that you close after you save the file.",
       "x-example": "10",
       "x-example-comment": "0 to 86400: seconds a closed tab stays ready to reopen"
     }

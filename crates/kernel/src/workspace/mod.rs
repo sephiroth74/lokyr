@@ -1445,8 +1445,10 @@ impl Workspace {
     /// Closes `tab` as [`Workspace::close_tab`] does, as its plugins and its
     /// window learn, but keeps it until `until`, its panes' programs running
     /// and their output read, to give back: the settings tab, and a
-    /// window's last tab, which closes the window, close as before. Whether
-    /// the tab was open.
+    /// window's last tab, which closes the window, close as before. Past
+    /// [`sdk::MOST_CLOSED_TABS`] kept, the oldest are due at once, which the next
+    /// [`Workspace::drop_closed_tabs`] closes for good. Whether the tab was
+    /// open.
     pub fn close_tab_kept(&mut self, tab: TabId, until: Instant) -> bool {
         let Some(window) = self.tabs.get(&tab).map(|shown| shown.window) else {
             return self.close_tab(tab);
@@ -1496,6 +1498,13 @@ impl Workspace {
             index,
             until,
         });
+        let past = self.closed.len().saturating_sub(sdk::MOST_CLOSED_TABS);
+        if past > 0 {
+            let now = Instant::now();
+            for oldest in &mut self.closed[..past] {
+                oldest.until = oldest.until.min(now);
+            }
+        }
         self.tell_left(left);
         true
     }

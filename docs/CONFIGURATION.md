@@ -1879,7 +1879,8 @@ How many seconds a tab that you close stays ready to come back with Shell › Re
 | from `0` to `86400` | `10` |
 
 - While it waits, the tab is out of your window, but its programs keep running and their output is read, so it comes back as you left it, at its place. After its seconds, or when Lokyr quits, it closes for good and its programs end.
-- Every tab that you close is kept, with ⌘W, its close button, a middle click or its context menu. A tab whose program ends, the last tab of a window and a window that you close are not.
+- Every tab that you close is kept, with ⌘W, its close button, a middle click or its context menu. A tab whose program ends, the last tab of a window and a window that you close are not, nor a tab that you close while a program other than a shell runs there: Lokyr asks first, and closing it ends the program.
+- At most 16 closed tabs wait; closing another closes the oldest for good.
 - ⇧⌘T gives back the tab closed last; press it again for the one before.
 - A kept tab holds its memory, its scrollback too, until it closes: a few megabytes for a shell, more for a long scrollback. `0` keeps none.
 - It applies to the tabs that you close after you save the file.
