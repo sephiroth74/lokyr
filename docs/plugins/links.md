@@ -16,7 +16,7 @@ A URL or a file asks you first, as [`[links]`](../CONFIGURATION.md#links) says, 
 
 <sub>Platforms: macOS · not released yet</sub>
 
-Press ⇧⌘E, or choose View › Show Hints: every URL, every path that exists, with or without a line after it, every git hash and every IP address that the pane shows gets a label of one or two letters, drawn over its first letters in the theme's accent, the nearest the cursor of one letter. Type a label to pick its hint:
+Press ⇧⌘E, or choose View › Show Hints: every URL, every path that exists, with or without a line after it, every git hash and every IP address that the pane shows gets a label of one or two letters, drawn over its first letters in the theme's accent, the nearest the cursor of one letter. A URL right after a bracket, a quote or a `=`, such as in Markdown's `[docs](https://…)`, HTML's `href="https://…"` or a line of JSON, gets its own label, and so does a path with spaces between quotes or after backslashes. Type a label to pick its hint:
 
 - **Open**, by default: as a ⌘-click opens it, a path at its line in your editor; a hash or an address, which open nothing, is copied.
 - **A capital**, as Shift types it, copies the hint instead.

@@ -46,11 +46,21 @@ pub struct LineHint {
 }
 
 /// The hints of `text`, a line's, in their order, none over another: the
-/// matches of `patterns` first, then, in each word between spaces, a URL or
-/// a path, else a hash of git's or an IPv4 address, over none of them.
+/// matches of `patterns` first, then, in each word between spaces that no
+/// backslash escapes, its URLs, at each scheme after a character other
+/// than a letter or a digit, else a path at its start, past a bracket or a
+/// quote, or the text between the quotes that start it, else a hash of
+/// git's or an IPv4 address, over none of them. Of a time linear in the
+/// line, but for the patterns' searches.
 pub fn in_line(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
     let chars: Vec<char> = text.chars().collect();
     let matched = matches(text, patterns);
+    // Whether the hint from `first` to `end` meets a match, whose spans,
+    // none over another, end in their order.
+    let meets_match = |first: usize, end: usize| {
+        let before = matched.partition_point(|other| other.first < end);
+        before > 0 && matched[before - 1].end > first
+    };
     let mut found: Vec<LineHint> = Vec::new();
     let mut at = 0;
     while at < chars.len() {
@@ -58,30 +68,103 @@ pub fn in_line(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
             at += 1;
             continue;
         }
-        let end = chars[at..]
-            .iter()
-            .position(|c| c.is_whitespace())
-            .map_or(chars.len(), |len| at + len);
-        let hint = link(text, &chars, at, end).or_else(|| word(&chars, at, end));
-        if let Some(hint) = hint
-            && found.last().is_none_or(|last| last.end <= hint.first)
-            && !matched
-                .iter()
-                .any(|other| other.first < hint.end && hint.first < other.end)
-        {
-            at = hint.end.max(end);
-            found.push(hint);
-            continue;
+        let end = (at..chars.len())
+            .find(|&i| chars[i].is_whitespace() && (i == 0 || chars[i - 1] != '\\'))
+            .unwrap_or(chars.len());
+        let mut next = end;
+        for hint in in_word(&chars, at, end) {
+            if found.last().is_none_or(|last| last.end <= hint.first)
+                && !meets_match(hint.first, hint.end)
+            {
+                next = next.max(hint.end);
+                found.push(hint);
+            }
         }
-        at = end;
+        at = next;
     }
     found.extend(matched);
     found.sort_by_key(|hint| hint.first);
     found
 }
 
+/// The hints of the word of `chars` from `first` to `end`, in their order:
+/// its URLs; else the URL or the path between the quotes that start it,
+/// past the word, when they hold a space, or the path at its start, past a
+/// bracket or a quote; else its hash or its address.
+fn in_word(chars: &[char], first: usize, end: usize) -> Vec<LineHint> {
+    let hint = |from: usize, to: usize, kind: Kind| LineHint {
+        first: from,
+        end: to,
+        text: chars[from..to].iter().collect(),
+        kind,
+    };
+    let word = &chars[first..end];
+    let urls = scan::urls(word);
+    if !urls.is_empty() {
+        return urls
+            .into_iter()
+            .map(|(from, to)| {
+                let url = chars[first + from..first + to].iter().collect();
+                hint(first + from, first + to, Kind::Link(Found::Url(url)))
+            })
+            .collect();
+    }
+    if let Some((open, close)) = quoted(chars, first) {
+        let inside = &chars[open..close];
+        if let Some(to) = scan::urls(inside)
+            .first()
+            .and_then(|&(from, to)| (from == 0).then_some(to))
+        {
+            let url = inside[..to].iter().collect();
+            return vec![hint(open, open + to, Kind::Link(Found::Url(url)))];
+        }
+        if let Some(found) = path_of(inside, 0, open) {
+            return vec![found];
+        }
+    }
+    let path = [0, 1]
+        .into_iter()
+        .filter(|&at| at < word.len())
+        .find_map(|at| path_of(word, at, first));
+    if let Some(found) = path {
+        return vec![found];
+    }
+    self::word(chars, first, end).into_iter().collect()
+}
+
+/// The hint of the path of `word`, whose first character is the line's
+/// `offset`, that its character `at` is part of, with its line and its
+/// column after it: of a slash or of a line after it, as `a/b` or
+/// `main.rs:42`, not every word.
+fn path_of(word: &[char], at: usize, offset: usize) -> Option<LineHint> {
+    let (path, (from, to), place) = scan::path_span(word, at)?;
+    if !path.contains('/') && place.is_none() {
+        return None;
+    }
+    let to = to + place.as_ref().map_or(0, |place| place.text.chars().count());
+    Some(LineHint {
+        first: offset + from,
+        end: offset + to,
+        text: word[from..to].iter().collect(),
+        kind: Kind::Link(Found::Path(path, place)),
+    })
+}
+
+/// The text between the quotes, `"` or `'`, that `chars`' word at `first`
+/// starts with, when it holds a space, as `git status` quotes a path: up to
+/// the next quote of the same, before no letter nor digit; of where the
+/// text starts and ends.
+fn quoted(chars: &[char], first: usize) -> Option<(usize, usize)> {
+    let quote = *chars.get(first).filter(|c| matches!(c, '"' | '\''))?;
+    let close = first + 1 + chars[first + 1..].iter().position(|&c| c == quote)?;
+    let inside = &chars[first + 1..close];
+    (chars.get(close + 1).is_none_or(|c| !c.is_alphanumeric())
+        && inside.iter().any(|c| c.is_whitespace()))
+    .then_some((first + 1, close))
+}
+
 /// The matches of `patterns` in `text`, none over another, the first
-/// pattern's before the later's.
+/// pattern's before the later's, in their order in the line.
 fn matches(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
     // The index of the character at each byte that starts one.
     let mut chars_at = vec![0; text.len() + 1];
@@ -89,7 +172,8 @@ fn matches(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
         chars_at[byte] = index;
     }
     chars_at[text.len()] = text.chars().count();
-    let mut found: Vec<LineHint> = Vec::new();
+    // The matches taken, by their first characters, of their ends.
+    let mut taken: std::collections::BTreeMap<usize, LineHint> = std::collections::BTreeMap::new();
     for pattern in patterns {
         let mut caps = pattern.regex.create_captures();
         let mut at = 0;
@@ -113,9 +197,12 @@ fn matches(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
                 continue;
             }
             let (first, last) = (chars_at[start], chars_at[end]);
-            if found
-                .iter()
-                .any(|other| other.first < last && first < other.end)
+            // Of the matches taken, none over another, the one that starts
+            // last before this one ends is the one that could meet it.
+            if taken
+                .range(..last)
+                .next_back()
+                .is_some_and(|(_, other)| other.end > first)
             {
                 continue;
             }
@@ -123,15 +210,18 @@ fn matches(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
                 caps.get_group(index)
                     .map_or("", |span| &text[span.start..span.end])
             };
-            found.push(LineHint {
+            taken.insert(
                 first,
-                end: last,
-                text: text[start..end].to_owned(),
-                kind: Kind::Pattern(pattern.url.as_deref().map(|url| expand(url, group))),
-            });
+                LineHint {
+                    first,
+                    end: last,
+                    text: text[start..end].to_owned(),
+                    kind: Kind::Pattern(pattern.url.as_deref().map(|url| expand(url, group))),
+                },
+            );
         }
     }
-    found
+    taken.into_values().collect()
 }
 
 /// `template` of each `$0` to `$9` the text of `group` of its number, the
@@ -157,44 +247,6 @@ pub fn expand<'a>(template: &str, group: impl Fn(usize) -> &'a str) -> String {
         }
     }
     expanded
-}
-
-/// The URL or the path of the word of `chars` from `first` to `end`, the
-/// characters of `text`, of its first two characters, past a bracket or a
-/// quote, with a path's line and column after it.
-fn link(text: &str, chars: &[char], first: usize, end: usize) -> Option<LineHint> {
-    for at in [first, first + 1].into_iter().filter(|&at| at < end) {
-        for found in scan::find(text, at) {
-            let (shown, kind) = match &found {
-                Found::Url(url) => (url.clone(), found.clone()),
-                Found::Path(path, place) => {
-                    // A path of a slash or of a line after it, as `a/b` or
-                    // `main.rs:42`, not every word.
-                    if !path.contains('/') && place.is_none() {
-                        continue;
-                    }
-                    let placed = place
-                        .as_ref()
-                        .map_or_else(|| path.clone(), |place| format!("{path}{}", place.text));
-                    (placed, found.clone())
-                }
-            };
-            if let Some((from, to)) = crate::span_of(text, &shown, at)
-                && from >= first
-                && to <= end.max(to)
-                && from < end
-            {
-                let text: String = chars[from..to].iter().collect();
-                return Some(LineHint {
-                    first: from,
-                    end: to,
-                    text,
-                    kind: Kind::Link(kind),
-                });
-            }
-        }
-    }
-    None
 }
 
 /// The hash of git's or the IPv4 address of the word of `chars` from
@@ -341,6 +393,61 @@ mod tests {
         // Its characters' places.
         let hint = &in_line("x <https://a.io/b> y", &[])[0];
         assert_eq!((hint.first, hint.end), (3, 17));
+    }
+
+    #[test]
+    fn a_url_glued_to_the_text_before_it_is_a_hint_at_its_scheme() {
+        assert_eq!(
+            texts("read [the docs](https://lokyr.dev/docs) first"),
+            ["https://lokyr.dev/docs"]
+        );
+        assert_eq!(
+            texts(r#"<a href="https://a.example/x">"#),
+            ["https://a.example/x"]
+        );
+        assert_eq!(
+            texts("--url=https://b.example/y?q=1."),
+            ["https://b.example/y?q=1"]
+        );
+        // A line of JSON, of no space: each of its URLs.
+        assert_eq!(
+            texts(r#"{"a":"https://c.example/1","b":["http://d.example/2"]}"#),
+            ["https://c.example/1", "http://d.example/2"]
+        );
+        // Not after a letter or a digit, as a word that holds the scheme.
+        assert!(texts("xhttps://e.example 9https://f.example").is_empty());
+    }
+
+    #[test]
+    fn a_path_of_escaped_spaces_or_between_quotes_is_a_hint_of_its_text() {
+        let found = in_line(r"cat my\ notes/to\ do.md now", &[]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].text, r"my\ notes/to\ do.md");
+        assert_eq!(
+            found[0].kind,
+            Kind::Link(Found::Path("my notes/to do.md".to_owned(), None))
+        );
+        assert_eq!(
+            texts(r#"modified:   "src/a dir/file.rs:12" and src/b.rs"#),
+            ["src/a dir/file.rs:12", "src/b.rs"]
+        );
+    }
+
+    #[test]
+    // A test's own clock, as it measures the plugin's time.
+    #[allow(clippy::disallowed_methods)]
+    fn a_long_line_is_scanned_in_linear_time() {
+        // 600 columns over 65 rows of words, URLs, paths, quotes, hashes
+        // and addresses.
+        let piece = "see https://lokyr.dev/p/1 src/main.rs:4 'a b' c0ffee1 10.0.0.1 x ";
+        let line: String = piece.chars().cycle().take(600 * 65).collect();
+        let start = std::time::Instant::now();
+        let found = in_line(&line, &[]);
+        let took = start.elapsed();
+        assert!(found.len() > 2000, "{}", found.len());
+        // Within 10 ms of an optimized build, and a debug build's slack.
+        let most = if cfg!(debug_assertions) { 400 } else { 10 };
+        assert!(took.as_millis() < most, "{took:?}");
     }
 
     #[test]

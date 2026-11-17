@@ -22,8 +22,8 @@ use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
 use lokyr_plugin_sdk::host::{
-    DecorationLook, LONGEST_NOTICE, NoticeLevel, OPEN_SCHEMES, PaneId, Underline, file_host,
-    scheme_opens, url_scheme,
+    DecorationLook, LONGEST_NOTICE, MOST_REACH, NoticeLevel, OPEN_SCHEMES, PaneId, Underline,
+    file_host, scheme_opens, url_scheme,
 };
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::message::{Event, POINTER};
@@ -815,9 +815,10 @@ fn hint_look(label: &str) -> DecorationLook {
 }
 
 /// The hints of what the view of `pane` shows, of `patterns` too, each of
-/// its cells, its text and what it opens, the nearest the cursor first, [`MOST_HINTS`] at most: of each
-/// logical line that the view shows, its URLs, its paths that are there,
-/// its hashes of git's and its IP addresses, which start in the view.
+/// its cells, its text and what it opens, the nearest the cursor first,
+/// [`MOST_HINTS`] at most: of each logical line that the view shows, read
+/// once, its URLs, its paths that are there, its hashes of git's and its
+/// IP addresses, which start in the view.
 fn screen_hints(
     cx: &mut Cx<'_>,
     pane: PaneId,
@@ -825,26 +826,36 @@ fn screen_hints(
 ) -> Result<Vec<(Span, String, Opens)>, Error> {
     let view = cx.viewport(pane)?;
     let (top, bottom) = (view.top, view.top + i64::from(view.rows));
+    // A read as far as the view's rows takes every row of the line that
+    // the view shows from the read's row on, but of a view taller than a
+    // read reaches.
+    let reach = usize::from(view.rows).clamp(1, MOST_REACH);
     let mut found: Vec<(Span, String, Opens)> = Vec::new();
-    let mut read_to = top;
     let mut directory: Option<Option<String>> = None;
-    for row in top..bottom {
-        if row < read_to {
-            continue;
-        }
-        let Some(line) = cx.line_text(pane, row, REACH)? else {
-            read_to = row + 1;
+    let mut row = top;
+    while row < bottom {
+        let Some(line) = cx.line_text(pane, row, reach)? else {
+            row += 1;
             continue;
         };
-        read_to = line
-            .cells
-            .iter()
-            .map(|&(_, at)| at + 1)
-            .max()
-            .unwrap_or(row + 1);
+        let (Some(&(_, first_row)), Some(&(_, last_row))) = (line.cells.first(), line.cells.last())
+        else {
+            row += 1;
+            continue;
+        };
+        // A read that its reach stopped may have cut the line, and a hint
+        // at its edge; the rows before the read's own were read already,
+        // or are above the view.
+        let cut_before = row - first_row >= reach as i64;
+        let cut_after = last_row - row >= reach as i64;
+        let from = row;
+        row = last_row.max(row) + 1;
         for hint in hints::in_line(&line.text, patterns) {
+            if (cut_before && hint.first == 0) || (cut_after && hint.end == line.cells.len()) {
+                continue;
+            }
             let span = cells_of(&line.cells, hint.first, hint.end);
-            if !(top..bottom).contains(&span.0.1) {
+            if !(from..bottom).contains(&span.0.1) {
                 continue;
             }
             // A path that is there, from the working directory of a

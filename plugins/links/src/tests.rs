@@ -1236,3 +1236,101 @@ fn hints_shown_again_by_a_call_that_fails_stay_as_they_show() {
     host.deliver(&mut links).unwrap();
     assert!(host.decorations().is_empty());
 }
+
+/// Lays `text` out in `pane` of `host` as a logical line from the row
+/// numbered `first`, of rows of `columns` characters that wrap into each
+/// other, as a read of its rows gives them.
+fn wrapped(host: &mut FakeHost, pane: PaneId, first: i64, columns: usize, text: &str) {
+    let chars: Vec<char> = text.chars().collect();
+    let rows: Vec<String> = chars
+        .chunks(columns)
+        .map(|row| row.iter().collect())
+        .collect();
+    let count = rows.len();
+    let pane = host.pane(pane);
+    for (at, row) in rows.into_iter().enumerate() {
+        pane.rows
+            .insert(first + i64::try_from(at).unwrap(), (row, at + 1 < count));
+    }
+}
+
+#[test]
+fn a_line_of_the_whole_view_is_read_once_of_no_hint_twice_nor_a_url_cut() {
+    // A line of the view's rows of 80 columns, of URLs and hashes across
+    // the rows' ends: a view of 60, and one taller than a read reaches,
+    // which reads the line twice.
+    for rows in [60_u16, 300] {
+        let text: String = (0..)
+            .map(|at| format!("see https://lokyr.dev/p/{at:05} or c0ffee{at:05}a; "))
+            .take_while({
+                let mut length = 0;
+                move |piece: &String| {
+                    length += piece.len();
+                    length <= usize::from(rows) * 80
+                }
+            })
+            .collect();
+        let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+        host.focus(Some(PANE));
+        let pane = host.pane(PANE);
+        pane.grid = (80, rows);
+        pane.held = 0..i64::from(rows);
+        pane.cursor = (0, i64::from(rows) - 1);
+        wrapped(&mut host, PANE, 0, 80, &text);
+        let mut links = Links::default();
+        host.activate(&mut links).unwrap();
+        host.command(&mut links, HINTS, Args::new()).unwrap();
+        let shown = links.hints.as_ref().expect("the hints");
+        let mut texts: Vec<&str> = shown.hints.iter().map(|hint| hint.text.as_str()).collect();
+        texts.sort_unstable();
+        let count = texts.len();
+        texts.dedup();
+        assert_eq!(texts.len(), count, "a hint twice, of {rows} rows");
+        // Each URL whole, of its five digits.
+        for hint in &shown.hints {
+            if let Opens::Url(url) = &hint.opens {
+                assert_eq!(url.len(), "https://lokyr.dev/p/00000".len(), "{url}");
+            }
+        }
+        // Every one, but past the labels' most; a label on each, and none
+        // on a cell twice.
+        let pieces = text.matches("see ").count();
+        assert_eq!(count, (2 * pieces).min(MOST_HINTS), "of {rows} rows");
+        let mut cells: Vec<(u16, i64)> = host.decorations().iter().map(|laid| laid.from).collect();
+        cells.sort_unstable();
+        cells.dedup();
+        assert_eq!(cells.len(), count);
+    }
+}
+
+#[test]
+fn a_hint_at_the_edge_of_a_read_cut_short_is_left_out() {
+    // A line of 100 rows of 80 columns, in a view of 10: a read from the
+    // view's first row reaches its 10 rows after, past which a URL of the
+    // view's last row goes on.
+    let mut text = "x".repeat(80 * 9 + 59);
+    text.push_str(" https://lokyr.dev/");
+    text.push_str(&"a".repeat(80 * 3));
+    text.push_str(" 4482b9e9 ");
+    text.push_str(&"y".repeat(80 * 87));
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.grid = (80, 10);
+    pane.held = 0..100;
+    pane.viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 10,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+    });
+    wrapped(&mut host, PANE, 0, 80, &text);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    // The URL cut at the read's end opens nothing cut: no hint, no panel.
+    assert!(links.hints.is_none(), "{:?}", links.hints);
+}

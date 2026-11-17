@@ -197,25 +197,45 @@ fn quoted(chars: &[char], at: usize) -> Option<(usize, usize)> {
 /// `at`, so that a URL that holds another opens whole wherever it is
 /// clicked.
 fn url(word: &[char], at: usize) -> Option<String> {
-    let lower: Vec<char> = word.iter().map(char::to_ascii_lowercase).collect();
     (0..=at.min(word.len().saturating_sub(1)))
-        .filter(|&i| i == 0 || !word[i - 1].is_ascii_alphanumeric())
-        .filter_map(|i| {
-            SCHEMES
-                .iter()
-                .find(|scheme| {
-                    lower[i..]
-                        .iter()
-                        .copied()
-                        .take(scheme.len())
-                        .eq(scheme.chars())
-                })
-                .map(|scheme| (i, scheme.len()))
-        })
-        .find_map(|(begin, scheme)| {
-            let end = url_end(word, begin, scheme);
-            (end > begin + scheme && at < end).then(|| word[begin..end].iter().collect())
-        })
+        .filter_map(|begin| url_from(word, begin).map(|end| (begin, end)))
+        .find_map(|(begin, end)| (at < end).then(|| word[begin..end].iter().collect()))
+}
+
+/// The end of the URL of `word` that starts at `begin`, at a scheme after
+/// no ASCII letter nor digit, if one does.
+fn url_from(word: &[char], begin: usize) -> Option<usize> {
+    if begin > 0 && word[begin - 1].is_ascii_alphanumeric() {
+        return None;
+    }
+    let scheme = SCHEMES.iter().find(|scheme| {
+        word[begin..]
+            .iter()
+            .map(char::to_ascii_lowercase)
+            .take(scheme.len())
+            .eq(scheme.chars())
+    })?;
+    let end = url_end(word, begin, scheme.len());
+    (end > begin + scheme.len()).then_some(end)
+}
+
+/// The URLs of `word`, each of its first character and the one after its
+/// last, in their order: each at a scheme after no ASCII letter nor digit,
+/// as text glues one to a bracket, a quote or a `=`, and none within
+/// another. Of a time linear in the word.
+pub fn urls(word: &[char]) -> Vec<(usize, usize)> {
+    let mut found = Vec::new();
+    let mut at = 0;
+    while at < word.len() {
+        match url_from(word, at) {
+            Some(end) => {
+                found.push((at, end));
+                at = end;
+            }
+            None => at += 1,
+        }
+    }
+    found
 }
 
 /// Where the URL of `word` that starts at `begin`, of a scheme of `scheme`
@@ -280,6 +300,12 @@ fn without_punctuation(word: &[char], begin: usize, mut end: usize, trailing: &[
 /// them; neither a path of another machine, as `user@host:/etc/hosts`,
 /// nor what follows another scheme.
 fn path(word: &[char], at: usize) -> Option<(String, Option<Place>)> {
+    path_span(word, at).map(|(path, _, place)| (path, place))
+}
+
+/// The path of `word` that its character `at` is part of, as [`path`]
+/// finds it, of where it starts and ends in `word`, without its place.
+pub fn path_span(word: &[char], at: usize) -> Option<(String, (usize, usize), Option<Place>)> {
     // A click on a place in brackets takes the path before them.
     let at = place_in_brackets(word, at).unwrap_or(at);
     if PATH_ENDS.contains(&word[at]) {
@@ -338,7 +364,7 @@ fn path(word: &[char], at: usize) -> Option<(String, Option<Place>)> {
     }
     let path: String = word[begin..end].iter().collect();
     let path = path.replace("\\ ", " ");
-    is_path(&path).then(|| (path, place(&word[end..])))
+    is_path(&path).then(|| (path, (begin, end), place(&word[end..])))
 }
 
 /// The character before the brackets of a place, as `(42,7)` after a path,

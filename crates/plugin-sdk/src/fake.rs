@@ -124,6 +124,38 @@ pub struct FakePane {
 }
 
 impl FakePane {
+    /// The logical line of its row numbered `row`, of its [`rows`](Self::rows)
+    /// that wrap into each other, as far as `reach` rows before it and after
+    /// it, as the app's host reads it: each row of its grid's columns, a
+    /// cell each character and a space past its text; `None` for a row that
+    /// it holds no text of.
+    pub fn line_of_rows(&self, row: i64, reach: usize) -> Option<LineText> {
+        self.rows.get(&row)?;
+        let wraps = |at: i64| self.rows.get(&at).is_some_and(|(_, wraps)| *wraps);
+        let mut first = row;
+        while row - first < reach as i64 && self.rows.contains_key(&(first - 1)) && wraps(first - 1)
+        {
+            first -= 1;
+        }
+        let mut last = row;
+        while last - row < reach as i64 && wraps(last) && self.rows.contains_key(&(last + 1)) {
+            last += 1;
+        }
+        let mut line = LineText {
+            text: String::new(),
+            cells: Vec::new(),
+        };
+        for at in first..=last {
+            let text = self.rows.get(&at).map_or("", |(text, _)| text.as_str());
+            let mut chars = text.chars();
+            for column in 0..self.grid.0 {
+                line.text.push(chars.next().unwrap_or(' '));
+                line.cells.push((column, at));
+            }
+        }
+        Some(line)
+    }
+
     /// Its commands whose rows meet the rows numbered from `top` to before
     /// `bottom`, as the app's host gives them: the last whose first row is
     /// at `top` or above it, and those after it whose first rows are above
@@ -3945,8 +3977,14 @@ impl Calling<'_> {
             Request::FocusedWindow => Response::Window(host.focused_window()),
             Request::FocusedPane => Response::Pane(host.focused_pane()),
             Request::SelectionText(pane) => Response::Text(host.held(*pane)?.selection.clone()),
-            Request::LineText { pane, row, .. } => {
-                Response::Line(host.held(*pane)?.lines.get(row).cloned())
+            Request::LineText { pane, row, reach } => {
+                let held = host.held(*pane)?;
+                Response::Line(
+                    held.lines
+                        .get(row)
+                        .cloned()
+                        .or_else(|| held.line_of_rows(*row, (*reach).min(host::MOST_REACH))),
+                )
             }
             Request::LinkAt { pane, column, row } => {
                 Response::Text(host.held(*pane)?.links.get(&(*column, *row)).cloned())
