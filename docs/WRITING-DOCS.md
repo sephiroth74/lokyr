@@ -169,8 +169,8 @@ The heading is the symptom, as the reader sees it, quoting an error message exac
 
 - **Use one format for markers**: `<sub>Platforms: macOS · Since 1.3</sub>` under a key, a command or an entry, and the marker line under a topic page's title. A section newer than its page carries its own marker. Don't write "Added in", "New in" or "Available since" in the text.
 - **Mark what no release has yet** with `· not released yet`: in the marker line of its page or section, or at the end of its list item or table row, so that readers of the last release know what they don't have yet. Never put the mark in a heading: the heading's link would change with it.
-- **Mark a new key of the config** with `"x-since": "next"` in its schema, beside `x-platforms`: the configuration guide shows it as `· not released yet` in the key's line of platforms.
-- **The release turns every mark into its own**: in the commit that prepares it, `cargo xtask since X.Y.Z` writes `· Since X.Y`, or `· Since X.Y.Z` for a patch, and `"x-since": "X.Y"`. A mark in code, such as the ones on this page, is left alone. The release refuses to go out while a mark is left, which a mark in another form, such as `(not released yet)`, would be.
+- **Mark a new key of the config** with `"x-since": "next"` in its schema, beside `x-platforms`: the configuration guide shows it as `· not released yet` in the key's line of platforms. Mark a new theme token in the comment above its rule in `crates/plugin-sdk/src/theme/rules.toml`, which the tokens' table shows.
+- **The release turns every mark into its own**: in the commit that prepares it, `cargo xtask since X.Y.Z` writes `· Since X.Y`, or `· Since X.Y.Z` for a patch, and `"x-since": "X.Y"`. A mark in code, such as the ones on this page, is left alone. The release refuses to go out while a mark is left: one in another form, such as `(not released yet)`, one in a heading, or one in HTML.
 
 ## Callouts
 

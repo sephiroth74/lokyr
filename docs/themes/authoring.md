@@ -214,8 +214,8 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `terminal.bg` | A bar of the terminal's own background | `background` |
 | `terminal.fg` | A bar of the terminal's own text | `foreground` |
 | `cursor.guide` | The band across the cursor's row, as the cursor guide shows it | `foreground / 10%` |
-| `hints.label.bg` | A hint's label, over the first cells of what it picks | `accent` |
-| `hints.label.fg` | A hint's label's letters | `contrasting(hints.label.bg)` |
+| `hints.label.bg` | A hint's label, over the first cells of what it picks · not released yet | `accent` |
+| `hints.label.fg` | A hint's label's letters · not released yet | `contrasting(hints.label.bg)` |
 
 <!-- The tokens' table's end. -->
 

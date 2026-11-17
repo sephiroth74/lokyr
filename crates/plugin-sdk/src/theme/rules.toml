@@ -145,7 +145,7 @@
 "terminal.fg" = "foreground"
 # The band across the cursor's row, as the cursor guide shows it.
 "cursor.guide" = "foreground / 10%"
-# A hint's label, over the first cells of what it picks.
+# A hint's label, over the first cells of what it picks · not released yet.
 "hints.label.bg" = "accent"
-# A hint's label's letters.
+# A hint's label's letters · not released yet.
 "hints.label.fg" = "contrasting(hints.label.bg)"

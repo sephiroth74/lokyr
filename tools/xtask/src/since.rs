@@ -1,27 +1,37 @@
 //! `cargo xtask since <X.Y.Z>`: what no release has yet, released. The
 //! public pages mark a feature of `main` that no release has with
-//! `· not released yet`, and the config's schemas a key of `"x-since":
-//! "next"`, or the same text in their guides; in the commit that prepares
-//! a release, this turns each mark into the release's, `· Since X.Y`, or
+//! `· not released yet`, the config's schemas a key of `"x-since":
+//! "next"`, or the same text in their guides, and the themes' rules a
+//! token of the same text in its comment; in the commit that prepares a
+//! release, this turns each mark into the release's, `· Since X.Y`, or
 //! `· Since X.Y.Z` of a patch, and `"x-since": "X.Y"`, then makes the config
-//! guide anew. `cargo xtask release` refuses to release while a mark is
-//! left. A mark in code, a code block or a span of backticks, as a guide
-//! that shows the mark, is no mark.
+//! guide anew and checks the theme guide's tokens against the rules. A page's mark is of its text
+//! as Markdown reads it: in code, a block or a span, as a guide that shows
+//! the mark, it is no mark; in a heading, or in HTML, it is refused. Every
+//! other occurrence of the words, in any case, is left and told, and
+//! `cargo xtask release` refuses to release while one is left.
 
 use std::fs;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail, ensure};
+use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use regex::Regex;
 
 /// The mark of what no release has yet, in a page or a schema's text.
 pub const MARK: &str = "· not released yet";
 
-/// A schema's key that no release has yet.
-const NEXT: &str = r#""x-since": "next""#;
+/// A schema's key that no release has yet, of any spaces around its colon.
+static NEXT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""x-since"\s*:\s*"next""#).expect("the pattern"));
 
-/// The words that make a mark, which a mark of another form holds too.
-const WORDS: &str = "not released yet";
+/// The words that make a mark, in any case and of any spaces between them,
+/// which a mark of another form holds too.
+static WORDS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)not\s+released\s+yet").expect("the pattern"));
 
 /// The root's public pages beside `docs/`.
 const ROOT_PAGES: [&str; 4] = [
@@ -30,6 +40,9 @@ const ROOT_PAGES: [&str; 4] = [
     "CONTRIBUTING.md",
     "TRANSLATING.md",
 ];
+
+/// The themes' rules, whose comments the theme guide's tokens show.
+const RULES: &str = "crates/plugin-sdk/src/theme/rules.toml";
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let version = args
@@ -56,10 +69,23 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         }
     }
     crate::config_guide::run(std::iter::empty()).context("making the config guide anew")?;
+    // The theme guide's table, whose marks the page's own rewrite took, is
+    // checked against the rewritten rules by a build of them, as this
+    // binary holds the rules of before.
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let checked = Command::new(cargo)
+        .args(["xtask", "theme-guide", "--check"])
+        .current_dir(&root)
+        .status()
+        .context("checking the theme guide of the rules")?;
+    ensure!(
+        checked.success(),
+        "the theme guide's table is not the rewritten rules': run `cargo xtask theme-guide`"
+    );
     let left = left(&root)?;
     ensure!(
         left.is_empty(),
-        "marks of another form are left, which a release refuses: {}",
+        "marks are left that no release takes, of another form, in a heading or in HTML: {}",
         left.join(", ")
     );
     println!("since: {changed} mark(s) now of {since}");
@@ -86,8 +112,8 @@ pub(crate) fn since(version: &str) -> Result<String> {
 }
 
 /// The files that may hold marks, relative to `root`: the public pages
-/// that git tracks, and the config's schemas, the kernel's and the
-/// plugins'.
+/// that git tracks, the config's schemas, the kernel's and the plugins',
+/// and the themes' rules.
 fn files(root: &Path) -> Result<Vec<PathBuf>> {
     let listed = Command::new("git")
         .args([
@@ -96,6 +122,7 @@ fn files(root: &Path) -> Result<Vec<PathBuf>> {
             "docs/*.md",
             "crates/kernel/config.schema.json",
             "plugins/*/*.schema.json",
+            RULES,
         ])
         .args(ROOT_PAGES)
         .current_dir(root)
@@ -122,180 +149,122 @@ pub(crate) fn left(root: &Path) -> Result<Vec<String>> {
 }
 
 /// What a file of marks is: a page, of Markdown, whose code is left
-/// alone, or a schema, of JSON, whose texts are the guide's whole, as one
-/// line holds a key's guide, code and all.
+/// alone, or a text of a mark wherever it is: a schema, of JSON, whose
+/// texts are the guide's whole, as one line holds a key's guide, code and
+/// all, and the themes' rules, whose comments the guide shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
     Page,
-    Schema,
+    Text,
 }
 
 impl Kind {
     fn of(file: &Path) -> Self {
-        if file
-            .extension()
-            .is_some_and(|extension| extension == "json")
-        {
-            Self::Schema
-        } else {
+        if file.extension().is_some_and(|extension| extension == "md") {
             Self::Page
+        } else {
+            Self::Text
         }
     }
 }
 
-/// The lines of `text`, from 1, that hold a mark, outside code of a page,
-/// or a schema's key of no release.
+/// The lines of `text`, from 1, that hold the words of a mark, in any
+/// form but in a page's code, or a schema's key of no release.
 fn marked(text: &str, kind: Kind) -> Vec<usize> {
-    let mut lines = Vec::new();
-    let mut fence = Fence::default();
-    for (at, line) in text.lines().enumerate() {
-        let found = match kind {
-            Kind::Schema => line.contains(NEXT) || line.contains(WORDS),
-            Kind::Page => {
-                !fence.takes(line) && outside_code(line).iter().any(|part| part.contains(WORDS))
-            }
-        };
-        if found {
-            lines.push(at + 1);
-        }
+    let code = match kind {
+        Kind::Page => read(text).code,
+        Kind::Text => Vec::new(),
+    };
+    let mut starts: Vec<usize> = WORDS
+        .find_iter(text)
+        .map(|found| found.start())
+        .filter(|&at| !code.iter().any(|code| code.contains(&at)))
+        .collect();
+    if kind == Kind::Text {
+        starts.extend(NEXT.find_iter(text).map(|found| found.start()));
     }
+    let mut lines: Vec<usize> = starts
+        .into_iter()
+        .map(|at| text[..at].matches('\n').count() + 1)
+        .collect();
+    lines.sort_unstable();
+    lines.dedup();
     lines
 }
 
-/// `text` of its marks made the release's, `· Since <since>`, outside code
-/// of a page, and of a schema's keys of no release of `since`: and how
-/// many it made.
+/// `text` of its marks made the release's, `· Since <since>`, in a page's
+/// text outside its code, headings and HTML, and of a schema's keys of no
+/// release of `since`: and how many it made.
 fn released(text: &str, since: &str, kind: Kind) -> (String, usize) {
     let mark = format!("· Since {since}");
-    if kind == Kind::Schema {
-        let marks = text.matches(MARK).count() + text.matches(NEXT).count();
-        let made = text
-            .replace(MARK, &mark)
-            .replace(NEXT, &format!(r#""x-since": "{since}""#));
+    if kind == Kind::Text {
+        let marks = text.matches(MARK).count() + NEXT.find_iter(text).count();
+        let marked = text.replace(MARK, &mark);
+        let key = format!(r#""x-since": "{since}""#);
+        let made = NEXT
+            .replace_all(&marked, regex::NoExpand(&key))
+            .into_owned();
         return (made, marks);
     }
+    let marks = read(text).marks;
     let mut made = String::with_capacity(text.len());
-    let mut marks = 0;
-    let mut fence = Fence::default();
-    for line in text.split_inclusive('\n') {
-        if fence.takes(line.trim_end_matches(['\n', '\r'])) {
-            made.push_str(line);
-            continue;
-        }
-        let mut at = 0;
-        for span in code_spans(line) {
-            let part = &line[at..span.start];
-            marks += part.matches(MARK).count();
-            made.push_str(&part.replace(MARK, &mark));
-            made.push_str(&line[span.clone()]);
-            at = span.end;
-        }
-        let part = &line[at..];
-        marks += part.matches(MARK).count();
-        made.push_str(&part.replace(MARK, &mark));
-    }
-    (made, marks)
-}
-
-/// The parts of `line` outside its spans of code.
-fn outside_code(line: &str) -> Vec<&str> {
-    let mut parts = Vec::new();
     let mut at = 0;
-    for span in code_spans(line) {
-        parts.push(&line[at..span.start]);
-        at = span.end;
+    for found in &marks {
+        made.push_str(&text[at..found.start]);
+        made.push_str(&mark);
+        at = found.end;
     }
-    parts.push(&line[at..]);
-    parts
+    made.push_str(&text[at..]);
+    (made, marks.len())
 }
 
-/// The spans of code of `line`, backticks and all, as CommonMark reads
-/// them: a run of backticks opens one that the next run of as many closes;
-/// a run that none closes is plain text.
-fn code_spans(line: &str) -> Vec<std::ops::Range<usize>> {
-    let bytes = line.as_bytes();
-    let run_at = |from: usize| {
-        let end = bytes[from..]
-            .iter()
-            .position(|byte| *byte != b'`')
-            .map_or(bytes.len(), |length| from + length);
-        end - from
-    };
-    let mut spans = Vec::new();
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] != b'`' {
-            at += 1;
-            continue;
-        }
-        let opening = run_at(at);
-        // The next run of as many backticks, which closes it.
-        let mut look = at + opening;
-        let mut closed = None;
-        while look < bytes.len() {
-            if bytes[look] == b'`' {
-                let run = run_at(look);
-                if run == opening {
-                    closed = Some(look + run);
-                    break;
-                }
-                look += run;
-            } else {
-                look += 1;
-            }
-        }
-        match closed {
-            Some(end) => {
-                spans.push(at..end);
-                at = end;
-            }
-            None => at += opening,
-        }
-    }
-    spans
+/// What a page's Markdown holds, of byte ranges: the marks that a release
+/// makes its own, in its text, outside its code, headings and HTML; and
+/// its code, blocks and spans, whose words are no mark.
+#[derive(Debug, Default)]
+struct Read {
+    marks: Vec<Range<usize>>,
+    code: Vec<Range<usize>>,
 }
 
-/// Where a document stands of its fenced code blocks: the fence that
-/// opened the block that it is in, if it is in one.
-#[derive(Default)]
-struct Fence {
-    open: Option<(char, usize)>,
-}
-
-impl Fence {
-    /// Whether `line` is of a fenced code block, its fences too: a fence
-    /// of three backticks or tildes or more opens one, and a line of the
-    /// same character, as many or more and nothing else, closes it.
-    fn takes(&mut self, line: &str) -> bool {
-        let trimmed = line.trim_start();
-        let fence = |line: &str| {
-            let first = line
-                .chars()
-                .next()
-                .filter(|first| matches!(first, '`' | '~'))?;
-            let count = line.chars().take_while(|char| *char == first).count();
-            (count >= 3).then_some((first, count))
-        };
-        match self.open {
-            Some((char, count)) => {
-                if let Some((closing, closing_count)) = fence(trimmed)
-                    && closing == char
-                    && closing_count >= count
-                    && trimmed.trim_start_matches(char).trim().is_empty()
-                {
-                    self.open = None;
-                }
-                true
+/// The marks and the code of the page `text`, as Markdown reads it.
+fn read(text: &str) -> Read {
+    let options = Options::ENABLE_TABLES
+        | Options::ENABLE_FOOTNOTES
+        | Options::ENABLE_STRIKETHROUGH
+        | Options::ENABLE_TASKLISTS
+        | Options::ENABLE_GFM;
+    let mut read = Read::default();
+    // The runs of text outside code and headings, each of the text events
+    // that follow one another.
+    let mut runs: Vec<Range<usize>> = Vec::new();
+    let (mut blocks, mut headings) = (0usize, 0usize);
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
+        match event {
+            Event::Start(Tag::CodeBlock(_)) => {
+                read.code.push(range);
+                blocks += 1;
             }
-            None => match fence(trimmed) {
-                Some(opened) => {
-                    self.open = Some(opened);
-                    true
-                }
-                None => false,
+            Event::End(TagEnd::CodeBlock) => blocks = blocks.saturating_sub(1),
+            Event::Start(Tag::Heading { .. }) => headings += 1,
+            Event::End(TagEnd::Heading(_)) => headings = headings.saturating_sub(1),
+            Event::Code(_) => read.code.push(range),
+            Event::Text(_) if blocks == 0 && headings == 0 => match runs.last_mut() {
+                Some(run) if run.end == range.start => run.end = range.end,
+                _ => runs.push(range),
             },
+            _ => {}
         }
     }
+    for run in runs {
+        let mut at = run.start;
+        while let Some(found) = text[at..run.end].find(MARK) {
+            let start = at + found;
+            read.marks.push(start..start + MARK.len());
+            at = start + MARK.len();
+        }
+    }
+    read
 }
 
 #[cfg(test)]
@@ -342,15 +311,15 @@ mod tests {
     #[test]
     fn a_schema_s_key_of_no_release_takes_the_release_s_version() {
         let schema = "{\n  \"double-tap\": {\n    \"x-platforms\": [\"macos\"],\n    \"x-since\": \"next\",\n    \"x-guide\": \"| `cmd+u` | `window.toggle-opacity` | Shows it opaque · not released yet |\"\n  }\n}\n";
-        assert_eq!(marked(schema, Kind::Schema), [4, 5]);
-        let (made, marks) = released(schema, "1.3", Kind::Schema);
+        assert_eq!(marked(schema, Kind::Text), [4, 5]);
+        let (made, marks) = released(schema, "1.3", Kind::Text);
         assert_eq!(marks, 2);
         assert!(made.contains("\"x-since\": \"1.3\","));
         assert!(made.contains("Shows it opaque · Since 1.3 |"));
-        assert!(marked(&made, Kind::Schema).is_empty());
+        assert!(marked(&made, Kind::Text).is_empty());
         // A guide's one line of an odd number of backticks before the mark.
         let guide = r#"{"x-guide": "| `global:ctrl+`` | a key | its text · not released yet |"}"#;
-        let (made, marks) = released(guide, "1.3", Kind::Schema);
+        let (made, marks) = released(guide, "1.3", Kind::Text);
         assert_eq!(marks, 1);
         assert!(made.contains("its text · Since 1.3 |"));
         // A page shows a schema's key of no release as it is.
@@ -358,11 +327,51 @@ mod tests {
     }
 
     #[test]
+    fn a_page_s_marks_are_of_its_text_as_markdown_reads_it() {
+        // A fence opened on a list item's line, a span of three backticks,
+        // a quote's fence, an indented block and a span over two lines:
+        // code, as they were; the marks after each, the release's.
+        let text = "- ```sh\n  ls · not released yet\n  ```\n\nAfter the item · not released yet\n\nUse ```a · not released yet``` here · not released yet\n\n> ```\n> ls · not released yet\n> ```\n\nText.\n\n    ls · not released yet\n\nWrite `x · not\nreleased yet` here · not released yet\n";
+        let (made, marks) = released(text, "1.3", Kind::Page);
+        assert_eq!(marks, 3, "{made}");
+        assert_eq!(
+            made,
+            "- ```sh\n  ls · not released yet\n  ```\n\nAfter the item · Since 1.3\n\nUse ```a · not released yet``` here · Since 1.3\n\n> ```\n> ls · not released yet\n> ```\n\nText.\n\n    ls · not released yet\n\nWrite `x · not\nreleased yet` here · Since 1.3\n"
+        );
+        assert!(marked(&made, Kind::Page).is_empty());
+        // In a heading or in HTML, a mark is refused: left, and told.
+        let text = "# Tabs\n\n## Groups · not released yet\n\n<div>Pinned · not released yet</div>\n\nBody · not released yet\n";
+        let (made, marks) = released(text, "1.3", Kind::Page);
+        assert_eq!(marks, 1, "{made}");
+        assert!(made.ends_with("Body · Since 1.3\n"));
+        assert_eq!(marked(&made, Kind::Page), [3, 5]);
+    }
+
+    #[test]
+    fn a_schema_s_compact_key_and_the_rules_comments_take_the_release() {
+        let schema = r#"{"a": {"x-since":"next", "x-guide": "It · not released yet"}}"#;
+        assert_eq!(marked(schema, Kind::Text), [1]);
+        let (made, marks) = released(schema, "1.3", Kind::Text);
+        assert_eq!(marks, 2);
+        assert_eq!(
+            made,
+            r#"{"a": {"x-since": "1.3", "x-guide": "It · Since 1.3"}}"#
+        );
+        // The themes' rules, whose comments the theme guide shows.
+        let rules = "# A hint's label · not released yet.\n\"hints.label.bg\" = \"accent\"\n";
+        let (made, marks) = released(rules, "1.3", Kind::of(Path::new(RULES)));
+        assert_eq!(marks, 1);
+        assert!(made.starts_with("# A hint's label · Since 1.3.\n"));
+        let token = lokyr_plugin_sdk::theme::rules::rule("hints.label.bg").unwrap();
+        assert!(token.description.contains(MARK), "{}", token.description);
+    }
+
+    #[test]
     fn a_mark_of_another_form_is_left_and_told() {
-        let text = "Hints (not released yet)\n\nNot released yet, in another case\n";
+        let text = "Hints (not released yet)\n\nNot Released\nyet, in another case\n";
         let (made, marks) = released(text, "1.3", Kind::Page);
         assert_eq!((made.as_str(), marks), (text, 0));
-        assert_eq!(marked(text, Kind::Page), [1]);
+        assert_eq!(marked(text, Kind::Page), [1, 3]);
     }
 
     #[test]
@@ -379,8 +388,17 @@ mod tests {
             let (made, _) = released(&text, "9.9", kind);
             let left = marked(&made, kind);
             assert!(left.is_empty(), "{}: {left:?}", file.display());
-            if kind == Kind::Schema {
+            if file
+                .extension()
+                .is_some_and(|extension| extension == "json")
+            {
                 serde_json::from_str::<serde_json::Value>(&made).unwrap();
+            }
+            if file
+                .extension()
+                .is_some_and(|extension| extension == "toml")
+            {
+                toml::from_str::<toml::Value>(&made).unwrap();
             }
         }
         let guide = fs::read_to_string(root.join("docs/WRITING-DOCS.md")).unwrap();
