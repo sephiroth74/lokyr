@@ -1751,9 +1751,35 @@ pub enum SettingKind {
         #[serde(default)]
         max_length: Option<u64>,
     },
+    /// A table of entries, each of a name of the user's choice and of its
+    /// fields, as the patterns of `[plugins.links] hints`, each a table of
+    /// its `pattern` and its `url`.
+    Map {
+        /// The fields of each entry, in the schema's order.
+        fields: Vec<SettingField>,
+    },
     /// Another value, which the page shows as it is.
     Other,
 }
+
+/// A field of each entry of a [`SettingKind::Map`].
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SettingField {
+    /// Its name, as the config writes it.
+    pub name: String,
+    /// What it does, as the schema tells it.
+    #[serde(default)]
+    pub description: String,
+    /// The values that it takes: `true` or `false`, a number, a text or one
+    /// of its choices.
+    pub kind: SettingKind,
+    /// Whether every entry has it.
+    #[serde(default)]
+    pub required: bool,
+}
+
+/// The most characters of the name of an entry of a [`SettingKind::Map`].
+pub const MOST_ENTRY_NAME: usize = 256;
 
 /// Where a plugin is in its life.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

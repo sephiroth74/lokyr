@@ -2765,3 +2765,316 @@ fn a_theme_s_card_names_it_in_the_config_for_its_appearance() {
             .any(|request| matches!(request, Request::AskChoice { .. }))
     );
 }
+
+/// The hints' patterns of `entries`, as a map's value: each of its name,
+/// its pattern and its URL, if it has one.
+fn patterns(entries: &[(&str, &str, Option<&str>)]) -> Data {
+    Data::Map(
+        entries
+            .iter()
+            .map(|(name, pattern, url)| {
+                let mut fields =
+                    BTreeMap::from([("pattern".to_owned(), Data::Text((*pattern).to_owned()))]);
+                if let Some(url) = url {
+                    fields.insert("url".to_owned(), Data::Text((*url).to_owned()));
+                }
+                ((*name).to_owned(), Data::Map(fields))
+            })
+            .collect(),
+    )
+}
+
+/// A host of the settings of [`settings`] and of the links' section, of
+/// its hints' patterns `hints`, the plugin activated, the links' section
+/// shown.
+fn host_of_hints(hints: Option<Data>) -> (FakeHost, SettingsPage) {
+    let mut settings = settings();
+    let text = |least: Option<u64>, most: u64| SettingKind::Text {
+        min_length: least,
+        max_length: Some(most),
+        examples: Vec::new(),
+    };
+    settings.sections.push(SettingsSection {
+        name: "links".to_owned(),
+        plugin: Some("lokyr/links".to_owned()),
+        description: "The hints".to_owned(),
+        keys: vec![key(
+            "hints",
+            hints,
+            Some(Data::Map(BTreeMap::new())),
+            SettingKind::Map {
+                fields: vec![
+                    SettingField {
+                        name: "pattern".to_owned(),
+                        description: "The regular expression".to_owned(),
+                        kind: text(Some(1), 256),
+                        required: true,
+                    },
+                    SettingField {
+                        name: "url".to_owned(),
+                        description: "The URL that a match opens".to_owned(),
+                        kind: text(None, 1024),
+                        required: false,
+                    },
+                ],
+            },
+        )],
+    });
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    // The app's three sections, then the tabs' and the links'.
+    host.ui_event(&mut plugin, &choose(TABS + 1)).unwrap();
+    let _ = written(&mut host);
+    (host, plugin)
+}
+
+/// A write of the links' hints, of `value`.
+fn hints_written(value: Option<Data>) -> Write {
+    (
+        "links".to_owned(),
+        Some("lokyr/links".to_owned()),
+        "hints".to_owned(),
+        value,
+    )
+}
+
+#[test]
+fn a_map_s_entries_are_changed_renamed_taken_away_and_added() {
+    const JIRA: &str = "https://jira.example.com/browse/$0";
+    let (mut host, mut plugin) =
+        host_of_hints(Some(patterns(&[("jira", r"TVUI-\d+", Some(JIRA))])));
+    let at = |parts: &[&str]| parts.join("\u{1f}");
+    let tree = rendered(&mut host, &mut plugin);
+    // Each entry: its name's field, a field of each of its fields, and its
+    // Remove; then the new entry's fields and Add; no Reset of them all.
+    assert_eq!(
+        held(&tree, &format!("entry-name:{}", at(&["hints", "jira"]))),
+        Some((Some("jira".to_owned()), "setting-entry-name".to_owned()))
+    );
+    assert_eq!(
+        held(
+            &tree,
+            &format!("entry-field:{}", at(&["hints", "jira", "pattern"]))
+        ),
+        Some((
+            Some(r"TVUI-\d+".to_owned()),
+            "setting-entry-field-required".to_owned()
+        ))
+    );
+    assert_eq!(
+        held(
+            &tree,
+            &format!("entry-field:{}", at(&["hints", "jira", "url"]))
+        ),
+        Some((
+            Some(JIRA.to_owned()),
+            "setting-entry-field-optional".to_owned()
+        ))
+    );
+    assert!(matches!(
+        &find_node(&tree, &format!("entry-remove:{}", at(&["hints", "jira"]))).unwrap().kind,
+        Kind::Button(button) if button.link
+    ));
+    assert_eq!(
+        held(&tree, &format!("new-entry:{}", at(&["hints", ""]))),
+        Some((None, "setting-entry-new".to_owned()))
+    );
+    assert!(held(&tree, &format!("new-entry:{}", at(&["hints", "url"]))).is_some());
+    assert!(labelled(&tree, "add-entry:hints").is_some());
+    assert_eq!(reset_of(&tree, "hints"), None);
+    // A field written as Return is pressed; an optional one emptied goes.
+    let url = format!("entry-field:{}", at(&["hints", "jira", "url"]));
+    host.ui_event(&mut plugin, &submit(&url, "https://jira.example.com/b/$0"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[(
+            "jira",
+            r"TVUI-\d+",
+            Some("https://jira.example.com/b/$0")
+        )])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &submit(&url, " ")).unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[(
+            "jira",
+            r"TVUI-\d+",
+            None
+        )])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // As typing pauses, too.
+    host.ui_event(
+        &mut plugin,
+        &on(
+            &url,
+            UiEventKind::InputChanged {
+                text: JIRA.to_owned(),
+                revision: 1,
+            },
+        ),
+    )
+    .unwrap();
+    host.advance(std::time::Duration::from_secs(1));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[(
+            "jira",
+            r"TVUI-\d+",
+            Some(JIRA)
+        )])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // A required field emptied is refused, under the map, nothing written.
+    let pattern = format!("entry-field:{}", at(&["hints", "jira", "pattern"]));
+    host.ui_event(&mut plugin, &submit(&pattern, "")).unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "refused:hints").as_deref(),
+        Some("setting-entry-required")
+    );
+    // Renamed as Return is pressed, never as typing pauses.
+    let name = format!("entry-name:{}", at(&["hints", "jira"]));
+    host.ui_event(
+        &mut plugin,
+        &on(
+            &name,
+            UiEventKind::InputChanged {
+                text: "tick".to_owned(),
+                revision: 1,
+            },
+        ),
+    )
+    .unwrap();
+    // A pause of another field's typing writes that field alone.
+    host.ui_event(
+        &mut plugin,
+        &on(
+            &pattern,
+            UiEventKind::InputChanged {
+                text: r"TVUI-\d+".to_owned(),
+                revision: 1,
+            },
+        ),
+    )
+    .unwrap();
+    host.advance(std::time::Duration::from_secs(1));
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    host.ui_event(&mut plugin, &submit(&name, "tickets"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[(
+            "tickets",
+            r"TVUI-\d+",
+            Some(JIRA)
+        )])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // Added, of its name and its required field, its fields emptied; of no
+    // name, of a name taken or of no pattern, refused.
+    let new = |field: &str| format!("new-entry:{}", at(&["hints", field]));
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    host.ui_event(&mut plugin, &on("add-entry:hints", UiEventKind::Click))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "refused:hints").as_deref(),
+        Some("setting-entry-unnamed")
+    );
+    host.ui_event(&mut plugin, &on(&new(""), typed("tickets")))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("add-entry:hints", UiEventKind::Click))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "refused:hints").as_deref(),
+        Some("setting-entry-taken")
+    );
+    host.ui_event(&mut plugin, &on(&new(""), typed("uuids")))
+        .unwrap();
+    host.ui_event(&mut plugin, &on("add-entry:hints", UiEventKind::Click))
+        .unwrap();
+    assert!(written(&mut host).is_empty());
+    host.ui_event(&mut plugin, &submit(&new("pattern"), "[0-9a-f]{8}"))
+        .unwrap();
+    let done = host.take_done();
+    assert!(done.contains(&Request::SetSetting {
+        section: "links".to_owned(),
+        plugin: Some("lokyr/links".to_owned()),
+        key: "hints".to_owned(),
+        value: Some(patterns(&[
+            ("tickets", r"TVUI-\d+", Some(JIRA)),
+            ("uuids", "[0-9a-f]{8}", None),
+        ])),
+    }));
+    for field in ["", "pattern", "url"] {
+        assert!(
+            done.iter().any(|request| matches!(
+                request,
+                Request::SetText { key, text, .. } if key.0 == new(field) && text.is_empty()
+            )),
+            "{field}"
+        );
+    }
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(text_of(&tree, "refused:hints"), None);
+    // Renamed as another entry is named: refused.
+    host.ui_event(
+        &mut plugin,
+        &submit(
+            &format!("entry-name:{}", at(&["hints", "tickets"])),
+            "uuids",
+        ),
+    )
+    .unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        text_of(&tree, "refused:hints").as_deref(),
+        Some("setting-entry-taken")
+    );
+    // Taken away, one at a time; the last, the key back to its default.
+    host.ui_event(
+        &mut plugin,
+        &on(
+            &format!("entry-remove:{}", at(&["hints", "tickets"])),
+            UiEventKind::Click,
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[(
+            "uuids",
+            "[0-9a-f]{8}",
+            None
+        )])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(
+        &mut plugin,
+        &on(
+            &format!("entry-remove:{}", at(&["hints", "uuids"])),
+            UiEventKind::Click,
+        ),
+    )
+    .unwrap();
+    assert_eq!(written(&mut host), [hints_written(None)]);
+}

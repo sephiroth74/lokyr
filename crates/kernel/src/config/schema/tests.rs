@@ -609,6 +609,100 @@ fn a_number_is_its_default_of_the_same_value_whole_or_not() {
 }
 
 #[test]
+fn a_table_of_entries_of_fields_is_a_map_whose_entries_are_checked() {
+    use lokyr_plugin_sdk::host::SettingKind;
+    use lokyr_plugin_sdk::message::Data;
+    let links: super::Ordered = serde_json::from_str(PLUGINS[6].1).unwrap();
+    let section = super::section("links", Some("lokyr/links"), &links, |_| None);
+    let hints = section.keys.iter().find(|key| key.name == "hints").unwrap();
+    let SettingKind::Map { fields } = &hints.kind else {
+        panic!("{:?}", hints.kind);
+    };
+    let names: Vec<(&str, bool)> = fields
+        .iter()
+        .map(|field| (field.name.as_str(), field.required))
+        .collect();
+    assert_eq!(names, [("pattern", true), ("url", false)]);
+    assert!(matches!(
+        fields[0].kind,
+        SettingKind::Text {
+            min_length: Some(1),
+            max_length: Some(256),
+            ..
+        }
+    ));
+    assert!(!fields[1].description.is_empty());
+    assert_eq!(hints.default, Some(Data::Map(Default::default())));
+    // An object of keys of its own, or of entries of no scalar fields, is
+    // another value.
+    let other: super::Ordered = serde_json::from_str(
+        r#"{ "type": "object", "properties": { "a": { "type": "string" } }, "additionalProperties": { "type": "object", "properties": { "b": { "type": "string" } } } }"#,
+    )
+    .unwrap();
+    assert_eq!(super::kind_of(&other), SettingKind::Other);
+    let nested: super::Ordered = serde_json::from_str(
+        r#"{ "type": "object", "additionalProperties": { "type": "object", "properties": { "b": { "type": "array" } } } }"#,
+    )
+    .unwrap();
+    assert_eq!(super::kind_of(&nested), SettingKind::Other);
+    // Each entry of a name, of its required fields, of fields that it has,
+    // each of its kind.
+    let entry = |fields: &[(&str, Data)]| {
+        Data::Map(
+            fields
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        )
+    };
+    let map = |entries: Vec<(&str, Data)>| {
+        Data::Map(
+            entries
+                .into_iter()
+                .map(|(name, value)| (name.to_owned(), value))
+                .collect(),
+        )
+    };
+    let text = |text: &str| Data::Text(text.to_owned());
+    let check = |value: &Data| super::check_kind(&hints.kind, value);
+    assert!(check(&map(vec![("jira", entry(&[("pattern", text("A-\\d+"))]))])).is_ok());
+    assert!(
+        check(&map(vec![(
+            "jira",
+            entry(&[
+                ("pattern", text("A")),
+                ("url", text("https://a.example/$0"))
+            ])
+        )]))
+        .is_ok()
+    );
+    assert!(check(&map(Vec::new())).is_ok());
+    let refused = |value: Data| check(&value).unwrap_err();
+    assert_eq!(
+        refused(map(vec![("jira", entry(&[("url", text("https://a"))]))])),
+        "`jira` takes its `pattern`"
+    );
+    assert_eq!(
+        refused(map(vec![("jira", entry(&[("pattern", text(""))]))])),
+        "`pattern` of `jira`: it takes a text that is not empty"
+    );
+    assert_eq!(
+        refused(map(vec![(
+            "jira",
+            entry(&[("pattern", text("A")), ("open", text("b"))])
+        )])),
+        "`jira` has no field `open`"
+    );
+    assert!(refused(map(vec![("", entry(&[("pattern", text("A"))]))])).contains("name"));
+    assert!(refused(map(vec![("a\nb", entry(&[("pattern", text("A"))]))])).contains("name"));
+    assert_eq!(
+        refused(map(vec![("jira", text("A"))])),
+        "`jira` takes a table of its fields"
+    );
+    assert_eq!(refused(text("A")), "it takes a table of entries");
+}
+
+#[test]
 fn every_key_has_its_address_in_the_guide_at_its_heading_s_anchor() {
     let base = super::GUIDE_ADDRESS;
     assert!(base.contains(&format!("/blob/v{}/", env!("CARGO_PKG_VERSION"))));

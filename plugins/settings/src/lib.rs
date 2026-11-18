@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Error, Value};
 use lokyr_plugin_sdk::host::{
-    FontFace, SettingBinding, SettingKey, SettingKind, Settings, SettingsSection,
+    FontFace, SettingBinding, SettingField, SettingKey, SettingKind, Settings, SettingsSection,
 };
 use lokyr_plugin_sdk::message::{Data, Event, SETTINGS_CHANGED, THEME_CHANGED, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -190,6 +190,21 @@ const REMOVE: &str = "remove:";
 /// The prefix of the key of a list's field that adds a value.
 const ADD: &str = "add:";
 
+/// The prefixes of the keys of a map's editor, of the key's name, its
+/// entry's and its field's, parted by [`PART`]: an entry's name, a field of
+/// an entry, an entry's Remove, a field of the new entry, of its name of an
+/// empty field's, and Add.
+const ENTRY_NAME: &str = "entry-name:";
+const ENTRY_FIELD: &str = "entry-field:";
+const ENTRY_REMOVE: &str = "entry-remove:";
+const NEW_ENTRY: &str = "new-entry:";
+const ADD_ENTRY: &str = "add-entry:";
+
+/// What parts a key's name, an entry's and a field's in the keys of a
+/// map's editor: no name of an entry holds it, as none holds a control
+/// character.
+const PART: char = '\u{1f}';
+
 /// The key of the sidebar's search field.
 const SEARCH: &str = "search";
 
@@ -283,15 +298,29 @@ pub struct SettingsPage {
     preview_timer: Option<u64>,
     typed: BTreeMap<String, Typed>,
     pause: Option<u64>,
+    /// The texts typed into the fields of each map's new entry, by the
+    /// map's name, each by its field's, its name's of an empty one.
+    new_entries: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// A text typed into a key's field and not written yet: the key's section
-/// and plugin, and the text.
+/// and plugin, the text, and the entry of a map whose field it is, by the
+/// key of its field.
 #[derive(Clone, Debug)]
 struct Typed {
     section: String,
     plugin: Option<String>,
     text: String,
+    entry: Option<EntryAt>,
+}
+
+/// A field of an entry of a map: the map's key, the entry's name, and the
+/// field's, of none the field of the entry's name.
+#[derive(Clone, Debug)]
+struct EntryAt {
+    key: String,
+    entry: String,
+    field: Option<String>,
 }
 
 /// The parts of the page, as its sidebar lists them, the sections of
@@ -672,6 +701,15 @@ impl Plugin for SettingsPage {
             }
             return Ok(());
         }
+        // A map's entry taken away, changed, renamed or added.
+        if key.starts_with(ENTRY_REMOVE)
+            || key.starts_with(ENTRY_NAME)
+            || key.starts_with(ENTRY_FIELD)
+            || key.starts_with(NEW_ENTRY)
+            || key.starts_with(ADD_ENTRY)
+        {
+            return self.entry_event(cx, section, event);
+        }
         // A list's value taken away, or one added.
         if let (UiEventKind::Click, Some(rest)) = (&event.kind, key.strip_prefix(REMOVE)) {
             let Some((name, at)) = rest.rsplit_once(':') else {
@@ -748,6 +786,7 @@ impl Plugin for SettingsPage {
                         section: section.name.clone(),
                         plugin: section.plugin.clone(),
                         text: text.clone(),
+                        entry: None,
                     },
                 );
                 if let Some(pause) = self.pause.take() {
@@ -763,6 +802,7 @@ impl Plugin for SettingsPage {
                         section: section.name.clone(),
                         plugin: section.plugin.clone(),
                         text: text.clone(),
+                        entry: None,
                     },
                 );
                 self.write_typed(cx, Some(name))
@@ -1265,6 +1305,31 @@ impl SettingsPage {
             else {
                 continue;
             };
+            // An entry's field as typing pauses, of a value that it takes,
+            // never its name, whose field the rename would take away.
+            if let Some(at) = &typed.entry {
+                if at.field.is_none() {
+                    continue;
+                }
+                let Some(setting) = find(section, &at.key) else {
+                    continue;
+                };
+                if let Ok(Some(value)) = entry_written(cx, setting, at, &typed.text) {
+                    let written = cx.set_setting(
+                        &section.name,
+                        section.plugin.as_deref(),
+                        &setting.name,
+                        value,
+                    );
+                    if written.is_ok() {
+                        self.typed.remove(&name);
+                        if self.refused.remove(&at.key).is_some() {
+                            self.render_page(cx)?;
+                        }
+                    }
+                }
+                continue;
+            }
             let Some(setting) = find(section, &name) else {
                 continue;
             };
@@ -1323,6 +1388,27 @@ impl SettingsPage {
             else {
                 continue;
             };
+            // An entry's field, or its name, of the value that it takes, or
+            // why not under its map.
+            if let Some(at) = &typed.entry {
+                let Some(setting) = find(section, &at.key) else {
+                    continue;
+                };
+                match entry_written(cx, setting, at, &typed.text) {
+                    Ok(Some(value)) => self.write(cx, section, setting, value)?,
+                    Ok(None) => {
+                        if self.refused.remove(&at.key).is_some() {
+                            self.render_page(cx)?;
+                        }
+                    }
+                    Err(why) => {
+                        self.refused.insert(at.key.clone(), why);
+                        self.typed.insert(name, typed.clone());
+                        self.render_page(cx)?;
+                    }
+                }
+                continue;
+            }
             let Some(setting) = find(section, &name) else {
                 continue;
             };
@@ -1348,6 +1434,174 @@ impl SettingsPage {
                     self.typed.insert(name, typed);
                     self.render_page(cx)?;
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// An event of a map's editor in `section`: an entry taken away, a text
+    /// typed into an entry's field or its name, written as the page's other
+    /// fields write theirs, its name as Return is pressed or as it is left
+    /// alone, or the new entry's fields typed into and added.
+    fn entry_event(
+        &mut self,
+        cx: &mut Cx<'_>,
+        section: &SettingsSection,
+        event: &UiEvent,
+    ) -> Result<(), Error> {
+        let key = event.key.0.as_str();
+        let (prefix, rest) = [ENTRY_REMOVE, ENTRY_NAME, ENTRY_FIELD, NEW_ENTRY, ADD_ENTRY]
+            .into_iter()
+            .find_map(|prefix| key.strip_prefix(prefix).map(|rest| (prefix, rest)))
+            .unwrap_or_default();
+        let mut parts = rest.split(PART);
+        let Some(setting) = parts.next().and_then(|name| find(section, name)) else {
+            return Ok(());
+        };
+        let entry = parts.next().map(str::to_owned);
+        let field = parts.next().map(str::to_owned);
+        match (prefix, &event.kind) {
+            (ENTRY_REMOVE, UiEventKind::Click) => {
+                let Some(entry) = entry else {
+                    return Ok(());
+                };
+                let mut entries = entries_of(setting.value.as_ref());
+                if entries.remove(&entry).is_none() {
+                    return Ok(());
+                }
+                self.typed.retain(|_, typed| {
+                    typed
+                        .entry
+                        .as_ref()
+                        .is_none_or(|at| at.key != setting.name || at.entry != entry)
+                });
+                self.write(cx, section, setting, map_value(entries))
+            }
+            (ENTRY_NAME | ENTRY_FIELD, kind) => {
+                let Some(entry) = entry else {
+                    return Ok(());
+                };
+                let at = EntryAt {
+                    key: setting.name.clone(),
+                    entry,
+                    field: if prefix == ENTRY_FIELD { field } else { None },
+                };
+                let typed = |text: &str| Typed {
+                    section: section.name.clone(),
+                    plugin: section.plugin.clone(),
+                    text: text.to_owned(),
+                    entry: Some(at.clone()),
+                };
+                match kind {
+                    UiEventKind::InputChanged { text, .. } => {
+                        self.typed.insert(key.to_owned(), typed(text));
+                        // A name waits for Return or its field left.
+                        if at.field.is_some() {
+                            if let Some(pause) = self.pause.take() {
+                                cx.cancel_timer(pause)?;
+                            }
+                            self.pause = Some(cx.start_timer(PAUSE, false)?);
+                        }
+                        Ok(())
+                    }
+                    UiEventKind::Submit { text, .. } => {
+                        self.typed.insert(key.to_owned(), typed(text));
+                        self.write_typed(cx, Some(key))
+                    }
+                    UiEventKind::Blur => self.write_typed(cx, Some(key)),
+                    _ => Ok(()),
+                }
+            }
+            (NEW_ENTRY, UiEventKind::InputChanged { text, .. }) => {
+                self.new_entries
+                    .entry(setting.name.clone())
+                    .or_default()
+                    .insert(entry.unwrap_or_default(), text.clone());
+                Ok(())
+            }
+            (NEW_ENTRY, UiEventKind::Submit { text, .. }) => {
+                self.new_entries
+                    .entry(setting.name.clone())
+                    .or_default()
+                    .insert(entry.unwrap_or_default(), text.clone());
+                self.add_entry(cx, section, setting)
+            }
+            (ADD_ENTRY, UiEventKind::Click) => self.add_entry(cx, section, setting),
+            _ => Ok(()),
+        }
+    }
+
+    /// Adds the new entry of the map `setting` of `section`, of the texts
+    /// typed into its fields: of a name that no other entry has, and of its
+    /// required fields, each of a value that its kind takes; or why not,
+    /// under the map. Added, its fields are empty again, for the next.
+    fn add_entry(
+        &mut self,
+        cx: &mut Cx<'_>,
+        section: &SettingsSection,
+        setting: &SettingKey,
+    ) -> Result<(), Error> {
+        let SettingKind::Map { fields } = &setting.kind else {
+            return Ok(());
+        };
+        let texts = self
+            .new_entries
+            .get(&setting.name)
+            .cloned()
+            .unwrap_or_default();
+        let text = |field: &str| texts.get(field).map_or("", |text| text.trim());
+        let mut entries = entries_of(setting.value.as_ref());
+        let name = text("");
+        let mut own = BTreeMap::new();
+        let refused = if name.is_empty() {
+            Some(message(cx, "setting-entry-unnamed", &[]))
+        } else if entries.contains_key(name) {
+            Some(message(
+                cx,
+                "setting-entry-taken",
+                &[("name", name.to_owned())],
+            ))
+        } else {
+            let mut refused = None;
+            for field in fields {
+                match field_value(cx, &field.kind, text(&field.name)) {
+                    Ok(Some(value)) => {
+                        own.insert(field.name.clone(), value);
+                    }
+                    Ok(None) if field.required => {
+                        refused = Some(message(
+                            cx,
+                            "setting-entry-required",
+                            &[("field", field.name.clone())],
+                        ));
+                    }
+                    Ok(None) => {}
+                    Err(why) => refused = Some(format!("{}: {why}", field.name)),
+                }
+                if refused.is_some() {
+                    break;
+                }
+            }
+            refused
+        };
+        if let Some(why) = refused {
+            self.refused.insert(setting.name.clone(), why);
+            return self.render_page(cx);
+        }
+        entries.insert(name.to_owned(), own);
+        let written = cx.set_setting(
+            &section.name,
+            section.plugin.as_deref(),
+            &setting.name,
+            map_value(entries),
+        );
+        let fine = written.is_ok();
+        self.told(cx, &setting.name, written)?;
+        if fine {
+            self.new_entries.remove(&setting.name);
+            for field in std::iter::once("").chain(fields.iter().map(|field| field.name.as_str())) {
+                let key = format!("{NEW_ENTRY}{}{PART}{field}", setting.name);
+                cx.set_text(page(), key.as_str(), "", u64::MAX)?;
             }
         }
         Ok(())
@@ -1990,10 +2244,7 @@ fn section_part(
         .collect();
     let rows = keys
         .into_iter()
-        .map(|key| {
-            let typed = typed.get(&key.name).map(|typed| typed.text.as_str());
-            key_row(cx, key, (refused.get(&key.name), typed))
-        })
+        .map(|key| key_row(cx, key, (refused.get(&key.name), typed)))
         .collect();
     part.push(group(rows, "keys"));
     part
@@ -2001,15 +2252,18 @@ fn section_part(
 
 /// The row of `key`: its name, its platforms and what it does, why its last
 /// write was refused, `refused`, and at its right the control of its value
-/// in force, or of the text typed into its field and not written yet,
-/// `typed`, marked as its default where it is, or that it is not set, and
-/// the button that takes it back to its default where it is another.
+/// in force, or of the text typed into its field and not written yet, of
+/// the texts typed, `typed`, marked as its default where it is, or that it
+/// is not set, and the button that takes it back to its default where it
+/// is another.
 fn key_row(
     cx: &mut Cx<'_>,
     key: &SettingKey,
-    (refused, typed): (Option<&String>, Option<&str>),
+    (refused, typed): (Option<&String>, &BTreeMap<String, Typed>),
 ) -> Node {
     let name = &key.name;
+    let all_typed = typed;
+    let typed = typed.get(name).map(|typed| typed.text.as_str());
     let mut title = vec![Node::text(name.clone()).style(Style {
         font_weight: Some(FontWeight::Semibold),
         ..Style::default()
@@ -2062,9 +2316,12 @@ fn key_row(
     if !links.is_empty() {
         about.push(row_of(links, 12.0));
     }
-    // A list's values, under what it does.
+    // A list's values, or a map's entries, under what it does.
     if matches!(key.kind, SettingKind::List { .. }) {
         about.push(list_editor(cx, key));
+    }
+    if let SettingKind::Map { fields } = &key.kind {
+        about.push(map_editor(cx, key, fields, all_typed));
     }
     if let Some(why) = refused {
         about.push(
@@ -2090,7 +2347,8 @@ fn key_row(
     // key is there already.
     let mut marks = Vec::new();
     let at_default = key.value.is_none() || key.value == key.default;
-    if writable(&key.kind) {
+    // A map's entries go one at a time, by their Remove.
+    if writable(&key.kind) && !matches!(key.kind, SettingKind::Map { .. }) {
         let mut reset = Node::button(message(cx, "setting-reset", &[]))
             .key(format!("{RESET}{name}").as_str())
             .as_link()
@@ -2213,6 +2471,312 @@ fn list_editor(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
         })
 }
 
+/// The entries of a map's value, `value`, each of its fields by their
+/// names; none of another value.
+fn entries_of(value: Option<&Data>) -> BTreeMap<String, BTreeMap<String, Data>> {
+    match value {
+        Some(Data::Map(entries)) => entries
+            .iter()
+            .filter_map(|(name, entry)| match entry {
+                Data::Map(fields) => Some((name.clone(), fields.clone())),
+                _ => None,
+            })
+            .collect(),
+        _ => BTreeMap::new(),
+    }
+}
+
+/// The value of a map of `entries`: none of no entry, so that the key goes
+/// back to its default, an empty map, and leaves the file.
+fn map_value(entries: BTreeMap<String, BTreeMap<String, Data>>) -> Option<Data> {
+    (!entries.is_empty()).then(|| {
+        Data::Map(
+            entries
+                .into_iter()
+                .map(|(name, fields)| (name, Data::Map(fields)))
+                .collect(),
+        )
+    })
+}
+
+/// The value of a field of a map's entry of the kind `kind`, of `text`:
+/// none of an empty one, `true` or `false` of a boolean, a number of a
+/// number, a text of another kind; or why not.
+fn field_value(cx: &mut Cx<'_>, kind: &SettingKind, text: &str) -> Result<Option<Data>, String> {
+    match (kind, text.trim()) {
+        (SettingKind::Boolean, "") => Ok(None),
+        (SettingKind::Boolean, "true") => Ok(Some(Data::Boolean(true))),
+        (SettingKind::Boolean, "false") => Ok(Some(Data::Boolean(false))),
+        (SettingKind::Boolean, _) => Err(message(cx, "setting-not-a-boolean", &[])),
+        _ => value_of(cx, kind, text),
+    }
+}
+
+/// The value that the map `setting` takes of `text`, typed into the field
+/// of `at`: its entry renamed, or its field changed, an empty one of no
+/// value taken away; none where nothing changes, or where the entry is no
+/// longer there; or why not, as an empty name, a name that another entry
+/// has, or an empty field that every entry has.
+fn entry_written(
+    cx: &mut Cx<'_>,
+    setting: &SettingKey,
+    at: &EntryAt,
+    text: &str,
+) -> Result<Option<Option<Data>>, String> {
+    let SettingKind::Map { fields } = &setting.kind else {
+        return Ok(None);
+    };
+    let mut entries = entries_of(setting.value.as_ref());
+    let Some(mut own) = entries.remove(&at.entry) else {
+        return Ok(None);
+    };
+    let text = text.trim();
+    match &at.field {
+        None => {
+            if text == at.entry {
+                return Ok(None);
+            }
+            if text.is_empty() {
+                return Err(message(cx, "setting-entry-unnamed", &[]));
+            }
+            if entries.contains_key(text) {
+                return Err(message(
+                    cx,
+                    "setting-entry-taken",
+                    &[("name", text.to_owned())],
+                ));
+            }
+            entries.insert(text.to_owned(), own);
+        }
+        Some(field) => {
+            let Some(kind) = fields.iter().find(|own| own.name == *field) else {
+                return Ok(None);
+            };
+            match field_value(cx, &kind.kind, text) {
+                Err(why) => return Err(format!("{field}: {why}")),
+                Ok(None) if kind.required => {
+                    return Err(message(
+                        cx,
+                        "setting-entry-required",
+                        &[("field", field.clone())],
+                    ));
+                }
+                Ok(None) => {
+                    if own.remove(field).is_none() {
+                        return Ok(None);
+                    }
+                }
+                Ok(Some(value)) => {
+                    if own.get(field) == Some(&value) {
+                        return Ok(None);
+                    }
+                    own.insert(field.clone(), value);
+                }
+            }
+            entries.insert(at.entry.clone(), own);
+        }
+    }
+    Ok(Some(map_value(entries)))
+}
+
+/// A map's entries, each of its name's field, its Remove, and a field of
+/// each of its fields, of the text typed into it and not written yet, of
+/// `typed`, or its value; then the fields of a new entry, its name's and
+/// each field's, and Add.
+fn map_editor(
+    cx: &mut Cx<'_>,
+    key: &SettingKey,
+    fields: &[SettingField],
+    typed: &BTreeMap<String, Typed>,
+) -> Node {
+    let name = &key.name;
+    let shown = |node: &str| typed.get(node).map(|typed| typed.text.clone());
+    let placeholders: Vec<String> = fields
+        .iter()
+        .map(|field| {
+            let id = if field.required {
+                "setting-entry-field-required"
+            } else {
+                "setting-entry-field-optional"
+            };
+            message(cx, id, &[])
+        })
+        .collect();
+    // A field's row: its name, which tells what it does as the pointer
+    // rests on it, of a key of its field's, and its field.
+    let field_row = |field: &SettingField, node: Node| {
+        let mut label = Node::text(field.name.clone())
+            .style(small())
+            .layout(Layout {
+                width: Length::Points(56.0),
+                ..Layout::default()
+            });
+        if !field.description.is_empty()
+            && let Some(key) = &node.key
+        {
+            label = label
+                .key(format!("label:{}", key.0).as_str())
+                .tooltip(field.description.as_str());
+        }
+        Node::container(vec![label, node]).layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        })
+    };
+    let grown = || Layout {
+        grow: 1.0,
+        min_width: Length::Points(0.0),
+        ..Layout::default()
+    };
+    let mut rows = Vec::new();
+    for (entry, values) in entries_of(key.value.as_ref()) {
+        let named = format!("{ENTRY_NAME}{name}{PART}{entry}");
+        let mut block = vec![
+            row_of(
+                vec![
+                    Node::field(message(cx, "setting-entry-name", &[]))
+                        .key(named.as_str())
+                        .label(message(
+                            cx,
+                            "setting-entry-name-label",
+                            &[("key", name.clone())],
+                        ))
+                        .holding(shown(&named).unwrap_or_else(|| entry.clone()))
+                        .style(Style {
+                            font_weight: Some(FontWeight::Semibold),
+                            ..field_text()
+                        })
+                        .layout(Layout {
+                            width: Length::Points(180.0),
+                            ..Layout::default()
+                        }),
+                    Node::container(Vec::new()).layout(grown()),
+                    Node::button(message(cx, "setting-list-remove", &[]))
+                        .key(format!("{ENTRY_REMOVE}{name}{PART}{entry}").as_str())
+                        .label(message(
+                            cx,
+                            "setting-entry-remove-label",
+                            &[("name", entry.clone())],
+                        ))
+                        .as_link()
+                        .style(Style {
+                            text_size: Some(TextSize::Small),
+                            ..Style::default()
+                        }),
+                ],
+                8.0,
+            )
+            .layout(Layout {
+                direction: Direction::Row,
+                gap: 8.0,
+                align: Align::Center,
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            }),
+        ];
+        for (field, placeholder) in fields.iter().zip(&placeholders) {
+            let node = format!("{ENTRY_FIELD}{name}{PART}{entry}{PART}{}", field.name);
+            let text = shown(&node)
+                .or_else(|| values.get(&field.name).map(plain))
+                .unwrap_or_default();
+            block.push(field_row(
+                field,
+                Node::field(placeholder.clone())
+                    .key(node.as_str())
+                    .label(format!("{entry} {}", field.name))
+                    .holding(text)
+                    .style(field_text())
+                    .layout(grown()),
+            ));
+        }
+        rows.push(
+            Node::container(block)
+                .key(format!("entry:{name}{PART}{entry}").as_str())
+                .role(Role::Group)
+                .label(entry.clone())
+                .layout(Layout {
+                    direction: Direction::Column,
+                    gap: 4.0,
+                    width: Length::Fraction(1.0),
+                    ..Layout::default()
+                }),
+        );
+    }
+    // The new entry, of its name and its fields, and Add.
+    let mut block = vec![
+        row_of(
+            vec![
+                Node::field(message(cx, "setting-entry-new", &[]))
+                    .key(format!("{NEW_ENTRY}{name}{PART}").as_str())
+                    .label(message(
+                        cx,
+                        "setting-entry-new-label",
+                        &[("key", name.clone())],
+                    ))
+                    .style(field_text())
+                    .layout(Layout {
+                        width: Length::Points(180.0),
+                        ..Layout::default()
+                    }),
+                Node::container(Vec::new()).layout(grown()),
+                Node::button(message(cx, "setting-entry-add", &[]))
+                    .key(format!("{ADD_ENTRY}{name}").as_str()),
+            ],
+            8.0,
+        )
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
+    ];
+    for (field, placeholder) in fields.iter().zip(&placeholders) {
+        block.push(field_row(
+            field,
+            Node::field(placeholder.clone())
+                .key(format!("{NEW_ENTRY}{name}{PART}{}", field.name).as_str())
+                .label(message(
+                    cx,
+                    "setting-entry-new-field-label",
+                    &[("field", field.name.clone())],
+                ))
+                .style(field_text())
+                .layout(grown()),
+        ));
+    }
+    rows.push(
+        Node::container(block)
+            .key(format!("new-entry:{name}").as_str())
+            .role(Role::Group)
+            .label(message(cx, "setting-entry-new", &[]))
+            .layout(Layout {
+                direction: Direction::Column,
+                gap: 4.0,
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            }),
+    );
+    Node::container(rows)
+        .key(format!("map:{name}").as_str())
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 12.0,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 6.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 0.0,
+            },
+            ..Layout::default()
+        })
+}
+
 /// The control of `key`'s value: a toggle of a boolean, the button of a
 /// menu of its values, a field of a number or of a text; another value's
 /// text, as the config writes it; none of a list, whose values show under
@@ -2297,8 +2861,8 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Nod
                     ..Layout::default()
                 })
         }
-        // A list's values show under what it does.
-        SettingKind::List { .. } => return None,
+        // A list's values, and a map's entries, show under what it does.
+        SettingKind::List { .. } | SettingKind::Map { .. } => return None,
         SettingKind::Other => match &key.value {
             Some(value) => Node::text(shown(value))
                 .key(format!("value:{name}").as_str())

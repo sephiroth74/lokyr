@@ -1377,6 +1377,134 @@ fn a_list_s_value_is_added_and_taken_away_in_the_file_and_its_default_given_back
     let _ = std::fs::remove_dir_all(&directory);
 }
 
+#[test]
+fn a_map_s_entries_are_written_from_the_settings_page_each_a_table_of_the_file() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf("settings-map");
+    let path = directory.join("config.toml");
+    std::fs::write(
+        &path,
+        concat!(
+            "# Jira's tickets.\n",
+            "[plugins.links.hints.jira]\n",
+            "pattern = 'TVUI-\\d+'   # the ticket\n",
+            "url = \"https://jira.example.com/browse/$0\"\n",
+        ),
+    )
+    .unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let (titles, _) = page_sidebar(&app, own);
+    let hints = titles
+        .iter()
+        .position(|title| title == "Link Hints")
+        .expect("the hints' section");
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: hints },
+    );
+    let at = |parts: &[&str]| parts.join("\u{1f}");
+    assert_eq!(
+        page_field(
+            &app,
+            own,
+            &format!("entry-field:{}", at(&["hints", "jira", "pattern"]))
+        ),
+        r"TVUI-\d+"
+    );
+    let read = || std::fs::read_to_string(&path).unwrap();
+    // A field changed in place, the file's comments kept.
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        &format!("entry-field:{}", at(&["hints", "jira", "url"])),
+        UiEventKind::Submit {
+            text: "https://jira.example.com/b/$0".to_owned(),
+            shift: false,
+        },
+    );
+    assert_eq!(
+        read(),
+        concat!(
+            "# Jira's tickets.\n",
+            "[plugins.links.hints.jira]\n",
+            "pattern = 'TVUI-\\d+'   # the ticket\n",
+            "url = \"https://jira.example.com/b/$0\"\n",
+        )
+    );
+    // A new entry, a table of its own after the others.
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        &format!("new-entry:{}", at(&["hints", ""])),
+        typed("uuids"),
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        &format!("new-entry:{}", at(&["hints", "pattern"])),
+        typed("[0-9a-f]{8}"),
+    );
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "add-entry:hints",
+        UiEventKind::Click,
+    );
+    assert!(
+        read().ends_with("\n[plugins.links.hints.uuids]\npattern = \"[0-9a-f]{8}\"\n"),
+        "{}",
+        read()
+    );
+    assert_eq!(
+        page_field(
+            &app,
+            own,
+            &format!("entry-name:{}", at(&["hints", "uuids"]))
+        ),
+        "uuids"
+    );
+    // Taken away, with its table; the last, the section's tables gone.
+    for entry in ["jira", "uuids"] {
+        settings_event(
+            &mut fake,
+            &mut app,
+            own,
+            None,
+            &format!("entry-remove:{}", at(&["hints", entry])),
+            UiEventKind::Click,
+        );
+    }
+    assert!(!read().contains("hints"), "{}", read());
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
 /// The titles of the settings page's sidebar in `window`, and the place of
 /// the one selected.
 fn page_sidebar(app: &App, window: WindowId) -> (Vec<String>, Option<usize>) {

@@ -116,6 +116,7 @@ setting-off = Disattivo
 setting-reset = Ripristina
 setting-not-a-number = Vuole un numero.
 setting-not-whole = Vuole un numero intero.
+setting-not-a-boolean = Vuole true o false.
 section-keys = Tasti
 keys-description = Ogni assegnazione di tasti, quelle predefinite e quelle della tua config, per categoria del comando. Fai clic sui tasti di un'assegnazione e premi la nuova scorciatoia: Lokyr scrive i nuovi tasti nella tua config, e `false` per quelli vecchi di una predefinita. Rimuovi toglie una predefinita, scrivendo `false`, o toglie una tua assegnazione; Ripristina rimette una predefinita; Aggiungi assegna una scorciatoia a un comando. Le scorciatoie di macOS, come ⌘Q di Esci, restano come sono.
 binding-nothing = Non fa nulla
@@ -158,3 +159,18 @@ setting-more-info = Più informazioni
 setting-docs = Documentazione
 setting-list-remove = Rimuovi
 setting-list-add = Aggiungi un valore
+# L'editor di una mappa, come i pattern degli hint: il nome di ogni voce,
+# i suoi campi, Rimuovi, e i campi della nuova voce e Aggiungi; i nomi che
+# VoiceOver legge; e perché una voce è rifiutata.
+setting-entry-name = Nome
+setting-entry-name-label = Il nome di una voce di { $key }
+setting-entry-remove-label = Rimuovi { $name }
+setting-entry-field-required = Obbligatorio
+setting-entry-field-optional = Facoltativo
+setting-entry-new = Nuova voce
+setting-entry-new-label = Il nome di una nuova voce di { $key }
+setting-entry-new-field-label = Il campo { $field } della nuova voce
+setting-entry-add = Aggiungi
+setting-entry-unnamed = Una voce ha bisogno di un nome.
+setting-entry-taken = Un'altra voce si chiama { $name }.
+setting-entry-required = { $field } non può essere vuoto.

@@ -117,6 +117,7 @@ setting-off = Off
 setting-reset = Reset
 setting-not-a-number = It takes a number.
 setting-not-whole = It takes a whole number.
+setting-not-a-boolean = It takes true or false.
 section-keys = Keys
 keys-description = Every binding of keys, the defaults and your config's, by its command's category. Click a binding's keys and press the new shortcut: Lokyr writes the new keys into your config, and `false` for a default's old ones. Remove takes a default away, writing `false`, or takes your own binding away; Restore gives a default back; Add binds a shortcut to a command. macOS's own shortcuts, as Quit's ⌘Q, stay as they are.
 binding-nothing = Takes nothing
@@ -159,3 +160,18 @@ setting-more-info = More info
 setting-docs = Documentation
 setting-list-remove = Remove
 setting-list-add = Add a value
+# A map's editor, such as the hints' patterns: each entry's name, its
+# fields, Remove, and the new entry's fields and Add; the names that
+# VoiceOver reads; and why an entry is refused.
+setting-entry-name = Name
+setting-entry-name-label = The name of an entry of { $key }
+setting-entry-remove-label = Remove { $name }
+setting-entry-field-required = Required
+setting-entry-field-optional = Optional
+setting-entry-new = New entry
+setting-entry-new-label = The name of a new entry of { $key }
+setting-entry-new-field-label = The new entry's { $field }
+setting-entry-add = Add
+setting-entry-unnamed = An entry needs a name.
+setting-entry-taken = Another entry is named { $name }.
+setting-entry-required = { $field } can't be empty.

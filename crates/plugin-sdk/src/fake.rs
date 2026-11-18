@@ -3548,8 +3548,9 @@ impl FakeHost {
 
 /// Whether a key of `kind` takes `value`, as the app's host checks a
 /// plugin's section: a boolean, a number of its range, a whole one of a
-/// key of integers, a text of its lengths, one of its choices; a list and
-/// another value as they are.
+/// key of integers, a text of its lengths, one of its choices, a table of
+/// entries of their names' bounds and of their fields, the required ones
+/// among them, each of its kind; a list and another value as they are.
 fn setting_takes(kind: &host::SettingKind, value: &Data) -> Result<(), String> {
     use host::SettingKind;
     let number = match value {
@@ -3584,6 +3585,29 @@ fn setting_takes(kind: &host::SettingKind, value: &Data) -> Result<(), String> {
             _ => false,
         },
         SettingKind::Choice { choices } => choices.contains(value),
+        SettingKind::Map { fields } => match value {
+            Data::Map(entries) => entries.iter().all(|(name, entry)| {
+                let named = !name.is_empty()
+                    && name.chars().count() <= host::MOST_ENTRY_NAME
+                    && !name.chars().any(char::is_control);
+                named
+                    && match entry {
+                        Data::Map(given) => {
+                            fields
+                                .iter()
+                                .all(|field| !field.required || given.contains_key(&field.name))
+                                && given.iter().all(|(field, value)| {
+                                    fields.iter().any(|own| {
+                                        own.name == *field
+                                            && setting_takes(&own.kind, value).is_ok()
+                                    })
+                                })
+                        }
+                        _ => false,
+                    }
+            }),
+            _ => false,
+        },
         SettingKind::List { .. } | SettingKind::Other => true,
     };
     if fine {

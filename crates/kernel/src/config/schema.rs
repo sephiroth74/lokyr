@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use toml_edit::TableLike;
 
 pub use lokyr_pkg_model::schema::Ordered;
-use lokyr_plugin_sdk::host::{SettingKey, SettingKind, SettingsSection};
+use lokyr_plugin_sdk::host::{self, SettingField, SettingKey, SettingKind, SettingsSection};
 use lokyr_plugin_sdk::message::Data;
 
 /// The schema, as the kernel holds it, JSON.
@@ -225,8 +225,49 @@ fn kind_of(node: &Ordered) -> SettingKind {
                 .get("items")
                 .and_then(|items| count(items, "maxLength")),
         },
+        Some("object") => map_of(node).unwrap_or(SettingKind::Other),
         _ => SettingKind::Other,
     }
+}
+
+/// The kind of an object of `additionalProperties`, each an object of
+/// fields that take a boolean, a number, a text or a choice, as the
+/// patterns of `[plugins.links] hints`: a map of its entries' fields, in
+/// their order; none of another object.
+fn map_of(node: &Ordered) -> Option<SettingKind> {
+    if node.properties().is_some_and(|own| !own.is_empty()) {
+        return None;
+    }
+    let entry = node.get("additionalProperties")?;
+    let required = entry
+        .get("required")
+        .map(Ordered::items)
+        .unwrap_or_default();
+    let fields = entry
+        .properties()?
+        .iter()
+        .map(|(name, field)| {
+            let kind = kind_of(field);
+            matches!(
+                kind,
+                SettingKind::Boolean
+                    | SettingKind::Number { .. }
+                    | SettingKind::Text { .. }
+                    | SettingKind::Choice { .. }
+            )
+            .then(|| SettingField {
+                name: name.clone(),
+                description: field
+                    .get("description")
+                    .and_then(Ordered::text)
+                    .unwrap_or_default()
+                    .to_owned(),
+                kind,
+                required: required.iter().any(|named| named.text() == Some(name)),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!fields.is_empty()).then_some(SettingKind::Map { fields })
 }
 
 /// The texts of a list of `node`, none of another.
@@ -645,6 +686,39 @@ pub fn check_kind(kind: &SettingKind, value: &Data) -> Result<(), String> {
             } else {
                 Err("it takes one of its values".to_owned())
             }
+        }
+        SettingKind::Map { fields } => {
+            let Data::Map(entries) = value else {
+                return Err("it takes a table of entries".to_owned());
+            };
+            for (name, entry) in entries {
+                if name.is_empty()
+                    || name.chars().count() > host::MOST_ENTRY_NAME
+                    || name.chars().any(char::is_control)
+                {
+                    return Err(format!(
+                        "an entry's name takes 1 to {} characters, of no control character",
+                        host::MOST_ENTRY_NAME
+                    ));
+                }
+                let Data::Map(given) = entry else {
+                    return Err(format!("`{name}` takes a table of its fields"));
+                };
+                if let Some(missing) = fields
+                    .iter()
+                    .find(|field| field.required && !given.contains_key(&field.name))
+                {
+                    return Err(format!("`{name}` takes its `{}`", missing.name));
+                }
+                for (field, value) in given {
+                    let Some(own) = fields.iter().find(|own| own.name == *field) else {
+                        return Err(format!("`{name}` has no field `{field}`"));
+                    };
+                    check_kind(&own.kind, value)
+                        .map_err(|why| format!("`{field}` of `{name}`: {why}"))?;
+                }
+            }
+            Ok(())
         }
         SettingKind::List { .. } | SettingKind::Other => Ok(()),
     }

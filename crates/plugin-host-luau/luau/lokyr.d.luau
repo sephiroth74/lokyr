@@ -848,6 +848,13 @@ export type SettingBinding = {
     system: boolean?,
 }
 
+export type SettingField = {
+    name: string,
+    description: string?,
+    kind: SettingKind,
+    required: boolean?,
+}
+
 export type SettingKey = {
     name: string,
     description: string?,
@@ -866,6 +873,7 @@ export type SettingKind =
     | { text: { min_length: number?, max_length: number?, examples: { string }? } }
     | { choice: { choices: { Data } } }
     | { list: { max_length: number? } }
+    | { map: { fields: { SettingField } } }
     | "other"
 
 export type Settings = {

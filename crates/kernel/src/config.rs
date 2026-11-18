@@ -2059,11 +2059,21 @@ pub fn set_value(
         .get_mut(leaf)
         .and_then(toml_edit::Item::as_table_like_mut)
         .ok_or_else(|| not_a_section(&named))?;
-    match table.get_mut(key) {
-        Some(toml_edit::Item::Value(old)) => {
+    match (table.get_mut(key), entries_of(&value)) {
+        (Some(toml_edit::Item::Value(old)), _) => {
             let decor = old.decor().clone();
             *old = value;
             *old.decor_mut() = decor;
+        }
+        // A table of entries, each a table of its fields, as the hints'
+        // patterns: each entry a table of its own, of its header, as a
+        // file writes them, those there changed in place.
+        (Some(toml_edit::Item::Table(old)), Some(entries)) => merge_entries(old, entries),
+        (None, Some(entries)) if !entries.is_empty() => {
+            let mut new = toml_edit::Table::new();
+            new.set_implicit(true);
+            merge_entries(&mut new, entries);
+            table.insert(key, toml_edit::Item::Table(new));
         }
         _ => {
             table.insert(key, toml_edit::Item::Value(value));
@@ -2076,6 +2086,115 @@ pub fn set_value(
     Config::parse(&written, &target)?;
     write_whole(&target, &written)
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
+}
+
+/// The entries of `value`, a table whose every value is a table, as the
+/// hints' patterns; none of another value.
+fn entries_of(value: &toml_edit::Value) -> Option<&toml_edit::InlineTable> {
+    let table = value.as_inline_table()?;
+    table
+        .iter()
+        .all(|(_, entry)| entry.is_inline_table())
+        .then_some(table)
+}
+
+/// Makes `table`'s entries `entries`, each a table of its fields: an entry
+/// that `entries` lacks goes, with its comments; one there keeps its place,
+/// its comments and those of its fields, inline or not, its fields made
+/// `entries`' own; a new one goes after the others, a table of its own
+/// header, or, of an entry renamed, a single one gone and a single one
+/// new, the table of the one gone, of its place and its comments.
+fn merge_entries(table: &mut toml_edit::Table, entries: &toml_edit::InlineTable) {
+    let gone: Vec<String> = table
+        .iter()
+        .map(|(name, _)| name.to_owned())
+        .filter(|name| !entries.contains_key(name))
+        .collect();
+    let new: Vec<&str> = entries
+        .iter()
+        .map(|(name, _)| name)
+        .filter(|name| !table.contains_key(name))
+        .collect();
+    let mut renamed = None;
+    for name in &gone {
+        let item = table.remove(name);
+        if let ([_], [_]) = (gone.as_slice(), new.as_slice()) {
+            renamed = item;
+        }
+    }
+    for (name, fields) in entries {
+        let Some(fields) = fields.as_inline_table() else {
+            continue;
+        };
+        match table.get_mut(name) {
+            Some(toml_edit::Item::Table(own)) => merge_fields(own, fields),
+            Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(own))) => {
+                merge_fields(own, fields);
+            }
+            _ => match renamed.take() {
+                Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(mut own))) => {
+                    merge_fields(&mut own, fields);
+                    table.insert(name, toml_edit::Item::Value(own.into()));
+                }
+                Some(toml_edit::Item::Table(mut own)) => {
+                    merge_fields(&mut own, fields);
+                    table.insert(name, toml_edit::Item::Table(own));
+                }
+                _ => {
+                    let mut own = toml_edit::Table::new();
+                    merge_fields(&mut own, fields);
+                    table.insert(name, toml_edit::Item::Table(own));
+                }
+            },
+        }
+    }
+}
+
+/// Makes the fields of `table` `fields`: those that `fields` lacks go, and
+/// each of `fields` takes its value, keeping its comments where it was
+/// there.
+fn merge_fields(table: &mut dyn toml_edit::TableLike, fields: &toml_edit::InlineTable) {
+    let gone: Vec<String> = table
+        .iter()
+        .map(|(name, _)| name.to_owned())
+        .filter(|name| !fields.contains_key(name))
+        .collect();
+    for name in gone {
+        table.remove(&name);
+    }
+    for (name, value) in fields {
+        match table.get_mut(name) {
+            // The same value keeps its text too, as a string of single
+            // quotes.
+            Some(toml_edit::Item::Value(old)) if same_value(old, value) => {}
+            Some(toml_edit::Item::Value(old)) => {
+                let decor = old.decor().clone();
+                *old = value.clone();
+                *old.decor_mut() = decor;
+            }
+            _ => {
+                let mut value = value.clone();
+                value.decor_mut().clear();
+                table.insert(name, toml_edit::Item::Value(value));
+            }
+        }
+    }
+}
+
+/// Whether `a` and `b` are the same value, whatever their texts write.
+fn same_value(a: &toml_edit::Value, b: &toml_edit::Value) -> bool {
+    let bare = |value: &toml_edit::Value| {
+        let mut value = value.clone();
+        value.decor_mut().clear();
+        value.to_string()
+    };
+    match (a, b) {
+        (toml_edit::Value::String(a), toml_edit::Value::String(b)) => a.value() == b.value(),
+        (toml_edit::Value::Integer(a), toml_edit::Value::Integer(b)) => a.value() == b.value(),
+        (toml_edit::Value::Float(a), toml_edit::Value::Float(b)) => a.value() == b.value(),
+        (toml_edit::Value::Boolean(a), toml_edit::Value::Boolean(b)) => a.value() == b.value(),
+        _ => bare(a) == bare(b),
+    }
 }
 
 /// The table of `document` at `path`, its root of none, to change, inline
@@ -4183,6 +4302,142 @@ long-command = 0
         set_value(&file, &["font"], "size", None).unwrap();
         assert!(set_value(&file, &["font"], "size", Some(toml_edit::Value::from(1000))).is_err());
         assert_eq!(fs::read_to_string(&file).unwrap(), before);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_table_of_entries_is_written_entry_by_entry_in_the_file_s_form() {
+        let root = std::env::temp_dir().join(format!("lokyr-set-entries-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("config.toml");
+        fs::write(
+            &file,
+            concat!(
+                "[plugins.links]\n",
+                "alphabet = \"asdf\"\n",
+                "\n",
+                "# Jira's tickets.\n",
+                "[plugins.links.hints.jira]\n",
+                "pattern = 'TVUI-\\d+'   # the ticket\n",
+                "url = \"https://jira.example.com/browse/$0\"\n",
+                "\n",
+                "[plugins.links.hints.uuids]\n",
+                "pattern = '[0-9a-f]{8}'\n",
+                "\n",
+                "# the end\n",
+            ),
+        )
+        .unwrap();
+        let entry = |pattern: &str, url: Option<&str>| {
+            let mut fields = toml_edit::InlineTable::new();
+            fields.insert("pattern", pattern.into());
+            if let Some(url) = url {
+                fields.insert("url", url.into());
+            }
+            toml_edit::Value::InlineTable(fields)
+        };
+        let write = |entries: &[(&str, toml_edit::Value)]| {
+            let mut table = toml_edit::InlineTable::new();
+            for (name, fields) in entries {
+                table.insert(*name, fields.clone());
+            }
+            set_value(
+                &file,
+                &["plugins", "links"],
+                "hints",
+                Some(toml_edit::Value::InlineTable(table)),
+            )
+            .unwrap();
+            fs::read_to_string(&file).unwrap()
+        };
+        let jira = entry(r"TVUI-\d+", Some("https://jira.example.com/browse/$0"));
+        // A field changed in place, its comment and the entry's kept; a new
+        // entry after the others, before the file's last comments.
+        let text = write(&[
+            ("jira", jira.clone()),
+            (
+                "uuids",
+                entry("[0-9a-f]{8}", Some("https://example.com/$0")),
+            ),
+            ("editor", entry(r"PROJ-\d+", None)),
+        ]);
+        assert_eq!(
+            text,
+            concat!(
+                "[plugins.links]\n",
+                "alphabet = \"asdf\"\n",
+                "\n",
+                "# Jira's tickets.\n",
+                "[plugins.links.hints.jira]\n",
+                "pattern = 'TVUI-\\d+'   # the ticket\n",
+                "url = \"https://jira.example.com/browse/$0\"\n",
+                "\n",
+                "[plugins.links.hints.uuids]\n",
+                "pattern = '[0-9a-f]{8}'\n",
+                "url = \"https://example.com/$0\"\n",
+                "\n",
+                "[plugins.links.hints.editor]\n",
+                "pattern = 'PROJ-\\d+'\n",
+                "\n",
+                "# the end\n",
+            ),
+            "{text}"
+        );
+        // An entry renamed keeps its place and its comments; one taken
+        // away goes with its table.
+        let text = write(&[
+            ("tickets", jira.clone()),
+            ("editor", entry(r"PROJ-\d+", None)),
+            (
+                "uuids",
+                entry("[0-9a-f]{8}", Some("https://example.com/$0")),
+            ),
+        ]);
+        assert!(
+            text.starts_with(concat!(
+                "[plugins.links]\n",
+                "alphabet = \"asdf\"\n",
+                "\n",
+                "# Jira's tickets.\n",
+                "[plugins.links.hints.tickets]\n",
+                "pattern = 'TVUI-\\d+'   # the ticket\n",
+            )),
+            "{text}"
+        );
+        let text = write(&[("tickets", jira.clone())]);
+        assert!(
+            !text.contains("uuids") && !text.contains("editor"),
+            "{text}"
+        );
+        assert!(text.ends_with("\n# the end\n"), "{text}");
+        let config = Config::read(&file).unwrap();
+        let hints = config
+            .plugins
+            .get("links")
+            .and_then(|links| links.values().get("hints").cloned());
+        assert_eq!(
+            hints,
+            Some(serde_json::json!({
+                "tickets": { "pattern": r"TVUI-\d+", "url": "https://jira.example.com/browse/$0" }
+            }))
+        );
+        // An inline table stays inline.
+        fs::write(
+            &file,
+            "[plugins.links]\nhints = { jira = { pattern = 'A-\\d+' } }\n",
+        )
+        .unwrap();
+        let text = write(&[("jira", entry(r"A-\d+", Some("https://a.example/$0")))]);
+        assert!(text.starts_with("[plugins.links]\nhints = {"), "{text}");
+        assert!(text.contains("https://a.example/$0"), "{text}");
+        // A file of no such section takes each entry as a table of its own.
+        fs::write(&file, "config_version = 1\n").unwrap();
+        let text = write(&[("jira", jira)]);
+        assert!(
+            text.contains("[plugins.links.hints.jira]\npattern = "),
+            "{text}"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
