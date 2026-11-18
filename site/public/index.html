@@ -635,11 +635,13 @@
   .footnote a { color: var(--muted); text-underline-offset: 2px; }
   .footnote a:hover { color: var(--fg); }
 
-  /* Road */
+  /* Road: a column of each step, its count `--steps` and the one under way
+     `--now`, from 1, which the line's colors reach and the grey follows. */
   .road {
+    --reached: calc((var(--now) - 1) / var(--steps) * 100%);
     position: relative;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(var(--steps), 1fr);
     gap: 16px;
     margin: 0;
     padding: 0;
@@ -652,7 +654,7 @@
     left: 7px;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, var(--violet), var(--pink) 50%, var(--line-strong) 58%);
+    background: linear-gradient(90deg, var(--violet), var(--pink) var(--reached), var(--line-strong) calc(var(--reached) + 8%));
   }
   .road li { position: relative; padding-top: 32px; }
   .road li::before {
@@ -745,7 +747,7 @@
       right: auto;
       width: 1px;
       height: auto;
-      background: linear-gradient(180deg, var(--violet), var(--pink) 50%, var(--line-strong) 58%);
+      background: linear-gradient(180deg, var(--violet), var(--pink) var(--reached), var(--line-strong) calc(var(--reached) + 8%));
     }
     .road li { padding-top: 0; }
     .road li::before { left: -34px; top: 3px; }
@@ -938,7 +940,7 @@
   <section class="wrap" aria-labelledby="road">
     <p class="eyebrow">The road</p>
     <h2 id="road">Built in phases, each with criteria that are measured.</h2>
-    <ol class="road">
+    <ol class="road" style="--steps: 8; --now: 8">
       <li class="done"><strong>Foundations</strong><span>Workspace, CI, the measuring tools</span><em>done</em></li>
       <li class="done"><strong>Terminal core</strong><span>Checked against xterm and fuzzers</span><em>done</em></li>
       <li class="done"><strong>The macOS app</strong><span>A window of one pane</span><em>in daily use</em></li>

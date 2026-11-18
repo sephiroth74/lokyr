@@ -2113,6 +2113,32 @@ mod tests {
     }
 
     #[test]
+    fn the_home_s_road_tells_its_steps_and_the_one_under_way() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let home = fs::read_to_string(root.join("site/public/index.html")).unwrap();
+        let start = "<ol class=\"road\" style=\"--steps: ";
+        let road = &home[home.find(start).expect("the home's road") + start.len()..];
+        let (steps, rest) = road.split_once("; --now: ").unwrap();
+        let (now, rest) = rest.split_once("\">").unwrap();
+        let items = &rest[..rest.find("</ol>").unwrap()];
+        let classes: Vec<&str> = items
+            .split("<li class=\"")
+            .skip(1)
+            .map(|item| &item[..item.find('"').unwrap()])
+            .collect();
+        // A column of each step, and the line's colors to the one under
+        // way, which a release moves: its count and its place, from 1.
+        assert_eq!(
+            steps.parse::<usize>().unwrap(),
+            classes.len(),
+            "{classes:?}"
+        );
+        let under_way = classes.iter().position(|class| *class == "now").unwrap() + 1;
+        assert_eq!(now.parse::<usize>().unwrap(), under_way, "{classes:?}");
+        assert_eq!(classes.iter().filter(|class| **class == "now").count(), 1);
+    }
+
+    #[test]
     fn the_home_s_structured_data_is_of_the_latest_release() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let home = fs::read_to_string(root.join("site/public/index.html")).unwrap();
