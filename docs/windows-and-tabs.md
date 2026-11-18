@@ -48,7 +48,7 @@ Each window takes a number when it opens, the lowest that no other open window h
 
 Choose Window › Float on Top to keep the window above other apps' windows, such as while you follow a build beside your browser. Choose it again to let the window go back among the others. Each window floats on its own.
 
-Click the window's green button to use full screen. The tab bar stays at the screen's top, and the menu bar slides down over it when the pointer reaches the top. A floating window stops floating in full screen, and floats again when it leaves it.
+Click the window's green button, or choose View › Enter Full Screen, to use full screen. The tab bar stays at the screen's top, and the menu bar slides down over it when the pointer reaches the top. A floating window stops floating in full screen, and floats again when it leaves it.
 
 **Try it**: choose Window › Float on Top, then click a window of another app: the Lokyr window stays above it.
 
