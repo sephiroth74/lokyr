@@ -1511,6 +1511,101 @@ fn a_map_s_entries_are_written_from_the_settings_page_each_a_table_of_the_file()
     let _ = std::fs::remove_dir_all(&directory);
 }
 
+/// An app of the config file `text`, in a directory of its own for `test`,
+/// its settings window showing Links: the app, its file and the window.
+fn links_settings(test: &str, text: &str) -> (Fake, App, std::path::PathBuf, WindowId) {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let directory = super::installed::shelf(test);
+    let path = directory.join("config.toml");
+    std::fs::write(&path, text).unwrap();
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(
+        Some(drawing),
+        Config::read(&path).unwrap(),
+        Some(path.clone()),
+    )
+    .with_program(idle());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let (titles, _) = page_sidebar(&app, own);
+    let links = titles
+        .iter()
+        .position(|title| title == "Links")
+        .expect("the links' section");
+    settings_event(
+        &mut fake,
+        &mut app,
+        own,
+        None,
+        "sections",
+        UiEventKind::Select { item: links },
+    );
+    (fake, app, path, own)
+}
+
+#[test]
+fn a_map_s_edit_keeps_the_file_s_entries_of_a_plugin_off_or_a_section_refused() {
+    use lokyr_kernel::plugins::view::UiEventKind;
+    let at = |parts: &[&str]| parts.join("\u{1f}");
+    let add = |fake: &mut Fake, app: &mut App, own: WindowId| {
+        for (field, text) in [("", "uuids"), ("pattern", "U")] {
+            settings_event(
+                fake,
+                app,
+                own,
+                None,
+                &format!("new-entry:{}", at(&["hints", field])),
+                UiEventKind::InputChanged {
+                    text: text.to_owned(),
+                    revision: 1,
+                },
+            );
+        }
+        settings_event(fake, app, own, None, "add-entry:hints", UiEventKind::Click);
+    };
+    // The plugin off: the page shows the file's entries, and keeps them.
+    let (mut fake, mut app, path, own) = links_settings(
+        "settings-map-off",
+        "[plugins.links]\nenabled = false\n\n[plugins.links.hints.jira]\npattern = 'A'\n",
+    );
+    assert_eq!(
+        page_field(&app, own, &format!("entry-name:{}", at(&["hints", "jira"]))),
+        "jira"
+    );
+    add(&mut fake, &mut app, own);
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("[plugins.links.hints.jira]\npattern = 'A'\n")
+            && text.contains("[plugins.links.hints.uuids]")
+            && text.contains("enabled = false"),
+        "{text}"
+    );
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    // A section refused, of an entry that the schema refuses: the page shows
+    // the file's entries, and an edit is refused rather than taking any away.
+    let refused = concat!(
+        "[plugins.links.hints.jira]\n",
+        "pattern = 'A'\n",
+        "\n",
+        "# my bad one\n",
+        "[plugins.links.hints.bad]\n",
+        "URL = 'x'\n",
+        "pattern = 'B'\n",
+    );
+    let (mut fake, mut app, path, own) = links_settings("settings-map-refused", refused);
+    assert_eq!(
+        page_field(&app, own, &format!("entry-name:{}", at(&["hints", "bad"]))),
+        "bad"
+    );
+    add(&mut fake, &mut app, own);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), refused);
+    assert!(page_text(&app, own, "refused:hints").contains("bad"));
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
 /// The titles of the settings page's sidebar in `window`, and the place of
 /// the one selected.
 fn page_sidebar(app: &App, window: WindowId) -> (Vec<String>, Option<usize>) {

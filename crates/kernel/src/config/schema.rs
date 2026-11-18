@@ -694,10 +694,12 @@ pub fn check_kind(kind: &SettingKind, value: &Data) -> Result<(), String> {
             for (name, entry) in entries {
                 if name.is_empty()
                     || name.chars().count() > host::MOST_ENTRY_NAME
-                    || name.chars().any(char::is_control)
+                    || name
+                        .chars()
+                        .any(|c| c.is_control() || lokyr_plugin_sdk::text::is_hidden(c))
                 {
                     return Err(format!(
-                        "an entry's name takes 1 to {} characters, of no control character",
+                        "an entry's name takes 1 to {} characters, of no control or hidden character",
                         host::MOST_ENTRY_NAME
                     ));
                 }

@@ -2310,3 +2310,61 @@ fn the_fake_keeps_the_most_closed_tabs_as_the_app_the_oldest_gone() {
     });
     host.command(&mut probe, "probe.go", Args::new()).unwrap();
 }
+
+#[test]
+fn a_map_s_entries_are_taken_as_the_kernel_takes_them() {
+    use crate::host::{SettingField, SettingKind};
+    let kind = SettingKind::Map {
+        fields: vec![
+            SettingField {
+                name: "pattern".to_owned(),
+                description: String::new(),
+                kind: SettingKind::Text {
+                    min_length: Some(1),
+                    max_length: Some(256),
+                    examples: Vec::new(),
+                },
+                required: true,
+            },
+            SettingField {
+                name: "url".to_owned(),
+                description: String::new(),
+                kind: SettingKind::Text {
+                    min_length: None,
+                    max_length: Some(1024),
+                    examples: Vec::new(),
+                },
+                required: false,
+            },
+        ],
+    };
+    let map = |name: &str, fields: &[(&str, &str)]| {
+        Data::Map(BTreeMap::from([(
+            name.to_owned(),
+            Data::Map(
+                fields
+                    .iter()
+                    .map(|(field, value)| ((*field).to_owned(), Data::Text((*value).to_owned())))
+                    .collect(),
+            ),
+        )]))
+    };
+    assert!(setting_takes(&kind, &map("jira", &[("pattern", "A")])).is_ok());
+    assert!(
+        setting_takes(
+            &kind,
+            &map("jira", &[("pattern", "A"), ("url", "https://a")])
+        )
+        .is_ok()
+    );
+    assert!(setting_takes(&kind, &map("jira", &[("url", "https://a")])).is_err());
+    assert!(setting_takes(&kind, &map("jira", &[("pattern", "")])).is_err());
+    assert!(setting_takes(&kind, &map("jira", &[("pattern", "A"), ("open", "b")])).is_err());
+    for name in ["", "a\nb", "a\u{202E}b", "a\u{200B}b", "a\u{2028}b"] {
+        assert!(
+            setting_takes(&kind, &map(name, &[("pattern", "A")])).is_err(),
+            "{name:?}"
+        );
+    }
+    assert!(setting_takes(&kind, &Data::Text("A".to_owned())).is_err());
+}

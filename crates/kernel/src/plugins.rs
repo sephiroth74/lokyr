@@ -660,6 +660,11 @@ struct State {
     schema: Option<Schema>,
     /// Its config in force: a map of its keys' values.
     config: Data,
+    /// Its section of the config file as it reads, but `enabled`, whatever
+    /// the plugin takes of it: what the settings show and write, so that a
+    /// write of a plugin turned off, or of a section refused, keeps the
+    /// file's other values, which its config in force lacks.
+    written: Data,
     /// Its state on the disk.
     stored: Stored,
     /// Whether its section of the config turns it on, as by default.
@@ -1678,6 +1683,7 @@ impl Plugins {
                 fault: None,
                 schema,
                 config: data(&Value::Object(config)),
+                written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
                 wanted: true,
                 ran: false,
@@ -1760,6 +1766,9 @@ impl Plugins {
             let mut values = section
                 .map(|section| section.values().clone())
                 .unwrap_or_default();
+            let mut written = values.clone();
+            written.remove(ENABLED);
+            state.written = data(&Value::Object(written));
             match values.remove(ENABLED) {
                 None => state.wanted = true,
                 Some(Value::Bool(enabled)) => state.wanted = enabled,
@@ -2481,7 +2490,8 @@ impl Plugins {
 
     /// The plugins' sections of the settings: each plugin's of a config
     /// schema, in their order, of its schema's order and of its keys'
-    /// values in force; the same list until a plugin comes or goes or the
+    /// values as the config file writes them, whether the plugin takes them
+    /// or not; the same list until a plugin comes or goes or the
     /// config applies anew, a change of which the plugins that subscribe to
     /// `settings-changed` hear.
     pub fn settings_sections(&mut self) -> Arc<[host::SettingsSection]> {
@@ -2498,7 +2508,9 @@ impl Plugins {
                 let schema = state.schema.as_ref()?;
                 let node: crate::config::schema::Ordered =
                     serde_json::from_str(schema.source()).ok()?;
-                let values = match &state.config {
+                // The file's values, as a plugin off or a section refused
+                // leaves them, which a write of the page merges into.
+                let values = match &state.written {
                     Data::Map(values) => values.clone(),
                     _ => BTreeMap::new(),
                 };

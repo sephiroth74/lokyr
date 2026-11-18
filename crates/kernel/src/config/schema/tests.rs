@@ -695,6 +695,12 @@ fn a_table_of_entries_of_fields_is_a_map_whose_entries_are_checked() {
     );
     assert!(refused(map(vec![("", entry(&[("pattern", text("A"))]))])).contains("name"));
     assert!(refused(map(vec![("a\nb", entry(&[("pattern", text("A"))]))])).contains("name"));
+    for hidden in ["a\u{202E}b", "a\u{200B}b", "a\u{2028}b"] {
+        assert!(
+            refused(map(vec![(hidden, entry(&[("pattern", text("A"))]))])).contains("name"),
+            "{hidden:?}"
+        );
+    }
     assert_eq!(
         refused(map(vec![("jira", text("A"))])),
         "`jira` takes a table of its fields"

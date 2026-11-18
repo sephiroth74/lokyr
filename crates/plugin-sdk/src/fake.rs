@@ -3589,7 +3589,9 @@ fn setting_takes(kind: &host::SettingKind, value: &Data) -> Result<(), String> {
             Data::Map(entries) => entries.iter().all(|(name, entry)| {
                 let named = !name.is_empty()
                     && name.chars().count() <= host::MOST_ENTRY_NAME
-                    && !name.chars().any(char::is_control);
+                    && !name
+                        .chars()
+                        .any(|c| c.is_control() || crate::text::is_hidden(c));
                 named
                     && match entry {
                         Data::Map(given) => {

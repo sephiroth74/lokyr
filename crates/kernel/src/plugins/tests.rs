@@ -2146,6 +2146,7 @@ fn a_call_is_its_own_plugin_s() {
             fault: None,
             schema: None,
             config: Data::Map(BTreeMap::new()),
+            written: Data::Map(BTreeMap::new()),
             stored: Stored::default(),
             wanted: true,
             ran: true,

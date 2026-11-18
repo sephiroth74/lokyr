@@ -2060,6 +2060,11 @@ pub fn set_value(
         .and_then(toml_edit::Item::as_table_like_mut)
         .ok_or_else(|| not_a_section(&named))?;
     match (table.get_mut(key), entries_of(&value)) {
+        // A table of entries written inline stays inline, merged as a
+        // table of tables is.
+        (Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(old))), Some(entries)) => {
+            merge_entries(old, entries, EntryForm::Inline);
+        }
         (Some(toml_edit::Item::Value(old)), _) => {
             let decor = old.decor().clone();
             *old = value;
@@ -2068,11 +2073,13 @@ pub fn set_value(
         // A table of entries, each a table of its fields, as the hints'
         // patterns: each entry a table of its own, of its header, as a
         // file writes them, those there changed in place.
-        (Some(toml_edit::Item::Table(old)), Some(entries)) => merge_entries(old, entries),
+        (Some(toml_edit::Item::Table(old)), Some(entries)) => {
+            merge_entries(old, entries, EntryForm::Header);
+        }
         (None, Some(entries)) if !entries.is_empty() => {
             let mut new = toml_edit::Table::new();
             new.set_implicit(true);
-            merge_entries(&mut new, entries);
+            merge_entries(&mut new, entries, EntryForm::Header);
             table.insert(key, toml_edit::Item::Table(new));
         }
         _ => {
@@ -2098,13 +2105,31 @@ fn entries_of(value: &toml_edit::Value) -> Option<&toml_edit::InlineTable> {
         .then_some(table)
 }
 
+/// The form of an entry of a table of entries, as a file writes it: a
+/// table of its own header, a table of dotted keys, or an inline table.
+#[derive(Clone, Copy)]
+enum EntryForm {
+    Header,
+    Dotted,
+    Inline,
+}
+
 /// Makes `table`'s entries `entries`, each a table of its fields: an entry
 /// that `entries` lacks goes, with its comments; one there keeps its place,
 /// its comments and those of its fields, inline or not, its fields made
-/// `entries`' own; a new one goes after the others, a table of its own
-/// header, or, of an entry renamed, a single one gone and a single one
-/// new, the table of the one gone, of its place and its comments.
-fn merge_entries(table: &mut toml_edit::Table, entries: &toml_edit::InlineTable) {
+/// `entries`' own; a new one goes after the others, in the form of the last
+/// of them, or `form` of none; a single one gone and a single one new, a
+/// rename, the entry renamed at its place, of its comments.
+fn merge_entries(
+    table: &mut dyn toml_edit::TableLike,
+    entries: &toml_edit::InlineTable,
+    form: EntryForm,
+) {
+    let form = table.iter().last().map_or(form, |(_, item)| match item {
+        toml_edit::Item::Table(own) if own.is_dotted() => EntryForm::Dotted,
+        toml_edit::Item::Table(_) => EntryForm::Header,
+        _ => EntryForm::Inline,
+    });
     let gone: Vec<String> = table
         .iter()
         .map(|(name, _)| name.to_owned())
@@ -2115,11 +2140,11 @@ fn merge_entries(table: &mut toml_edit::Table, entries: &toml_edit::InlineTable)
         .map(|(name, _)| name)
         .filter(|name| !table.contains_key(name))
         .collect();
-    let mut renamed = None;
-    for name in &gone {
-        let item = table.remove(name);
-        if let ([_], [_]) = (gone.as_slice(), new.as_slice()) {
-            renamed = item;
+    if let ([old], [new]) = (gone.as_slice(), new.as_slice()) {
+        rename_in_place(table, old, new);
+    } else {
+        for name in &gone {
+            table.remove(name);
         }
     }
     for (name, fields) in entries {
@@ -2131,21 +2156,47 @@ fn merge_entries(table: &mut toml_edit::Table, entries: &toml_edit::InlineTable)
             Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(own))) => {
                 merge_fields(own, fields);
             }
-            _ => match renamed.take() {
-                Some(toml_edit::Item::Value(toml_edit::Value::InlineTable(mut own))) => {
-                    merge_fields(&mut own, fields);
-                    table.insert(name, toml_edit::Item::Value(own.into()));
-                }
-                Some(toml_edit::Item::Table(mut own)) => {
-                    merge_fields(&mut own, fields);
-                    table.insert(name, toml_edit::Item::Table(own));
-                }
-                _ => {
-                    let mut own = toml_edit::Table::new();
-                    merge_fields(&mut own, fields);
-                    table.insert(name, toml_edit::Item::Table(own));
-                }
-            },
+            _ => {
+                let item = match form {
+                    EntryForm::Inline => {
+                        let mut own = toml_edit::InlineTable::new();
+                        merge_fields(&mut own, fields);
+                        toml_edit::Item::Value(own.into())
+                    }
+                    EntryForm::Header | EntryForm::Dotted => {
+                        let mut own = toml_edit::Table::new();
+                        own.set_dotted(matches!(form, EntryForm::Dotted));
+                        merge_fields(&mut own, fields);
+                        toml_edit::Item::Table(own)
+                    }
+                };
+                table.insert(name, item);
+            }
+        }
+    }
+}
+
+/// Renames the entry `old` of `table` `new`, at its place among the
+/// others, its key's comments and its value as they were.
+fn rename_in_place(table: &mut dyn toml_edit::TableLike, old: &str, new: &str) {
+    let names: Vec<String> = table.iter().map(|(name, _)| name.to_owned()).collect();
+    let mut kept = Vec::new();
+    for name in &names {
+        let key = table.key(name).cloned();
+        if let (Some(key), Some(item)) = (key, table.remove(name)) {
+            kept.push((key, item));
+        }
+    }
+    for (key, item) in kept {
+        let key = if key.get() == old {
+            toml_edit::Key::new(new)
+                .with_leaf_decor(key.leaf_decor().clone())
+                .with_dotted_decor(key.dotted_decor().clone())
+        } else {
+            key
+        };
+        if let toml_edit::Entry::Vacant(entry) = table.entry_format(&key) {
+            entry.insert(item);
         }
     }
 }
@@ -4431,6 +4482,91 @@ long-command = 0
         let text = write(&[("jira", entry(r"A-\d+", Some("https://a.example/$0")))]);
         assert!(text.starts_with("[plugins.links]\nhints = {"), "{text}");
         assert!(text.contains("https://a.example/$0"), "{text}");
+        // An inline table of several lines merged, its comments and its
+        // values' texts kept.
+        fs::write(
+            &file,
+            concat!(
+                "[plugins.links]\n",
+                "hints = {\n",
+                "  # jira's\n",
+                "  jira = { pattern = 'A-\\d+' },\n",
+                "  uu = { pattern = 'U' }, # the uuids\n",
+                "}\n",
+            ),
+        )
+        .unwrap();
+        let text = write(&[
+            ("jira", entry(r"A-\d+", None)),
+            ("uu", entry("U", None)),
+            ("zz", entry("Z", None)),
+        ]);
+        assert!(
+            text.contains("  # jira's\n  jira = { pattern = 'A-\\d+' },"),
+            "{text}"
+        );
+        assert!(text.contains("uu = { pattern = 'U' }"), "{text}");
+        assert!(text.contains("# the uuids"), "{text}");
+        assert!(text.contains("zz = { pattern = \"Z\" }"), "{text}");
+        // Inline entries under a header: a rename at its place, its comment
+        // kept; a new entry inline too.
+        fs::write(
+            &file,
+            concat!(
+                "[plugins.links.hints]\n",
+                "# jira's\n",
+                "jira = { pattern = 'A' } # c\n",
+                "# uu's\n",
+                "uu = { pattern = 'U' }\n",
+            ),
+        )
+        .unwrap();
+        let text = write(&[("tickets", entry("A", None)), ("uu", entry("U", None))]);
+        assert_eq!(
+            text,
+            concat!(
+                "[plugins.links.hints]\n",
+                "# jira's\n",
+                "tickets = { pattern = 'A' } # c\n",
+                "# uu's\n",
+                "uu = { pattern = 'U' }\n",
+            )
+        );
+        let text = write(&[
+            ("tickets", entry("A", None)),
+            ("uu", entry("U", None)),
+            ("zz", entry("Z", None)),
+        ]);
+        assert!(
+            text.ends_with("uu = { pattern = 'U' }\nzz = { pattern = \"Z\" }\n"),
+            "{text}"
+        );
+        // Dotted entries: a rename at its place, a new entry dotted too.
+        fs::write(
+            &file,
+            concat!(
+                "[plugins.links]\n",
+                "hints.jira.pattern = 'A'   # mine\n",
+                "hints.uu.pattern = 'U'\n",
+            ),
+        )
+        .unwrap();
+        write(&[("tickets", entry("A", None)), ("uu", entry("U", None))]);
+        let text = write(&[
+            ("tickets", entry("A", None)),
+            ("uu", entry("U", None)),
+            ("zz", entry("Z", None)),
+        ]);
+        assert_eq!(
+            text,
+            concat!(
+                "[plugins.links]\n",
+                "hints.tickets.pattern = 'A'   # mine\n",
+                "hints.uu.pattern = 'U'\n",
+                "hints.zz.pattern = \"Z\"\n",
+            ),
+            "{text}"
+        );
         // A file of no such section takes each entry as a table of its own.
         fs::write(&file, "config_version = 1\n").unwrap();
         let text = write(&[("jira", jira)]);
