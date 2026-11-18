@@ -1330,7 +1330,7 @@ fn a_line_of_the_whole_view_is_read_once_of_no_hint_twice_nor_a_url_cut() {
 }
 
 #[test]
-fn a_hint_at_the_edge_of_a_read_cut_short_is_left_out() {
+fn a_hint_at_the_edge_of_a_read_is_whole_of_the_next_read() {
     // A line of 100 rows of 80 columns, in a view of 10: a read from the
     // view's first row reaches its 10 rows after, past which a URL of the
     // view's last row goes on.
@@ -1357,6 +1357,91 @@ fn a_hint_at_the_edge_of_a_read_cut_short_is_left_out() {
     host.activate(&mut links).unwrap();
     host.take_done();
     host.command(&mut links, HINTS, Args::new()).unwrap();
-    // The URL cut at the read's end opens nothing cut: no hint, no panel.
-    assert!(links.hints.is_none(), "{:?}", links.hints);
+    // The URL cut at the read's end is read whole by the next read, from
+    // its row: one hint, of the whole URL.
+    let url = format!("https://lokyr.dev/{}", "a".repeat(80 * 3));
+    let shown = links.hints.as_ref().expect("the hints");
+    let texts: Vec<&str> = shown.hints.iter().map(|hint| hint.text.as_str()).collect();
+    assert_eq!(texts, [url.as_str()]);
+    assert_eq!(shown.hints[0].span.0, (60, 9));
+}
+
+#[test]
+fn a_hint_cut_after_a_full_stop_at_a_read_s_edge_opens_nothing_cut() {
+    // A view of 10 rows scrolled back into a line of 100 rows, the URL from
+    // its last row on, a `_` the read's last character: the scan ends the
+    // URL before it, and the next read, past the view, takes it not.
+    let mut text = "x".repeat(80 * 9 + 59);
+    text.push_str(" https://lokyr.dev/");
+    // The read of rows 0 to 19 ends at the row 19's end.
+    let to_edge = 80 * 20 - text.chars().count() - 1;
+    text.push_str(&"a".repeat(to_edge));
+    text.push('_');
+    text.push_str("rest/of/the/url ");
+    text.push_str(&"y".repeat(80 * 70));
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.grid = (80, 10);
+    pane.held = 0..100;
+    pane.viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 10,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+    });
+    wrapped(&mut host, PANE, 0, 80, &text);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let texts: Vec<String> = links
+        .hints
+        .iter()
+        .flat_map(|shown| shown.hints.iter().map(|hint| hint.text.clone()))
+        .collect();
+    assert!(
+        texts.iter().all(|text| text.ends_with("rest/of/the/url")),
+        "{texts:?}"
+    );
+}
+
+#[test]
+fn a_hint_across_two_reads_of_a_tall_view_is_found_once() {
+    // A view of 300 rows, past a read's reach of 256: a URL from the row
+    // 256's end into the row 257, and one before it on the same row.
+    let mut text = "x".repeat(80 * 256 + 30);
+    text.push_str(" https://lokyr.dev/a ");
+    let pad = 80 * 257 - 20 - text.chars().count();
+    text.push_str(&"x".repeat(pad));
+    text.push_str(" https://lokyr.dev/");
+    text.push_str(&"b".repeat(40));
+    text.push(' ');
+    text.push_str(&"y".repeat(80 * 300 - text.chars().count()));
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.grid = (80, 300);
+    pane.held = 0..300;
+    pane.viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 300,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+    });
+    wrapped(&mut host, PANE, 0, 80, &text);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let mut texts: Vec<String> = links
+        .hints
+        .iter()
+        .flat_map(|shown| shown.hints.iter().map(|hint| hint.text.clone()))
+        .collect();
+    texts.sort();
+    let long = format!("https://lokyr.dev/{}", "b".repeat(40));
+    assert_eq!(texts, ["https://lokyr.dev/a".to_owned(), long]);
 }

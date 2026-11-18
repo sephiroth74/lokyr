@@ -135,7 +135,7 @@ pattern = 'PROJ-\d+'
 url = "https://jira.example.com/browse/$0"
 ```
 
-- **The table's name**, `tickets` here, is yours to choose. Lokyr uses it in the notices about that pattern, and when two patterns match the same text, the one whose name comes first in alphabetical order wins.
+- **The table's name**, `tickets` here, is yours to choose. Lokyr uses it in the notices about that pattern, and when two patterns match the same text, the one whose name comes first wins, capital letters before lowercase ones, so that `Zeta` comes before `alpha`.
 - **`pattern`** is a [regular expression](https://docs.rs/regex/latest/regex/#syntax). It is case-sensitive; start it with `(?i)` to ignore case. Write it between single quotes, as above, so that TOML keeps its backslashes as they are. Between double quotes, each backslash is doubled: `"PROJ-\\d+"`.
 - **`url`** is what picking the hint opens. In it, `$0` stands for the whole text that the pattern matched, `$1` to `$9` for the parts of the pattern between parentheses, and `$$` for a `$`. It must open an `http`, `https`, `mailto` or `file` URL, or a path from `/` or `~`. A `url` that starts with another scheme, such as `vscode:` or `jira:`, is left out, and a notice reports it.
 - **Without a `url`**, picking the hint copies its text.

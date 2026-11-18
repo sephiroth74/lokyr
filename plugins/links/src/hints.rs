@@ -90,7 +90,9 @@ pub fn in_line(text: &str, patterns: &[Pattern]) -> Vec<LineHint> {
 /// The hints of the word of `chars` from `first` to `end`, in their order:
 /// its URLs; else the URL or the path between the quotes that start it,
 /// past the word, when they hold a space, or the path at its start, past a
-/// bracket or a quote; else its hash or its address.
+/// bracket or a quote, or past its last `=`, as an option's or a
+/// variable's value, then each path of a list after a `:`; else its hash
+/// or its address.
 fn in_word(chars: &[char], first: usize, end: usize) -> Vec<LineHint> {
     let hint = |from: usize, to: usize, kind: Kind| LineHint {
         first: from,
@@ -122,12 +124,33 @@ fn in_word(chars: &[char], first: usize, end: usize) -> Vec<LineHint> {
             return vec![found];
         }
     }
-    let path = [0, 1]
+    // An option's or a variable's value, as `--manifest-path=a/b` or
+    // `PATH=/usr/bin`, after its last `=`, as a click there finds it.
+    let starts: Vec<usize> = match word.iter().rposition(|&c| c == '=') {
+        Some(equals) if equals + 1 < word.len() => vec![equals + 1],
+        _ => [0, 1].into_iter().filter(|&at| at < word.len()).collect(),
+    };
+    let mut paths: Vec<LineHint> = starts
         .into_iter()
-        .filter(|&at| at < word.len())
-        .find_map(|at| path_of(word, at, first));
-    if let Some(found) = path {
-        return vec![found];
+        .find_map(|at| path_of(word, at, first))
+        .into_iter()
+        .collect();
+    // Each path of a list after a `:` that starts one, as `/usr/bin:/bin`,
+    // never a line's number, as `main.rs:42`.
+    let mut from = paths.last().map_or(0, |path| path.end - first);
+    for at in 1..word.len() {
+        if at <= from || word[at - 1] != ':' || !matches!(word[at], '/' | '~') {
+            continue;
+        }
+        if let Some(found) = path_of(word, at, first)
+            && found.first - first >= from
+        {
+            from = found.end - first;
+            paths.push(found);
+        }
+    }
+    if !paths.is_empty() {
+        return paths;
     }
     self::word(chars, first, end).into_iter().collect()
 }
@@ -367,6 +390,26 @@ mod tests {
             .into_iter()
             .map(|hint| hint.text)
             .collect()
+    }
+
+    #[test]
+    fn a_path_after_an_equals_sign_and_each_of_a_list_is_a_hint() {
+        // An option's value and a variable's, as a click there finds them.
+        assert_eq!(
+            texts("cargo build --manifest-path=crates/kernel/Cargo.toml"),
+            ["crates/kernel/Cargo.toml"]
+        );
+        assert_eq!(texts("PATH=/usr/bin:/bin"), ["/usr/bin", "/bin"]);
+        assert_eq!(texts("/usr/local/bin:~/bin"), ["/usr/local/bin", "~/bin"]);
+        // A line's number, and a path of another machine, are no list.
+        assert_eq!(texts("src/main.rs:42:7"), ["src/main.rs:42:7"]);
+        assert_eq!(texts("git@github.com:/acme/app"), Vec::<String>::new());
+        // And the same as ⌘-click finds.
+        let line: Vec<char> = "--manifest-path=crates/kernel/Cargo.toml".chars().collect();
+        assert!(matches!(
+            scan::find(&line.iter().collect::<String>(), 20).first(),
+            Some(Found::Path(path, _)) if path == "crates/kernel/Cargo.toml"
+        ));
     }
 
     #[test]

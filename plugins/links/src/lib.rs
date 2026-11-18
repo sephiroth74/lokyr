@@ -844,6 +844,9 @@ fn screen_hints(
     let mut found: Vec<(Span, String, Opens)> = Vec::new();
     let mut directory: Option<Option<String>> = None;
     let mut row = top;
+    // Where the last read's word that its reach cut starts, as a row and a
+    // column, which the next read starts from and takes no hint before.
+    let mut resume: Option<(i64, u16)> = None;
     while row < bottom {
         let Some(line) = cx.line_text(pane, row, reach)? else {
             row += 1;
@@ -855,18 +858,42 @@ fn screen_hints(
             continue;
         };
         // A read that its reach stopped may have cut the line, and a hint
-        // at its edge; the rows before the read's own were read already,
-        // or are above the view.
+        // of its first or its last word, which the scan may end before the
+        // cut, of a full stop it leaves out; the rows before the read's own
+        // were read already, or are above the view.
         let cut_before = row - first_row >= reach as i64;
         let cut_after = last_row - row >= reach as i64;
+        let chars: Vec<char> = line.text.chars().collect();
+        let first_word_end = chars
+            .iter()
+            .position(|c| c.is_whitespace())
+            .unwrap_or(chars.len());
+        let last_word_start = chars
+            .iter()
+            .rposition(|c| c.is_whitespace())
+            .map_or(0, |space| space + 1);
         let from = row;
+        let since = resume.take();
+        // The next read from the cut word's row, so that a hint across the
+        // two reads is whole in the next; a word longer than a read is lost.
         row = last_row.max(row) + 1;
+        if cut_after
+            && let Some(&(column, word_row)) = line.cells.get(last_word_start)
+            && word_row > from
+        {
+            row = word_row;
+            resume = Some((word_row, column));
+        }
         for hint in hints::in_line(&line.text, patterns) {
-            if (cut_before && hint.first == 0) || (cut_after && hint.end == line.cells.len()) {
+            if (cut_before && hint.first < first_word_end)
+                || (cut_after && hint.end > last_word_start)
+            {
                 continue;
             }
             let span = cells_of(&line.cells, hint.first, hint.end);
-            if !(from..bottom).contains(&span.0.1) {
+            if !(from..bottom).contains(&span.0.1)
+                || since.is_some_and(|at| (span.0.1, span.0.0) < at)
+            {
                 continue;
             }
             // A path that is there, from the working directory of a
