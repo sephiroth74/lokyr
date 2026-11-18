@@ -12,7 +12,7 @@ In your config, `[keys]` binds keys to a command, and to its arguments:
 
 ```toml
 [keys]
-"cmd+shift+t" = "tabs.new"                                      # a second key for a new tab
+"ctrl+cmd+t" = "tabs.new"                                       # a second key for a new tab
 "ctrl+cmd+1" = { command = "tabs.goto", args = { index = 1 } }  # the first tab
 "cmd+d" = false                                                  # no split on ⌘D
 ```
@@ -46,7 +46,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | [`links.new-window`](plugins/links.md) | New Window at Folder | `column`, whole number; `row`, whole number |  |
 | `pane.man-page` | Open man Page |  |  |
 | `pane.man-search` | Search man Page Index |  |  |
-| `window.close` | Close Window |  | ⌘W (`cmd+w`); ⇧⌘W (`cmd+shift+w`) |
+| `window.close` | Close Window |  | ⇧⌘W (`cmd+shift+w`) |
 | `window.goto` | Go to Window | `index`, whole number | ⌥⌘1 to ⌥⌘9 (`cmd+alt+1` to `cmd+alt+9`), `index` 1 to 9 |
 | `window.new` | New Window |  | ⌘N (`cmd+n`) |
 | `window.next` | Cycle Through Windows |  | ⌘\` (`` cmd+` ``) |
@@ -61,26 +61,26 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
 | [`links.new-tab`](plugins/links.md) | New Tab at Folder | `column`, whole number; `row`, whole number |  |
-| [`tabs.add-to-group`](plugins/tabs.md) | Add Tab to Group | `group`, whole number, `0` by default |  |
+| [`tabs.add-to-group`](plugins/tabs.md) | Add Tab to Group | `group`, whole number, `0` by default | · not released yet |
 | [`tabs.close`](plugins/tabs.md) | Close Tab |  | ⌘W (`cmd+w`) |
 | [`tabs.detach`](plugins/tabs.md) | Move Tab to New Window |  |  |
-| [`tabs.fold-group`](plugins/tabs.md) | Fold Group |  |  |
+| [`tabs.fold-group`](plugins/tabs.md) | Fold Group |  | · not released yet |
 | [`tabs.goto`](plugins/tabs.md) | Select Tab | `index`, whole number | ⌘1 to ⌘9 (`cmd+1` to `cmd+9`), `index` 1 to 9 |
 | [`tabs.move`](plugins/tabs.md) | Move Tab | `delta`, whole number | ⇧⌘← (`cmd+shift+left`), `delta = -1`; ⇧⌘→ (`cmd+shift+right`), `delta = 1` |
 | [`tabs.new`](plugins/tabs.md) | New Tab |  | ⌘T (`cmd+t`) |
-| [`tabs.new-group`](plugins/tabs.md) | New Group with Tab |  |  |
+| [`tabs.new-group`](plugins/tabs.md) | New Group with Tab |  | · not released yet |
 | [`tabs.next`](plugins/tabs.md) | Select Next Tab |  | ⇧⌘] (`cmd+shift+]`) |
 | [`tabs.prev`](plugins/tabs.md) | Select Previous Tab |  | ⇧⌘[ (`cmd+shift+[`) |
-| [`tabs.remove-from-group`](plugins/tabs.md) | Remove Tab from Group |  |  |
+| [`tabs.remove-from-group`](plugins/tabs.md) | Remove Tab from Group |  | · not released yet |
 | [`tabs.rename`](plugins/tabs.md) | Rename Tab… | `title`, text, `""` by default |  |
-| [`tabs.rename-group`](plugins/tabs.md) | Rename Group… | `title`, text, `""` by default |  |
-| [`tabs.reopen`](plugins/tabs.md) | Reopen Closed Tab |  | ⇧⌘T (`cmd+shift+t`) |
+| [`tabs.rename-group`](plugins/tabs.md) | Rename Group… | `title`, text, `""` by default | · not released yet |
+| [`tabs.reopen`](plugins/tabs.md) | Reopen Closed Tab |  | ⇧⌘T (`cmd+shift+t`) · not released yet |
 | [`tabs.set-color`](plugins/tabs.md) | Set Tab Color | `color`, text |  |
-| [`tabs.set-group-color`](plugins/tabs.md) | Set Group Color | `color`, text |  |
-| [`tabs.switch`](plugins/tabs.md) | Switch Tab |  | ⌃Tab (`ctrl+tab`) |
-| [`tabs.switch-back`](plugins/tabs.md) | Switch Tab Back |  | ⌃⇧Tab (`ctrl+shift+tab`) |
-| [`tabs.toggle-pin`](plugins/tabs.md) | Pin Tab |  |  |
-| [`tabs.ungroup`](plugins/tabs.md) | Ungroup |  |  |
+| [`tabs.set-group-color`](plugins/tabs.md) | Set Group Color | `color`, text | · not released yet |
+| [`tabs.switch`](plugins/tabs.md) | Switch Tab |  | ⌃Tab (`ctrl+tab`) · not released yet |
+| [`tabs.switch-back`](plugins/tabs.md) | Switch Tab Back |  | ⌃⇧Tab (`ctrl+shift+tab`) · not released yet |
+| [`tabs.toggle-pin`](plugins/tabs.md) | Pin Tab |  | · not released yet |
+| [`tabs.ungroup`](plugins/tabs.md) | Ungroup |  | · not released yet |
 
 ## Panes
 
@@ -153,8 +153,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | [`font.bigger`](plugins/core-actions.md) | Bigger |  | ⌘= (`cmd+=`); ⌘+ (`cmd++`) |
 | [`font.reset`](plugins/core-actions.md) | Default Size |  | ⌘0 (`cmd+0`) |
 | [`font.smaller`](plugins/core-actions.md) | Smaller |  | ⌘- (`cmd+-`) |
-| [`links.hints`](plugins/links.md) | Show Hints | `action`, text, `"open"` by default | ⇧⌘E (`cmd+shift+e`) |
-| [`links.hints-action`](plugins/links.md) | Next Hint Action | `delta`, whole number | Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused` |
+| [`links.hints`](plugins/links.md) | Show Hints | `action`, text, `"open"` by default | ⇧⌘E (`cmd+shift+e`) · not released yet |
+| [`links.hints-action`](plugins/links.md) | Next Hint Action | `delta`, whole number | Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused` · not released yet |
 | [`links.open`](plugins/links.md) | Open Link | `column`, whole number; `row`, whole number | ⌘-click (`cmd+click`) |
 | [`pane.prompt-next`](plugins/core-actions.md) | Jump to Next Prompt |  | ⌘↓ (`cmd+down`) |
 | [`pane.prompt-previous`](plugins/core-actions.md) | Jump to Previous Prompt |  | ⌘↑ (`cmd+up`) |
@@ -165,7 +165,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | [`pane.scroll-page-up`](plugins/core-actions.md) | Scroll Up a Page |  | ⌘Page Up (`cmd+pageup`); ⇧Page Up (`shift+pageup`) |
 | [`pane.scroll-top`](plugins/core-actions.md) | Scroll to the Top |  | ⌘Home (`cmd+home`) |
 | `window.toggle-cursor-guide` | Show Cursor Guide |  | ⌥⌘; (`cmd+alt+;`) |
-| `window.toggle-opacity` | Use Transparency |  | ⌘U (`cmd+u`) |
+| `window.toggle-opacity` | Use Transparency |  | ⌘U (`cmd+u`) · not released yet |
 
 ## See also
 

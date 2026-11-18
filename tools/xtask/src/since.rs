@@ -5,7 +5,9 @@
 //! token of the same text in its comment; in the commit that prepares a
 //! release, this turns each mark into the release's, `· Since X.Y`, or
 //! `· Since X.Y.Z` of a patch, and `"x-since": "X.Y"`, then makes the config
-//! guide anew and checks the theme guide's tokens against the rules. A page's mark is of its text
+//! guide anew, checks the theme guide's tokens against the rules, and writes
+//! the released commands' file of the app's, the commands' reference made
+//! anew of none marked (on a Mac, as its keys are). A page's mark is of its text
 //! as Markdown reads it: in code, a block or a span, as a guide that shows
 //! the mark, it is no mark; in a heading, or in HTML, it is refused. Every
 //! other occurrence of the words, in any case, is left and told, and
@@ -69,6 +71,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         }
     }
     crate::config_guide::run(std::iter::empty()).context("making the config guide anew")?;
+    // The commands' reference, made of the app, marks what the released
+    // commands' file lacks: the file of the app's commands and keys now,
+    // and the reference of none marked.
+    crate::docs::release().context("writing the released commands")?;
     // The theme guide's table, whose marks the page's own rewrite took, is
     // checked against the rewritten rules by a build of them, as this
     // binary holds the rules of before.

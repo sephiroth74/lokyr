@@ -3,7 +3,11 @@
 //! the default keymap of an app of the default distribution: written where
 //! `LOKYR_WRITE_DOCS` is set, as `cargo xtask docs` sets it, else checked,
 //! so that a changed command or binding fails until they are written again.
+//! The reference marks the commands and the keys that the last release had
+//! not, of the released ones' file, which `LOKYR_RELEASED_COMMANDS` writes
+//! anew of the app's, as a release's `cargo xtask since` does.
 
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -16,6 +20,86 @@ use super::*;
 /// The repository's `docs/`.
 fn docs() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs")
+}
+
+/// The file of the commands and the default keys of the last release, of
+/// a line each.
+fn released_file() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/xtask/released-commands.txt")
+}
+
+/// What the reference marks as not released yet: a command or a key that
+/// the last release had not.
+const NOT_RELEASED: &str = "· not released yet";
+
+/// A binding's line of the released file: its command, its keys as the
+/// config writes them, its arguments and its context, parted by tabs.
+fn binding_line(binding: &Binding) -> String {
+    let args: Vec<String> = binding
+        .invocation
+        .args
+        .iter()
+        .map(|(name, given)| format!("{name}={}", value(given)))
+        .collect();
+    let when = binding
+        .when
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    format!(
+        "{}\t{}\t{}\t{when}",
+        binding.invocation.command,
+        keys_written(binding),
+        args.join(",")
+    )
+}
+
+/// The released file of `app`: each of its commands' names, and each of its
+/// bindings in force, sorted.
+fn released_text(app: &App) -> String {
+    let mut lines = BTreeSet::new();
+    for command in app.commands.in_order() {
+        lines.insert(command.name.clone());
+        for binding in bindings_of(app, &command.name) {
+            lines.insert(binding_line(binding));
+        }
+    }
+    let mut text = String::from(
+        "# The commands and the default keys of Lokyr's last release, a command's name or a\n# binding's command, keys, arguments and context a line, which the commands'\n# reference marks the others of as not released yet. A release's\n# `cargo xtask since` writes it anew: never by hand.\n",
+    );
+    for line in lines {
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text
+}
+
+/// The commands and the bindings of the last release, of its file; of no
+/// file, every one.
+struct Released(Option<BTreeSet<String>>);
+
+impl Released {
+    /// Of the file, as it reads.
+    fn read() -> Self {
+        Self(std::fs::read_to_string(released_file()).ok().map(|text| {
+            text.lines()
+                .filter(|line| !line.starts_with('#') && !line.is_empty())
+                .map(str::to_owned)
+                .collect()
+        }))
+    }
+
+    /// Whether the last release had the command `name`.
+    fn command(&self, name: &str) -> bool {
+        self.0.as_ref().is_none_or(|lines| lines.contains(name))
+    }
+
+    /// Whether the last release had `binding`.
+    fn binding(&self, binding: &Binding) -> bool {
+        self.0
+            .as_ref()
+            .is_none_or(|lines| lines.contains(&binding_line(binding)))
+    }
 }
 
 /// The categories, in the reference's order, each of its heading.
@@ -212,16 +296,36 @@ fn runs<'a>(bindings: &[&'a Binding]) -> Vec<Run<'a>> {
 
 /// The default bindings of `command`, in the keymap's order.
 fn bindings_of<'a>(app: &'a App, command: &str) -> Vec<&'a Binding> {
-    app.keymap
-        .bindings()
+    let bindings = app.keymap.bindings();
+    bindings
         .iter()
-        .filter(|binding| binding.invocation.command == command)
+        .enumerate()
+        .filter(|(at, binding)| {
+            binding.invocation.command == command && !covered(&bindings[at + 1..], binding)
+        })
+        .map(|(_, binding)| binding)
         .collect()
+}
+
+/// Whether one of `later`, the bindings after `binding`, of the same keys,
+/// takes them wherever `binding` would: of no context, or of its own; as
+/// the keymap runs the last binding that holds, ⌘W of Close Tab over Close
+/// Window's.
+fn covered(later: &[Binding], binding: &Binding) -> bool {
+    let canonical = |keys: &[Combo]| {
+        keys.iter()
+            .map(|combo| combo.canonical())
+            .collect::<Vec<_>>()
+    };
+    let keys = canonical(&binding.keys);
+    later.iter().any(|other| {
+        canonical(&other.keys) == keys && (other.when.is_none() || other.when == binding.when)
+    })
 }
 
 /// The keys of `command` as the reference shows them: each binding's, as
 /// the pages and as the config write them, its arguments and its context.
-fn keys_in_full(bindings: &[&Binding]) -> String {
+fn keys_in_full(bindings: &[&Binding], released: &Released) -> String {
     let mut parts = Vec::new();
     for run in runs(bindings) {
         let first = run.bindings[0];
@@ -257,14 +361,22 @@ fn keys_in_full(bindings: &[&Binding]) -> String {
                         .unwrap_or_default();
                     format!("`{name}` {} to {end}", value(given))
                 }
-                _ => format!("`{name} = {}`", value(given)),
+                _ => code(&format!("{name} = {}", value(given))),
             })
             .collect();
         if !args.is_empty() {
             let _ = write!(part, ", {}", args.join(", "));
         }
         if let Some(when) = &first.when {
-            let _ = write!(part, ", while `{when}`");
+            let _ = write!(part, ", while {}", code(&when.to_string()));
+        }
+        // A key that the last release had not, of a command that it had.
+        if run
+            .bindings
+            .iter()
+            .any(|binding| !released.binding(binding))
+        {
+            let _ = write!(part, " {NOT_RELEASED}");
         }
         parts.push(part);
     }
@@ -307,7 +419,7 @@ fn keys_in_brief(bindings: &[&Binding]) -> String {
         }
         let mut part = keys.join(", ");
         if let Some(when) = context {
-            let _ = write!(part, " while `{when}`");
+            let _ = write!(part, " while {}", code(&when));
         }
         parts.push(part);
     }
@@ -348,10 +460,11 @@ fn cell(text: &str) -> String {
     text.replace('|', "\\|")
 }
 
-/// The commands' reference of `app`.
-fn reference(app: &App) -> String {
+/// The commands' reference of `app`, a command or a key that `released`
+/// lacks marked as not released yet.
+fn reference(app: &App, released: &Released) -> String {
     let mut page = String::from(
-        "# Commands\n\n<sub>macOS · Lokyr's commands and its bundled plugins'</sub>\n\n<!-- Made by `cargo xtask docs` of the app's commands and its default keys: change those, not this page. -->\n\nEvery action of Lokyr is a command, which a menu, a key, the [command palette](plugins/command-palette.md) or a plugin runs. This page lists every command of Lokyr and of its bundled plugins, with its arguments and the keys that run it by default, so that you can bind keys of your own.\n\n## Bind a command to keys\n\nIn your config, `[keys]` binds keys to a command, and to its arguments:\n\n```toml\n[keys]\n\"cmd+shift+t\" = \"tabs.new\"                                      # a second key for a new tab\n\"ctrl+cmd+1\" = { command = \"tabs.goto\", args = { index = 1 } }  # the first tab\n\"cmd+d\" = false                                                  # no split on ⌘D\n```\n\nYour keys win over the defaults below. The [keys' section of the configuration guide](CONFIGURATION.md#bindings) tells how to write keys, arguments and contexts.\n\nThe keys below show as macOS writes them, then as the config writes them. A key that holds in a context only, such as while the palette is open, says so with `while`.\n",
+        "# Commands\n\n<sub>macOS · Lokyr's commands and its bundled plugins'</sub>\n\n<!-- Made by `cargo xtask docs` of the app's commands and its default keys: change those, not this page. -->\n\nEvery action of Lokyr is a command, which a menu, a key, the [command palette](plugins/command-palette.md) or a plugin runs. This page lists every command of Lokyr and of its bundled plugins, with its arguments and the keys that run it by default, so that you can bind keys of your own.\n\n## Bind a command to keys\n\nIn your config, `[keys]` binds keys to a command, and to its arguments:\n\n```toml\n[keys]\n\"ctrl+cmd+t\" = \"tabs.new\"                                       # a second key for a new tab\n\"ctrl+cmd+1\" = { command = \"tabs.goto\", args = { index = 1 } }  # the first tab\n\"cmd+d\" = false                                                  # no split on ⌘D\n```\n\nYour keys win over the defaults below. The [keys' section of the configuration guide](CONFIGURATION.md#bindings) tells how to write keys, arguments and contexts.\n\nThe keys below show as macOS writes them, then as the config writes them. A key that holds in a context only, such as while the palette is open, says so with `while`.\n",
     );
     for (category, heading) in CATEGORIES {
         let mut names: Vec<&str> = app
@@ -377,12 +490,23 @@ fn reference(app: &App) -> String {
                 None => format!("`{name}`"),
             };
             let bindings = bindings_of(app, name);
+            // A command that the last release had not, of its row's end.
+            let keys = if released.command(name) {
+                keys_in_full(&bindings, released)
+            } else {
+                let all = Released(None);
+                let keys = keys_in_full(&bindings, &all);
+                if keys.is_empty() {
+                    NOT_RELEASED.to_owned()
+                } else {
+                    format!("{keys} {NOT_RELEASED}")
+                }
+            };
             let _ = writeln!(
                 page,
-                "| {shown} | {} | {} | {} |",
+                "| {shown} | {} | {} | {keys} |",
                 cell(&command.title),
                 cell(&params(command)),
-                cell(&keys_in_full(&bindings))
             );
         }
     }
@@ -497,7 +621,7 @@ fn plugin_tables(app: &App, file: &str, text: &str) -> Result<String, Vec<String
                 row[column] = if keys.is_empty() {
                     " ".to_owned()
                 } else {
-                    format!(" {} ", cell(&keys.join(", ")))
+                    format!(" {} ", keys.join(", "))
                 };
             }
             let ending = if line.ends_with('\n') { "\n" } else { "" };
@@ -546,7 +670,24 @@ fn the_commands_reference_and_the_plugins_tables_are_the_app_s() {
             stale.push(format!("docs/{file}"));
         }
     };
-    check("commands.md", reference(&app));
+    // Every command's category among the reference's, of none left out.
+    let missing: Vec<&str> = app
+        .commands
+        .in_order()
+        .filter(|command| {
+            !CATEGORIES
+                .iter()
+                .any(|(category, _)| *category == command.category)
+        })
+        .map(|command| command.name.as_str())
+        .collect();
+    assert!(missing.is_empty(), "categories of no heading: {missing:?}");
+    // A release's: the released file, of the app's commands and keys, then
+    // the reference of none marked.
+    if std::env::var_os("LOKYR_RELEASED_COMMANDS").is_some() {
+        std::fs::write(released_file(), released_text(&app)).unwrap();
+    }
+    check("commands.md", reference(&app, &Released::read()));
     let mut pages: Vec<PathBuf> = std::fs::read_dir(docs().join("plugins"))
         .unwrap()
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
@@ -608,7 +749,7 @@ fn keys_show_as_the_pages_write_them_and_a_run_of_numbers_as_one() {
     let refs: Vec<&Binding> = numbers.iter().collect();
     assert_eq!(keys_in_brief(&refs), "⌘1 to ⌘9");
     assert_eq!(
-        keys_in_full(&refs),
+        keys_in_full(&refs, &Released(None)),
         "⌘1 to ⌘9 (`cmd+1` to `cmd+9`), `index` 1 to 9"
     );
     // Two are no run; a context says so.
@@ -619,13 +760,39 @@ fn keys_show_as_the_pages_write_them_and_a_run_of_numbers_as_one() {
     let refs: Vec<&Binding> = moves.iter().collect();
     assert_eq!(keys_in_brief(&refs), "Tab, ⇧Tab while `links.focused`");
     assert_eq!(
-        keys_in_full(&refs),
+        keys_in_full(&refs, &Released(None)),
         "Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused`"
+    );
+    // A binding that a later one of the same keys takes everywhere is
+    // covered; one of a later binding of another context is not.
+    let close = |command: &str, when: Option<&str>| Binding {
+        keys: parse("cmd+w"),
+        invocation: lokyr_kernel::keymap::Invocation {
+            command: command.to_owned(),
+            args: lokyr_kernel::commands::Args::new(),
+        },
+        when: when.map(|when| When::parse(when).unwrap()),
+    };
+    assert!(covered(
+        &[close("tabs.close", None)],
+        &close("window.close", None)
+    ));
+    assert!(!covered(
+        &[close("tabs.close", Some("links.focused"))],
+        &close("window.close", None)
+    ));
+    // A key that the last release had not, of a command that it had.
+    let released = Released(Some(BTreeSet::from(["tabs.goto".to_owned()])));
+    let one = [binding("cmd+1", &[("index", 1)], None)];
+    let refs: Vec<&Binding> = one.iter().collect();
+    assert_eq!(
+        keys_in_full(&refs, &released),
+        "⌘1 (`cmd+1`), `index = 1` · not released yet"
     );
     // A backtick in the config's form, between two backticks.
     let next = [binding("cmd+`", &[], None)];
     let refs: Vec<&Binding> = next.iter().collect();
-    assert_eq!(keys_in_full(&refs), "⌘\\` (`` cmd+` ``)");
+    assert_eq!(keys_in_full(&refs, &Released(None)), "⌘\\` (`` cmd+` ``)");
     assert_eq!(code("a|b"), "`a\\|b`");
 }
 
