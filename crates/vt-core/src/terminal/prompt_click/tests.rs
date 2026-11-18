@@ -305,6 +305,25 @@ fn a_right_prompt_of_no_mark_is_no_part_of_the_command_line() {
 }
 
 #[test]
+fn a_selection_on_fish_s_indented_continuation_line_takes_its_place() {
+    // `begin`, Alt-Enter, then `echo hi`, which fish indents by moving the
+    // cursor, the line's first cells blank.
+    let mut terminal = fed(
+        40,
+        "\x1b]133;A;click_events=1\x07fish> \x1b]133;B\x07begin\r\n\x1b[10Cecho hi",
+    );
+    assert_eq!(terminal.cell(0, 1).semantic(), Semantic::Output);
+    assert_eq!(terminal.cell(15, 1).semantic(), Semantic::Input);
+    // `hi`, at the cursor's end: its two characters.
+    assert_eq!(replaced(&mut terminal, (15, 16), 1), Some((None, 2)));
+    // `echo`: the arrows to its end, then its four characters.
+    assert_eq!(
+        replaced(&mut terminal, (10, 13), 1),
+        Some((Some(PromptClick::Left(3)), 4))
+    );
+}
+
+#[test]
 fn a_right_prompt_of_no_input_s_mark_ends_as_the_text_goes_back_before_it() {
     let mut terminal = with_right_prompt(false);
     for x in 35..39 {

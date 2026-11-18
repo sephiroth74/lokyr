@@ -365,3 +365,41 @@ fn fish_s_right_prompt_is_no_part_of_a_selection_that_goes() {
             && text.trim_end().ends_with("RIGHTP")
     });
 }
+
+#[test]
+fn fish_s_indented_continuation_line_takes_a_selection_that_goes() {
+    let Some(fish) = found(&[
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+        "/usr/bin/fish",
+    ]) else {
+        eprintln!("no fish here");
+        return;
+    };
+    let home = home(
+        "fish-continued",
+        &[(
+            ".config/fish/config.fish",
+            "function fish_prompt; echo -n 'fish> '; end\nfunction fish_greeting; end\n",
+        )],
+    );
+    let session = shell(&fish, &home);
+    until(&session, "the prompt", |terminal| {
+        terminal.prompt_clicks().is_some()
+    });
+    // `begin`, Alt-Enter, then `echo hi`, which fish indents.
+    session.send("begin\x1b\recho hi");
+    until(&session, "the second line", |terminal| {
+        terminal
+            .row_text(terminal.cursor().y)
+            .trim()
+            .starts_with("echo hi")
+    });
+    let hi = column_of(&session.lock(), "hi");
+    select_on_cursor_row(&session, hi, hi + 1);
+    assert!(session.replace_selection(&backspace(), KeyOptions::default()));
+    until(&session, "the selection taken away", |terminal| {
+        let text = terminal.row_text(terminal.cursor().y);
+        text.trim() == "echo"
+    });
+}

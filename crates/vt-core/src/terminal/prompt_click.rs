@@ -279,7 +279,11 @@ impl Terminal {
         (first.1..=last.1).any(|y| {
             let (page, row) = rows.screen_row(y);
             let cells = page.cells(row);
-            let end = input_end(cells, if y == start.1 { start.0 } else { 0 });
+            let end = if y == start.1 {
+                input_end(cells, start.0, false)
+            } else {
+                input_end(cells, 0, true)
+            };
             let from = if y == first.1 { first.0 } else { 0 };
             let to = if y == last.1 { last.0 } else { u16::MAX };
             cells
@@ -329,7 +333,7 @@ impl Terminal {
             let (page, row) = rows.screen_row(row_y);
             let from = if row_y == start_y { start_x } else { 0 };
             let cells = page.cells(row);
-            let end = input_end(cells, from);
+            let end = input_end(cells, from, row_y != start_y);
             for (cell_x, cell) in cells
                 .iter()
                 .enumerate()
@@ -463,13 +467,28 @@ fn shows_text(content: Content) -> bool {
 /// Where the input of the row of `cells` ends, from the column `from`: at
 /// its first blank cell that is no input's nor prompt's, as the semantic
 /// prompts' input line holds its input, then a blank area, then a final
-/// prompt, which a shell may draw of no mark; the row's end of none.
-fn input_end(cells: &[Cell], from: u16) -> usize {
+/// prompt, which a shell may draw of no mark; the row's end of none. On a
+/// row after the command line's first, `continued`, the blank cells
+/// before its first input or prompt are none of its end, as a line editor
+/// that indents a continuation line by moving the cursor leaves them, as
+/// fish does.
+fn input_end(cells: &[Cell], from: u16, continued: bool) -> usize {
+    let blank = |cell: &Cell| cell.semantic() == Semantic::Output && !has_character(cell.content());
+    let first = if continued {
+        cells
+            .iter()
+            .enumerate()
+            .skip(usize::from(from))
+            .find(|(_, cell)| !blank(cell))
+            .map_or(cells.len(), |(x, _)| x)
+    } else {
+        usize::from(from)
+    };
     cells
         .iter()
         .enumerate()
-        .skip(usize::from(from))
-        .find(|(_, cell)| cell.semantic() == Semantic::Output && !has_character(cell.content()))
+        .skip(first)
+        .find(|(_, cell)| blank(cell))
         .map_or(cells.len(), |(x, _)| x)
 }
 
