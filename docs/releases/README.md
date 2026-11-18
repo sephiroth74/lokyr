@@ -2,6 +2,7 @@
 
 What each release of Lokyr brought, the newest first. The [changelog](../../CHANGELOG.md) lists every change of each release.
 
+- [1.3.0](1.3.0.md), 18 November 2026: the programs' status on their tabs, a click in the command line, pinned and grouped tabs, a closed tab reopened, and hints.
 - [1.2.0](1.2.0.md), 16 November 2026: themes made in the app, of the Theme Editor, and the settings' Keys page.
 - [1.1.0](1.1.0.md), 14 November 2026: the settings in a window of their own.
 - [1.0.0](1.0.0.md), 13 November 2026: the first public release, of the AI agents on their tabs, inline images and the Homebrew cask.
