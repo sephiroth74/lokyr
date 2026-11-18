@@ -3243,6 +3243,11 @@ fn a_double_tap_of_the_quick_terminal_s_modifier_shows_and_hides_it_from_every_a
         "{}",
         shown.text
     );
+    // Closed, the same answer as the app becomes active again tells it not
+    // again, nor a second time while it shows.
+    app.diagnostics.dismiss();
+    fake.watch_double_taps_again(&mut app);
+    assert!(app.diagnostics.shown_diagnostic().is_none());
     // Given as the app was in the background, the watch again as it
     // becomes active takes the notice away.
     fake.allow_double_taps(true);

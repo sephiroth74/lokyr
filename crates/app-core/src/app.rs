@@ -885,6 +885,11 @@ pub struct App<B: Backend> {
     /// The modifiers whose double taps the platform watches for the
     /// plugins, as the app gave them last.
     double_taps: Vec<host::Modifier>,
+    /// The platform's last answer of the double taps that a notice told,
+    /// of the modifiers that it named, which the same answer as the app
+    /// becomes active tells not again, so that a notice closed stays
+    /// closed until the answer or the modifiers change.
+    double_taps_told: Option<(DoubleTaps, Vec<host::Modifier>)>,
     /// The jobs of the packages' service, Sleip's commands that Lokyr's own
     /// plugins start.
     packages: packages::Jobs,
@@ -1131,6 +1136,7 @@ impl<B: Backend> App<B> {
             last_image: 0,
             awake: (host::Awake::Off, String::new()),
             double_taps: Vec::new(),
+            double_taps_told: None,
             packages: packages::Jobs::beside_the_app(),
             placing: BTreeMap::new(),
             placing_size: None,
@@ -2860,9 +2866,17 @@ impl<B: Backend> App<B> {
     fn tell_double_taps(&mut self, platform: &mut dyn Platform, watching: DoubleTaps) {
         if self.double_taps.is_empty() || matches!(watching, DoubleTaps::Off | DoubleTaps::Watching)
         {
+            self.double_taps_told = None;
             self.resolve(platform, &About::DoubleTaps);
             return;
         }
+        // The same answer of the same modifiers, as the app becomes active
+        // again, told already: its notice, closed or not, as it is.
+        let told = Some((watching, self.double_taps.clone()));
+        if self.double_taps_told == told {
+            return;
+        }
+        self.double_taps_told = told;
         let named: Vec<&str> = self
             .double_taps
             .iter()
@@ -5098,6 +5112,7 @@ impl<B: Backend> App<B> {
             // A modifier tapped twice, to the plugins that watch it, at the
             // turn's end; it works, whatever a notice told before.
             AppEvent::DoubleTap(modifier) => {
+                self.double_taps_told = None;
                 self.resolve(platform, &About::DoubleTaps);
                 self.plugins.double_tapped(host_modifier(modifier));
             }
