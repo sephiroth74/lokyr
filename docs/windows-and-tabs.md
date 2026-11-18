@@ -14,9 +14,9 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Tabs** in a bar at the top or the bottom, or in a column on the left or the right, in three looks.
 - **Drags** that reorder tabs, move them to another window, split a pane with them, or take them out to a window of their own.
 - **Titles and colors** of your own for each tab, and marks that show what happens in the tabs you don't look at, as [the `tabs` plugin](plugins/tabs.md#the-bar) describes.
-- **The tab you used before**, a press of ⌃Tab away. · not released yet
-- **Pinned tabs**, kept at the start of the bar, and **groups** of tabs under a name and a color. · not released yet
-- **A tab you closed**, back with ⇧⌘T. · not released yet
+- **The tab you used before**, a press of ⌃Tab away. · Since 1.3
+- **Pinned tabs**, kept at the start of the bar, and **groups** of tabs under a name and a color. · Since 1.3
+- **A tab you closed**, back with ⇧⌘T. · Since 1.3
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
@@ -64,7 +64,7 @@ background-blur = 20        # the blur's radius, in points
 
 Only the background lets things show through: the text, the cursor, the selection and the colors that programs give stay opaque. A blur costs the window server some work: over a video that plays behind the window, a blur of 20 points took about 4 % more of one core. [`background-opacity`](CONFIGURATION.md#background-opacity) and [`background-blur`](CONFIGURATION.md#background-blur) tell more.
 
-Press ⌘U, or choose View › Use Transparency, to show a translucent window opaque while you read, and again to see through it once more. Each window keeps its own choice, and your config stays as it is. · not released yet
+Press ⌘U, or choose View › Use Transparency, to show a translucent window opaque while you read, and again to see through it once more. Each window keeps its own choice, and your config stays as it is. · Since 1.3
 
 **Try it**: add the lines above to your config file, which Lokyr › Settings… (⌘,) opens, and save it: the window shows what's behind it, blurred.
 
@@ -83,7 +83,7 @@ restore-windows = "always"   # open the last windows again at every start
 
 Each pane starts a new shell, in the folder where its shell was: what the panes showed, and the programs that ran in them, don't come back.
 
-Pinned tabs come back pinned, and groups come back with their names, colors and folds. · not released yet
+Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
 
 **Try it**: set `restore-windows = "always"`, open a second tab with ⌘T, and run `cd /usr/share` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`.
 
@@ -101,7 +101,7 @@ While a window has a single tab, the bar hides, and the titlebar shows the tab's
 
 - **⌘1 to ⌘9** show the first nine tabs, and each tab shows its keys, as [`show-index`](CONFIGURATION.md#show-index) says.
 - **⇧⌘]** and **⇧⌘[** show the next and the previous tab in the bar, going round at the ends.
-- **⌃Tab** shows the tab you used before. Hold Control and press Tab again to go further back: the tab that shows when you let go of Control becomes the most recent. ⌃⇧Tab goes the other way, and [`control-tab = "order"`](CONFIGURATION.md#control-tab) makes them follow the bar's order instead. · not released yet
+- **⌃Tab** shows the tab you used before. Hold Control and press Tab again to go further back: the tab that shows when you let go of Control becomes the most recent. ⌃⇧Tab goes the other way, and [`control-tab = "order"`](CONFIGURATION.md#control-tab) makes them follow the bar's order instead. · Since 1.3
 - **⇧⌘←** and **⇧⌘→** move the tab one place left or right.
 
 **Try it**: with three tabs, press ⌘1, then ⇧⌘]: the second tab shows. Press ⇧⌘→: it moves to the third place.
@@ -141,7 +141,7 @@ printf '\033]6;1;bg;*;default\033\\'
 
 ## Pin tabs
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 Right-click a tab and choose Pin Tab, or choose Shell › Pin Tab, to keep it at the start of the bar. In a bar across the window, a pinned tab is narrow: it shows a pin, the first letters of its title and its most urgent mark, such as an agent that waits for you, and its whole title when you point at it. Down a column, it shows a pin instead of its close button.
 
@@ -151,7 +151,7 @@ Right-click a tab and choose Pin Tab, or choose Shell › Pin Tab, to keep it at
 
 ## Reopen a closed tab
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 Press ⇧⌘T, or choose Shell › Reopen Closed Tab, to bring back the tab you closed last, at its place and as you left it. Press it again for the one before.
 
@@ -167,7 +167,7 @@ Some tabs close for good at once:
 
 ## Group tabs
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 Right-click a tab, choose New Group with Tab, and type the group's name. The group shows as a pill of its name and color before its tabs, which take a tint of its color.
 
@@ -233,10 +233,10 @@ close-button = "hover"            # "always" or "never"
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |
 | ⇧⌘], ⇧⌘[ | `cmd+shift+]`, `cmd+shift+[` | Show the next or the previous tab |
-| ⌃Tab, ⌃⇧Tab | `ctrl+tab`, `ctrl+shift+tab` | Show the tab you used before, or go the other way · not released yet |
+| ⌃Tab, ⌃⇧Tab | `ctrl+tab`, `ctrl+shift+tab` | Show the tab you used before, or go the other way · Since 1.3 |
 | ⇧⌘←, ⇧⌘→ | `cmd+shift+left`, `cmd+shift+right` | Move the tab a place |
-| ⇧⌘T | `cmd+shift+t` | Reopen the tab you closed last · not released yet |
-| ⌘U | `cmd+u` | Show the window opaque, or translucent again · not released yet |
+| ⇧⌘T | `cmd+shift+t` | Reopen the tab you closed last · Since 1.3 |
+| ⌘U | `cmd+u` | Show the window opaque, or translucent again · Since 1.3 |
 
 [The commands' reference](commands.md#windows) lists every command of the windows and the tabs, those of no keys too, such as `tabs.toggle-pin` and `window.toggle-float-on-top`, which you can bind in [`[keys]`](CONFIGURATION.md#bindings).
 

@@ -186,7 +186,7 @@ The guide for plugin authors, [Writing a plugin](plugins/authoring.md), makes a 
 
 ### Versioning
 
-- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.4` ↔ API 0.1), which `lokyr --api-version` tells. A patch adds requests, events and the test host's functions: 0.1.4, of Lokyr 1.2, adds since 0.1.3 every token of a theme as it resolves, `cx.theme_tokens`, and the event `theme-changed`, each theme's format in the read of the themes, and `cx.set_theme` of a theme of either appearance; the system's color panel, `cx.show_color_panel` and `cx.close_color_panel`, of no capability, and its events `color-picked` and `color-panel-closed`; a question of buttons, `cx.ask_choice`, its answer `chosen`; a view's part drawn in a theme of a name, the node `themed`; and, of Lokyr's own plugins alone, of `config`, a theme copied, made, converted, and its colors written or shown before they are, `cx.copy_theme`, `cx.new_theme`, `cx.convert_theme`, `cx.set_theme_value` and `cx.preview_theme_value`; a plugin that needs them asks `api = "^0.1.4"`, which Lokyr 1.1 refuses with its notice; 0.1.3, of Lokyr 1.1, adds since 0.1.2 a notice in Lokyr's card, `cx.notify`, of no capability, and the test host's `notices`; the styles of a family, `cx.font_styles`, of no capability, and a style's preview, `cx.preview_font_style`, of `appearance-write`; a theme's preview in a view, the node `theme-preview`, the themes' list's `loading` and the event `themes-changed`; a number's field of steps, `stepped`, and a button of a link's look, `link`; a panel in the middle of a view's window, `view_window`; a window's title as its titlebar shows it, `WindowInfo.title`; and, of Lokyr's own plugins alone, the settings window's pages, the plugins' list and the config's keys; a plugin that needs them asks `api = "^0.1.3"`, which Lokyr 1.0 refuses with its notice; 0.1.2, of Lokyr 1.0, adds since 0.1.1 the agents of every window, `cx.agents`, of `process-read`, and a file opened at its line in the editor, `cx.open_at`, of `open`, which a plugin asks with `api = "^0.1.2"`; 0.1.1, of Lokyr 0.9, adds since 0.8.0's 0.1.0 the images of cells and the view's image node, the cells of the selection and of the screen, the clipboard's image, the save panel, `keep_awake`, the titlebar's buttons, the menus' ticks and submenus, the packages' service, the font families' list, preview and choice and the capability `appearance-write`, which the themes' preview and choice take in place of `user-commands`, and the test host's screen, selection, saves, tabs, marks and menu items; a plugin that needs them asks `api = "^0.1.1"`, which an older Lokyr refuses with its notice.
+- The API version is the version of `plugin-sdk` (`plugin-sdk 0.1.5` ↔ API 0.1), which `lokyr --api-version` tells. A patch adds requests, events and the test host's functions: 0.1.5, of Lokyr 1.3, adds since 0.1.4 a window's tabs in the order of their use, `cx.recent_tabs`; a tab pinned, `cx.set_tab_pinned`, and `pinned` of a tab; a closed tab kept, `keep` of `cx.close_tab`, and given back, `cx.reopen_tab`; the groups of tabs, `cx.groups`, `cx.new_group`, `cx.add_to_group`, `cx.remove_from_group`, `cx.rename_group`, `cx.set_group_color`, `cx.fold_group` and `cx.ungroup`, `group` of a tab and the event `group-changed`; a session's status, `status` of a tab, and what a waiting agent asks for, `kind` of `cx.agents`, of `process-read`; a decoration's label, `label` of its look; a modifier's double tap from any app, `cx.watch_double_tap`, of `global-hotkey`, and its event `double-tapped`; and, of Lokyr's own plugins alone, the settings' maps of tables and a key's page of the documentation; a plugin that needs them asks `api = "^0.1.5"`, which Lokyr 1.2 refuses with its notice; 0.1.4, of Lokyr 1.2, adds since 0.1.3 every token of a theme as it resolves, `cx.theme_tokens`, and the event `theme-changed`, each theme's format in the read of the themes, and `cx.set_theme` of a theme of either appearance; the system's color panel, `cx.show_color_panel` and `cx.close_color_panel`, of no capability, and its events `color-picked` and `color-panel-closed`; a question of buttons, `cx.ask_choice`, its answer `chosen`; a view's part drawn in a theme of a name, the node `themed`; and, of Lokyr's own plugins alone, of `config`, a theme copied, made, converted, and its colors written or shown before they are, `cx.copy_theme`, `cx.new_theme`, `cx.convert_theme`, `cx.set_theme_value` and `cx.preview_theme_value`; a plugin that needs them asks `api = "^0.1.4"`, which Lokyr 1.1 refuses with its notice; 0.1.3, of Lokyr 1.1, adds since 0.1.2 a notice in Lokyr's card, `cx.notify`, of no capability, and the test host's `notices`; the styles of a family, `cx.font_styles`, of no capability, and a style's preview, `cx.preview_font_style`, of `appearance-write`; a theme's preview in a view, the node `theme-preview`, the themes' list's `loading` and the event `themes-changed`; a number's field of steps, `stepped`, and a button of a link's look, `link`; a panel in the middle of a view's window, `view_window`; a window's title as its titlebar shows it, `WindowInfo.title`; and, of Lokyr's own plugins alone, the settings window's pages, the plugins' list and the config's keys; a plugin that needs them asks `api = "^0.1.3"`, which Lokyr 1.0 refuses with its notice; 0.1.2, of Lokyr 1.0, adds since 0.1.1 the agents of every window, `cx.agents`, of `process-read`, and a file opened at its line in the editor, `cx.open_at`, of `open`, which a plugin asks with `api = "^0.1.2"`; 0.1.1, of Lokyr 0.9, adds since 0.8.0's 0.1.0 the images of cells and the view's image node, the cells of the selection and of the screen, the clipboard's image, the save panel, `keep_awake`, the titlebar's buttons, the menus' ticks and submenus, the packages' service, the font families' list, preview and choice and the capability `appearance-write`, which the themes' preview and choice take in place of `user-commands`, and the test host's screen, selection, saves, tabs, marks and menu items; a plugin that needs them asks `api = "^0.1.1"`, which an older Lokyr refuses with its notice.
 - New APIs start as unstable: in Rust behind the `unstable` feature; in Luau every request is a function of `cx` by its Rust name, unprefixed, the whole API experimental while `plugin-sdk` is 0.x, until F6, so that a request that becomes stable keeps its name and no plugin breaks of a rename. They become stable in a minor release.
 - The manifest declares the API version it requires (`api = "^0.1"`). The host supports the current major version and, through adapters, the previous one.
 - Before 1.0, minor versions may break compatibility. After 1.0, semver is followed strictly.
@@ -201,6 +201,7 @@ The guide for plugin authors, [Writing a plugin](plugins/authoring.md), makes a 
 type WindowId = number
 type TabId = number
 type PaneId = number
+type GroupId = number
 
 -- Command arguments: named values of a flat schema, each a string, an
 -- integer, a number or a boolean.
@@ -273,6 +274,19 @@ type TabInfo = {
     secure: boolean, -- the keyboard's protected input is on for it, as its window has the focus and shows it
     agent: ("working" | "waiting" | "done" | "error")?, -- of `process-read`: the state of an AI agent that runs in one of its panes, the most urgent of theirs: working while it prints, tells a progress or turns its title's spinner; waiting once it asks for attention, by a notification or its bell, until something is typed into its pane; done once quiet after a request; of an agent whose hooks tell its state, as Claude Code's of Lokyr › Install Claude Code Integration…, as they tell it, and error as an error ends its answer
     agent_message: string?, -- of `process-read`: the message of the notification by which an agent of its panes that waits asked for attention, as "Claude needs your permission to use Bash", 200 characters at most; none of a bell alone
+    status: { text: string?, indicator: Color?, color: Color?, detail: string? }?, -- of `process-read`: the status that a program of its panes tells of its session, of OSC 21337, its active pane's or another's: a short text, as "Working", 256 bytes at most, the color of its dot, its text's color and a line of what it does, 1024 bytes at most, each none until the program tells it
+    pinned: boolean, -- pinned at its window's start, after the tabs pinned before it
+    group: GroupId?, -- the group that it is in
+}
+
+-- A group of a window's tabs, as a read of its groups gives it: its tabs next to one another, of no pinned tab.
+type GroupInfo = {
+    id: GroupId,
+    window: WindowId,
+    name: string, -- empty for none, 256 characters at most
+    color: Color?, -- an RGB one
+    folded: boolean, -- its tabs hidden behind its name in the bar
+    tabs: { TabId }, -- in their order, one at least
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the
@@ -472,12 +486,14 @@ type ImageSpec = {
 -- of one that the host keeps.
 type Image = { png: string, width: number, height: number, scale: number, id: number? }
 
--- A decoration's look: an underline, of its own color or the text's, a background, and the pointing hand over its cells.
+-- A decoration's look: an underline, of its own color or the text's, a background, the pointing hand over its cells,
+-- and a label over its first cells.
 type DecorationLook = {
     underline: ("single" | "double" | "curly" | "dotted" | "dashed")?,
     underline_color: { number }?, -- red, green, blue
     background: { number }?,
     pointing: boolean?,
+    label: string?, -- drawn over its first cells in place of their text, as a hint's letters, of the theme's colors for labels: one to three ASCII letters and digits
 }
 
 -- The workspace's changes, as its operations record them; an index is a
@@ -500,6 +516,9 @@ type Event =
     -- A pane's header changed: its program's title, or, of none, its folder and program as output comes; to a plugin
     -- without `process-read`, which reads no folder nor program, as its program's title changes alone.
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
+    -- A group of tabs was made, or changed: its name, its color, its fold or its tabs, or it went, taken apart or of no
+    -- tab left; its window, or the one that it was in.
+    | { kind: "group-changed", group: GroupId, window: WindowId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
     -- A window took the keyboard's focus, or lost it, as a click goes to another app or another window; not as a question of
@@ -567,6 +586,8 @@ type Event =
     | { kind: "config-changed" }
     -- A timer of the plugin's fired, to it alone, once however many times it fired since the plugin last heard of it.
     | { kind: "timer", id: number }
+    -- The modifier that the plugin watches, of `watch_double_tap`, was pressed and let go of alone twice, to it alone.
+    | { kind: "double-tapped", modifier: "ctrl" | "alt" | "cmd" | "shift" }
     -- An event that a plugin emitted, of its namespace; a value nests 64 levels at most.
     | { kind: "custom", name: string, schema: string, value: any }
 
@@ -785,7 +806,8 @@ type Cx = {
     -- folder, where a plugin that shows something once in a while would show it at every start.
     keeps_state: () -> (boolean?, Error?),
     -- The AI agents that run in the panes, of every window, in the windows', tabs' and panes' order, of
-    -- `process-read`: each one's pane, tab, window, program's name, state, message while it waits, and `since`, how
+    -- `process-read`: each one's pane, tab, window, program's name, state, message while it waits, what it asks for
+    -- while it waits, `kind`, of "permission", "question" or "auth", where its program tells it, and `since`, how
     -- long it has been in its state, in milliseconds.
     agents: () -> ({ AgentInfo }?, Error?),
 
@@ -797,6 +819,10 @@ type Cx = {
     -- the workspace's events.
     windows: () -> ({ WindowInfo }?, Error?),
     tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
+    -- A window's tabs in the order of their use, the one that showed last first, as Control-Tab steps through them.
+    recent_tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
+    -- A window's groups of tabs, in the order of their tabs.
+    groups: (window: WindowId) -> ({ GroupInfo }?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
     -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane
@@ -806,12 +832,31 @@ type Cx = {
     -- A new pane on `side` of `pane`'s part, whose program starts as a new pane's beside it: its id.
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
     -- Closes a tab, or a pane; with `ask`, once it is confirmed while a program other than a shell runs there,
-    -- as the host asks for a window.
-    close_tab: (tab: TabId, ask: boolean?) -> (boolean, Error?),
+    -- as the host asks for a window. Of `keep` seconds, a day at most, the host keeps the tab for them, its
+    -- programs running, 16 tabs at most, the oldest closing for good past them; but a window's last tab and a tab
+    -- whose close was confirmed. `reopen_tab` gives back the tab closed last that the host keeps, at its place in
+    -- its window, or in `window` once its own closed, which shows it; nothing of none kept.
+    close_tab: (tab: TabId, ask: boolean?, keep: number?) -> (boolean, Error?),
+    reopen_tab: (window: WindowId) -> (boolean, Error?),
     close_pane: (pane: PaneId, ask: boolean?) -> (boolean, Error?),
     -- A title or a color of a tab's own, in place of its program's; none gives the program's back.
     set_tab_title: (tab: TabId, title: string?) -> (boolean, Error?),
     set_tab_color: (tab: TabId, color: Color?) -> (boolean, Error?),
+    -- Pins a tab, which goes to its window's start, after the tabs pinned before it; or unpins it, which goes right
+    -- after them.
+    set_tab_pinned: (tab: TabId, pinned: boolean) -> (boolean, Error?),
+    -- A group of tabs of one window, none pinned, of a name and a color, its tabs next to one another at the first's
+    -- place, each out of the group that it was in: its id, given at once. A tab put into a group goes to the end of
+    -- its tabs; a tab taken out goes right after them, and a group left of none goes. A folded group hides its tabs
+    -- behind its name in the bar; showing one of its tabs unfolds it. `ungroup` takes a group apart, its tabs staying
+    -- where they are.
+    new_group: (tabs: { TabId }, name: string?, color: Color?) -> (GroupId?, Error?),
+    add_to_group: (tab: TabId, group: GroupId) -> (boolean, Error?),
+    remove_from_group: (tab: TabId) -> (boolean, Error?),
+    rename_group: (group: GroupId, name: string) -> (boolean, Error?),
+    set_group_color: (group: GroupId, color: Color?) -> (boolean, Error?),
+    fold_group: (group: GroupId, folded: boolean) -> (boolean, Error?),
+    ungroup: (group: GroupId) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
@@ -1095,6 +1140,11 @@ type Cx = {
     -- neither; one that is not there stays so.
     start_timer: (delay: number, repeats: boolean) -> (number?, Error?),
     cancel_timer: (timer: number) -> (boolean, Error?),
+    -- Require `global-hotkey`: hears the double tap of a modifier from any app, in place of the one before, or of none
+    -- for nil: `double-tapped` comes to the plugin alone as the modifier is pressed and let go of alone twice within
+    -- the system's double-click interval; it ends as the plugin stops. macOS asks to allow Lokyr in Input Monitoring the
+    -- first time, which Lokyr tells; Lokyr reads the modifiers alone.
+    watch_double_tap: (modifier: ("ctrl" | "alt" | "cmd" | "shift")?) -> (boolean, Error?),
 }
 
 -- What a plugin's entry module returns.
@@ -1152,14 +1202,14 @@ type Plugin = {
 | `process-spawn` | Starting processes; refused before 1.0.0, with a notice | Very high |
 | `net:<host>` | HTTP requests to the listed hosts, whatever their case; refused before 1.0.0, with a notice | High |
 | `fs-read:<path>`, `fs-write:<path>` | Access to the listed paths and to the paths under them, of whole components and no `..` | High |
-| `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, and quick windows, which slide in over every app's | Medium |
+| `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, a modifier's double tap from any app, `watch_double_tap`, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
-| `process-read` | Seeing the panes' processes: their command lines and working directories | Medium: command lines can hold passwords |
-| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
+| `process-read` | Seeing the panes' processes: their command lines and working directories, and what their programs tell of their state, as an agent's and a session's status | Medium: command lines can hold passwords |
+| `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |
-| `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
+| `decorate` | Drawing over a pane: decorations and their labels, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
 | `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; a theme copied into the themes folder, `copy_theme`, a new one there, `new_theme`, or an `.itermcolors` one there converted, `convert_theme`, each once its question is answered, and a theme's colors there written, `set_theme_value`, or shown before they are, `preview_theme_value`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |

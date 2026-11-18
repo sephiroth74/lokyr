@@ -11,7 +11,7 @@
       "maxLength": 64,
       "default": "asdfghjklqwertyuiopzxcvbnm",
       "x-platforms": ["macos"],
-      "x-since": "next",
+      "x-since": "1.3",
       "x-guide": "The letters of the hints' labels, in the order that they take them: the first letters label the hints nearest the cursor, one letter each, and the hints past them take two.\n\n| Values | Default |\n|---|---|\n| lowercase letters and digits, each once, 2 at least | `\"asdfghjklqwertyuiopzxcvbnm\"` |\n\n- The home row's first, by default, so that the nearest hints are a key away. A capital, as Shift types it, copies the hint whatever its action.\n- A value of another character, or of a letter twice, is told in a notice, and the hints keep the default.\n- It applies as you save the file, to the next hints.",
       "x-example": "\"asdfghjklqwertyuiopzxcvbnm\"",
       "x-example-comment": "the letters of the hints' labels, nearest first"
@@ -39,7 +39,7 @@
       },
       "default": {},
       "x-platforms": ["macos"],
-      "x-since": "next",
+      "x-since": "1.3",
       "x-docs": "links.md#add-your-own-patterns",
       "x-guide": "Patterns of your own that View › Show Hints labels, beside the URLs, the paths, git's hashes and the IP addresses that it finds by itself, such as your issue tracker's ticket numbers, each opening a page of its own.\n\n| Values | Default |\n|---|---|\n| tables of a `pattern` and a `url` | none |\n\n```toml\n# A ticket number, such as PROJ-1234, opens the ticket's page.\n[plugins.links.hints.tickets]\npattern = 'PROJ-\\d+'\nurl = \"https://jira.example.com/browse/$0\"\n```\n\n- Each pattern is a table under `[plugins.links.hints]`, named as you like, `tickets` above: the name shows in the notices about it, and of two patterns that match the same text, the one whose name comes first wins, capitals before lowercase letters.\n- `pattern` is a regular expression, case-sensitive unless it starts with `(?i)`. Between single quotes, TOML keeps its backslashes as they are; between double quotes, double each one: `\"PROJ-\\\\d+\"`.\n- `url` is what picking the hint opens: `$0` stands for the whole text that the pattern matched, `$1` to `$9` for the parts of the pattern between parentheses, and `$$` for a `$`. It opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`; a `url` that starts with another scheme, such as `vscode:`, is left out, and a notice reports it. Without a `url`, picking the hint copies its text.\n- A pattern that doesn't read is left out, and a notice reports why. A match of your patterns comes before what the hints find by themselves.\n- The settings window adds, changes, renames and removes them too, each a table of its own in the file, the rest of the file and its comments kept.\n- It applies as you save the file, to the next hints. [Links](links.md#add-your-own-patterns) shows more examples.",
       "x-example": "{ tickets = { pattern = 'PROJ-\\d+', url = \"https://jira.example.com/browse/$0\" } }",

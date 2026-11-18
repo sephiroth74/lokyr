@@ -68,7 +68,7 @@ OSC 777 ; notify ; title ; body ST
 
 ## OSC 99, a notification in parts
 
-<sub>Platforms: macOS · not released yet · [Specification](https://sw.kovidgoyal.net/kitty/desktop-notifications/)</sub>
+<sub>Platforms: macOS · Since 1.3 · [Specification](https://sw.kovidgoyal.net/kitty/desktop-notifications/)</sub>
 
 ```text
 OSC 99 ; metadata ; payload ST

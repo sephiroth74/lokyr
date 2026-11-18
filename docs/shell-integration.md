@@ -28,7 +28,7 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
 - **Hear when a long command ends**: a notification lets you know when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
 - **New tabs in the same folder**: a new tab or a split starts in the folder that its pane's shell reported last, as [`[window] new-directory`](CONFIGURATION.md#new-directory) says.
-- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Delete or Forward Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane, in zsh, in bash, in fish 3 and in fish 4.1 or later. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
+- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Delete or Forward Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane, in zsh, in bash, in fish 3 and in fish 4.1 or later. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · Since 1.3
 - **Tabs that know what runs**: when a command starts, its tab's title and marks follow the program that it runs. Lokyr looks for the program from the command's start until 4 seconds later, and again when the program prints something.
 
 ## Turn it off
@@ -90,8 +90,8 @@ At each prompt, after your own prompt commands run and before the shell draws th
 - **macOS's `/bin/bash`** gets no integration unless you add it by hand.
 - **Remote shells** over `ssh` get no integration: their commands get no marks.
 - **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks.
-- **A click in the command line** moves nothing in a remote shell over `ssh`, as `ssh` is the program in front, nor in a bash older than 4.4 with a DEBUG trap of its own. A program that a shell runs, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone. · not released yet
-- **fish 4.0** reports its prompts without saying that it takes clicks, so a click in its command line moves nothing. fish 3, with the integration, and fish 4.1 and later take them. · not released yet
+- **A click in the command line** moves nothing in a remote shell over `ssh`, as `ssh` is the program in front, nor in a bash older than 4.4 with a DEBUG trap of its own. A program that a shell runs, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone. · Since 1.3
+- **fish 4.0** reports its prompts without saying that it takes clicks, so a click in its command line moves nothing. fish 3, with the integration, and fish 4.1 and later take them. · Since 1.3
 - **A program that takes the whole screen**, such as an editor, shows no prompts and gets no marks while it runs.
 
 ## Troubleshooting
@@ -120,7 +120,7 @@ You should see `1`. In fish, `echo $version` should print 4 or later, or `functi
 
 ### A click in the command line doesn't move the cursor
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 **Why**: [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) is `false`, the shell has no integration, the program in front is not a shell, such as `ssh`, the shell is fish 4.0, or a bash older than 4.4 has a DEBUG trap of its own.
 
@@ -180,10 +180,10 @@ lokyr_report_folder() {
 
 Other options of `A`, and the right prompt:
 
-- **`cl=line`** for a line editor that moves its cursor with the left and right arrows within the line, so that a click in the command line moves the cursor. · not released yet
-- **`cl=m`** for a line editor that moves across the lines of a command of several lines with the arrows; Lokyr then counts each line's end as one arrow. · not released yet
-- **`click_events=1`** hands Lokyr's clicks in the command line to the shell itself, in the mouse's SGR encoding, at their row on the screen; `click_events=2` counts the row from the row of the prompt's `A`, as the [click events' specification](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) describes. · not released yet
-- **A right prompt**, such as zsh's `RPROMPT`, starts with `OSC 133 ; P ; k=r` and ends with `B`, so that its text is no part of the command line that a click counts. · not released yet
+- **`cl=line`** for a line editor that moves its cursor with the left and right arrows within the line, so that a click in the command line moves the cursor. · Since 1.3
+- **`cl=m`** for a line editor that moves across the lines of a command of several lines with the arrows; Lokyr then counts each line's end as one arrow. · Since 1.3
+- **`click_events=1`** hands Lokyr's clicks in the command line to the shell itself, in the mouse's SGR encoding, at their row on the screen; `click_events=2` counts the row from the row of the prompt's `A`, as the [click events' specification](https://sw.kovidgoyal.net/kitty/shell-integration/#notes-for-shell-developers) describes. · Since 1.3
+- **A right prompt**, such as zsh's `RPROMPT`, starts with `OSC 133 ; P ; k=r` and ends with `B`, so that its text is no part of the command line that a click counts. · Since 1.3
 
 ## See also
 

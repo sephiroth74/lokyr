@@ -8,11 +8,13 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-18
+
 ### Added
 
 - The settings link the documentation's page of a key's topic beside its More info, such as shell integration's, which tells how to add it by hand to macOS's own bash or to a shell that you start from another one.
 - A program that tells its status of OSC 7501, the Program Status Protocol, as Claude Code and Codex do, shows it exactly on its tab, whether `[agents] programs` lists it or not: at work, of its progress in the tab's ring; waiting for you, of what it asks for, a permission, an answer or a login, and of its message in the tab's tooltip; done, or failed of a red mark, until you look at its tab or type into its pane; idle, of no mark. Its output, its quiet and its bell no longer guess its state while it tells it, until it leaves the foreground; Lokyr answers the protocol's query, `OSC 7501 ; ?`, as such programs ask before they tell anything.
-- The plugin API reads what an agent that waits asks for, the `kind` of each agent of `cx.agents`, of a program that tells it.
+- The plugin API 0.1.5 reads what an agent that waits asks for, the `kind` of each agent of `cx.agents`, of a program that tells it.
 - A program's status of its session, as OSC 21337 tells it and Codex sends it: its tab shows a dot of its color, unless an agent's mark, and its text and detail in its tooltip; it goes as the program exits.
 - Desktop notifications of OSC 99, as programs send them: their title and body, in parts or in base64, shown once their last part comes, as those of OSC 9 and 777; Lokyr answers the protocol's query, as programs ask before they send one. Their icons and buttons are not shown.
 - The plugin API reads the status that a program tells of its session, `status` of a tab, of its text, its colors and its detail.
@@ -30,7 +32,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The plugin API hears the double tap of a modifier from any app, `cx.watch_double_tap`, of `global-hotkey`, and its event `double-tapped`, to the plugin alone.
 - Press ⌘U, or choose View › Use Transparency, to show a translucent window opaque while you read, and again to see through it once more. Each window keeps its own choice, and your config's opacity and blur stay as they are; changing them in the config shows them in every window.
 - Reopen a tab you just closed: Shell › Reopen Closed Tab, ⇧⌘T, brings back the tab you closed last, at its place, as you left it. For 10 seconds after you close a tab, its programs keep running and their output is read; then it closes for good. Set the time with `[plugins.tabs] reopen-seconds`, or `0` to close tabs at once. A tab whose program ends, the last tab of a window and a window you close don't wait, nor a tab you close while a program other than a shell runs there, as closing it ends the program. At most 16 closed tabs wait; closing another closes the oldest for good.
-- The plugin API keeps a closed tab to give back, `keep` of `cx.close_tab_kept`, 16 at most, and gives it back, `cx.reopen_tab`.
+- The plugin API keeps a closed tab to give back, `keep` of `cx.close_tab`, 16 at most, and gives it back, `cx.reopen_tab`.
 - The text fields have a context menu of Cut, Copy, Paste and Select All, each dimmed where it does nothing, and take macOS's Control-T, which swaps the characters around the caret, Control-P and Control-N, and Control-Y, which types back what Control-K took.
 
 ### Changed
@@ -312,7 +314,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - The first numbered version, not distributed: the macOS app, a window of one pane, of Lokyr's own terminal core and Metal renderer, configured by `~/.config/lokyr/config.toml`.
 
-[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/sephiroth74/lokyr/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/sephiroth74/lokyr/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/sephiroth74/lokyr/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/sephiroth74/lokyr/compare/v0.9.0...v1.0.0

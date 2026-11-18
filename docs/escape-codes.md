@@ -109,11 +109,11 @@ xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.h
 | OSC 6 ; 1 | The tab's color | 0.5.1 | [Its escape codes](https://iterm2.com/documentation-escape-codes.html) |
 | [OSC 9 ; 4](escape-codes/progress-and-status.md#osc-94-progress) | A program's progress, on its tab | 0.5.1 | [Progress bar sequences](https://learn.microsoft.com/en-us/windows/terminal/tutorials/progress-bar-sequences) |
 | OSC 133 | Semantic prompts: where each prompt, command and output starts | 0.7 | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
-| OSC 133 `cl=`, `click_events=` and `P;k=r` | A click in the command line, and a right prompt's mark | · not released yet | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
+| OSC 133 `cl=`, `click_events=` and `P;k=r` | A click in the command line, and a right prompt's mark | 1.3 | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
 | OSC 1337 `File=` | Inline images, whole or in parts (`MultipartFile=`, `FilePart=`, `FileEnd`) | 1.0 | [Inline images](https://iterm2.com/documentation-images.html) |
-| [OSC 99](escape-codes/notifications.md#osc-99-a-notification-in-parts) | Desktop notifications with a title and a body, in parts, and the query of what the terminal supports | · not released yet | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
-| [OSC 7501](escape-codes/progress-and-status.md#osc-7501-a-programs-status) | A program's status, such as working, waiting or done | · not released yet | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
-| [OSC 21337](escape-codes/progress-and-status.md#osc-21337-a-sessions-status) | A session's status, shown on its tab | · not released yet | [Session status](https://iterm2.com/documentation-session-status.html) |
+| [OSC 99](escape-codes/notifications.md#osc-99-a-notification-in-parts) | Desktop notifications with a title and a body, in parts, and the query of what the terminal supports | 1.3 | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
+| [OSC 7501](escape-codes/progress-and-status.md#osc-7501-a-programs-status) | A program's status, such as working, waiting or done | 1.3 | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
+| [OSC 21337](escape-codes/progress-and-status.md#osc-21337-a-sessions-status) | A session's status, shown on its tab | 1.3 | [Session status](https://iterm2.com/documentation-session-status.html) |
 
 ### The keyboard and graphics
 

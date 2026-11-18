@@ -43,7 +43,7 @@ The bar fills to 60% in red, then goes.
 
 ## OSC 7501, a program's status
 
-<sub>Platforms: macOS · not released yet · [Specification](https://control-codes.page/proposals/osc-7501/), revision 0.4</sub>
+<sub>Platforms: macOS · Since 1.3 · [Specification](https://control-codes.page/proposals/osc-7501/), revision 0.4</sub>
 
 ```text
 OSC 7501 ; key=value : key=value … ST
@@ -98,7 +98,7 @@ You should see:
 
 ## OSC 21337, a session's status
 
-<sub>Platforms: macOS · not released yet · [Specification](https://iterm2.com/documentation-session-status.html)</sub>
+<sub>Platforms: macOS · Since 1.3 · [Specification](https://iterm2.com/documentation-session-status.html)</sub>
 
 ```text
 OSC 21337 ; key=value ; key=value … ST

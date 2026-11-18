@@ -20,8 +20,8 @@ Hold ⌘ and move the pointer over the address: it's underlined, and the pointer
 - **A path with a line**, such as `src/main.rs:42`, opens at that line in your editor.
 - **The context menu** opens a link, copies its address, or opens a window or a tab in its folder.
 - **A question before opening**, which you can turn off for URLs, for files, or for both.
-- **Hints**: ⇧⌘E labels every URL, path, git hash and IP address on the screen, to open or copy one from the keyboard. · not released yet
-- **Your own patterns**, such as your issue tracker's ticket numbers, which hints label and open. · not released yet
+- **Hints**: ⇧⌘E labels every URL, path, git hash and IP address on the screen, to open or copy one from the keyboard. · Since 1.3
+- **Your own patterns**, such as your issue tracker's ticket numbers, which hints label and open. · Since 1.3
 
 ## Open a link with ⌘-click
 
@@ -102,7 +102,7 @@ An item that doesn't apply is dimmed: a URL of the web has no folder. For a sele
 
 ## Label links with hints
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 Press ⇧⌘E, or choose View › Show Hints. Every URL, every path that exists, with or without its line, every git hash and every IP address on the screen is underlined, and gets a label of one or two letters over its first letters. The labels nearest the cursor are a single letter. Type a label to pick its hint:
 
@@ -124,7 +124,7 @@ The four get a label on the output's line, and on the command line above it too.
 
 ## Add your own patterns
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 Besides URLs, paths, hashes and addresses, the hints can label text of your own, such as your issue tracker's ticket numbers, and open a page for each. Each pattern is a table of the config, under `[plugins.links.hints]`, named as you like:
 
@@ -193,15 +193,15 @@ search-engine = "google"
 
 [`[links]`](CONFIGURATION.md#links) tells each key, and [`[plugins.links]`](CONFIGURATION.md#pluginslinks) the hints' [`alphabet`](CONFIGURATION.md#alphabet) and [`hints`](CONFIGURATION.md#hints).
 
-In the settings window, which Lokyr › Open Settings Window opens, the Links section holds these keys, and under Hints the hints' keys, your patterns among them. · not released yet
+In the settings window, which Lokyr › Open Settings Window opens, the Links section holds these keys, and under Hints the hints' keys, your patterns among them. · Since 1.3
 
 ## Commands and keys
 
 | Keys | In the config | What they do |
 |---|---|---|
 | ⌘-click | `cmd+click` | Open the link under the pointer |
-| ⇧⌘E | `cmd+shift+e` | Show the hints · not released yet |
-| Tab, ⇧Tab | `tab`, `shift+tab` | Change what a pick does, while the hints show · not released yet |
+| ⇧⌘E | `cmd+shift+e` | Show the hints · Since 1.3 |
+| Tab, ⇧Tab | `tab`, `shift+tab` | Change what a pick does, while the hints show · Since 1.3 |
 
 [The `links` plugin](plugins/links.md#commands) lists its commands, those of no keys too, such as `links.copy`, which you can bind in [`[keys]`](CONFIGURATION.md#bindings).
 
@@ -218,8 +218,8 @@ Hints read the screen's lines once, when you press ⇧⌘E, and cost nothing whi
 - **macOS's own `ls` prints no links**: GNU's does, with `--hyperlink`, such as Homebrew's `gls`.
 - **A URL that a program cuts with its own line breaks** opens only the part you click. Lokyr joins only the rows that a line wraps over.
 - **A path on another machine**, such as one that a program prints over `ssh`, doesn't open: Lokyr looks for it on this Mac.
-- **Hints label the screen**, not the scrollback above it: scroll to bring a link into view first. · not released yet
-- **Patterns open only** `http`, `https`, `mailto` and `file` URLs and paths, not other schemes such as `vscode:`. · not released yet
+- **Hints label the screen**, not the scrollback above it: scroll to bring a link into view first. · Since 1.3
+- **Patterns open only** `http`, `https`, `mailto` and `file` URLs and paths, not other schemes such as `vscode:`. · Since 1.3
 
 ## Troubleshooting
 
@@ -246,7 +246,7 @@ editor = "vscode"
 
 ### A pattern of your own gets no labels
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 **Why**: the pattern doesn't read, its `url` starts with a scheme that doesn't open, or its backslashes were lost between double quotes. A notice reports the first two when you save the config.
 

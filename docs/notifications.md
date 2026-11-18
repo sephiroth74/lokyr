@@ -55,7 +55,7 @@ mark-title = true      # 🔔 before the title of a window in the background
 
 A program sends a notification by printing an escape code, OSC 9 or OSC 777, which Lokyr reads and never shows. [Notification codes](escape-codes/notifications.md) describes each, with what to print. Lokyr hands the notification to macOS, which shows it as it shows every app's.
 
-A program can also send OSC 99, a notification whose title and body come in parts. · not released yet
+A program can also send OSC 99, a notification whose title and body come in parts. · Since 1.3
 
 ## Limits
 

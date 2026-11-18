@@ -94,6 +94,11 @@ font.reset	cmd+0
 font.smaller
 font.smaller	cmd+-		
 links.copy
+links.hints
+links.hints	cmd+shift+e		
+links.hints-action
+links.hints-action	shift+tab	delta=-1	links.focused
+links.hints-action	tab	delta=1	links.focused
 links.new-tab
 links.new-window
 links.open
@@ -165,9 +170,11 @@ splits.split	cmd+shift+d	direction="down"
 splits.swap
 splits.zoom-toggle
 splits.zoom-toggle	cmd+shift+enter		
+tabs.add-to-group
 tabs.close
 tabs.close	cmd+w		
 tabs.detach
+tabs.fold-group
 tabs.goto
 tabs.goto	cmd+1	index=1	
 tabs.goto	cmd+2	index=2	
@@ -183,12 +190,24 @@ tabs.move	cmd+shift+left	delta=-1
 tabs.move	cmd+shift+right	delta=1	
 tabs.new
 tabs.new	cmd+t		
+tabs.new-group
 tabs.next
 tabs.next	cmd+shift+]		
 tabs.prev
 tabs.prev	cmd+shift+[		
+tabs.remove-from-group
 tabs.rename
+tabs.rename-group
+tabs.reopen
+tabs.reopen	cmd+shift+t		
 tabs.set-color
+tabs.set-group-color
+tabs.switch
+tabs.switch	ctrl+tab		
+tabs.switch-back
+tabs.switch-back	ctrl+shift+tab		
+tabs.toggle-pin
+tabs.ungroup
 window.close
 window.close	cmd+shift+w		
 window.goto
@@ -214,4 +233,6 @@ window.set-title	cmd+shift+i
 window.toggle-cursor-guide
 window.toggle-cursor-guide	cmd+alt+;		
 window.toggle-float-on-top
+window.toggle-opacity
+window.toggle-opacity	cmd+u		
 window.toggle-quick-terminal

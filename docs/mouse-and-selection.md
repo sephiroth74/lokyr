@@ -19,7 +19,7 @@ Double-click the word `usr` in the listing, press ⌘C, then ⌘V: the word past
 - **Selection** by dragging, a word by a double click, a line by a triple click, and a rectangle with ⌥.
 - **Copy** with ⌘C, or as you let go of the button, as [`copy-on-select`](CONFIGURATION.md#copy-on-select) says.
 - **⌘-click** on a link, a URL or a path opens it, a path with a line at that line in your editor.
-- **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md). · not released yet
+- **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md). · Since 1.3
 - **A context menu**, from a right click or a ⌃-click, to open a link or a man page, look up or search a word, and copy, paste or select.
 - **Scrolling** through the scrollback with the wheel or the trackpad.
 - **Programs that take the mouse**, such as vim or htop, get your clicks, and ⇧ keeps them for the selection.
@@ -62,7 +62,7 @@ Hold ⌘ and move the pointer over a link, a URL or a path: Lokyr underlines it 
 
 ## Click in the command line
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 With [shell integration](shell-integration.md), a click in the command line moves the shell's cursor there, like in a text field. Select part of the command line and press Delete to remove it, or type to replace it. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off.
 
@@ -140,7 +140,7 @@ focus-follows-mouse = false  # true gives the keyboard to the pane under the poi
 
 ### A click in the command line doesn't move the cursor
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 **Why**: the shell has no integration, the program in front isn't a shell, or `click-to-move` is off.
 

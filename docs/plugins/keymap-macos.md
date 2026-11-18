@@ -14,15 +14,15 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⌘C, ⌘V, ⌘A, ⌘K | `pane.copy`, `pane.paste`, `pane.select-all`, `pane.clear` |
 | ⌘=, ⌘+, ⌘-, ⌘0 | `font.bigger`, `font.smaller`, `font.reset` |
 | ⌥⌘; | `window.toggle-cursor-guide`: the band across the cursor's row |
-| ⌘U | `window.toggle-opacity`: a translucent window shown opaque, and back · not released yet |
-| ⇧⌘E, and Tab and ⇧Tab in the hints | `links.hints`, `links.hints-action`: the hints of what the pane shows, and what a pick does · not released yet |
+| ⌘U | `window.toggle-opacity`: a translucent window shown opaque, and back · Since 1.3 |
+| ⇧⌘E, and Tab and ⇧Tab in the hints | `links.hints`, `links.hints-action`: the hints of what the pane shows, and what a pick does · Since 1.3 |
 | ⇧⌘↑, ⇧⌘↓, ⌘Page Up, ⌘Page Down, ⌘Home, ⌘End | scrolling, by a line, a page, or to the top and the bottom |
 | ⌘↑, ⌘↓ | the previous prompt and the next, of the commands that the shell marks |
 | ⌘-click | `links.open` |
 | ⌘F, ⌘G, ⇧⌘G | `search.open`, `search.next`, `search.previous` |
 | ⇧⌘P, and ↑ and ↓ in the palette | `command-palette.open`, `command-palette.move` |
 | ⌘T, ⌘W, ⇧⌘], ⇧⌘[, ⌃Tab, ⌃⇧Tab, ⌘1 to ⌘9, ⇧⌘← and ⇧⌘→ | the tabs: new, close, next, previous, by number, move |
-| ⇧⌘T | `tabs.reopen`: the tab you closed last · not released yet |
+| ⇧⌘T | `tabs.reopen`: the tab you closed last · Since 1.3 |
 | ⌘D, ⇧⌘D, ⌥⌘ and an arrow, ⌘], ⌘[, ⌃⌘ and an arrow, ⇧⌘Return | the splits: split right or down, the pane in a direction, the next and the previous pane, resize, zoom |
 
 The [commands' reference](../commands.md) lists every command with its default keys, and the [keys' table in the configuration guide](../CONFIGURATION.md#bindings) has every binding, with what each command does.

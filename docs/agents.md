@@ -21,7 +21,7 @@ A tab of several agents shows the most urgent: one that waits before one at work
 
 ## Programs that tell their status
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.3</sub>
 
 A program can tell its state exactly, of OSC 7501, the [Program Status Protocol](https://control-codes.page/proposals/osc-7501/), as Claude Code and Codex do once Lokyr answers the protocol's query. Lokyr then shows what the program tells, whether `[agents] programs` lists it or not, and guesses nothing of its output, its quiet or its bell:
 

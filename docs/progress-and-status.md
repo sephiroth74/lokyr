@@ -21,7 +21,7 @@ A thin bar across the window's top fills to the end in two and a half seconds, t
 - **A single tab's title**: while the window has one tab, which hides the tab bar, a ring beside the title in the titlebar shows the progress.
 - **A spinner** on the tab of a program that prints on its own, even when it reports no progress.
 - **An AI agent's state**: an agent at work, waiting for you, done or failed, which [AI agents](agents.md) describes, and its progress in the ring when it reports one.
-- **A session's status**: a dot in the color that a program gives its session's status, and the status's text in the tab's tooltip. · not released yet
+- **A session's status**: a dot in the color that a program gives its session's status, and the status's text in the tab's tooltip. · Since 1.3
 
 ## Get the progress of Gradle, Claude Code and cargo
 
@@ -48,14 +48,14 @@ The bar goes from every window. The tabs still show the progress round their out
 
 - [`[plugins.progress] enabled`](plugins/progress.md#turning-it-off) turns the bar across the window's top off.
 - [`[agents] programs`](CONFIGURATION.md#programs) lists the AI agents' programs; an empty list turns the agents' marks off.
-- With an empty `programs`, the statuses that programs report don't show either. · not released yet
+- With an empty `programs`, the statuses that programs report don't show either. · Since 1.3
 - [`[plugins.tabs] hide-when-single`](CONFIGURATION.md#hide-when-single) chooses whether a single tab hides the bar, its progress then in the titlebar.
 
 ## How it works
 
 A program prints escape codes that Lokyr reads and never shows: OSC 9;4 for its progress. [Progress and status codes](escape-codes/progress-and-status.md) describes each, with what to print to send it.
 
-A program can also report its status with OSC 7501, and its session's status with OSC 21337. · not released yet
+A program can also report its status with OSC 7501, and its session's status with OSC 21337. · Since 1.3
 
 A program that changes its progress many times a second costs Lokyr no frames: the window server moves the bar and the ring.
 

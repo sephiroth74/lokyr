@@ -8,7 +8,7 @@ A ⌘-click on text opens what the text points to: the link that the program gav
 
 - **⌘-click** opens the link, the URL or the path under the pointer, and a path with its line, such as `src/main.rs:42`, at that line in your editor, as [Open a link with ⌘-click](../links.md#open-a-link-with--click) and [Open a path at its line](../links.md#open-a-path-at-its-line-in-your-editor) show. While you hold ⌘, the link under the pointer is underlined and the pointer is a pointing hand.
 - **The pane's context menu** opens the link, copies its address, or opens a window or a tab in its folder, as [Use the context menu](../links.md#use-the-context-menu) shows.
-- **Hints**, ⇧⌘E, label every URL, path, git hash and IP address on the screen, for a letter or two to open, copy, type or select it, as [Label links with hints](../links.md#label-links-with-hints) shows. Patterns of your own join them, as [Add your own patterns](../links.md#add-your-own-patterns) shows. · not released yet
+- **Hints**, ⇧⌘E, label every URL, path, git hash and IP address on the screen, for a letter or two to open, copy, type or select it, as [Label links with hints](../links.md#label-links-with-hints) shows. Patterns of your own join them, as [Add your own patterns](../links.md#add-your-own-patterns) shows. · Since 1.3
 
 ## Commands
 
@@ -20,8 +20,8 @@ A ⌘-click on text opens what the text points to: the link that the program gav
 | `links.copy` | | Copies what `links.open` would open at the cell: the link, the URL, or the path from `/` |
 | `links.new-window` | | Opens a window whose shell starts in the folder of the path at the cell, or in the folder that holds its file |
 | `links.new-tab` | | Opens a tab, after the others, as `links.new-window` does a window |
-| `links.hints` | ⇧⌘E | Shows the hints of the pane, a pick doing its `action`: `"open"` by default, `"copy"`, `"type"` or `"select"` · not released yet |
-| `links.hints-action` | Tab, ⇧Tab while `links.focused` | Moves what a pick does by its `delta`, through open, copy, type and select · not released yet |
+| `links.hints` | ⇧⌘E | Shows the hints of the pane, a pick doing its `action`: `"open"` by default, `"copy"`, `"type"` or `"select"` · Since 1.3 |
+| `links.hints-action` | Tab, ⇧Tab while `links.focused` | Moves what a pick does by its `delta`, through open, copy, type and select · Since 1.3 |
 
 <!-- commands end -->
 

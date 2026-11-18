@@ -391,8 +391,14 @@ mod tests {
         let (made, marks) = released(rules, "1.3", Kind::of(Path::new(RULES)));
         assert_eq!(marks, 1);
         assert!(made.starts_with("# A hint's label · Since 1.3.\n"));
+        // The comment is the token's description, its mark or its release's
+        // with it, whichever the rules hold now.
         let token = lokyr_plugin_sdk::theme::rules::rule("hints.label.bg").unwrap();
-        assert!(token.description.contains(MARK), "{}", token.description);
+        assert!(
+            token.description.starts_with("A hint's label"),
+            "{}",
+            token.description
+        );
     }
 
     #[test]
