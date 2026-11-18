@@ -81,7 +81,9 @@ Lokyr can open the windows that were open when you quit it: each where it was, w
 restore-windows = "always"   # open the last windows again at every start
 ```
 
-Each pane starts a new shell, in the folder where its shell was: what the panes showed, and the programs that ran in them, don't come back. Pinned tabs come back pinned, and groups come back with their names, colors and folds. · not released yet
+Each pane starts a new shell, in the folder where its shell was: what the panes showed, and the programs that ran in them, don't come back.
+
+Pinned tabs come back pinned, and groups come back with their names, colors and folds. · not released yet
 
 **Try it**: set `restore-windows = "always"`, open a second tab with ⌘T, and run `cd /usr/share` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`.
 
@@ -121,7 +123,7 @@ Press Escape during a drag to put the tab back where it was.
 A tab shows the title that its program sets, such as vim or your prompt, or else its folder and the program that runs in it, such as `src — vim`. A title set by a program other than the shell goes when the shell is back in front, such as when `ssh` ends.
 
 - **Rename a tab**: double-click it, or choose Shell › Rename Tab…, and type its title. An empty title gives the tab its own back.
-- **Color a tab**: right-click it and choose a color under Color, or No Color. A program can color its tab too, with OSC 6;1; the color you choose goes before the program's.
+- **Color a tab**: right-click it and choose a color under Color, or No Color. A program can color its tab too, with [OSC 6;1](https://iterm2.com/documentation-escape-codes.html); the color you choose goes before the program's.
 - **Title the window**: Shell › Set Title…, ⇧⌘I, gives the window a title of your own, and an empty title gives it its own back.
 - **The window's size** ends its title, such as `120×30`, as [`title-size`](CONFIGURATION.md#title-size) says.
 
@@ -176,7 +178,7 @@ Right-click a tab, choose New Group with Tab, and type the group's name. The gro
 
 Down a column, a group is a row of its color's dot and its name.
 
-**Try it**: with three tabs, right-click the first, choose New Group with Tab and type `build`. Drag the second tab right after the first: both are in the group. Click the pill: the group folds.
+**Try it**: with three tabs, right-click the first, choose New Group with Tab and type `build`. Drag the third tab right after the first: both are in the group. Click the pill: the group folds.
 
 ## Choose where the bar goes
 

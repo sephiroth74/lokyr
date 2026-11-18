@@ -217,7 +217,15 @@ fn released(text: &str, since: &str, kind: Kind) -> (String, usize) {
     let mut at = 0;
     for found in &marks {
         made.push_str(&text[at..found.start]);
-        made.push_str(&mark);
+        // A mark that a table's cell holds alone, as a Since column's, is
+        // the version alone, as the other rows write theirs.
+        let line_start = text[..found.start].rfind('\n').map_or(0, |at| at + 1);
+        let line_end = text[found.end..]
+            .find('\n')
+            .map_or(text.len(), |at| found.end + at);
+        let alone = text[line_start..found.start].trim_end().ends_with('|')
+            && text[found.end..line_end].trim_start().starts_with('|');
+        made.push_str(if alone { since } else { &mark });
         at = found.end;
     }
     made.push_str(&text[at..]);
@@ -311,6 +319,21 @@ mod tests {
         assert_eq!(
             made,
             "Bind ``\"global:ctrl+`\"`` · Since 1.3, and `x-since`: `\"x-since\": \"next\"`\nA lone ` tick · Since 1.3\n"
+        );
+    }
+
+    #[test]
+    fn a_mark_that_a_table_s_cell_holds_alone_is_the_version_alone() {
+        let text = "| Code | What it does | Since |\n|---|---|---|\n| OSC 9 | Notifications | 0.2 |\n| OSC 99 | Notifications in parts | · not released yet |\n| OSC 7501 | A status · not released yet | |\n";
+        let (made, marks) = released(text, "1.3", Kind::Page);
+        assert_eq!(marks, 2, "{made}");
+        assert!(
+            made.contains("| OSC 99 | Notifications in parts | 1.3 |"),
+            "{made}"
+        );
+        assert!(
+            made.contains("| OSC 7501 | A status · Since 1.3 | |"),
+            "{made}"
         );
     }
 

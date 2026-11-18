@@ -2,7 +2,7 @@
 
 <sub>macOS · zsh, bash, fish · on by default · [`[terminal] shell-integration`](CONFIGURATION.md#shell-integration)</sub>
 
-Shell integration lets your shell report to Lokyr where each prompt starts, where your command starts and ends, whether it succeeded, and the folder it works in. With it, you can jump between your commands, see at a glance which ones failed, copy a command's output, and click in the command line to move the cursor. Lokyr turns it on for zsh, bash and fish without changing your files.
+Shell integration lets your shell report to Lokyr where each prompt starts, where your command starts and ends, whether it succeeded, and the folder it works in. With it, you can jump between your commands, see at a glance which ones failed, and copy a command's output. Lokyr turns it on for zsh, bash and fish without changing your files.
 
 ## Try it
 
@@ -28,7 +28,7 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
 - **Hear when a long command ends**: a notification lets you know when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
 - **New tabs in the same folder**: a new tab or a split starts in the folder that its pane's shell reported last, as [`[window] new-directory`](CONFIGURATION.md#new-directory) says.
-- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Backspace or Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane, in zsh, in bash, in fish 3 and in fish 4.1 or later. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
+- **Click in the command line** to move the shell's cursor there, like in a text field. Select part of the command line and press Delete or Forward Delete to remove it, or type to replace it. Both work while the shell is the program in front of the pane, in zsh, in bash, in fish 3 and in fish 4.1 or later. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
 - **Tabs that know what runs**: when a command starts, its tab's title and marks follow the program that it runs. Lokyr looks for the program from the command's start until 4 seconds later, and again when the program prints something.
 
 ## Turn it off
@@ -88,9 +88,9 @@ At each prompt, after your own prompt commands run and before the shell draws th
 ## Limits
 
 - **macOS's `/bin/bash`** gets no integration unless you add it by hand.
-- **Remote shells** over `ssh` get no integration: their commands get no marks, and a click in their command line moves nothing, as `ssh` is the program in front.
-- **A program that a shell runs**, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone.
-- **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks, and a click in its command line moves nothing.
+- **Remote shells** over `ssh` get no integration: their commands get no marks.
+- **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks.
+- **A click in the command line** moves nothing in a remote shell over `ssh`, as `ssh` is the program in front, nor in a bash older than 4.4 with a DEBUG trap of its own. A program that a shell runs, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone. · not released yet
 - **fish 4.0** reports its prompts without saying that it takes clicks, so a click in its command line moves nothing. fish 3, with the integration, and fish 4.1 and later take them. · not released yet
 - **A program that takes the whole screen**, such as an editor, shows no prompts and gets no marks while it runs.
 

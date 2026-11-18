@@ -120,7 +120,7 @@ Hints also find a URL right after a bracket, a quote or a `=`, such as in Markdo
 echo "https://lokyr.dev/docs/ /etc/hosts 10.0.0.1 3fa2b9c"
 ```
 
-Each of the four gets a label. Type the URL's label with Shift: the labels go, and `pbpaste` prints `https://lokyr.dev/docs/`.
+The four get a label on the output's line, and on the command line above it too. Type a label of the URL with Shift: the labels go, and `pbpaste` prints `https://lokyr.dev/docs/`.
 
 ## Add your own patterns
 

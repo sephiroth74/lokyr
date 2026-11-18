@@ -12,7 +12,7 @@ Run this command:
 for p in 20 40 60 80 100; do printf '\033]9;4;1;%d\033\\' "$p"; sleep 0.5; done; printf '\033]9;4;0\033\\'
 ```
 
-A thin bar across the window's top fills to the end in two and a half seconds, then goes. Open a second tab with ⌘T and run it again: the tab's outline fills too.
+A thin bar across the window's top fills to the end in two and a half seconds, then goes. Open a second tab with ⌘T (`cmd+t`) and run it again: the tab's outline fills too.
 
 ## What it gives you
 
@@ -21,7 +21,7 @@ A thin bar across the window's top fills to the end in two and a half seconds, t
 - **A single tab's title**: while the window has one tab, which hides the tab bar, a ring beside the title in the titlebar shows the progress.
 - **A spinner** on the tab of a program that prints on its own, even when it reports no progress.
 - **An AI agent's state**: an agent at work, waiting for you, done or failed, which [AI agents](agents.md) describes, and its progress in the ring when it reports one.
-- **A session's status**: a dot of the color that a program gives the status of its session, and the status's text in the tab's tooltip.
+- **A session's status**: a dot in the color that a program gives its session's status, and the status's text in the tab's tooltip. · not released yet
 
 ## Get the progress of Gradle, Claude Code and cargo
 
@@ -47,12 +47,15 @@ The bar goes from every window. The tabs still show the progress round their out
 ## Settings
 
 - [`[plugins.progress] enabled`](plugins/progress.md#turning-it-off) turns the bar across the window's top off.
-- [`[agents] programs`](CONFIGURATION.md#programs) lists the AI agents' programs; an empty list turns the agents' marks off, the reported statuses' among them.
+- [`[agents] programs`](CONFIGURATION.md#programs) lists the AI agents' programs; an empty list turns the agents' marks off.
+- With an empty `programs`, the statuses that programs report don't show either. · not released yet
 - [`[plugins.tabs] hide-when-single`](CONFIGURATION.md#hide-when-single) chooses whether a single tab hides the bar, its progress then in the titlebar.
 
 ## How it works
 
-A program prints escape codes that Lokyr reads and never shows: OSC 9;4 for its progress, OSC 7501 for its status, and OSC 21337 for its session's status. [Progress and status codes](escape-codes/progress-and-status.md) describes each, with what to print to send it.
+A program prints escape codes that Lokyr reads and never shows: OSC 9;4 for its progress. [Progress and status codes](escape-codes/progress-and-status.md) describes each, with what to print to send it.
+
+A program can also report its status with OSC 7501, and its session's status with OSC 21337. · not released yet
 
 A program that changes its progress many times a second costs Lokyr no frames: the window server moves the bar and the ring.
 

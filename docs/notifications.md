@@ -49,15 +49,17 @@ bounce = true          # the Dock's icon bounces while Lokyr is in the backgroun
 mark-title = true      # 🔔 before the title of a window in the background
 ```
 
-[The configuration guide](CONFIGURATION.md#notifications) tells each key's values.
+[The configuration guide](CONFIGURATION.md#notifications) lists each key's values.
 
 ## How it works
 
-A program sends a notification by printing an escape code, OSC 9, OSC 777 or OSC 99, which Lokyr reads and never shows. [Notification codes](escape-codes/notifications.md) describes each, with what to print. Lokyr hands the notification to macOS, which shows it as it shows every app's.
+A program sends a notification by printing an escape code, OSC 9 or OSC 777, which Lokyr reads and never shows. [Notification codes](escape-codes/notifications.md) describes each, with what to print. Lokyr hands the notification to macOS, which shows it as it shows every app's.
+
+A program can also send OSC 99, a notification whose title and body come in parts. · not released yet
 
 ## Limits
 
-- **No buttons, icons or sounds of a program's own**: Lokyr shows a notification's title and text.
+- **A program's own buttons, icons and sounds don't show**: Lokyr shows a notification's title and text.
 - **No notification while the window has the focus**, whichever kind it is.
 - **Focus modes**, such as Do Not Disturb, hold Lokyr's notifications as they hold every app's.
 

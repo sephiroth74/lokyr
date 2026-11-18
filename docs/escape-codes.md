@@ -58,7 +58,7 @@ The variables don't cross `ssh`, and a program started under `tmux` or `sudo` ma
 | `CSI ? u` | The keyboard's reporting flags | `CSI ? Ps u`, the flags in force |
 | `CSI ? 996 n` | The color scheme | `CSI ? 997 ; 1 n` for a dark theme, `CSI ? 997 ; 2 n` for a light one |
 | `OSC 11 ; ? ST` | The background color, and `10` the text's, `12` the cursor's | `OSC 11 ; rgb:rrrr/gggg/bbbb ST` |
-| `DCS + q Pt ST` | XTGETTCAP, a terminfo capability, its name in hexadecimal | `DCS 1 + r Pt = Pt ST`, the name and its value in hexadecimal, or `DCS 0 + r ST` for a name that Lokyr doesn't know |
+| `DCS + q Pt ST` | XTGETTCAP, a terminfo capability, its name in hexadecimal | `DCS 1 + r Pt = Pt ST`, the name and its value in hexadecimal; `DCS 1 + r Pt ST` for a capability that is true or false; `DCS 0 + r Pt ST` for a name that Lokyr doesn't know |
 
 Prefer a query for each feature, such as DECRQM for a mode, to a check of the name or the version: a feature's query keeps working as Lokyr and other terminals change.
 
@@ -82,7 +82,7 @@ xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.h
 |---|---|---|
 | SGR, the text's attributes | 0 to 9, 21 to 29, 30 to 37, 90 to 97, 38;5 and 38;2 (also with `:`), 39, 40 to 47, 100 to 107, 48, 49, 4:0 to 4:5 (the underline's styles), 53 and 55 (overline), 58 and 59 (the underline's color) | 0.2 |
 | ANSI modes | IRM (4), LNM (20); GATM, SRTM, VEM, HEM, PUM, FEAM, FETM, MATM, TTM, SATM, TSM and EBM reported as always reset | 0.2 |
-| DEC modes | 1 (DECCKM), 3 (DECCOLM), 4 (DECSCLM), 5 (DECSCNM), 6 (DECOM), 7 (DECAWM), 12 (the cursor's blink), 25 (DECTCEM), 40 (DECCOLM allowed), 41, 45 (reverse wrap), 1045 (extended reverse wrap), 47, 1047 and 1049 (the alternate screen), 1048, 66 (DECNKM), 67 (DECBKM), 69 (DECLRMM), 95 (DECNCSM), 1000, 1002, 1003, 1006 and 1016 (the mouse), 1004 (focus), 1007 (alternate scroll), 1036 (Meta sends ESC), 2004 (bracketed paste) | 0.2 |
+| DEC modes | 1 (DECCKM), 3 (DECCOLM), 4 (DECSCLM), 5 (DECSCNM), 6 (DECOM), 7 (DECAWM), 12 (the cursor's blink), 25 (DECTCEM), 40 (DECCOLM allowed), 41, 45 (reverse wrap), 1045 (extended reverse wrap), 47, 1047 and 1049 (the alternate screen), 1048, 66 (DECNKM), 67 (DECBKM), 69 (DECLRMM), 95 (DECNCSM), 9, 1000, 1002, 1003, 1006 and 1016 (the mouse), 1004 (focus), 1007 (alternate scroll), 1036 (Meta sends ESC), 2004 (bracketed paste) | 0.2 |
 | Synchronized output | Mode 2026, [its specification](https://gist.github.com/christianparpart/d8a62cc1ab659194337d73e399004036) | 0.2 |
 | Grapheme clusters | Mode 2027, [its specification](https://github.com/contour-terminal/terminal-unicode-core) | 0.2 |
 | The color scheme's reports | Mode 2031 and `CSI ? 996 n`, [their specification](https://contour-terminal.org/vt-extensions/color-palette-update-notifications/) | 0.7 |
@@ -91,7 +91,7 @@ xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.h
 
 | Family | Codes | Since |
 |---|---|---|
-| Identity and state | DA1, DA2, DA3, DECID, DSR (5n and 6n), DECDSR (?6n, ?15n, ?25n, ?26n, ?53n, ?55n, ?56n, ?62n, ?63n, ?75n, ?85n), DECRQM, DECRQSS, DECRQCRA, XTVERSION, XTGETTCAP | 0.2 |
+| Identity and state | DA1, DA2, DA3, DECID, DSR (5n and 6n), DECDSR (?6n, ?15n, ?25n, ?26n, ?53n, ?55n, ?56n, ?62n, ?63n, ?75n, ?85n), DECRQM, DECRQSS, XTVERSION, XTGETTCAP | 0.2 |
 | XTWINOPS | 14t, 16t and 18t (the sizes), 22t and 23t (the title's stack); the title modes (`CSI > Ps t` and `T`); XTSAVE and XTRESTORE (`CSI ? Pm s` and `r`). A program can't move, resize or minimize the window, nor read its title (21t) or a rectangle's checksum (DECRQCRA) | 0.2 |
 
 ### OSC
@@ -105,20 +105,22 @@ xterm's [control sequences](https://invisible-island.net/xterm/ctlseqs/ctlseqs.h
 | OSC 8 | Hyperlinks | 0.2 | [Hyperlinks in terminals](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda) |
 | OSC 10, 11 and 12, and 110, 111 and 112 | The text's, the background's and the cursor's colors, set, asked for and reset | 0.2 | [xterm](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands) |
 | OSC 52 | The clipboard: written, and read only as [`[clipboard] read`](CONFIGURATION.md#read) allows | 0.2 | [xterm](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Operating-System-Commands) |
-| [OSC 9](escape-codes/notifications.md#osc-9-a-notification) and [777](escape-codes/notifications.md#osc-777-a-notification-with-a-title) | Desktop notifications | 0.2 | |
+| [OSC 9](escape-codes/notifications.md#osc-9-a-notification) and [777](escape-codes/notifications.md#osc-777-a-notification-with-a-title) | Desktop notifications | 0.2 | [OSC 9](https://conemu.github.io/en/AnsiEscapeCodes.html#OSC_Operating_system_commands) |
 | OSC 6 ; 1 | The tab's color | 0.5.1 | [Its escape codes](https://iterm2.com/documentation-escape-codes.html) |
 | [OSC 9 ; 4](escape-codes/progress-and-status.md#osc-94-progress) | A program's progress, on its tab | 0.5.1 | [Progress bar sequences](https://learn.microsoft.com/en-us/windows/terminal/tutorials/progress-bar-sequences) |
 | OSC 133 | Semantic prompts: where each prompt, command and output starts | 0.7 | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
+| OSC 133 `cl=`, `click_events=` and `P;k=r` | A click in the command line, and a right prompt's mark | · not released yet | [Semantic prompts](https://gitlab.freedesktop.org/Per_Bothner/specifications/blob/master/proposals/semantic-prompts.md), and [Shell integration](shell-integration.md#for-shell-authors) |
 | OSC 1337 `File=` | Inline images, whole or in parts (`MultipartFile=`, `FilePart=`, `FileEnd`) | 1.0 | [Inline images](https://iterm2.com/documentation-images.html) |
-| [OSC 99](escape-codes/notifications.md#osc-99-a-notification-in-parts) | Desktop notifications of a title and a body, in parts, and the query of what the terminal supports · not released yet | | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
-| [OSC 7501](escape-codes/progress-and-status.md#osc-7501-a-programs-status) | A program's status, such as working, waiting or done · not released yet | | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
-| [OSC 21337](escape-codes/progress-and-status.md#osc-21337-a-sessions-status) | A session's status, shown on its tab · not released yet | | [Session status](https://iterm2.com/documentation-session-status.html) |
+| [OSC 99](escape-codes/notifications.md#osc-99-a-notification-in-parts) | Desktop notifications with a title and a body, in parts, and the query of what the terminal supports | · not released yet | [Desktop notifications](https://sw.kovidgoyal.net/kitty/desktop-notifications/) |
+| [OSC 7501](escape-codes/progress-and-status.md#osc-7501-a-programs-status) | A program's status, such as working, waiting or done | · not released yet | [Program Status Protocol](https://control-codes.page/proposals/osc-7501/) |
+| [OSC 21337](escape-codes/progress-and-status.md#osc-21337-a-sessions-status) | A session's status, shown on its tab | · not released yet | [Session status](https://iterm2.com/documentation-session-status.html) |
 
 ### The keyboard and graphics
 
 | Family | Codes | Since | Specification |
 |---|---|---|---|
 | The keyboard protocol that reports every key | `CSI > Ps u`, `CSI < Ps u`, `CSI = Ps ; Ps u` and `CSI ? u` | 0.2 | [Keyboard protocol](https://sw.kovidgoyal.net/kitty/keyboard-protocol/) |
+| XTMODKEYS, the keys of modifyOtherKeys | `CSI > 4 ; Pv m`, its reset `CSI > 4 n`, and its query `CSI ? 4 m`, which Lokyr answers `CSI > 4 ; Pv m` | 0.2 | [xterm](https://invisible-island.net/xterm/ctlseqs/ctlseqs.html#h2-Functions-using-CSI-_-ordered-by-the-final-character_s_) |
 | Graphics | APC `G`, images sent directly | 1.0 | [Graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) |
 
 ## See also

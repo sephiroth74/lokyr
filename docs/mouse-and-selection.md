@@ -19,8 +19,8 @@ Double-click the word `usr` in the listing, press ⌘C, then ⌘V: the word past
 - **Selection** by dragging, a word by a double click, a line by a triple click, and a rectangle with ⌥.
 - **Copy** with ⌘C, or as you let go of the button, as [`copy-on-select`](CONFIGURATION.md#copy-on-select) says.
 - **⌘-click** on a link, a URL or a path opens it, a path with a line at that line in your editor.
-- **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md).
-- **A context menu** of a right click or a ⌃-click: Open Link, Open man Page, Look Up, Copy, Paste, Select All and Clear.
+- **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md). · not released yet
+- **A context menu**, from a right click or a ⌃-click, to open a link or a man page, look up or search a word, and copy, paste or select.
 - **Scrolling** through the scrollback with the wheel or the trackpad.
 - **Programs that take the mouse**, such as vim or htop, get your clicks, and ⇧ keeps them for the selection.
 - **Files dropped** from the Finder paste their paths, ready for a command.
@@ -39,7 +39,7 @@ Drag across the text to select the cells between where you press and where the p
 
 Output that scrolls the text while you drag keeps the selection's start on its text. For a selection made with the keyboard, see [copy mode](plugins/copy-mode.md).
 
-**Try it**: run `seq 1 100`, then drag from `50` past the window's top: the view scrolls up while the selection grows.
+**Try it**: run `seq 1 100`, then drag from `90` past the window's top: the view scrolls up while the selection grows.
 
 ## Copy what you select
 
@@ -62,7 +62,9 @@ Hold ⌘ and move the pointer over a link, a URL or a path: Lokyr underlines it 
 
 ## Click in the command line
 
-With [shell integration](shell-integration.md), a click in the command line moves the shell's cursor there, like in a text field. Select part of the command line and press Delete to remove it, or type to replace it. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off. · not released yet
+<sub>Platforms: macOS · not released yet</sub>
+
+With [shell integration](shell-integration.md), a click in the command line moves the shell's cursor there, like in a text field. Select part of the command line and press Delete to remove it, or type to replace it. [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move) turns both off.
 
 **Try it**: type `echo hello world` without pressing Return, click on the `w`, then type `X`: the line reads `echo hello Xworld`.
 
@@ -70,14 +72,14 @@ With [shell integration](shell-integration.md), a click in the command line move
 
 A right click, or a ⌃-click, opens a menu at the pointer:
 
-- **Open Link** opens the link under the pointer.
-- **Open man Page** opens a window of the man page that the selection names, such as `ls` or `ls(1)`.
-- **Look Up** shows the selection's definition in macOS's dictionary.
-- **Copy**, **Paste**, **Select All** and **Clear**.
+- **Open Link**, **Copy Link Address**, **New Window at Folder** and **New Tab at Folder**, for the link, the URL or the path under the pointer, as [Links](links.md#use-the-context-menu) describes.
+- **Open man Page for “ls”** opens a window of the man page that the selection names, such as `ls` or `ls(1)`, and **Search man Page Index** looks its words up among the man pages.
+- **Look Up** shows the selection's definition in macOS's dictionary, and **Search the Web** searches for it, as [`search-engine`](CONFIGURATION.md#search-engine) says.
+- **Copy**, **Copy Command Output**, **Paste**, **Select All**, **Select Command Output** and **Clear**.
 
 The menu also lists the bundled plugins' items, such as the splits', and dims an item that would do nothing. A click on a selection keeps it for the menu; a click elsewhere selects the word under the pointer.
 
-**Try it**: run `echo grep`, right-click the word `grep`, and choose Open man Page: a window of `grep`'s manual opens.
+**Try it**: run `echo grep`, right-click the word `grep`, and choose Open man Page for “grep”: a window of `grep`'s manual opens.
 
 ## Scroll
 
@@ -137,6 +139,8 @@ focus-follows-mouse = false  # true gives the keyboard to the pane under the poi
 **Check**: run `pbpaste`: it prints what you selected.
 
 ### A click in the command line doesn't move the cursor
+
+<sub>Platforms: macOS · not released yet</sub>
 
 **Why**: the shell has no integration, the program in front isn't a shell, or `click-to-move` is off.
 

@@ -23,12 +23,13 @@ Each code below ends in the same notification, as macOS shows it:
 - **Its title** is the one that the program sends, or else the window's title. A title past 256 characters, or a body past 2048, shows its start.
 - **A click** brings forward the pane that sent it, with its tab and its window.
 - **An AI agent's notification** also marks its tab as waiting for you, as [AI agents](../agents.md) describes.
+- **A title that starts with `lokyr-agent:`**, such as `lokyr-agent:done`, is an AI agent's state, which Lokyr's Claude Code integration sends: it marks the agent's tab and shows no notification.
 
 macOS shows them once you allow Lokyr's notifications in System Settings › Notifications.
 
 ## OSC 9, a notification
 
-<sub>Platforms: macOS · Since 0.2</sub>
+<sub>Platforms: macOS · Since 0.2 · [Specification](https://conemu.github.io/en/AnsiEscapeCodes.html#OSC_Operating_system_commands)</sub>
 
 ```text
 OSC 9 ; body ST

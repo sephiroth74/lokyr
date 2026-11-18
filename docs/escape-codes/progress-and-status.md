@@ -25,7 +25,7 @@ OSC 9 ; 4 ; state ; value ST
 | Parameter | Values | Meaning |
 |---|---|---|
 | `state` | `0` remove, `1` normal, `2` error, `3` indeterminate, `4` paused | What the task is doing |
-| `value` | `0` to `100` | How far along it is, in percent. Lokyr reads a larger number as `100`, and ignores it for `0` and `3` |
+| `value` | `0` to `100` | How far along it is, in percent. Lokyr reads a larger number of up to nine digits as `100`, a longer one as no value, and ignores it for `0` and `3` |
 
 **What Lokyr does**: it shows the progress round the outline of the program's tab, in the [`progress`](../plugins/progress.md) bar across the window's top, and in the ring of a single tab's title. A task that failed shows red and a paused one yellow, full when it reports no percentage. An indeterminate task shows a part that sweeps across. A `state` other than these is ignored.
 
@@ -39,7 +39,7 @@ printf '\033]9;4;2;60\033\\'; sleep 2; printf '\033]9;4;0\033\\'
 
 The bar fills to 60% in red, then goes.
 
-**See**: [the `progress` plugin](../plugins/progress.md), [the `tabs` plugin](../plugins/tabs.md), and [Progress and status](../progress-and-status.md), which tells how to get the progress of programs that send it only to terminals that they recognize.
+**See**: [the `progress` plugin](../plugins/progress.md), [the `tabs` plugin](../plugins/tabs.md), and [Progress and status](../progress-and-status.md), which shows how to get the progress of programs that send it only to terminals that they recognize.
 
 ## OSC 7501, a program's status
 
@@ -108,7 +108,7 @@ OSC 21337 ; key=value ; key=value … ST
 |---|---|---|
 | `status` | Text, up to 256 bytes | A short status, such as `Working` |
 | `indicator` | A color, `#rrggbb` or `rgb:rr/gg/bb` | The color of the dot that marks the tab |
-| `status-color` | A color, as `indicator` | The color of the status's text |
+| `status-color` | A color, as `indicator` | The dot's color where `indicator` gives none |
 | `detail` | Text, up to 1024 bytes | A line of what the program does |
 
 Write a `;` in a value as `\;` and a backslash as `\\`. A key that a report leaves out keeps its value; an empty value clears it.

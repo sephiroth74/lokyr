@@ -2,7 +2,7 @@
 
 <sub>`lokyr/links` · bundled · [source](../../plugins/links)</sub>
 
-A ⌘-click on text opens what the text points to: the link that the program gave it, with OSC 8, or the URL or the path that the text holds there. From the keyboard, its hints label what the pane shows, for a letter or two to open it. [Links](../links.md) shows how to use them.
+A ⌘-click on text opens what the text points to: the link that the program gave it, with [OSC 8](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda), or the URL or the path that the text holds there. From the keyboard, its hints label what the pane shows, for a letter or two to open it. [Links](../links.md) shows how to use them.
 
 ## What it does
 
