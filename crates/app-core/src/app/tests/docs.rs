@@ -36,6 +36,27 @@ const CATEGORIES: [(Category, &str); 9] = [
 const TABLE_START: &str = "<!-- commands: ";
 const TABLE_END: &str = "<!-- commands end -->";
 
+/// `text` in a span of code of a table's cell: between two backticks and a
+/// space on each side where it holds a backtick, as `` `` cmd+` `` ``, and
+/// its bars escaped, which would end the cell.
+fn code(text: &str) -> String {
+    let text = text.replace('|', "\\|");
+    if text.contains('`') {
+        format!("`` {text} ``")
+    } else {
+        format!("`{text}`")
+    }
+}
+
+/// `character` as Markdown shows it outside a span of code: escaped where
+/// it would start one, emphasis or a tag, or end a table's cell.
+fn plain(character: char) -> String {
+    match character {
+        '`' | '|' | '\\' | '*' | '_' | '<' => format!("\\{character}"),
+        _ => character.to_string(),
+    }
+}
+
 /// A key of `combo`, as the pages write keys: macOS's symbols of its
 /// modifiers, Control, Option, Shift then Command, and its key's name; a
 /// character alone, or a letter of Shift alone, as it types, in a span of
@@ -54,11 +75,14 @@ fn key(combo: &Combo) -> String {
     .collect();
     let others = mods.ctrl || mods.alt || mods.cmd;
     match combo.press {
-        Press::Char(character) if !others && !mods.shift => format!("`{character}`"),
+        Press::Char(character) if !others && !mods.shift => code(&character.to_string()),
         Press::Char(character) if !others && character.is_ascii_alphabetic() => {
-            format!("`{}`", character.to_ascii_uppercase())
+            code(&character.to_ascii_uppercase().to_string())
         }
-        Press::Char(character) => format!("{symbols}{}", character.to_uppercase()),
+        Press::Char(character) => {
+            let shown: String = character.to_uppercase().map(plain).collect();
+            format!("{symbols}{shown}")
+        }
         Press::Named(named) => format!("{symbols}{}", named_key(named)),
         Press::Click => format!("{symbols}-click"),
         Press::Wheel(direction) => {
@@ -205,17 +229,17 @@ fn keys_in_full(bindings: &[&Binding]) -> String {
         // The config's form, unless it is what the page shows, as `h`.
         let written = |binding: &Binding| {
             let written = keys_written(binding);
-            (keys_shown(binding) != format!("`{written}`")).then_some(written)
+            (keys_shown(binding) != code(&written)).then_some(written)
         };
         let mut part = if run.bindings.len() > 1 {
             let shown = format!("{} to {}", keys_shown(first), keys_shown(last));
             match (written(first), written(last)) {
-                (Some(from), Some(to)) => format!("{shown} (`{from}` to `{to}`)"),
+                (Some(from), Some(to)) => format!("{shown} ({} to {})", code(&from), code(&to)),
                 _ => shown,
             }
         } else {
             match written(first) {
-                Some(written) => format!("{} (`{written}`)", keys_shown(first)),
+                Some(written) => format!("{} ({})", keys_shown(first), code(&written)),
                 None => keys_shown(first),
             }
         };
@@ -563,6 +587,10 @@ fn keys_show_as_the_pages_write_them_and_a_run_of_numbers_as_one() {
     assert_eq!(shown("g>g"), "`g` `g`");
     assert_eq!(shown("cmd+click"), "⌘-click");
     assert_eq!(shown("shift+tab"), "⇧Tab");
+    // What Markdown reads outside a span of code, escaped.
+    assert_eq!(shown("cmd+`"), "⌘\\`");
+    assert_eq!(shown("cmd+\\"), "⌘\\\\");
+    assert_eq!(shown("`"), "`` ` ``");
     let binding = |keys: &str, args: &[(&str, i64)], when: Option<&str>| Binding {
         keys: parse(keys),
         invocation: lokyr_kernel::keymap::Invocation {
@@ -594,6 +622,11 @@ fn keys_show_as_the_pages_write_them_and_a_run_of_numbers_as_one() {
         keys_in_full(&refs),
         "Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused`"
     );
+    // A backtick in the config's form, between two backticks.
+    let next = [binding("cmd+`", &[], None)];
+    let refs: Vec<&Binding> = next.iter().collect();
+    assert_eq!(keys_in_full(&refs), "⌘\\` (`` cmd+` ``)");
+    assert_eq!(code("a|b"), "`a\\|b`");
 }
 
 #[test]

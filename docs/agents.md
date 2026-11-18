@@ -17,7 +17,7 @@ A tab of several agents shows the most urgent: one that waits before one at work
 - **Notifications**: while its window has no focus, an agent that waits for you or is done tells it in a notification of the system's, of its program, the message that it told, and its tab's title. A click on it brings the agent's pane forward, with its tab and its window.
 - **The Dock**: Lokyr's icon counts the agents that wait for you, in every window.
 - **Go to Next Agent**, Window › Go to Next Agent or ⌥⌘A, brings forward the next agent that waits for you, or, of none, one that is done, across every window.
-- **Show Agents**, Window › Show Agents… or ⇧⌥⌘A, lists every agent in the command palette, the most urgent first, each with what it asked or its tab, its state and how long it has been in it; Return brings it forward.
+- **Show Agents**, Window › Show Agents… or ⌥⇧⌘A, lists every agent in the command palette, the most urgent first, each with what it asked or its tab, its state and how long it has been in it; Return brings it forward.
 
 ## Programs that tell their status
 

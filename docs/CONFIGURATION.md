@@ -907,7 +907,7 @@ Whether the titlebar stays opaque over a translucent window, in the default back
 | `true`, `false` | `false` |
 
 - The terminal's background runs under the titlebar: with `false`, the titlebar is as translucent as the background, as `background-opacity` makes it; with `true`, it is opaque, and what is behind the window shows through the background below it alone.
-- A tab bar on the left that runs up through the titlebar, as [`position`](#position-1) and [`style`](#style-1) put it, keeps its own colors there: the titlebar is opaque beside it, over the panes.
+- A tab bar on the left that runs up through the titlebar, as [`position`](#position) and [`style`](#style-1) put it, keeps its own colors there: the titlebar is opaque beside it, over the panes.
 - The title's color reads over the background: a light background in the dark appearance, or a dark one in the light appearance, gives the window the appearance of its background.
 - It applies at once, as you save the file.
 

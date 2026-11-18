@@ -21,7 +21,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 
 ## The agents' list
 
-- **Window › Show Agents…**, ⇧⌥⌘A, opens the palette of the AI agents of every window, as [`[agents]`](../CONFIGURATION.md#agents) finds them: those that wait for you first, the longest waiting at the top, then those done, those at work, and those that have shown nothing yet.
+- **Window › Show Agents…**, ⌥⇧⌘A, opens the palette of the AI agents of every window, as [`[agents]`](../CONFIGURATION.md#agents) finds them: those that wait for you first, the longest waiting at the top, then those done, those at work, and those that have shown nothing yet.
 - **Each** shows its program and what it asked, as "claude: Claude needs your permission to use Bash", or its tab's title, and at its end its state and how long it has been in it.
 - **As you type**, it finds them by their programs, their messages and their tabs' titles; **Return**, or a click, brings the chosen agent's pane forward, with its tab and its window.
 

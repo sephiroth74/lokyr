@@ -49,9 +49,9 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.close` | Close Window |  | ⌘W (`cmd+w`); ⇧⌘W (`cmd+shift+w`) |
 | `window.goto` | Go to Window | `index`, whole number | ⌥⌘1 to ⌥⌘9 (`cmd+alt+1` to `cmd+alt+9`), `index` 1 to 9 |
 | `window.new` | New Window |  | ⌘N (`cmd+n`) |
-| `window.next` | Cycle Through Windows |  | ⌘` (`cmd+``) |
+| `window.next` | Cycle Through Windows |  | ⌘\` (`` cmd+` ``) |
 | `window.next-agent` | Go to Next Agent |  | ⌥⌘A (`cmd+alt+a`) |
-| `window.previous` | Cycle Back Through Windows |  | ⇧⌘` (`cmd+shift+``) |
+| `window.previous` | Cycle Back Through Windows |  | ⇧⌘\` (`` cmd+shift+` ``) |
 | `window.set-title` | Set Title… |  | ⇧⌘I (`cmd+shift+i`) |
 | `window.toggle-float-on-top` | Float on Top |  |  |
 | [`window.toggle-quick-terminal`](plugins/quick-terminal.md) | Quick Terminal |  |  |
