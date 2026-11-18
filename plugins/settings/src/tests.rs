@@ -2882,7 +2882,7 @@ fn a_map_s_entries_are_changed_renamed_taken_away_and_added() {
     ));
     assert_eq!(
         held(&tree, &format!("new-entry:{}", at(&["hints", ""]))),
-        Some((None, "setting-entry-new".to_owned()))
+        Some((Some(String::new()), "setting-entry-new".to_owned()))
     );
     assert!(held(&tree, &format!("new-entry:{}", at(&["hints", "url"]))).is_some());
     assert!(labelled(&tree, "add-entry:hints").is_some());
@@ -3101,12 +3101,18 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
         keys: vec![key("alphabet", None, None, text.clone())],
     });
     // A plugin's section of a key that the app's of its name has stays a
-    // part of its own.
+    // part of its own, as does another's than Lokyr's of the app's name.
     settings.sections.push(SettingsSection {
         name: "window".to_owned(),
-        plugin: Some("acme/window".to_owned()),
+        plugin: Some("lokyr/window".to_owned()),
         description: String::new(),
-        keys: vec![key("programs", None, None, text)],
+        keys: vec![key("programs", None, None, text.clone())],
+    });
+    settings.sections.push(SettingsSection {
+        name: "font".to_owned(),
+        plugin: Some("acme/font".to_owned()),
+        description: String::new(),
+        keys: vec![key("ligatures", None, None, text)],
     });
     let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
     host.pane(PaneId(1));
@@ -3118,7 +3124,7 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(
         sidebar_of(&tree),
-        ["font", "window", "theme", "links", "tabs", "window"]
+        ["font", "window", "theme", "links", "tabs", "window", "font"]
     );
     host.ui_event(&mut plugin, &choose(3)).unwrap();
     let _ = written(&mut host);
@@ -3159,10 +3165,116 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
         )]
     );
     host.deliver(&mut plugin).unwrap();
-    // The search finds the plugin's key in the part.
+    // The search finds the plugin's key in the part, of no empty group of
+    // the app's keys; the part's title finds the plugin's keys too.
     host.ui_event(&mut plugin, &search("alphabet")).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["links"]);
     assert!(held(&tree, "field:alphabet").is_some());
     assert!(held(&tree, "field:editor").is_none());
+    assert!(find_node(&tree, "keys").is_none());
+    host.ui_event(&mut plugin, &search("links")).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(held(&tree, "field:editor").is_some());
+    assert!(held(&tree, "field:alphabet").is_some());
+}
+
+#[test]
+fn a_map_s_editor_writes_what_its_fields_show() {
+    const JIRA: &str = "https://jira.example.com/browse/$0";
+    let (mut host, mut plugin) = host_of_hints(Some(patterns(&[
+        ("jira", r"TVUI-\d+", Some(JIRA)),
+        ("uuids", "[0-9a-f]{8}", None),
+    ])));
+    let at = |parts: &[&str]| parts.join("\u{1f}");
+    let typed = |text: &str| UiEventKind::InputChanged {
+        text: text.to_owned(),
+        revision: 1,
+    };
+    let new = |field: &str| format!("new-entry:{}", at(&["hints", field]));
+    // The new entry's texts held by its fields; the page shown anew empties
+    // them, so that Add writes nothing that they do not show.
+    host.ui_event(
+        &mut plugin,
+        &on(&new("url"), typed("https://stale.example/$0")),
+    )
+    .unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, &new("url"))
+            .and_then(|(text, _)| text)
+            .as_deref(),
+        Some("https://stale.example/$0")
+    );
+    host.hide_page();
+    host.deliver(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &choose(TABS + 1)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, &new("url"))
+            .and_then(|(text, _)| text)
+            .as_deref(),
+        Some("")
+    );
+    host.ui_event(&mut plugin, &on(&new(""), typed("fresh")))
+        .unwrap();
+    host.ui_event(&mut plugin, &submit(&new("pattern"), "F"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[
+            ("fresh", "F", None),
+            ("jira", r"TVUI-\d+", Some(JIRA)),
+            ("uuids", "[0-9a-f]{8}", None),
+        ])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // A pause after a space writes nothing, the space kept for the next
+    // character; the whole value is written at the next pause.
+    let pattern = format!("entry-field:{}", at(&["hints", "uuids", "pattern"]));
+    host.ui_event(&mut plugin, &on(&pattern, typed("foo ")))
+        .unwrap();
+    host.advance(std::time::Duration::from_secs(1));
+    host.deliver(&mut plugin).unwrap();
+    assert!(written(&mut host).is_empty());
+    host.ui_event(&mut plugin, &on(&pattern, typed("foo bar")))
+        .unwrap();
+    host.advance(std::time::Duration::from_secs(1));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        written(&mut host),
+        [hints_written(Some(patterns(&[
+            ("fresh", "F", None),
+            ("jira", r"TVUI-\d+", Some(JIRA)),
+            ("uuids", "foo bar", None),
+        ])))]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // A refused rename's text goes with its reason as the map is written.
+    let name = format!("entry-name:{}", at(&["hints", "jira"]));
+    host.ui_event(&mut plugin, &submit(&name, "uuids")).unwrap();
+    assert!(written(&mut host).is_empty());
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        held(&tree, &name).and_then(|(text, _)| text).as_deref(),
+        Some("uuids")
+    );
+    host.ui_event(
+        &mut plugin,
+        &submit(
+            &format!("entry-field:{}", at(&["hints", "jira", "url"])),
+            "https://jira.example.com/b/$0",
+        ),
+    )
+    .unwrap();
+    assert_eq!(written(&mut host).len(), 1);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(text_of(&tree, "refused:hints"), None);
+    assert_eq!(
+        held(&tree, &name).and_then(|(text, _)| text).as_deref(),
+        Some("jira")
+    );
 }

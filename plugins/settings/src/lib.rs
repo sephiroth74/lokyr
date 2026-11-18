@@ -19,7 +19,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::command::{Args, Category, Error, Value};
 use lokyr_plugin_sdk::host::{
@@ -299,9 +299,27 @@ pub struct SettingsPage {
     typed: BTreeMap<String, Typed>,
     pause: Option<u64>,
     /// The texts typed into the fields of each map's new entry, by the
-    /// map's name, each by its field's, its name's of an empty one.
-    new_entries: BTreeMap<String, BTreeMap<String, String>>,
+    /// map's name, each by its field's, its name's of an empty one, which
+    /// its fields hold.
+    new_entries: NewEntries,
+    /// The fields of maps' entries whose texts their map refused, by their
+    /// nodes' keys, whose texts go as the map is written or the settings
+    /// change, the reason under the map gone with them.
+    refused_texts: BTreeSet<String>,
 }
+
+/// The texts typed into the fields of each map's new entry, by the map's
+/// name, each by its field's, its name's of an empty one.
+type NewEntries = BTreeMap<String, BTreeMap<String, String>>;
+
+/// The texts that the page's tree shows beside the settings: why each
+/// key's last write was refused, by its name, the texts typed and not
+/// written yet, and the new entries' texts.
+type Texts<'a> = (
+    &'a BTreeMap<String, String>,
+    &'a BTreeMap<String, Typed>,
+    &'a NewEntries,
+);
 
 /// A text typed into a key's field and not written yet: the key's section
 /// and plugin, the text, and the entry of a map whose field it is, by the
@@ -345,9 +363,13 @@ impl<'s> Part<'s> {
     }
 }
 
+/// The prefix of the names of Lokyr's own plugins, whose sections join the
+/// app's of their names.
+const OWN_PLUGINS: &str = "lokyr/";
+
 /// The parts of the page, as its sidebar lists them, the sections of
-/// `settings`: the app's, each with the plugins' of its name whose keys
-/// none of its own has, then the other plugins'.
+/// `settings`: the app's, each with Lokyr's own plugins' of its name whose
+/// keys none of its own has, then the other plugins'.
 fn parts(settings: &Settings) -> Vec<Part<'_>> {
     let (app, plugins): (Vec<&SettingsSection>, Vec<&SettingsSection>) = settings
         .sections
@@ -360,7 +382,13 @@ fn parts(settings: &Settings) -> Vec<Part<'_>> {
             let mut names: Vec<&str> = section.keys.iter().map(|key| key.name.as_str()).collect();
             let mut joined = Vec::new();
             for (at, &plugin) in plugins.iter().enumerate() {
+                // Lokyr's own plugins alone, so that another's section
+                // never shows as a part of the app's own.
                 if !taken[at]
+                    && plugin
+                        .plugin
+                        .as_deref()
+                        .is_some_and(|name| name.starts_with(OWN_PLUGINS))
                     && plugin.name == section.name
                     && plugin
                         .keys
@@ -499,6 +527,8 @@ impl Plugin for SettingsPage {
                     self.query.clear();
                     self.typed.clear();
                     self.refused.clear();
+                    self.new_entries.clear();
+                    self.refused_texts.clear();
                     again = true;
                 }
                 Event::PageHidden(page) if page == PAGE => {
@@ -536,9 +566,12 @@ impl Plugin for SettingsPage {
                 Event::SettingsChanged => {
                     self.editing = None;
                     self.confirming = None;
-                    let refused = &self.refused;
-                    self.typed.retain(|name, _| !refused.contains_key(name));
+                    let (refused, refused_texts) = (&self.refused, &self.refused_texts);
+                    self.typed.retain(|name, _| {
+                        !refused.contains_key(name) && !refused_texts.contains(name)
+                    });
                     self.refused.clear();
+                    self.refused_texts.clear();
                     again = true;
                 }
                 // Typing paused: what it typed is written, of a value whole.
@@ -963,7 +996,7 @@ impl Plugin for SettingsPage {
             &settings,
             self.chosen,
             &words(&self.query),
-            (&self.refused, &self.typed),
+            (&self.refused, &self.typed, &self.new_entries),
         ))
     }
 }
@@ -1303,7 +1336,26 @@ impl SettingsPage {
         written: Result<(), Error>,
     ) -> Result<(), Error> {
         let changed = match written {
-            Ok(()) => self.refused.remove(name).is_some(),
+            Ok(()) => {
+                // A map written: its entries' texts that it refused go, of
+                // their reason, their fields showing the values in force.
+                let gone: Vec<String> = self
+                    .refused_texts
+                    .iter()
+                    .filter(|node| {
+                        self.typed
+                            .get(*node)
+                            .and_then(|typed| typed.entry.as_ref())
+                            .is_some_and(|at| at.key == name)
+                    })
+                    .cloned()
+                    .collect();
+                for node in &gone {
+                    self.typed.remove(node);
+                    self.refused_texts.remove(node);
+                }
+                self.refused.remove(name).is_some() || !gone.is_empty()
+            }
             Err(error) => {
                 self.refused.insert(name.to_owned(), error.message);
                 true
@@ -1368,6 +1420,11 @@ impl SettingsPage {
                 let Some(setting) = find(section, &at.key) else {
                     continue;
                 };
+                // Of a value whole, as the field shows it: never a text
+                // that a space ends, as one typed, nor a number's part.
+                if !whole_in_field(cx, setting, at, &typed.text) {
+                    continue;
+                }
                 if let Ok(Some(value)) = entry_written(cx, setting, at, &typed.text) {
                     let written = cx.set_setting(
                         &section.name,
@@ -1377,6 +1434,7 @@ impl SettingsPage {
                     );
                     if written.is_ok() {
                         self.typed.remove(&name);
+                        self.refused_texts.remove(&name);
                         if self.refused.remove(&at.key).is_some() {
                             self.render_page(cx)?;
                         }
@@ -1449,14 +1507,19 @@ impl SettingsPage {
                     continue;
                 };
                 match entry_written(cx, setting, at, &typed.text) {
-                    Ok(Some(value)) => self.write(cx, section, setting, value)?,
+                    Ok(Some(value)) => {
+                        self.refused_texts.remove(&name);
+                        self.write(cx, section, setting, value)?;
+                    }
                     Ok(None) => {
+                        self.refused_texts.remove(&name);
                         if self.refused.remove(&at.key).is_some() {
                             self.render_page(cx)?;
                         }
                     }
                     Err(why) => {
                         self.refused.insert(at.key.clone(), why);
+                        self.refused_texts.insert(name.clone());
                         self.typed.insert(name, typed.clone());
                         self.render_page(cx)?;
                     }
@@ -1835,10 +1898,10 @@ fn shown_parts(cx: &mut Cx<'_>, settings: &Settings, words: &[String]) -> Vec<us
         .filter(|(_, part)| {
             words.is_empty()
                 || part.sections().any(|section| {
-                    section
-                        .keys
-                        .iter()
-                        .any(|key| key_holds(cx, section, key, words))
+                    section.keys.iter().any(|key| {
+                        key_holds(cx, section, key, words)
+                            || key_holds(cx, part.section, key, words)
+                    })
                 })
         })
         .map(|(at, _)| at)
@@ -1979,13 +2042,13 @@ fn tree(
     settings: &Settings,
     chosen: usize,
     words: &[String],
-    (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
+    (refused, typed, new_entries): Texts<'_>,
 ) -> Node {
     let shown = shown_parts(cx, settings, words);
     let parts = parts(settings);
     let chosen_part = parts.get(chosen).filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
-        Some(part) => section_part(cx, part, words, (refused, typed)),
+        Some(part) => section_part(cx, part, words, (refused, typed, new_entries)),
         None if !words.is_empty() => vec![
             Node::text(message(cx, "settings-no-match", &[]))
                 .key("no-match")
@@ -2261,7 +2324,7 @@ fn section_part(
     cx: &mut Cx<'_>,
     shown: &Part<'_>,
     words: &[String],
-    (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
+    (refused, typed, new_entries): Texts<'_>,
 ) -> Vec<Node> {
     let section = shown.section;
     let mut part = vec![
@@ -2299,16 +2362,24 @@ fn section_part(
         .iter()
         .filter(|key| words.is_empty() || key_holds(cx, section, key, words))
         .collect();
-    let rows = keys
+    let rows: Vec<Node> = keys
         .into_iter()
-        .map(|key| key_row(cx, key, (refused.get(&key.name), typed)))
+        .map(|key| key_row(cx, key, (refused.get(&key.name), typed, new_entries)))
         .collect();
-    part.push(group(rows, "keys"));
+    // Of none that the search shows, no group, as the joined sections'
+    // keys may be the part's alone that it shows.
+    if !rows.is_empty() || words.is_empty() {
+        part.push(group(rows, "keys"));
+    }
     for joined in &shown.joined {
         let keys: Vec<&SettingKey> = joined
             .keys
             .iter()
-            .filter(|key| words.is_empty() || key_holds(cx, joined, key, words))
+            .filter(|key| {
+                words.is_empty()
+                    || key_holds(cx, joined, key, words)
+                    || key_holds(cx, section, key, words)
+            })
             .collect();
         if keys.is_empty() {
             continue;
@@ -2353,7 +2424,7 @@ fn section_part(
         }
         let rows = keys
             .into_iter()
-            .map(|key| key_row(cx, key, (refused.get(&key.name), typed)))
+            .map(|key| key_row(cx, key, (refused.get(&key.name), typed, new_entries)))
             .collect();
         part.push(group(rows, &at("keys")));
     }
@@ -2369,7 +2440,7 @@ fn section_part(
 fn key_row(
     cx: &mut Cx<'_>,
     key: &SettingKey,
-    (refused, typed): (Option<&String>, &BTreeMap<String, Typed>),
+    (refused, typed, new_entries): (Option<&String>, &BTreeMap<String, Typed>, &NewEntries),
 ) -> Node {
     let name = &key.name;
     let all_typed = typed;
@@ -2431,7 +2502,9 @@ fn key_row(
         about.push(list_editor(cx, key));
     }
     if let SettingKind::Map { fields } = &key.kind {
-        about.push(map_editor(cx, key, fields, all_typed));
+        let empty = BTreeMap::new();
+        let new_texts = new_entries.get(&key.name).unwrap_or(&empty);
+        about.push(map_editor(cx, key, fields, (all_typed, new_texts)));
     }
     if let Some(why) = refused {
         about.push(
@@ -2622,6 +2695,28 @@ fn field_value(cx: &mut Cx<'_>, kind: &SettingKind, text: &str) -> Result<Option
     }
 }
 
+/// Whether `text`, typed into the field of `at` of the map `setting`, is a
+/// value whole as the field shows it: none of an empty one, or one whose
+/// text is `text` itself, never a text that a space ends nor a number's
+/// part, as `13.`, which typing goes on from.
+fn whole_in_field(cx: &mut Cx<'_>, setting: &SettingKey, at: &EntryAt, text: &str) -> bool {
+    let SettingKind::Map { fields } = &setting.kind else {
+        return false;
+    };
+    let Some(field) = at
+        .field
+        .as_ref()
+        .and_then(|name| fields.iter().find(|own| own.name == *name))
+    else {
+        return false;
+    };
+    match field_value(cx, &field.kind, text) {
+        Ok(None) => text.is_empty(),
+        Ok(Some(value)) => plain(&value) == text,
+        Err(_) => false,
+    }
+}
+
 /// The value that the map `setting` takes of `text`, typed into the field
 /// of `at`: its entry renamed, or its field changed, an empty one of no
 /// value taken away; none where nothing changes, or where the entry is no
@@ -2697,7 +2792,7 @@ fn map_editor(
     cx: &mut Cx<'_>,
     key: &SettingKey,
     fields: &[SettingField],
-    typed: &BTreeMap<String, Typed>,
+    (typed, new_texts): (&BTreeMap<String, Typed>, &BTreeMap<String, String>),
 ) -> Node {
     let name = &key.name;
     let shown = |node: &str| typed.get(node).map(|typed| typed.text.clone());
@@ -2821,6 +2916,7 @@ fn map_editor(
             vec![
                 Node::field(message(cx, "setting-entry-new", &[]))
                     .key(format!("{NEW_ENTRY}{name}{PART}").as_str())
+                    .holding(new_texts.get("").cloned().unwrap_or_default())
                     .label(message(
                         cx,
                         "setting-entry-new-label",
@@ -2850,6 +2946,7 @@ fn map_editor(
             field,
             Node::field(placeholder.clone())
                 .key(format!("{NEW_ENTRY}{name}{PART}{}", field.name).as_str())
+                .holding(new_texts.get(&field.name).cloned().unwrap_or_default())
                 .label(message(
                     cx,
                     "setting-entry-new-field-label",
