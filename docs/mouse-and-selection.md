@@ -56,7 +56,7 @@ The text that Lokyr copies joins the rows of a line that wrapped, drops the spac
 
 ## Open links and paths with ⌘-click
 
-Hold ⌘ and move the pointer over a link, a URL or a path: Lokyr underlines it and shows the pointing hand. Click to open it: a URL in your browser, a file in its app, a folder in the Finder, and a path with a line, such as `src/main.rs:42`, at that line in your editor. [Links and hints](plugins/links.md) tells what Lokyr finds and how to open it from the keyboard.
+Hold ⌘ and move the pointer over a link, a URL or a path: Lokyr underlines it and shows the pointing hand. Click to open it: a URL in your browser, a file in its app, a folder in the Finder, and a path with a line, such as `src/main.rs:42`, at that line in your editor. [Links](links.md) tells what Lokyr finds and how to open it from the keyboard.
 
 **Try it**: run `echo https://lokyr.dev/docs/`, then ⌘-click the address: it opens in your browser.
 
@@ -144,7 +144,7 @@ focus-follows-mouse = false  # true gives the keyboard to the pane under the poi
 
 ## See also
 
-- [Links and hints](plugins/links.md)
+- [Links](links.md)
 - [Copy mode](plugins/copy-mode.md), to select with the keyboard
 - [Shell integration](shell-integration.md)
 - [Copy, paste and scrolling](plugins/core-actions.md)

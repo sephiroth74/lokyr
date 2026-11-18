@@ -2222,4 +2222,4 @@ url = "https://jira.example.com/browse/$0"
 - `pattern` is a regular expression, case-sensitive unless it starts with `(?i)`. Between single quotes, TOML keeps its backslashes as they are; between double quotes, double each one: `"PROJ-\\d+"`.
 - `url` is what picking the hint opens: `$0` stands for the whole text that the pattern matched, `$1` to `$9` for the parts of the pattern between parentheses, and `$$` for a `$`. It opens only `http`, `https`, `mailto` and `file` URLs, or a path from `/` or `~`; a `url` that starts with another scheme, such as `vscode:`, is left out, and a notice reports it. Without a `url`, picking the hint copies its text.
 - A pattern that doesn't read is left out, and a notice reports why. A match of your patterns comes before what the hints find by themselves.
-- It applies as you save the file, to the next hints. [Links](plugins/links.md#add-your-own-patterns) shows more examples.
+- It applies as you save the file, to the next hints. [Links](links.md#add-your-own-patterns) shows more examples.

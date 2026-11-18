@@ -16,6 +16,7 @@ Lokyr is a fast terminal for macOS, written in Rust. Every feature that you see,
 - [Notifications](notifications.md): the notifications of programs, agents, long commands and the bell, and how to allow them.
 - [Mouse and selection](mouse-and-selection.md): selecting and copying text, ⌘-click on links and paths, the context menu, scrolling, and programs that take the mouse.
 - [Windows and tabs](windows-and-tabs.md): opening, moving between and restoring windows, and the tabs' drags, titles, colors, pins and groups.
+- [Links](links.md): ⌘-click on URLs, paths and programs' links, a path's line in your editor, and hints from the keyboard, with patterns of your own.
 - [Plugins](plugins/README.md): the plugins that come with Lokyr, a page each, such as the [tab bar](plugins/tabs.md), the [splits](plugins/splits.md), [find](plugins/search.md), [links and hints](plugins/links.md) and the [quick terminal](plugins/quick-terminal.md); and how to install more with Sleip.
 
 ## Reference
