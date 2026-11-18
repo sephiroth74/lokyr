@@ -184,6 +184,8 @@ search-engine = "google"
 
 [`[links]`](CONFIGURATION.md#links) tells each key, and [`[plugins.links]`](CONFIGURATION.md#pluginslinks) the hints' [`alphabet`](CONFIGURATION.md#alphabet) and [`hints`](CONFIGURATION.md#hints).
 
+In the settings window, which Lokyr › Open Settings Window opens, the Links section holds the keys of `[links]`. The hints' keys are in their own section, Link Hints, after the sections of Lokyr's own settings. · not released yet
+
 ## Commands and keys
 
 | Keys | In the config | What they do |
@@ -209,6 +211,7 @@ Hints read the screen's lines once, when you press ⇧⌘E, and cost nothing whi
 - **A path on another machine**, such as one that a program prints over `ssh`, doesn't open: Lokyr looks for it on this Mac.
 - **Hints label the screen**, not the scrollback above it: scroll to bring a link into view first. · not released yet
 - **Patterns open only** `http`, `https`, `mailto` and `file` URLs and paths, not other schemes such as `vscode:`. · not released yet
+- **The settings window shows your patterns as text**, without editing them: add, change and remove them in your config file. · not released yet
 
 ## Troubleshooting
 
