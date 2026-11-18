@@ -743,17 +743,19 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
     let Some(lokyr_kernel::plugins::view::Kind::List(sections)) = tree.kind(list) else {
         panic!("a list");
     };
-    // The config's 18 sections, then the 7 of the plugins of a schema,
-    // the bindings of keys a page of their own.
+    // The config's 18 sections, the links' hints in the config's Links,
+    // then the 6 other plugins of a schema, the bindings of keys a page of
+    // their own.
     let titles: Vec<&str> = sections
         .items
         .iter()
         .map(|item| item.texts[1].as_str())
         .collect();
-    assert_eq!(titles.len(), 25, "{titles:?}");
+    assert_eq!(titles.len(), 24, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
-    // The plugins' in the order that they register, the links' first.
-    assert_eq!(&titles[18..20], ["Link Hints", "Tabs"]);
+    // The plugins' in the order that they register.
+    assert_eq!(&titles[18..20], ["Tabs", "Splits"]);
+    assert!(!titles.contains(&"Hints"), "{titles:?}");
     assert!(!titles.contains(&"Keys"), "{titles:?}");
     assert_eq!(
         app.settings
@@ -780,8 +782,9 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
         .unwrap();
     let list = view.surface.tree.by_key(&"sections".into()).unwrap();
     assert!(state.focus.focus(view.id, &view.surface.tree, list));
-    // The config's sections, then the plugins', past the links' hints.
-    for _ in 0..19 {
+    // The config's sections, then the plugins', the links' hints in the
+    // config's Links.
+    for _ in 0..18 {
         tap(
             &mut fake,
             &mut app,
@@ -1407,8 +1410,8 @@ fn a_map_s_entries_are_written_from_the_settings_page_each_a_table_of_the_file()
     let (titles, _) = page_sidebar(&app, own);
     let hints = titles
         .iter()
-        .position(|title| title == "Link Hints")
-        .expect("the hints' section");
+        .position(|title| title == "Links")
+        .expect("the links' section");
     settings_event(
         &mut fake,
         &mut app,
@@ -1418,6 +1421,9 @@ fn a_map_s_entries_are_written_from_the_settings_page_each_a_table_of_the_file()
         UiEventKind::Select { item: hints },
     );
     let at = |parts: &[&str]| parts.join("\u{1f}");
+    // The config's Links, then the links plugin's hints under their title.
+    assert_eq!(page_text(&app, own, "title"), "Links");
+    assert_eq!(page_text(&app, own, "joined-title:links"), "Hints");
     assert_eq!(
         page_field(
             &app,

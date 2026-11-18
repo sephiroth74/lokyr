@@ -323,14 +323,69 @@ struct EntryAt {
     field: Option<String>,
 }
 
+/// A part of the page, as its sidebar lists it: a section, and the
+/// plugins' sections of its name that it shows after its own keys, as the
+/// `links` plugin's hints in the app's Links, each key written to its own
+/// section.
+struct Part<'s> {
+    section: &'s SettingsSection,
+    joined: Vec<&'s SettingsSection>,
+}
+
+impl<'s> Part<'s> {
+    /// Its sections, its own first.
+    fn sections(&self) -> impl Iterator<Item = &'s SettingsSection> + '_ {
+        std::iter::once(self.section).chain(self.joined.iter().copied())
+    }
+
+    /// The key `name` of one of its sections, and that section.
+    fn find(&self, name: &str) -> Option<(&'s SettingsSection, &'s SettingKey)> {
+        self.sections()
+            .find_map(|section| find(section, name).map(|key| (section, key)))
+    }
+}
+
 /// The parts of the page, as its sidebar lists them, the sections of
-/// `settings`: the app's, then the plugins'.
-fn parts(settings: &Settings) -> Vec<&SettingsSection> {
+/// `settings`: the app's, each with the plugins' of its name whose keys
+/// none of its own has, then the other plugins'.
+fn parts(settings: &Settings) -> Vec<Part<'_>> {
     let (app, plugins): (Vec<&SettingsSection>, Vec<&SettingsSection>) = settings
         .sections
         .iter()
         .partition(|section| section.plugin.is_none());
-    app.into_iter().chain(plugins).collect()
+    let mut taken = vec![false; plugins.len()];
+    let mut parts: Vec<Part<'_>> = app
+        .into_iter()
+        .map(|section| {
+            let mut names: Vec<&str> = section.keys.iter().map(|key| key.name.as_str()).collect();
+            let mut joined = Vec::new();
+            for (at, &plugin) in plugins.iter().enumerate() {
+                if !taken[at]
+                    && plugin.name == section.name
+                    && plugin
+                        .keys
+                        .iter()
+                        .all(|key| !names.contains(&key.name.as_str()))
+                {
+                    names.extend(plugin.keys.iter().map(|key| key.name.as_str()));
+                    joined.push(plugin);
+                    taken[at] = true;
+                }
+            }
+            Part { section, joined }
+        })
+        .collect();
+    parts.extend(
+        plugins
+            .into_iter()
+            .zip(taken)
+            .filter(|(_, taken)| !taken)
+            .map(|(section, _)| Part {
+                section,
+                joined: Vec::new(),
+            }),
+    );
+    parts
 }
 
 /// The page's view.
@@ -661,7 +716,7 @@ impl Plugin for SettingsPage {
             return self.render_page(cx);
         }
         let settings = page_settings(cx)?;
-        let Some(section) = parts(&settings).get(self.chosen).copied() else {
+        let Some(part) = parts(&settings).into_iter().nth(self.chosen) else {
             return Ok(());
         };
         // An item of a key's menu of values, its panel of its key's name.
@@ -670,7 +725,7 @@ impl Plugin for SettingsPage {
             else {
                 return Ok(());
             };
-            let (Some(setting), Ok(at)) = (find(section, name), at.parse::<usize>()) else {
+            let (Some((section, setting)), Ok(at)) = (part.find(name), at.parse::<usize>()) else {
                 return Ok(());
             };
             let Some(values) = menu_values(cx, section, setting) else {
@@ -708,14 +763,14 @@ impl Plugin for SettingsPage {
             || key.starts_with(NEW_ENTRY)
             || key.starts_with(ADD_ENTRY)
         {
-            return self.entry_event(cx, section, event);
+            return self.entry_event(cx, &part, event);
         }
         // A list's value taken away, or one added.
         if let (UiEventKind::Click, Some(rest)) = (&event.kind, key.strip_prefix(REMOVE)) {
             let Some((name, at)) = rest.rsplit_once(':') else {
                 return Ok(());
             };
-            let (Some(setting), Ok(at)) = (find(section, name), at.parse::<usize>()) else {
+            let (Some((section, setting)), Ok(at)) = (part.find(name), at.parse::<usize>()) else {
                 return Ok(());
             };
             let mut texts = list_texts(setting.value.as_ref());
@@ -728,7 +783,7 @@ impl Plugin for SettingsPage {
         }
         if let (UiEventKind::Submit { text, .. }, Some(name)) = (&event.kind, key.strip_prefix(ADD))
         {
-            let Some(setting) = find(section, name) else {
+            let Some((section, setting)) = part.find(name) else {
                 return Ok(());
             };
             let added = text.trim();
@@ -755,7 +810,7 @@ impl Plugin for SettingsPage {
         let Some((prefix, name)) = key.split_once(':') else {
             return Ok(());
         };
-        let Some(setting) = find(section, name) else {
+        let Some((section, setting)) = part.find(name) else {
             return Ok(());
         };
         let prefix = format!("{prefix}:");
@@ -884,8 +939,7 @@ impl Plugin for SettingsPage {
         // A key's menu of values, each an item ticked where it is in force.
         if let ViewId::Panel(PanelId(panel)) = view {
             let name = panel.strip_prefix(CHOICES)?;
-            let section = *parts(&settings).get(self.chosen)?;
-            let setting = find(section, name)?;
+            let (section, setting) = parts(&settings).get(self.chosen)?.find(name)?;
             let choices = menu_values(cx, section, setting)?;
             let items = choices
                 .iter()
@@ -1446,7 +1500,7 @@ impl SettingsPage {
     fn entry_event(
         &mut self,
         cx: &mut Cx<'_>,
-        section: &SettingsSection,
+        part: &Part<'_>,
         event: &UiEvent,
     ) -> Result<(), Error> {
         let key = event.key.0.as_str();
@@ -1455,7 +1509,7 @@ impl SettingsPage {
             .find_map(|prefix| key.strip_prefix(prefix).map(|rest| (prefix, rest)))
             .unwrap_or_default();
         let mut parts = rest.split(PART);
-        let Some(setting) = parts.next().and_then(|name| find(section, name)) else {
+        let Some((section, setting)) = parts.next().and_then(|name| part.find(name)) else {
             return Ok(());
         };
         let entry = parts.next().map(str::to_owned);
@@ -1778,12 +1832,14 @@ fn shown_parts(cx: &mut Cx<'_>, settings: &Settings, words: &[String]) -> Vec<us
     parts(settings)
         .into_iter()
         .enumerate()
-        .filter(|(_, section)| {
+        .filter(|(_, part)| {
             words.is_empty()
-                || section
-                    .keys
-                    .iter()
-                    .any(|key| key_holds(cx, section, key, words))
+                || part.sections().any(|section| {
+                    section
+                        .keys
+                        .iter()
+                        .any(|key| key_holds(cx, section, key, words))
+                })
         })
         .map(|(at, _)| at)
         .collect()
@@ -1926,12 +1982,10 @@ fn tree(
     (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Node {
     let shown = shown_parts(cx, settings, words);
-    let chosen_part = parts(settings)
-        .get(chosen)
-        .copied()
-        .filter(|_| shown.contains(&chosen));
+    let parts = parts(settings);
+    let chosen_part = parts.get(chosen).filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
-        Some(section) => section_part(cx, section, words, (refused, typed)),
+        Some(part) => section_part(cx, part, words, (refused, typed)),
         None if !words.is_empty() => vec![
             Node::text(message(cx, "settings-no-match", &[]))
                 .key("no-match")
@@ -2081,8 +2135,8 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
     let items: Vec<ListItem> = shown
         .iter()
         .filter_map(|&at| parts.get(at))
-        .map(|section| ListItem {
-            texts: vec![icon_of(section).to_owned(), title(cx, section)],
+        .map(|part| ListItem {
+            texts: vec![icon_of(part.section).to_owned(), title(cx, part.section)],
         })
         .collect();
     let mut list = Node::list(row, items.len(), (0, items))
@@ -2199,14 +2253,17 @@ fn title(cx: &mut Cx<'_>, section: &SettingsSection) -> String {
     }
 }
 
-/// The part of the chosen section: its title, its plugin's name, what it
-/// holds, and its keys in a group, each write refused of why, `refused`.
+/// The chosen part: its section's title, its plugin's name, what it holds,
+/// and its keys in a group, each write refused of why, `refused`; then
+/// each plugin's section that it shows, of a heading of its title, its
+/// plugin's name, what it holds and its keys.
 fn section_part(
     cx: &mut Cx<'_>,
-    section: &SettingsSection,
+    shown: &Part<'_>,
     words: &[String],
     (refused, typed): (&BTreeMap<String, String>, &BTreeMap<String, Typed>),
 ) -> Vec<Node> {
+    let section = shown.section;
     let mut part = vec![
         Node::text(title(cx, section))
             .key("title")
@@ -2247,6 +2304,59 @@ fn section_part(
         .map(|key| key_row(cx, key, (refused.get(&key.name), typed)))
         .collect();
     part.push(group(rows, "keys"));
+    for joined in &shown.joined {
+        let keys: Vec<&SettingKey> = joined
+            .keys
+            .iter()
+            .filter(|key| words.is_empty() || key_holds(cx, joined, key, words))
+            .collect();
+        if keys.is_empty() {
+            continue;
+        }
+        let at = |what: &str| format!("{what}:{}", joined.name);
+        part.push(
+            Node::text(title(cx, joined))
+                .key(at("joined-title").as_str())
+                .role(Role::Heading)
+                .style(Style {
+                    font_weight: Some(FontWeight::Bold),
+                    ..Style::default()
+                })
+                .layout(Layout {
+                    padding: Edges {
+                        top: 12.0,
+                        right: 0.0,
+                        bottom: 0.0,
+                        left: 0.0,
+                    },
+                    ..Layout::default()
+                }),
+        );
+        if let Some(plugin) = &joined.plugin {
+            part.push(
+                Node::text(message(
+                    cx,
+                    "settings-plugin",
+                    &[("plugin", plugin.clone())],
+                ))
+                .key(at("joined-plugin").as_str())
+                .style(small()),
+            );
+        }
+        if !joined.description.is_empty() {
+            part.push(
+                Node::text(joined.description.clone())
+                    .key(at("joined-description").as_str())
+                    .style(secondary())
+                    .layout(wrapped()),
+            );
+        }
+        let rows = keys
+            .into_iter()
+            .map(|key| key_row(cx, key, (refused.get(&key.name), typed)))
+            .collect();
+        part.push(group(rows, &at("keys")));
+    }
     part
 }
 

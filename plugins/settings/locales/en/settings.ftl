@@ -99,7 +99,7 @@ section-plugin-quick-terminal = Quick Terminal
 section-plugin-search = Find
 section-plugin-command-header = Command Header
 section-plugin-quick-tips = Quick Tips
-section-plugin-links = Link Hints
+section-plugin-links = Hints
 
 # A key.
 settings-plugin = Of the plugin { $plugin }

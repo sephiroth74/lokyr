@@ -3078,3 +3078,91 @@ fn a_map_s_entries_are_changed_renamed_taken_away_and_added() {
     .unwrap();
     assert_eq!(written(&mut host), [hints_written(None)]);
 }
+
+#[test]
+fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own() {
+    let mut settings = settings();
+    let text = SettingKind::Text {
+        min_length: Some(1),
+        max_length: Some(256),
+        examples: Vec::new(),
+    };
+    let app_links = SettingsSection {
+        name: "links".to_owned(),
+        plugin: None,
+        description: "What a link does".to_owned(),
+        keys: vec![key("editor", None, None, text.clone())],
+    };
+    settings.sections.insert(3, app_links);
+    settings.sections.push(SettingsSection {
+        name: "links".to_owned(),
+        plugin: Some("lokyr/links".to_owned()),
+        description: "The hints".to_owned(),
+        keys: vec![key("alphabet", None, None, text.clone())],
+    });
+    // A plugin's section of a key that the app's of its name has stays a
+    // part of its own.
+    settings.sections.push(SettingsSection {
+        name: "window".to_owned(),
+        plugin: Some("acme/window".to_owned()),
+        description: String::new(),
+        keys: vec![key("programs", None, None, text)],
+    });
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        sidebar_of(&tree),
+        ["font", "window", "theme", "links", "tabs", "window"]
+    );
+    host.ui_event(&mut plugin, &choose(3)).unwrap();
+    let _ = written(&mut host);
+    let tree = rendered(&mut host, &mut plugin);
+    // Its own keys, then the plugin's under its title, its plugin's name
+    // and what it holds.
+    assert!(held(&tree, "field:editor").is_some());
+    assert_eq!(
+        text_of(&tree, "joined-title:links").as_deref(),
+        Some("links")
+    );
+    assert_eq!(
+        text_of(&tree, "joined-description:links").as_deref(),
+        Some("The hints")
+    );
+    assert!(find_node(&tree, "keys:links").is_some());
+    assert!(held(&tree, "field:alphabet").is_some());
+    host.ui_event(&mut plugin, &submit("field:alphabet", "asdf"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [(
+            "links".to_owned(),
+            Some("lokyr/links".to_owned()),
+            "alphabet".to_owned(),
+            Some(Data::Text("asdf".to_owned()))
+        )]
+    );
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &submit("field:editor", "zed"))
+        .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [app_key(
+            "links",
+            "editor",
+            Some(Data::Text("zed".to_owned()))
+        )]
+    );
+    host.deliver(&mut plugin).unwrap();
+    // The search finds the plugin's key in the part.
+    host.ui_event(&mut plugin, &search("alphabet")).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["links"]);
+    assert!(held(&tree, "field:alphabet").is_some());
+    assert!(held(&tree, "field:editor").is_none());
+}
