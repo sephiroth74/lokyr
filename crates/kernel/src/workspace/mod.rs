@@ -2225,6 +2225,7 @@ impl Workspace {
                     tab: tab.into(),
                     window: gone.window.into(),
                 });
+                self.lost_from_group(gone.group);
             }
             self.tell_left(left);
         }
@@ -2374,6 +2375,7 @@ impl Workspace {
             tab: tab.into(),
             window: moved.window.into(),
         });
+        self.lost_from_group(moved.group);
         self.take_active_look(into);
         self.changed(WorkspaceEvent::LayoutChanged { tab: into.into() });
         self.changed(WorkspaceEvent::PaneFocused {

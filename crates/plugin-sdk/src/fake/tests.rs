@@ -2368,3 +2368,42 @@ fn a_map_s_entries_are_taken_as_the_kernel_takes_them() {
     }
     assert!(setting_takes(&kind, &Data::Text("A".to_owned())).is_err());
 }
+
+#[test]
+fn a_closed_window_s_and_a_reopened_tab_s_events_come_in_the_app_s_order() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::WorkspaceWrite]);
+    let window = WindowId(1);
+    host.pane(PaneId(1)).window = window;
+    let (a, _) = host.add_tab(window);
+    let (b, _) = host.add_tab(window);
+    let group = host.add_group(&[a, b], "work", None);
+    let mut probe = Probe::new(|cx, _| cx.subscribe(&crate::event::WorkspaceEvent::NAMES));
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    // A tab closed and kept, then given back: its group after its panes.
+    let mut keep = Probe::new(move |cx, _| cx.close_tab_kept(b, false, 60));
+    host.command(&mut keep, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    probe.heard.clear();
+    let mut reopen = Probe::new(move |cx, _| cx.reopen_tab(window).map(|_| ()));
+    host.command(&mut reopen, "probe.go", Args::new()).unwrap();
+    host.deliver(&mut probe).unwrap();
+    let names = heard(&probe);
+    let created = names.iter().position(|name| name == "pane-created");
+    let changed = names.iter().position(|name| name == "group-changed");
+    assert!(created.is_some() && changed > created, "{names:?}");
+    // The window closed: its tabs' panes and the tabs, their group's
+    // changes, then the window.
+    probe.heard.clear();
+    host.close_window(window);
+    host.deliver(&mut probe).unwrap();
+    let names = heard(&probe);
+    let last = |name: &str| names.iter().rposition(|heard| heard == name);
+    let first = |name: &str| names.iter().position(|heard| heard == name);
+    assert!(first("pane-closed").is_some(), "{names:?}");
+    assert!(first("tab-closed") > first("pane-closed"), "{names:?}");
+    assert!(first("group-changed") > first("tab-closed"), "{names:?}");
+    assert_eq!(last("window-closed"), Some(names.len() - 1), "{names:?}");
+    let _ = group;
+}

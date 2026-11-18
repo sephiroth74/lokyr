@@ -2814,6 +2814,19 @@ fn a_group_is_told_of_the_tabs_that_close_and_come_back() {
     assert_eq!(workspace.reopen_tab(window), Some(c));
     assert_eq!(workspace.group_tabs(group), [b, c]);
     assert!(told_groups(&mut workspace).contains(&group.into()));
+    // A tab that closes of its last pane, as its shell exits: told.
+    let e = workspace.open_tab(window, pane("sleep 30"), 4).unwrap();
+    assert!(workspace.add_to_group(e, group));
+    workspace.take_events();
+    let last = workspace.tab(e).unwrap().active_pane();
+    assert!(workspace.close_pane(last));
+    assert_eq!(told_groups(&mut workspace), [group.into()]);
+    assert_eq!(workspace.group_tabs(group), [b, c]);
+    // One that goes into another tab's pane: told.
+    let into = workspace.tab(a).unwrap().active_pane();
+    assert!(workspace.tab_into_pane(c, into, Edge::Right));
+    assert!(told_groups(&mut workspace).contains(&group.into()));
+    assert_eq!(workspace.group_tabs(group), [b]);
 }
 
 #[test]

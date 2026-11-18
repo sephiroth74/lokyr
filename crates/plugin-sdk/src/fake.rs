@@ -1172,12 +1172,22 @@ impl FakeHost {
     /// Closes `window`, with its tabs and its panes, as its last program
     /// ended or the user closed it, which the plugin is owed.
     pub fn close_window(&mut self, window: WindowId) -> &mut Self {
+        // Its tabs go first, each of its panes' closings, its own and its
+        // group's change, then the window, as the app's.
+        self.settle();
+        let tabs = self
+            .windows
+            .get(&window)
+            .map(|shown| shown.tabs.clone())
+            .unwrap_or_default();
+        for tab in tabs {
+            self.drop_tab(tab);
+        }
         self.panes.retain(|_, pane| pane.window != window);
         self.quick.remove(&window);
         if self.focused == Some(window) {
             self.given_focus = Some(None);
         }
-        // Its tabs go before its groups settle, as the app's go with it.
         self.settle();
         self.changed(WorkspaceEvent::WindowClosed { window });
         self
@@ -2529,10 +2539,10 @@ impl FakeHost {
             index: placed,
         });
         let group = self.tabs.get(&tab).and_then(|shown| shown.group);
-        self.lost_from_group(group);
         for pane in ids {
             self.changed(WorkspaceEvent::PaneCreated { pane, tab });
         }
+        self.lost_from_group(group);
         self.activate_tab(tab);
     }
 
@@ -2592,6 +2602,7 @@ impl FakeHost {
                     tab,
                     window: gone.window,
                 });
+                self.lost_from_group(gone.group);
             }
             self.tell_left(left);
         }
@@ -2645,6 +2656,7 @@ impl FakeHost {
             tab,
             window: moved.window,
         });
+        self.lost_from_group(moved.group);
         // It takes the moved active pane's title, as the app's.
         self.looked(into, &before);
         self.changed(WorkspaceEvent::LayoutChanged { tab: into });

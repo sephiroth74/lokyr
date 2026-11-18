@@ -1664,6 +1664,96 @@ fn groups(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![fresh.clone()],
             },
+            // A tab of the group that closes of its last pane, and one that
+            // goes into another tab's pane: the group is told each time.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(4),
+                            pane: pane(4),
+                        },
+                    ),
+                    (
+                        Request::AddToGroup {
+                            tab: tab(4),
+                            group: group(1),
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::ClosePane {
+                        pane: pane(4),
+                        ask: false,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::NewTab {
+                            window: w,
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(5),
+                            pane: pane(5),
+                        },
+                    ),
+                    (
+                        Request::AddToGroup {
+                            tab: tab(5),
+                            group: group(1),
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::TabIntoPane {
+                        tab: tab(5),
+                        pane: p,
+                        edge: Edge::Right,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![fresh.clone()],
+            },
+            // The world's tab as it was, of its own pane alone.
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::ClosePane {
+                        pane: pane(5),
+                        ask: false,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: Vec::new(),
+            },
             Step {
                 wait: 0,
                 asks: vec![
