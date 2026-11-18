@@ -20,6 +20,9 @@
 # - motion-1 to motion-4: the window dragged and resized, of each copy, of
 #   one look and one round each: the recordings first, the mouse left alone,
 #   then their figures, the Mac free again.
+# - again: idle in two rounds more, the third and the fourth, then each
+#   throughput's workload in two more, to tell a package's wakeup and
+#   CJK's throughput from the session's noise.
 #
 # The config is ab-F3b-20/config.toml's, the releases' of the least work
 # beside the terminal's own; the motion's, F3-152's.
@@ -32,7 +35,7 @@ BENCH=$REPO/target/release/lokyr-bench
 SPIKE=$REPO/spikes/wasmtime-notarized/build/Spike.app
 ONSCREEN=$REPO/tools/bench/onscreen.py
 W=/tmp/lokyr/workloads
-STEPS="prepare startup startup-again latency idle memory motion-1 motion-2 motion-3 motion-4"
+STEPS="prepare startup startup-again latency idle memory motion-1 motion-2 motion-3 motion-4 again"
 DONE=$OUT/steps.done
 
 app() { echo $OUT/$1/Lokyr.app; }
@@ -54,6 +57,7 @@ minutes() {
     idle) echo "7 min" ;;
     memory) echo "6 min" ;;
     motion-*) echo "2 min of the mouse left alone, then 10 min of figures, the Mac free" ;;
+    again) echo "8 min" ;;
   esac
 }
 conditions() {
@@ -162,8 +166,9 @@ started() {
   pid=$(pgrep -nf "$bundle/Contents/MacOS/lokyr")
   [ -n "$pid" ] && [ "$pid" != "$before" ]
 }
+# Idle and memory of the rounds `$@`.
 idle() {
-  for round in 1 2; do
+  for round in "$@"; do
     for v in $(order $round v120 v130); do
       name=$v-$round
       log "idle $name"
@@ -193,8 +198,12 @@ memory() {
     done
     load
   done
+  throughput 1 2
+}
+# The four workloads' throughput on screen, of the rounds `$@`.
+throughput() {
   for file in ascii seq sgr cjk; do
-    for round in 1 2; do
+    for round in "$@"; do
       for v in $(order $round v120 v130); do
         log "throughput $file $v $round"
         rm -f $OUT/onscreen-$file-$v-$round.jsonl
@@ -211,20 +220,22 @@ memory() {
 # that switches, or translucent at 0.95 with a blur of 10 and the cursor's
 # fades, as F3-152's.
 motion_config() {
-  look=$1 opacity=$2 blur=$3 fades=$4
-  mkdir -p $OUT/motion/config-$look/lokyr
+  # Names of their own: a POSIX shell's variables are global, and the
+  # caller's `look` is the round's.
+  config_look=$1 config_opacity=$2 config_blur=$3 config_fades=$4
+  mkdir -p $OUT/motion/config-$config_look/lokyr
   {
     printf '[app]\nrestore-windows = "never"\n'
     printf '[plugins.quick-tips]\nenabled = false\n'
     printf '[font]\nfamily = "Menlo"\nsize = 20\n'
     printf '[window]\ncolumns = 88\nrows = 27\nremember-frame = false\n'
-    printf 'background-opacity = %s\nbackground-blur = %s\n' "$opacity" "$blur"
-    if [ "$fades" = fade ]; then
+    printf 'background-opacity = %s\nbackground-blur = %s\n' "$config_opacity" "$config_blur"
+    if [ "$config_fades" = fade ]; then
       printf '[cursor]\nblink = true\nfade-in = 100\nvisible = 500\nfade-out = 500\nhidden = 100\n'
     else
       printf '[cursor]\nblink = true\nfade-in = 0\nvisible = 600\nfade-out = 0\nhidden = 600\n'
     fi
-  } > $OUT/motion/config-$look/lokyr/config.toml
+  } > $OUT/motion/config-$config_look/lokyr/config.toml
 }
 # The copy `$1` of the look `$2` started, its window found by the bench.
 launch() {
@@ -291,7 +302,7 @@ motion() {
 run_step() {
   step=$1
   case $step in
-    prepare | startup | startup-again | latency | idle | memory | motion-1 | motion-2 | motion-3 | motion-4) ;;
+    prepare | startup | startup-again | latency | idle | memory | motion-1 | motion-2 | motion-3 | motion-4 | again) ;;
     *)
       echo "no step $step: $STEPS" >&2
       return 1
@@ -305,12 +316,16 @@ run_step() {
     startup) startup ;;
     startup-again) startup_again ;;
     latency) latency ;;
-    idle) idle ;;
+    idle) idle 1 2 ;;
     memory) memory ;;
     motion-1) motion 1 opaque "v120 v130" ;;
     motion-2) motion 1 blur "v130 v120" ;;
     motion-3) motion 2 blur "v120 v130" ;;
     motion-4) motion 2 opaque "v130 v120" ;;
+    again)
+      idle 3 4
+      throughput 3 4
+      ;;
   esac
   status=$?
   if [ $status -ne 0 ]; then
