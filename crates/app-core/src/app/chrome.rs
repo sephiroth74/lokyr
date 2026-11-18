@@ -226,7 +226,10 @@ impl<B: Backend> App<B> {
                 .iter()
                 .filter_map(|menu| match menu {
                     NativeMenu::Panel(id, _) => Some(*id),
-                    NativeMenu::Window | NativeMenu::Closed | NativeMenu::Overflow(_) => None,
+                    NativeMenu::Window
+                    | NativeMenu::Closed
+                    | NativeMenu::Overflow(_)
+                    | NativeMenu::Field(..) => None,
                 })
                 .chain(state.native_due.iter().copied())
                 .filter_map(panel)

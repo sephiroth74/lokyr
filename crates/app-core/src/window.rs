@@ -53,6 +53,9 @@ pub(crate) enum NativeMenu {
     /// A menu's panel that closed while the platform showed it, whose
     /// choice and closing do nothing.
     Closed,
+    /// A field's own menu, of its view's id and its node's key, whose
+    /// choice cuts, copies, pastes or selects all of it.
+    Field(u32, lokyr_kernel::plugins::view::Key),
 }
 
 /// A drag of the edge of a window's tab bar's column: the bar's plugin,

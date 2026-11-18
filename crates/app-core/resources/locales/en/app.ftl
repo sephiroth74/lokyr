@@ -119,6 +119,11 @@ save-panel-message = { $name } saves this file.
 save-failed = { $path } could not be saved: { $error }
 # The context menu's Look Up, which names the selection, shortened.
 menu-look-up = Look Up “{ $word }”
+# A text field's context menu.
+field-menu-cut = Cut
+field-menu-copy = Copy
+field-menu-paste = Paste
+field-menu-select-all = Select All
 # The context menu's man page, which names the page.
 menu-man-page = Open man Page for “{ $page }”
 # The context menu's search of the man pages, which names the words.

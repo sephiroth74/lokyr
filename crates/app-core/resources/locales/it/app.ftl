@@ -113,6 +113,11 @@ title-buttons-more = Altro
 save-panel-message = { $name } salva questo file.
 save-failed = Impossibile salvare { $path }: { $error }
 menu-look-up = Cerca info su “{ $word }”
+# Il menu contestuale di un campo di testo.
+field-menu-cut = Taglia
+field-menu-copy = Copia
+field-menu-paste = Incolla
+field-menu-select-all = Seleziona tutto
 menu-man-page = Apri la pagina man per “{ $page }”
 menu-man-search = Cerca “{ $words }” nell'indice delle pagine man
 menu-search-web = Cerca “{ $text }” sul web

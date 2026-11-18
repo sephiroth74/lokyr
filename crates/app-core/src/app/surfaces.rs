@@ -8,11 +8,11 @@
 use std::time::Instant;
 
 use lokyr_kernel::plugins::ui::{Slot, UiEvent, ViewId};
-use lokyr_kernel::plugins::view::{Key as NodeKey, Kind};
+use lokyr_kernel::plugins::view::{Key as NodeKey, Kind, UiEventKind};
 use lokyr_kernel::workspace::Workspace;
 use lokyr_platform_core::{
-    ContentRect, Ime, KeyEvent, Modifiers, MouseButton, Platform, Point, PointerArea, PointerShape,
-    ScrollDelta, Size, WindowId,
+    ContentRect, ContextMenu, Ime, KeyEvent, MenuItem, Modifiers, MouseButton, Platform, Point,
+    PointerArea, PointerShape, ScrollDelta, Shortcut, ShortcutKey, Size, WindowId,
 };
 use lokyr_ui_core::chrome;
 use lokyr_ui_core::field::Clipboard;
@@ -28,11 +28,20 @@ use super::chrome::{SlotView, ui_event};
 use super::tab_drag::{self, Dropping};
 use crate::drawing::Backend;
 use crate::keys;
-use crate::window::Window;
+use crate::window::{NativeMenu, Window};
 
 /// A line of the wheel over a slot's view, in points: a line of the
 /// interface's text.
 const LINE: f64 = 16.0;
+
+/// A field's own menu: each item's command, its title's message and its key
+/// under Command, as macOS's text fields have them.
+const FIELD_MENU: [(&str, &str, char); 4] = [
+    ("field:cut", "field-menu-cut", 'x'),
+    ("field:copy", "field-menu-copy", 'c'),
+    ("field:paste", "field-menu-paste", 'v'),
+    ("field:select-all", "field-menu-select-all", 'a'),
+];
 
 /// The commands of the Edit menu that a field with the focus takes as its
 /// own, each of its key under Command.
@@ -256,6 +265,7 @@ impl<B: Backend> App<B> {
         };
         let mut events = Vec::new();
         let mut ended = false;
+        let mut field_menu = None;
         if pressed {
             // A composition under way, of a field of another view or of the
             // pane, ends as it stands.
@@ -279,7 +289,19 @@ impl<B: Backend> App<B> {
                 .surface
                 .pressed(at, (button, clicks, mods.shift), &mut drawing.font);
             ended |= pressed.composition_kept;
-            events.extend(told(view, pressed.events));
+            // A field's context menu is its own, of its edits, which its
+            // plugin hears nothing of.
+            let mut node_events = pressed.events;
+            if let Some(at) = node_events.iter().position(|event| {
+                event.kind == UiEventKind::ContextMenu
+                    && matches!(
+                        view.surface.tree.kind(event.node),
+                        Some(Kind::Field(field)) if !field.records
+                    )
+            }) {
+                field_menu = Some((id, node_events.remove(at).key));
+            }
+            events.extend(told(view, node_events));
             state.captured = Some(id);
             state.captured_by = Some(platform_button);
             state.focus.pressed(id, &view.surface.tree, &pressed.path);
@@ -319,7 +341,108 @@ impl<B: Backend> App<B> {
         self.views_changed(window);
         platform.request_frame(window);
         self.wake_for_tooltips(platform);
+        if let Some((view, key)) = field_menu {
+            self.show_field_menu(platform, window, (view, &key), position);
+        }
         true
+    }
+
+    /// Shows the menu of the field `key` of the view `view` of `window` at
+    /// `position`: Cut, Copy, Paste and Select All, each of its key, dimmed
+    /// where it would do nothing, as of no selection, of nothing on the
+    /// clipboard, or of no text.
+    fn show_field_menu(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (view, key): (u32, &NodeKey),
+        position: Point,
+    ) {
+        let pasted = platform
+            .clipboard_text()
+            .is_some_and(|text| !text.trim().is_empty());
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(shown) = view_mut(&mut state.chrome, view) else {
+            return;
+        };
+        let (selected, written) = shown
+            .surface
+            .fields
+            .state(key)
+            .map_or((false, false), |field| {
+                (!field.selection().is_empty(), !field.text().is_empty())
+            });
+        let mut menu = ContextMenu::default();
+        for (command, title, letter) in FIELD_MENU {
+            let does = match command {
+                "field:cut" | "field:copy" => selected,
+                "field:paste" => pasted,
+                _ => written,
+            };
+            if !does {
+                menu.dimmed.push(command.to_owned());
+            }
+            if command == "field:select-all" {
+                menu.items.push(MenuItem::Separator);
+            }
+            menu.items.push(MenuItem::Command {
+                title: self.texts.text(title),
+                command: command.to_owned(),
+                shortcut: Some(Shortcut {
+                    key: ShortcutKey::Char(letter),
+                    command: true,
+                    shift: false,
+                    alt: false,
+                    control: false,
+                }),
+            });
+        }
+        platform.show_context_menu(window, position, &menu);
+        state.native.push_back(NativeMenu::Field(view, key.clone()));
+    }
+
+    /// The item `command` of the menu of the field `key` of the view `view`
+    /// of `window`: the field cuts, copies, pastes or selects all, as its
+    /// key under Command does.
+    pub(super) fn field_menu_chosen(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        (view, key): (u32, &NodeKey),
+        command: &str,
+    ) {
+        let Some(&(_, _, letter)) = FIELD_MENU.iter().find(|(name, ..)| *name == command) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(shown) = view_mut(&mut state.chrome, view) else {
+            return;
+        };
+        let Some(node) = shown.surface.tree.by_key(key) else {
+            return;
+        };
+        let text = letter.to_string();
+        let event = vt::KeyEvent {
+            key: vt::Key::Char(letter),
+            action: KeyAction::Press,
+            mods: Mods {
+                super_key: true,
+                ..Mods::NONE
+            },
+            text: &text,
+            unmodified: &text,
+            base_layout: None,
+        };
+        if let Some(events) = shown.surface.key(node, &event, &mut Board(&mut *platform)) {
+            let events: Vec<_> = told(shown, events).collect();
+            self.ui_events.extend(events);
+            self.views_changed(window);
+            platform.request_frame(window);
+        }
     }
 
     /// A wheel or a trackpad scrolled by `delta` at `position` over

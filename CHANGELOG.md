@@ -31,6 +31,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Press ⌘U, or choose View › Use Transparency, to show a translucent window opaque while you read, and again to see through it once more. Each window keeps its own choice, and your config's opacity and blur stay as they are; changing them in the config shows them in every window.
 - Reopen a tab you just closed: Shell › Reopen Closed Tab, ⇧⌘T, brings back the tab you closed last, at its place, as you left it. For 10 seconds after you close a tab, its programs keep running and their output is read; then it closes for good. Set the time with `[plugins.tabs] reopen-seconds`, or `0` to close tabs at once. A tab whose program ends, the last tab of a window and a window you close don't wait, nor a tab you close while a program other than a shell runs there, as closing it ends the program. At most 16 closed tabs wait; closing another closes the oldest for good.
 - The plugin API keeps a closed tab to give back, `keep` of `cx.close_tab_kept`, 16 at most, and gives it back, `cx.reopen_tab`.
+- The text fields have a context menu of Cut, Copy, Paste and Select All, each dimmed where it does nothing, and take macOS's Control-T, which swaps the characters around the caret, Control-P and Control-N, and Control-Y, which types back what Control-K took.
 
 ### Changed
 
@@ -41,6 +42,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- The text fields, such as the settings window's, its search and the find bar's, take their editing keys before Lokyr's shortcuts: Shift-Command-← selects to the field's start rather than move the tab, and Command-↑ moves the caret rather than jump to the previous prompt.
 - A command's mark in the gutter shows on its prompt's first line of text, not on the empty line that some prompt themes print before the prompt.
 - A tab's context menu no longer runs the item that the pointer moves over, such as Rename Tab…: it waits for you to click an item.
 - The cursor no longer shows, as it blinks, the character of another cell, as a few moves at once, of a click in the command line or of quick output, find its drawing busy: it stays where it was drawn until its next frame draws it in its new cell.

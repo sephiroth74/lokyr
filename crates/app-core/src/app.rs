@@ -5595,7 +5595,7 @@ impl<B: Backend> App<B> {
             // A choice of a native menu of a plugin's panel, or of the
             // window's own.
             WindowEvent::ContextCommand(command) => {
-                if !self.native_chosen(window, &command) {
+                if !self.native_chosen(platform, window, &command) {
                     self.context_command(platform, window, &command);
                 }
             }

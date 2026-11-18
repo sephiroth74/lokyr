@@ -680,6 +680,91 @@ fn click_page_node(fake: &mut Fake, app: &mut App, window: WindowId, key: &str) 
     frames(fake, app, window);
 }
 
+/// The middle of the node of `key` of the page's view in `window`, in the
+/// window's points.
+fn page_node_middle(fake: &Fake, app: &App, window: WindowId, key: &str) -> Point {
+    let view = page_view(app, window).unwrap();
+    let frame = view.frame.unwrap();
+    let node = view
+        .surface
+        .tree
+        .by_key(&key.into())
+        .unwrap_or_else(|| panic!("{key}"));
+    let at = view.surface.layout.frame(&view.surface.tree, node).unwrap();
+    let scale = fake.window(window).unwrap().size.scale;
+    Point {
+        x: f64::from(frame.x + at.x + at.width / 2.0) / scale,
+        y: f64::from(frame.y + at.y + at.height / 2.0) / scale,
+    }
+}
+
+#[test]
+fn a_field_s_context_menu_cuts_copies_pastes_and_selects_all_dimmed_where_it_does_nothing() {
+    let (mut fake, mut app, _) = two_tabs();
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let middle = page_node_middle(&fake, &app, own, "search");
+    let menu = |fake: &mut Fake, app: &mut App| {
+        let before = fake.context_menus().len();
+        super::right_click(fake, app, own, middle, Modifiers::NONE);
+        frames(fake, app, own);
+        assert_eq!(fake.context_menus().len(), before + 1, "a menu shown");
+        let (_, _, shown) = fake.context_menus().last().unwrap().clone();
+        let titles: Vec<String> = shown
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command { title, .. } => Some(title.clone()),
+                _ => None,
+            })
+            .collect();
+        (titles, shown.dimmed.clone())
+    };
+    // Of no text, no selection and nothing on the clipboard, all dimmed.
+    let (titles, dimmed) = menu(&mut fake, &mut app);
+    assert_eq!(titles, ["Cut", "Copy", "Paste", "Select All"]);
+    assert_eq!(
+        dimmed,
+        ["field:cut", "field:copy", "field:paste", "field:select-all"]
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    for (code, text) in [(KeyCode::KeyA, "a"), (KeyCode::KeyB, "b")] {
+        fake.send(&mut app, own, key_event(code, text, Modifiers::NONE, true));
+        fake.send(&mut app, own, key_event(code, text, Modifiers::NONE, false));
+    }
+    frames(&mut fake, &mut app, own);
+    // Select All, then Cut: the clipboard holds the text, the field none.
+    let (_, dimmed) = menu(&mut fake, &mut app);
+    assert_eq!(dimmed, ["field:cut", "field:copy", "field:paste"]);
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextCommand("field:select-all".to_owned()),
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    let (_, dimmed) = menu(&mut fake, &mut app);
+    assert_eq!(dimmed, ["field:paste"]);
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextCommand("field:cut".to_owned()),
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "");
+    assert_eq!(fake.clipboard_text().as_deref(), Some("ab"));
+    // Paste, of the clipboard.
+    let (_, dimmed) = menu(&mut fake, &mut app);
+    assert_eq!(dimmed, ["field:cut", "field:copy", "field:select-all"]);
+    fake.send(
+        &mut app,
+        own,
+        WindowEvent::ContextCommand("field:paste".to_owned()),
+    );
+    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "ab");
+}
+
 #[test]
 fn the_plugins_page_s_sidebar_keeps_its_width_whatever_its_part_shows() {
     let folder = super::installed::shelf("settings-sidebar");

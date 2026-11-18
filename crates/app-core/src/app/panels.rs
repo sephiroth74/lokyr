@@ -399,7 +399,12 @@ impl<B: Backend> App<B> {
     /// menu's panel, its item's node's event to the panel's plugin, as its
     /// press would tell, or nothing once the panel closed. Whether the menu
     /// was a panel's, whose items are no commands of the app's.
-    pub(super) fn native_chosen(&mut self, window: WindowId, command: &str) -> bool {
+    pub(super) fn native_chosen(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        command: &str,
+    ) -> bool {
         let Some(state) = self.windows.get(&window) else {
             return false;
         };
@@ -419,6 +424,11 @@ impl<B: Backend> App<B> {
             Some(NativeMenu::Overflow(choices)) => {
                 let choices = choices.clone();
                 self.overflow_chosen(window, &choices, command);
+                true
+            }
+            Some(NativeMenu::Field(view, key)) => {
+                let (view, key) = (*view, key.clone());
+                self.field_menu_chosen(platform, window, (view, &key), command);
                 true
             }
             Some(NativeMenu::Closed) => true,
