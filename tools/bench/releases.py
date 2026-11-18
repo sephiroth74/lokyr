@@ -8,6 +8,7 @@ each group of measures over the releases, in `docs/bench/releases/`.
 """
 import json
 import os
+import re
 import sys
 
 import charts
@@ -20,6 +21,13 @@ SHOWN = 8
 PAGE = os.path.join(BENCH, "RELEASES.md")
 START = "<!-- The summary and the charts, which tools/bench/releases.py writes from releases.json: edit those, not this. -->"
 END = "<!-- The end of what tools/bench/releases.py writes. -->"
+TABLE_START = "<!-- The table of every measure, which tools/bench/releases.py writes from releases.json's `table`: edit that, not this. -->"
+TABLE_END = "<!-- The end of the table that tools/bench/releases.py writes. -->"
+# The marks of a cell: better or worse than the release before beyond its
+# rounds' spread, as the release's own session measured both, or past its
+# budget; each a sign that reads without color.
+MARKS = {"better": "▲", "worse": "▼", "over": "✖"}
+SUPERSCRIPTS = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 
 
 def value_text(value, measure):
@@ -183,10 +191,97 @@ def chart_files(data):
     return files
 
 
-def page(text, block):
+def page(text, block, start_marker=START, end_marker=END):
     """`text`, RELEASES.md, with `block` between its markers."""
-    start, end = text.index(START) + len(START), text.index(END)
+    start, end = text.index(start_marker) + len(start_marker), text.index(end_marker)
     return text[:start] + "\n\n" + block + "\n" + text[end:]
+
+
+def cell_mark(row, release, shown, measures):
+    """The mark of `row`'s cell of `release`, whose value shows as `shown`:
+    past the row's limit, as its value shows; or better or worse, of the
+    verdict of its measure against the release before in its own session;
+    none as before, or of no measure."""
+    limit = row.get("limit")
+    number = re.match(r"[0-9]+(\.[0-9]+)?", shown)
+    if limit and number:
+        value = float(number.group())
+        if value > limit["value"] if limit["better"] == "lower" else value < limit["value"]:
+            return MARKS["over"]
+    measure = measures.get(row.get("measure"))
+    if not measure:
+        return ""
+    after, before = measure["values"].get(release), measure.get("baseline", {}).get(release)
+    if after is None or before is None:
+        return ""
+    told = verdict(measure, before, after)
+    if told.startswith("❌"):
+        return MARKS["over"]
+    if "Worse" in told:
+        return MARKS["worse"]
+    if "Better" in told:
+        return MARKS["better"]
+    return ""
+
+
+def table(data):
+    """The Markdown of the table of every measure, of `table`'s groups and
+    rows, the releases' columns linked to their reports, and its notes
+    numbered under it: a note of several rows of one release told once."""
+    releases = data["releases"]
+    measures = {m["id"]: m for m in data["measures"]}
+    rows = [row for group in data["table"]["groups"] for row in group["rows"]]
+    # Each note's number, of its release and text, in the order the cells
+    # take them, and the rows that take it.
+    numbers, notes = {}, []
+
+    def numbered(release, text, name):
+        key = (release, text)
+        if key not in numbers:
+            numbers[key] = len(notes) + 1
+            notes.append([release, text, []])
+        taken = notes[numbers[key] - 1][2]
+        if name not in taken:
+            taken.append(name)
+        return f"\u00a0{str(numbers[key]).translate(SUPERSCRIPTS)}"
+
+    lines = [
+        "Each release's measures in its own session: ▲ better and ▼ worse than the release before, "
+        "as that session measured both, beyond the rounds' spread; ✖ past the budget; — not measured; "
+        "the numbers, the notes under the table.",
+        "",
+        "| Measure | Budget | " + " | ".join(f"[{r['label']}]({r['report']})" for r in releases) + " |",
+        "|---|---|" + "---:|" * len(releases),
+    ]
+    for group in data["table"]["groups"]:
+        lines.append(f"| **{group['title']}** | |" + " |" * len(releases))
+        for row in group["rows"]:
+            budget = row.get("budget", "")
+            if isinstance(budget, list):
+                budget = budget[0].replace(" ", "\u00a0") + numbered(None, budget[1], row["name"])
+            else:
+                budget = budget.replace(" ", "\u00a0")
+            cells = []
+            for release in releases:
+                cell = row["cells"].get(release["id"], "—")
+                shown, note = (cell[0], cell[1]) if isinstance(cell, list) else (cell, None)
+                mark = cell_mark(row, release["id"], shown, measures)
+                # A value, its sign and its note's number kept on one line.
+                text = shown.replace(" ", "\u00a0") + (f"\u00a0{mark}" if mark else "")
+                if note:
+                    text += numbered(release["id"], note, row["name"])
+                cells.append(text)
+            lines.append(f"| {row['name']} | {budget} | " + " | ".join(cells) + " |")
+    lines += ["", "Notes:", ""]
+    for number, (release, text, names) in enumerate(notes, start=1):
+        if release is None:
+            told = f"The budget · {names[0]}: {text}"
+        elif len(names) == 1:
+            told = f"{release} · {names[0]}: {text}"
+        else:
+            told = f"{release}: {text}"
+        lines.append(f"{number}. {told}.")
+    return "\n".join(lines) + "\n"
 
 
 def recent(data):
@@ -201,7 +296,8 @@ def main(argv):
         data = recent(json.load(file))
     outputs = {os.path.join(BENCH, path): svg for path, svg in chart_files(data).items()}
     with open(PAGE) as file:
-        outputs[PAGE] = page(file.read(), summary(data))
+        written = page(file.read(), summary(data))
+        outputs[PAGE] = page(written, table(data), TABLE_START, TABLE_END)
     stale = []
     for path, content in outputs.items():
         current = open(path).read() if os.path.exists(path) else None

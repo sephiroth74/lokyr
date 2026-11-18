@@ -264,3 +264,67 @@
     });
   });
 })();
+
+// A wide page's tables: a group's row of its title alone marked; a sign of
+// a verdict, ▲, ▼ or ✖, of its color; a measure not taken dimmed; the
+// column under the pointer marked, and the release of its header in the
+// page's charts with it.
+(function () {
+  var marks = { "▲": "mark-better", "▼": "mark-worse", "✖": "mark-over" };
+  document.querySelectorAll(".page.wide .doc table").forEach(function (table) {
+    table.querySelectorAll("tbody tr").forEach(function (row) {
+      var cells = Array.prototype.slice.call(row.children);
+      var first = cells[0];
+      var title = first && first.children.length === 1 && first.firstElementChild.tagName === "STRONG" &&
+        first.textContent.trim() === first.firstElementChild.textContent.trim();
+      if (title && cells.slice(1).every(function (cell) { return !cell.textContent.trim(); })) {
+        row.classList.add("group");
+      }
+      cells.forEach(function (cell) {
+        if (/^—/.test(cell.textContent.trim())) cell.classList.add("none");
+        var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+        var texts = [];
+        while (walker.nextNode()) texts.push(walker.currentNode);
+        texts.forEach(function (text) {
+          if (!/[▲▼✖]/.test(text.data)) return;
+          var parts = text.data.split(/([▲▼✖])/);
+          var fragment = document.createDocumentFragment();
+          parts.forEach(function (part) {
+            if (marks[part]) {
+              var span = document.createElement("span");
+              span.className = marks[part];
+              span.textContent = part;
+              fragment.appendChild(span);
+            } else if (part) {
+              fragment.appendChild(document.createTextNode(part));
+            }
+          });
+          text.parentNode.replaceChild(fragment, text);
+        });
+      });
+    });
+    var headers = Array.prototype.slice.call(table.querySelectorAll("thead th"));
+    var marked = -1;
+    function mark(index) {
+      if (index === marked) return;
+      marked = index;
+      table.querySelectorAll(".column-on").forEach(function (cell) { cell.classList.remove("column-on"); });
+      var label = index > 0 && headers[index] ? headers[index].textContent.trim() : "";
+      if (index > 0) {
+        table.querySelectorAll("tr").forEach(function (row) {
+          if (row.classList.contains("group")) return;
+          var cell = row.children[index];
+          if (cell) cell.classList.add("column-on");
+        });
+      }
+      document.querySelectorAll(".doc svg.chart rect.column").forEach(function (column) {
+        column.classList.toggle("on", label !== "" && column.getAttribute("data-release") === label);
+      });
+    }
+    table.addEventListener("pointerover", function (event) {
+      var cell = event.target.closest ? event.target.closest("td, th") : null;
+      if (cell && table.contains(cell)) mark(cell.cellIndex);
+    });
+    table.addEventListener("pointerleave", function () { mark(-1); });
+  });
+})();

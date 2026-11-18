@@ -75,6 +75,42 @@ class Trends(unittest.TestCase):
         self.assertIn(".chart.dark .surface { fill: #1a1a19; }", svg)
 
 
+class Table(unittest.TestCase):
+    DATA = {
+        "releases": [{"id": "1.2.0", "label": "1.2.0", "report": "ab-F3b-29.md"},
+                     {"id": "1.3.0", "label": "1.3.0", "report": "ab-F5a-17.md"}],
+        "measures": [
+            {"id": "p50", "better": "lower", "tolerance": 1, "budget": 33.3,
+             "values": {"1.2.0": 16.6, "1.3.0": 19.0}, "baseline": {"1.2.0": 17.7, "1.3.0": 16.6}},
+        ],
+        "table": {"groups": [{"title": "Latency", "rows": [
+            {"name": "A key to its echo, p50, ms", "budget": ["≤ 33.3", "2 refreshes at 60 Hz"], "measure": "p50",
+             "limit": {"value": 33.3, "better": "lower"},
+             "cells": {"1.2.0": ["16.6", "at 60 Hz"], "1.3.0": "19.0"}},
+            {"name": "The gap, ms", "limit": {"value": 35, "better": "lower"},
+             "cells": {"1.2.0": ["58.5", "at 60 Hz"], "1.3.0": "11 of 1592"}},
+            {"name": "A drag, frames a second", "cells": {"1.3.0": "58.3"}},
+        ]}]},
+    }
+
+    def test_the_table_of_every_measure_is_the_data_s_of_its_marks_and_notes(self):
+        text = releases.table(self.DATA)
+        # The releases' columns of their reports, right-aligned, a group's row.
+        self.assertIn("| Measure | Budget | [1.2.0](ab-F3b-29.md) | [1.3.0](ab-F5a-17.md) |\n|---|---|---:|---:|", text)
+        self.assertIn("| **Latency** | | | |", text)
+        # Better and worse of the measure's verdicts against the release
+        # before, past the limit of the value shown, none of no measure.
+        self.assertIn("| A key to its echo, p50, ms | ≤\u00a033.3\u00a0¹ | 16.6\u00a0▲\u00a0² | 19.0\u00a0▼ |", text)
+        self.assertIn("| The gap, ms |  | 58.5\u00a0✖\u00a0² | 11\u00a0of\u00a01592 |", text)
+        # A cell of no value a dash.
+        self.assertIn("| A drag, frames a second |  | — | 58.3 |", text)
+        # The notes numbered in the cells' order, one of several rows of a
+        # release told once, of the release alone.
+        self.assertIn("1. The budget · A key to its echo, p50, ms: 2 refreshes at 60 Hz.", text)
+        self.assertIn("2. 1.2.0: at 60 Hz.", text)
+        self.assertNotIn("3. ", text)
+
+
 class Files(unittest.TestCase):
     def test_the_summary_and_the_charts_are_those_of_the_data(self):
         # `python3 tools/bench/releases.py` writes them again.

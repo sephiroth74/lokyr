@@ -516,6 +516,31 @@ body {
 .chart-card .chart-card-value { color: var(--fg); font-variant-numeric: tabular-nums; }
 .chart-card .chart-card-report { margin-top: 4px; color: var(--dim); }
 
+/* A wide page's tables: their figures of one width, alternate rows, a
+   group's row of its title, the row and the column under the pointer
+   marked, as the script marks the column; the first column held as the
+   table scrolls sideways, and the header under the top bar as the page
+   scrolls where the table fits its column. A cell's sign of a verdict is
+   of its color, a measure not taken dimmed. */
+.page.wide .doc table :is(td, th) { padding: 8px 10px; }
+.page.wide .doc table td { font-variant-numeric: tabular-nums; background: var(--bg); }
+.page.wide .doc table th { background: var(--bg); }
+.page.wide .doc table tbody tr:nth-child(even) td { background: #110e19; }
+.page.wide .doc table tbody tr.group td:first-child { white-space: nowrap; }
+.page.wide .doc table tbody tr.group td {
+  background: var(--bg);
+  padding-top: 18px;
+  color: var(--fg);
+  border-bottom-color: var(--line-strong);
+}
+.page.wide .doc table tbody tr:not(.group):hover td,
+.page.wide .doc table :is(td, th).column-on { background: #1b1727; }
+.page.wide .doc table :is(td, th):first-child { position: sticky; left: 0; z-index: 1; }
+.page.wide .doc table td.none { color: var(--dim); }
+.page.wide .doc table .mark-better { color: #74d39c; }
+.page.wide .doc table .mark-worse { color: #f2b35e; }
+.page.wide .doc table .mark-over { color: #ff7a8f; }
+
 /* A page of charts or of a wide table: its column wider than the text's on
    a wide screen, its prose kept to the text's measure, its charts and its
    tables taking the rest. */
@@ -523,6 +548,8 @@ body {
   .page.has-nav.wide { grid-template-columns: 220px minmax(0, 960px); }
   .page.has-nav.wide .doc { max-width: 960px; }
   .page.has-nav.wide .doc > :not(.chart-figure, table) { max-width: 700px; }
+  .page.has-nav.wide .doc table { display: table; width: 100%; overflow: visible; }
+  .page.has-nav.wide .doc table thead th { position: sticky; top: 53px; z-index: 2; }
 }
 @media (min-width: 1360px) {
   .wrap.page.has-nav.has-toc.wide {
