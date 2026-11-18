@@ -837,6 +837,14 @@ pub trait Platform {
     /// it on.
     fn set_recording_keys(&mut self, on: bool);
 
+    /// Whether a field that edits text has the keyboard: the keys of the
+    /// menus' key equivalents that edit text, the arrows, Home, End,
+    /// Delete and Forward Delete of Command, Option or Shift, come as keys
+    /// of the window with the focus, whose field takes them, not as the
+    /// menus' items, as macOS's text fields take them. Off until the app
+    /// turns it on.
+    fn set_editing_text(&mut self, on: bool);
+
     /// Gives the pointer over each of `areas` of `window`'s content its own
     /// shape, the first area over those after it, and all over the shape
     /// of the rest, in place of the areas before; none until the app asks.

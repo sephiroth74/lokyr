@@ -723,6 +723,9 @@ pub struct App<B: Backend> {
     /// Whether the platform records the keys, as a field that records a
     /// shortcut has a window's keyboard.
     recording_keys: bool,
+    /// Whether a field that edits text has the keyboard of the window with
+    /// the focus, as the platform was told last.
+    editing_text: bool,
     /// What the plugins were told last of the pointer, and the modifiers
     /// held then.
     pointer_told: Option<PointerTold>,
@@ -1082,6 +1085,7 @@ impl<B: Backend> App<B> {
             bar_timer: None,
             command_held: false,
             recording_keys: false,
+            editing_text: false,
             pointer_told: None,
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
             pointer_text_changed: false,

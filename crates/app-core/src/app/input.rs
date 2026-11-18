@@ -239,6 +239,16 @@ impl<B: Backend> App<B> {
             self.recording_keys = recording;
             platform.set_recording_keys(recording);
         }
+        // A field that edits text, of the window with the focus, takes the
+        // menus' keys that edit text.
+        let editing = self
+            .windows
+            .values()
+            .any(|state| state.focused && editing_field(state));
+        if editing != self.editing_text {
+            self.editing_text = editing;
+            platform.set_editing_text(editing);
+        }
     }
 
     /// Closes `window`'s panels that a key typed into a pane closes, as
@@ -410,6 +420,31 @@ impl<B: Backend> App<B> {
             }
             if focused_view == Some(view.id) {
                 context.hold(format!("{namespace}.focused"));
+            }
+        }
+        // A field that has the keyboard takes its editing keys before the
+        // keymap, as macOS's fields take theirs before the menus', but where
+        // a binding of a context that holds takes the key, as the palette's
+        // arrows while its field has the keyboard.
+        if !state.resolver.is_pending()
+            && event
+                .as_ref()
+                .is_some_and(|event| lokyr_ui_core::field::takes(event.key, event.mods))
+            && editing_field(state)
+        {
+            let combo = keymap::Combo {
+                mods: pressed.mods,
+                press: pressed.press,
+            };
+            let in_context = self.keymap.bindings().iter().any(|binding| {
+                matches!(&binding.keys[..], [only] if only.canonical() == combo.canonical())
+                    && binding
+                        .when
+                        .as_ref()
+                        .is_some_and(|when| context.holds_when(when))
+            });
+            if !in_context {
+                return Taken::Program(vec![key.clone()]);
             }
         }
         match state.resolver.press(&self.keymap, pressed, &context) {
@@ -1374,4 +1409,19 @@ pub(super) fn show_selection(pane: &Pane, selecting: &mut Selecting) {
         Some((from, to)) => pane.select(from, to, selecting.shape, selecting.unit),
         None => pane.clear_selection(),
     }
+}
+
+/// Whether a field that edits text, not one that records a shortcut, has
+/// the keyboard of `state`'s window.
+pub(super) fn editing_field<B: Backend>(state: &crate::window::Window<B>) -> bool {
+    let lokyr_ui_core::focus::Target::Node { panel, node } = state.focus.target() else {
+        return false;
+    };
+    state.chrome.iter().any(|view| {
+        view.id == panel
+            && matches!(
+                view.surface.tree.kind(node),
+                Some(plugins::view::Kind::Field(field)) if !field.records
+            )
+    })
 }

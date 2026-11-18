@@ -71,6 +71,9 @@ pub(crate) struct Shared {
     /// Whether the keys are recorded, as a field that records a shortcut
     /// has the keyboard: the views take the menus' key equivalents.
     recording_keys: Cell<bool>,
+    /// Whether a field that edits text has the keyboard: the views take the
+    /// menus' key equivalents that edit text.
+    editing_text: Cell<bool>,
     /// Whether the system asked the application to quit and waits for its
     /// answer, as AppKit's `NSTerminateLater` has it.
     terminating: Cell<bool>,
@@ -98,6 +101,7 @@ impl Shared {
             modal_aborted: Cell::new(false),
             menu_open: Cell::new(false),
             recording_keys: Cell::new(false),
+            editing_text: Cell::new(false),
             later: RefCell::new(Vec::new()),
             early: RefCell::new(Vec::new()),
         })
@@ -112,6 +116,16 @@ impl Shared {
     /// Records the keys, or stops.
     pub(crate) fn set_recording_keys(&self, on: bool) {
         self.recording_keys.set(on);
+    }
+
+    /// Whether a field that edits text has the keyboard.
+    pub(crate) fn editing_text(&self) -> bool {
+        self.editing_text.get()
+    }
+
+    /// A field that edits text has the keyboard, or no longer.
+    pub(crate) fn set_editing_text(&self, on: bool) {
+        self.editing_text.set(on);
     }
 
     /// Hands the window `id` `event` on the run loop's next turn, as the

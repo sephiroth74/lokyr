@@ -358,6 +358,56 @@ fn the_settings_tab_s_tree_goes_to_a_client_of_accessibility() {
 }
 
 #[test]
+fn a_field_takes_its_editing_keys_before_the_app_s_bindings_and_the_menus() {
+    let (mut fake, mut app, _) = two_tabs();
+    let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    // The search has the keyboard, as the settings open: the platform
+    // gives it the menus' keys that edit text.
+    assert_eq!(focused_key(&app, own), ("search".to_owned(), true));
+    assert!(fake.editing_text());
+    for (code, text) in [
+        (KeyCode::KeyA, "a"),
+        (KeyCode::KeyB, "b"),
+        (KeyCode::KeyC, "c"),
+    ] {
+        fake.send(&mut app, own, key_event(code, text, Modifiers::NONE, true));
+        fake.send(&mut app, own, key_event(code, text, Modifiers::NONE, false));
+    }
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "abc");
+    // Shift-Command-←, which moves a tab of the keymap's, selects to the
+    // field's start; Command-→ goes to its end, the selection gone.
+    let shift_cmd = Modifiers {
+        shift: true,
+        super_key: true,
+        ..Modifiers::NONE
+    };
+    tap(&mut fake, &mut app, own, KeyCode::ArrowLeft, shift_cmd);
+    let selection = |app: &App| {
+        page_view(app, own)
+            .unwrap()
+            .surface
+            .fields
+            .state(&"search".into())
+            .map(lokyr_ui_core::field::FieldState::selection)
+    };
+    assert_eq!(selection(&app), Some(0..3));
+    let cmd = Modifiers {
+        super_key: true,
+        ..Modifiers::NONE
+    };
+    tap(&mut fake, &mut app, own, KeyCode::ArrowRight, cmd);
+    assert_eq!(selection(&app), Some(3..3));
+    // The pane of the terminal's window, with the keyboard, takes no such
+    // keys of the field's.
+    let terminal = fake.windows().find(|window| *window != own).unwrap();
+    fake.send(&mut app, own, WindowEvent::Focused(false));
+    fake.send(&mut app, terminal, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, terminal);
+    assert!(!fake.editing_text());
+}
+
+#[test]
 fn tab_goes_through_the_page_s_fields_and_the_tabs_as_the_system_s_keyboard_navigation_has_it() {
     let (mut fake, mut app, _) = of_pages();
     let window = open(&mut fake, &mut app, SETTINGS_TAB);

@@ -29,7 +29,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
-use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
+use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad, Mods};
 use lokyr_vt_core::unicode::Segmenter;
 
 use crate::layout::{Frame, Layout};
@@ -286,6 +286,37 @@ pub struct Fields {
     pressed: Option<NodeKey>,
     /// The text that each field's plugin gave it last, of the tree.
     given: HashMap<NodeKey, String>,
+    /// The text that Control-K took last, which Control-Y types back, as
+    /// macOS's text fields keep it apart from the clipboard.
+    killed: String,
+}
+
+/// Whether a field that has the keyboard takes `key` of `mods` as its own,
+/// before the app's bindings of no context: a move of the arrows, Home or
+/// End, of Option, Command or Shift; a deletion, of Option or Command too;
+/// the Control keys of macOS's text fields; Command's edits, all, copy,
+/// cut, paste, undo and redo; Return; a character that types. Control's
+/// arrows and the keys of Command that a field does not edit with, as
+/// Command-T, stay the app's.
+pub fn takes(key: Key, mods: Mods) -> bool {
+    let (command, control) = (mods.super_key, mods.control);
+    let option = mods.left_alt || mods.right_alt;
+    match key {
+        Key::Left | Key::Right | Key::Up | Key::Down | Key::Home | Key::End => !control,
+        Key::Backspace | Key::Delete => !control,
+        Key::Char(c) if control && !command && !option => {
+            matches!(
+                c,
+                'a' | 'e' | 'b' | 'f' | 'h' | 'd' | 'k' | 't' | 'n' | 'p' | 'y'
+            )
+        }
+        Key::Char(c) if command && !control => {
+            matches!(c.to_ascii_lowercase(), 'a' | 'c' | 'x' | 'v' | 'z')
+        }
+        Key::Enter | Key::Keypad(Keypad::Enter) => !command && !control,
+        Key::Char(_) | Key::Keypad(_) => !command && !control,
+        _ => false,
+    }
 }
 
 /// Where a move of the caret goes.
@@ -424,6 +455,9 @@ impl Fields {
             Key::Char('e') if control && !command => moving(Toward::End),
             Key::Char('b') if control && !command => moving(Toward::Back),
             Key::Char('f') if control && !command => moving(Toward::Forward),
+            // The line before and after, of a field of one line, its ends.
+            Key::Char('p') if control && !command => moving(Toward::Start),
+            Key::Char('n') if control && !command => moving(Toward::End),
             _ => None,
         };
         if let Some((toward, extend)) = toward {
@@ -459,7 +493,43 @@ impl Fields {
             } else {
                 selection
             };
+            // Control-K's text kept for Control-Y.
+            let killed = (control && event.key == Key::Char('k'))
+                .then(|| state.text[range.clone()].to_owned())
+                .filter(|killed| !killed.is_empty());
             let changed = state.edit(range, "", Joining::Deleting);
+            let events = changed_events(node, key, &mut *state, changed);
+            if let Some(killed) = killed {
+                self.killed = killed;
+            }
+            return Some(events);
+        }
+        // Control-Y types back what Control-K took.
+        if control && !command && event.key == Key::Char('y') {
+            let selection = state.selection();
+            let changed = state.edit(selection, &self.killed, Joining::Nothing);
+            return Some(changed_events(node, key, &mut *state, changed));
+        }
+        // Control-T swaps the characters on either side of the caret, the
+        // caret past them; at the end, the last two.
+        if control && !command && event.key == Key::Char('t') {
+            let places = boundaries(&state.text);
+            let end = state.text.len();
+            let middle = if state.caret >= end {
+                before(&places, end)
+            } else {
+                state.caret
+            };
+            let (first, last) = (before(&places, middle), after(&places, middle));
+            if first >= middle || middle >= last {
+                return Some(Vec::new());
+            }
+            let swapped = format!(
+                "{}{}",
+                &state.text[middle..last],
+                &state.text[first..middle]
+            );
+            let changed = state.edit(first..last, &swapped, Joining::Nothing);
             return Some(changed_events(node, key, &mut *state, changed));
         }
         let enter = matches!(event.key, Key::Enter | Key::Keypad(Keypad::Enter));
@@ -1229,6 +1299,76 @@ mod tests {
         assert_eq!(field.shown(), "hello, |");
         field.press(Key::Backspace, mods(false, false, false, true), "");
         assert_eq!(field.shown(), "|");
+    }
+
+    #[test]
+    fn the_control_keys_of_macos_s_fields_transpose_kill_and_yank() {
+        let mut field = Typing::new();
+        let control = mods(false, true, false, false);
+        field.kind("hello world");
+        // Control-T at the end swaps the last two characters; inside, the
+        // two on either side of the caret, the caret past them.
+        field.press(Key::Char('t'), control, "");
+        assert_eq!(field.shown(), "hello wordl|");
+        field.press(Key::Char('a'), control, "");
+        field.press(Key::Right, NONE, "");
+        field.press(Key::Char('t'), control, "");
+        assert_eq!(field.shown(), "eh|llo wordl");
+        // Control-P and Control-N, the field's start and end.
+        field.press(Key::Char('n'), control, "");
+        assert_eq!(field.shown(), "ehllo wordl|");
+        field.press(Key::Char('p'), control, "");
+        assert_eq!(field.shown(), "|ehllo wordl");
+        // Control-K takes the rest of the line, Control-Y types it back,
+        // whatever the clipboard holds.
+        field.press(Key::Right, mods(false, false, true, false), "");
+        field.press(Key::Char('k'), control, "");
+        assert_eq!(field.shown(), "ehllo|");
+        field.board.write("other");
+        field.press(Key::Char('a'), control, "");
+        field.press(Key::Char('y'), control, "");
+        assert_eq!(field.shown(), " wordl|ehllo");
+    }
+
+    #[test]
+    fn a_field_takes_its_editing_keys_before_the_app_s_bindings() {
+        let command = mods(false, false, false, true);
+        let shift_command = mods(true, false, false, true);
+        let control = mods(false, true, false, false);
+        let option = mods(false, false, true, false);
+        // Its moves, of Command, Option and Shift; its deletions; its
+        // edits of Command; Return and the characters.
+        for (key, mods) in [
+            (Key::Left, shift_command),
+            (Key::Right, command),
+            (Key::Up, command),
+            (Key::Down, shift_command),
+            (Key::Home, NONE),
+            (Key::Left, option),
+            (Key::Backspace, command),
+            (Key::Delete, option),
+            (Key::Char('a'), control),
+            (Key::Char('k'), control),
+            (Key::Char('t'), control),
+            (Key::Char('c'), command),
+            (Key::Char('z'), shift_command),
+            (Key::Enter, NONE),
+            (Key::Char('x'), NONE),
+        ] {
+            assert!(takes(key, mods), "{key:?} {mods:?}");
+        }
+        // Control's arrows, Command's other keys, Tab and Escape, the app's.
+        for (key, mods) in [
+            (Key::Left, control),
+            (Key::Char('t'), command),
+            (Key::Char('w'), command),
+            (Key::Char('k'), command),
+            (Key::Tab, NONE),
+            (Key::Escape, NONE),
+            (Key::Enter, command),
+        ] {
+            assert!(!takes(key, mods), "{key:?} {mods:?}");
+        }
     }
 
     #[test]

@@ -256,6 +256,8 @@ pub struct Fake {
     option_as_meta: (bool, bool),
     /// Whether the keys are recorded, as the app last told.
     recording_keys: bool,
+    /// Whether a field that edits text has the keyboard, as the app told.
+    editing_text: bool,
     /// The icons that the app showed, from the first.
     app_icons: Vec<Option<PathBuf>>,
     /// The user's languages and regions, none unless a test sets them.
@@ -373,6 +375,7 @@ impl Fake {
             timers: BTreeMap::new(),
             option_as_meta: (false, false),
             recording_keys: false,
+            editing_text: false,
             app_icons: Vec::new(),
             locales: Vec::new(),
             attention_requests: 0,
@@ -806,6 +809,11 @@ impl Fake {
     /// Whether the keys are recorded, as the app last told.
     pub fn recording_keys(&self) -> bool {
         self.recording_keys
+    }
+
+    /// Whether the app told that a field that edits text has the keyboard.
+    pub fn editing_text(&self) -> bool {
+        self.editing_text
     }
 
     /// Gives the user the languages and regions of `locales`, as
@@ -1561,6 +1569,10 @@ impl Platform for Fake {
 
     fn set_recording_keys(&mut self, on: bool) {
         self.recording_keys = on;
+    }
+
+    fn set_editing_text(&mut self, on: bool) {
+        self.editing_text = on;
     }
 
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {

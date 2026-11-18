@@ -968,6 +968,12 @@ impl Platform for Backend {
         }
     }
 
+    fn set_editing_text(&mut self, on: bool) {
+        if let Some(shared) = self.shared.upgrade() {
+            shared.set_editing_text(on);
+        }
+    }
+
     fn track_mouse_moves(&mut self, window: WindowId, track: bool) {
         if let Some(window) = self.windows.get(&window) {
             window.track_mouse_moves(track);

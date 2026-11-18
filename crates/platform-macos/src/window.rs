@@ -956,6 +956,13 @@ define_class!(
                 self.post_key(event);
                 return Bool::YES;
             }
+            // A field that edits text takes its keys of the arrows, Home,
+            // End and the deletes before the menus, as Command-↑ moves its
+            // caret to its start rather than run the prompts' jump.
+            if key_down && key_window && self.edits_text() && edits_text_key(event) {
+                self.post_key(event);
+                return Bool::YES;
+            }
             // SAFETY: the superclass's `performKeyEquivalent:`, of the same
             // event.
             unsafe { msg_send![super(self), performKeyEquivalent: event] }
@@ -1359,6 +1366,14 @@ impl ContentView {
     /// Runs `with` of the view's accessibility, once the view has one.
     pub(crate) fn access<T>(&self, with: impl FnOnce(&Access) -> T) -> Option<T> {
         self.ivars().access.borrow().as_ref().map(with)
+    }
+
+    /// Whether a field that edits text has the keyboard.
+    fn edits_text(&self) -> bool {
+        self.ivars()
+            .shared
+            .upgrade()
+            .is_some_and(|shared| shared.editing_text())
     }
 
     /// Whether the keys are recorded, as a field that records a shortcut
@@ -2140,6 +2155,14 @@ fn ns_cursor(shape: PointerShape) -> Retained<NSCursor> {
         PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
         PointerShape::ResizeRow => NSCursor::rowResizeCursor(),
     }
+}
+
+/// Whether `event` is a key that a text field edits with, which a menu's key
+/// equivalent may name: an arrow, Home, End, Delete or Forward Delete, by
+/// their virtual key codes, whatever its modifiers.
+fn edits_text_key(event: &NSEvent) -> bool {
+    // ← → ↓ ↑, Home, End, Delete and Forward Delete.
+    matches!(event.keyCode(), 123..=126 | 115 | 119 | 51 | 117)
 }
 
 #[cfg(test)]
