@@ -1,0 +1,304 @@
+10:18:46 step prepare
+--- prepare
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+10:18  up 5 days, 22:56, 217 users, load averages: 1.54 2.45 3.29
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+10:18:46 lokyr-bench
+10:18:53 workloads
+10:18:54 1.3.0's bundle of cc317751
+10:20:01 1.2.0's app of its DMG
+10:20:09 v120: 1.2.0 (202611161031)
+10:20:09 v130: 1.2.0 (202611180905)
+10:20:09 step prepare done
+10:22:09 step startup
+--- startup
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+10:22  up 5 days, 22:59, 217 users, load averages: 2.21 2.40 3.10
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+10:22:10 30 starts of v120
+10:22:17 30 starts of v130
+10:22:27 startup v120 1
+10:22:44 startup v130 1
+10:23:02 startup floor 1
+10:23:17 load { 5.44 3.56 3.50 }
+10:23:19 startup v130 2
+10:23:36 startup v120 2
+10:23:54 startup floor 2
+10:24:09 load { 3.18 3.25 3.38 }
+10:24:11 startup v130 3
+10:24:29 startup v120 3
+10:24:47 startup floor 3
+10:25:02 load { 1.92 2.90 3.24 }
+10:25:04 startup v120 4
+10:25:21 startup v130 4
+10:25:39 startup floor 4
+10:25:54 load { 1.48 2.62 3.12 }
+10:25:54 step startup done
+10:36:50 step startup-again
+--- startup-again
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+10:36  up 5 days, 23:14, 217 users, load averages: 2.44 2.35 2.60
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+10:36:51 30 starts of v120
+10:36:58 30 starts of v130
+10:37:07 startup v120 1
+10:37:25 startup v130 1
+10:37:42 startup floor 1
+10:37:57 load { 2.85 2.59 2.68 }
+10:37:59 startup v130 2
+10:38:16 startup v120 2
+10:38:34 startup floor 2
+10:38:49 load { 3.09 2.78 2.74 }
+10:38:51 startup v130 3
+10:39:08 startup v120 3
+10:39:25 startup floor 3
+10:39:40 load { 2.98 2.81 2.75 }
+10:39:42 startup v120 4
+10:40:00 startup v130 4
+10:40:17 startup floor 4
+10:40:32 load { 2.32 2.66 2.70 }
+10:40:34 startup v120 5
+10:40:51 startup v130 5
+10:41:09 startup floor 5
+10:41:24 load { 4.03 3.02 2.83 }
+10:41:26 startup v130 6
+10:41:43 startup v120 6
+10:42:00 startup floor 6
+10:42:15 load { 2.98 2.90 2.80 }
+10:42:17 startup v130 7
+10:42:35 startup v120 7
+10:42:52 startup floor 7
+10:43:07 load { 2.86 2.87 2.79 }
+10:43:09 startup v120 8
+10:43:26 startup v130 8
+10:43:44 startup floor 8
+10:43:59 load { 3.87 3.14 2.89 }
+10:43:59 step startup-again done
+11:05:56 step latency
+--- latency
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+11:05  up 5 days, 23:43, 217 users, load averages: 5.82 4.53 3.46
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+11:05:57 latency warm-up v120
+11:06:00 latency warm-up v130
+11:06:04 latency v120 1
+11:06:19 latency v130 1
+11:06:31 load { 4.40 4.29 3.41 }
+11:06:33 latency v130 2
+11:06:48 latency v120 2
+11:07:00 load { 4.40 4.32 3.45 }
+11:07:02 latency v130 3
+11:07:16 latency v120 3
+11:07:29 load { 3.67 4.15 3.42 }
+11:07:31 latency v120 4
+11:07:45 latency v130 4
+11:07:57 load { 3.47 4.05 3.41 }
+11:07:59 latency v120 5
+11:08:14 latency v130 5
+11:08:26 load { 2.63 3.81 3.33 }
+11:08:28 latency v130 6
+11:08:43 latency v120 6
+11:08:55 load { 3.15 3.84 3.36 }
+11:08:57 latency v130 7
+11:09:11 latency v120 7
+11:09:24 load { 2.96 3.75 3.35 }
+11:09:26 latency v120 8
+11:09:40 latency v130 8
+11:09:52 load { 2.63 3.61 3.31 }
+11:09:52 step latency done
+11:16:23 step idle
+--- idle
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+11:16  up 5 days, 23:54, 217 users, load averages: 3.02 2.72 2.91
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+11:16:24 idle v120-1
+11:18:01 idle v130-1
+11:19:39 load { 1.57 2.23 2.66 }
+11:19:39 idle v130-2
+11:21:17 idle v120-2
+11:22:55 load { 4.16 3.25 3.00 }
+11:22:55 step idle done
+11:30:57 step memory
+--- memory
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+11:30  up 6 days, 8 mins, 218 users, load averages: 2.84 2.89 2.88
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+11:30:58 memory v120-1
+11:31:37 memory v130-1
+11:32:11 load { 1.74 2.55 2.75 }
+11:32:11 memory v130-2
+11:32:44 memory v120-2
+11:33:18 load { 5.31 4.01 3.33 }
+11:33:18 memory v130-3
+11:33:51 memory v120-3
+11:34:25 load { 3.84 3.80 3.30 }
+11:34:25 memory v120-4
+11:34:59 memory v130-4
+11:35:32 load { 4.56 4.02 3.42 }
+11:35:32 throughput ascii v120 1
+11:35:40 throughput ascii v130 1
+11:35:48 throughput ascii v130 2
+11:35:55 throughput ascii v120 2
+11:36:02 load { 4.11 3.97 3.42 }
+11:36:02 throughput seq v120 1
+11:36:04 throughput seq v130 1
+11:36:05 throughput seq v130 2
+11:36:06 throughput seq v120 2
+11:36:07 load { 4.10 3.97 3.42 }
+11:36:07 throughput sgr v120 1
+11:36:08 throughput sgr v130 1
+11:36:10 throughput sgr v130 2
+11:36:11 throughput sgr v120 2
+11:36:12 load { 4.65 4.08 3.46 }
+11:36:12 throughput cjk v120 1
+11:36:14 throughput cjk v130 1
+11:36:16 throughput cjk v130 2
+11:36:17 throughput cjk v120 2
+11:36:19 load { 4.52 4.06 3.46 }
+11:36:19 step memory done
+11:48:12 step motion-1
+--- motion-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+11:48  up 6 days, 25 mins, 218 users, load averages: 2.32 2.86 3.17
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+11:48:13 motion v120 blur 1
+11:52:02 motion v130 blur 1
+11:55:12 recordings done: the Mac is free, the figures follow
+11:59:09 step motion-1 done
+12:31:12 step motion-2
+--- motion-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+12:31  up 6 days,  1:08, 218 users, load averages: 3.35 2.92 3.11
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+12:31:13 motion v130 blur 1
+12:34:32 motion v120 blur 1
+12:38:03 recordings done: the Mac is free, the figures follow
+12:42:12 step motion-2 done
+13:29:32 step motion-3
+--- motion-3
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+13:29  up 6 days,  2:07, 218 users, load averages: 2.31 1.87 1.91
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+13:29:32 motion v120 blur 2
+13:32:42 motion v130 blur 2
+13:35:49 recordings done: the Mac is free, the figures follow
+13:39:48 step motion-3 done
+13:42:05 step motion-4
+--- motion-4
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+13:42  up 6 days,  2:19, 218 users, load averages: 3.68 7.29 7.03
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+13:42:05 motion v130 blur 2
+13:48:39 motion v120 blur 2
+13:53:28 recordings done: the Mac is free, the figures follow
+13:59:29 step motion-4 done
+14:02:16 motion-1 and motion-4 ran blurred of the configs' clobbered look; motion-2's blur kept as round 1, motion-4's as round 3; motion-1, motion-3 and motion-4 to run again
+14:08:03 step motion-1
+--- motion-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+14:08  up 6 days,  2:45, 218 users, load averages: 4.61 4.31 5.86
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+14:08:03 motion v120 opaque 1
+14:13:02 motion v130 opaque 1
+14:16:11 recordings done: the Mac is free, the figures follow
+14:20:42 step motion-1 done
+14:31:05 step motion-3
+--- motion-3
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+14:31  up 6 days,  3:08, 218 users, load averages: 5.79 4.12 6.02
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+14:31:06 motion v120 blur 2
+14:34:28 motion v130 blur 2
+14:37:13 recordings done: the Mac is free, the figures follow
+14:40:58 step motion-3 done
+14:46:16 step motion-4
+--- motion-4
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+14:46  up 6 days,  3:24, 218 users, load averages: 2.64 3.68 5.08
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+14:46:16 motion v130 opaque 2
+14:49:36 motion v120 opaque 2
+14:52:14 recordings done: the Mac is free, the figures follow
+14:55:42 step motion-4 done
+14:58:35 step again
+--- again
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+14:58  up 6 days,  3:36, 218 users, load averages: 3.90 4.98 5.45
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+14:58:35 idle v130-3
+15:00:13 idle v120-3
+15:01:50 load { 2.26 3.53 4.72 }
+15:01:51 idle v120-4
+15:03:28 idle v130-4
+15:05:06 load { 1.35 2.50 4.05 }
+15:05:06 throughput ascii v130 3
+15:05:13 throughput ascii v120 3
+15:05:20 throughput ascii v120 4
+15:05:27 throughput ascii v130 4
+15:05:33 load { 2.92 2.77 4.09 }
+15:05:33 throughput seq v130 3
+15:05:35 throughput seq v120 3
+15:05:36 throughput seq v120 4
+15:05:37 throughput seq v130 4
+15:05:38 load { 3.00 2.79 4.09 }
+15:05:38 throughput sgr v130 3
+15:05:39 throughput sgr v120 3
+15:05:40 throughput sgr v120 4
+15:05:42 throughput sgr v130 4
+15:05:43 load { 3.08 2.81 4.09 }
+15:05:43 throughput cjk v130 3
+15:05:45 throughput cjk v120 3
+15:05:46 throughput cjk v120 4
+15:05:48 throughput cjk v130 4
+15:05:49 load { 4.92 3.19 4.21 }
+15:05:49 step again done
+15:22:08 step idle-long-1
+--- idle-long-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+15:22  up 6 days,  3:59, 218 users, load averages: 2.92 3.03 3.33
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+15:22:08 idle-long v120-1
+15:26:33 idle-long v130-1
+15:30:58 load { 1.10 1.67 2.46 }
+15:30:59 step idle-long-1 done
+15:44:08 step idle-long-2
+--- idle-long-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+15:44  up 6 days,  4:21, 219 users, load averages: 2.20 2.27 2.31
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          Main Display: Yes
+15:44:09 idle-long v130-2
+15:48:34 idle-long v120-2
+15:52:59 load { 3.96 2.35 2.17 }
+15:52:59 step idle-long-2 done
