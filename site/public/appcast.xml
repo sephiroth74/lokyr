@@ -6,6 +6,57 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Lokyr</title>
         <item>
+            <title>1.3.0</title>
+            <pubDate>Wed, 18 Nov 2026 17:24:58 +0100</pubDate>
+            <sparkle:version>202611181532</sparkle:version>
+            <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[Programs that tell you what they're doing, a click that moves the shell's cursor, and tabs that keep up: pinned, grouped, reopened and stepped through in the order you used them; hints to open what's on the screen without the mouse.
+
+## What's new since 1.2.0
+
+- **Programs' status on their tabs**: a program that tells its state with OSC 7501 shows it on its tab exactly: at work, waiting for you, of what it asks for, done, or failed. A program's status of its session, OSC 21337, shows as a dot of its color, its text in the tab's tooltip. Desktop notifications of OSC 99 show as those of OSC 9 and 777 do.
+- **A click in the command line** moves the shell's cursor there, as in a text field, in zsh, bash and fish with Lokyr's shell integration, and in any shell that announces it. Backspace, Delete or a typed character over a selection of the command line takes its place. `[cursor] click-to-move` turns both off.
+- **⌃Tab shows the tab you used before**: keep Control down and press Tab again to go further back. ⌃⇧Tab goes the other way. `[plugins.tabs] control-tab = "order"` keeps the bar's order.
+- **Pinned tabs**: right-click a tab and choose Pin Tab. It stays at the start of the bar, narrow, and ⌘W doesn't close it.
+- **Tab groups**: right-click a tab and choose New Group with Tab to gather tabs under a name and a color. Click the group's pill to fold it; drag tabs in and out of it. Restored windows keep their pins and groups.
+- **Reopen a closed tab**: Shell › Reopen Closed Tab, ⇧⌘T, brings back the tab you closed last, as you left it, for 10 seconds after you close it. `[plugins.tabs] reopen-seconds` sets the time.
+- **Hints**: press ⇧⌘E to label every URL, path, git hash and IP address on the screen, then type a label to open it, or a capital to copy it. Add your own patterns, such as a ticket's number to its page, in the settings window's Links › Hints.
+- **The quick terminal from a double tap**: set `[plugins.quick-terminal] double-tap` to a modifier, then press it twice quickly, alone, from any app.
+- **Use Transparency**: press ⌘U to show a translucent window opaque while you read, and again to see through it.
+- **Text fields** have a context menu of Cut, Copy, Paste and Select All, and take macOS's Control-T, Control-P, Control-N and Control-Y.
+- **The settings link each key's topic** in the documentation, beside its More info.
+- **Plugins**: the plugin API 0.1.5 reads the tabs in the order they were used, pins, groups and reopens tabs, reads a program's status and what a waiting agent asks for, labels a decoration, and hears a modifier's double tap.
+
+## Changed
+
+- ⌃Tab and ⌃⇧Tab follow the order you used the tabs in. ⇧⌘] and ⇧⌘[ still follow the bar.
+- An agent's notification tells its own message, or what it asks for while it waits.
+- The scroll indicator of a list shows while you scroll it and fades a moment after, as macOS's scroll bars do.
+- The settings window's sidebar is wider, its search field and its sections lined up.
+
+## Fixed
+
+- The text fields take their editing keys before Lokyr's shortcuts: Shift-Command-← selects to the field's start, and Command-↑ moves the caret.
+- A command's mark in the gutter shows on its prompt's first line of text, not on an empty line that a prompt theme prints first.
+- A tab's context menu waits for a click on an item, rather than running the one under the pointer.
+- The blinking cursor no longer shows the character of another cell for a moment after a quick move.
+- A plugin whose command fails while you answer its earlier question can ask you again.
+
+## Before you update
+
+- Plugins installed for 1.2.0 keep working: the plugin API is 0.1.5, which takes 0.1.4's plugins.
+- The first time you set a modifier's double tap, macOS asks you to allow Lokyr in System Settings › Privacy & Security › Input Monitoring. Lokyr reads the modifiers alone, never what you type.
+]]></description>
+            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.3.0/Lokyr-1.3.0.dmg" length="18955687" type="application/octet-stream" sparkle:edSignature="Zzzeb9DP9wliOnPaK8fJ7Em3B6crRGhLyGEdg33YlggijtjYQuAsh5A+IvlLLT35TuinLSyT9ZFOl+irYVb6Bw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.3.0/Lokyr202611181532-202611161031.delta" sparkle:deltaFrom="202611161031" length="2160486" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vNHYh2neJyfJzYf+UOSgxjGDTziC6r2ep5fVnl6A/OC6OUXfw9cEGk5m/jlA2C1aKnSxIu19kGMxpjwHXtgzCQ=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.3.0/Lokyr202611181532-202611142210.delta" sparkle:deltaFrom="202611142210" length="2698022" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="DjPCfmm5+CXY0MrXiUkHC76TPWxdKE3KquCgCiaSwcCokjNcAAnmjTIllspj0BcaHeQqwYhm5o7Z+zqr3F31Ag=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.3.0/Lokyr202611181532-202611131033.delta" sparkle:deltaFrom="202611131033" length="3192934" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="aA7f8/jKZVHsZSddPbJU7TE1jfmYZlPVDPy+3jF9mk+kAca06xMbgz6PYShYfkjW9GjWD/X6BfmQ4ALQBL2SCA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.2.0</title>
             <pubDate>Mon, 16 Nov 2026 11:59:37 +0100</pubDate>
             <sparkle:version>202611161031</sparkle:version>
@@ -95,50 +146,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
                 <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr202611142210-202611131033.delta" sparkle:deltaFrom="202611131033" length="2208006" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="LVH1q+Ly7U9anGVv/+jLCt46hr6qboM/2Pf5kfTPVThtWAShMs71ikj/gyqD2lfCX98Tv1Z3ZIbfJ2qfU2nUAg=="/>
             </sparkle:deltas>
         </item>
-        <item>
-            <title>1.0.0</title>
-            <pubDate>Fri, 13 Nov 2026 11:43:03 +0100</pubDate>
-            <sparkle:version>202611131033</sparkle:version>
-            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[The first public release. Lokyr's source is open, under the MIT License, at [github.com/sephiroth74/lokyr](https://github.com/sephiroth74/lokyr), and [lokyr.dev](https://lokyr.dev) documents it. Lokyr installs from this disk image, or with Homebrew, `brew install --cask sephiroth74/tap/lokyr`, and updates itself.
-
-## What's new since 0.9.0
-
-- **AI agents on their tabs**: a tab running Claude Code, Codex, Gemini CLI, Aider or another agent that `[agents] programs` lists shows whether the agent works, waits for you, or is done with what you asked. What it asked shows in the tab's tooltip, as "Claude needs your permission to use Bash", and in a tab of several panes a ring goes round the pane that waits.
-- **Agents that wait for you**: a notification tells when an agent waits or is done while its window has no focus, and the Dock's icon counts the agents that wait. Window › Go to Next Agent, ⌥⌘A, brings the next one forward, across every window; Window › Show Agents…, ⇧⌥⌘A, lists them all in the palette, the most urgent first.
-- **Claude Code's integration**: Lokyr › Install Claude Code Integration… adds hooks to Claude Code's settings, asking of each of its configurations and keeping a copy of the file, so that Claude Code tells its tab exactly when it works, waits for you, is done, or stops on an error.
-- **A path opened at its line**: ⌘-click on a path's line, as `src/main.rs:42:7` that compilers, tests and agents print, opens the file at that line in the editor that `[links] editor` names: VS Code, Cursor, Windsurf, Zed, Sublime Text, TextMate or an address of your own.
-- **A command's output**: Edit › Copy Command Output, ⌥⇧⌘C, and Select Command Output, ⇧⌘A, copy or select the output of the last command, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line.
-- **Inline images**: programs show pictures in the terminal, as `imgcat` sends them, of iTerm2's protocol, and as `kitten icat`, `chafa`, `timg` and file managers' previews send them, of kitty's graphics protocol; the images scroll with their lines and stay within 64 MiB of memory, as `[terminal] image-memory` says.
-- **Homebrew**: `brew install --cask sephiroth74/tap/lokyr` installs Lokyr and links `lokyr` and `sleip`, leaving the updates to Lokyr's own.
-- **Plugins**: the plugin API 0.1.2 lets a plugin list the agents of every window and open a file at a line in the editor.
-- About Lokyr links to lokyr.dev.
-
-## Changed
-
-- The icon's variant that `[app] icon` chooses stays in the Dock after Lokyr quits.
-- A click on a notification, a program's, an agent's or a long command's, brings forward the pane that sent it, with its tab and its window.
-
-## Fixed
-
-- A tab no longer keeps the title of a program that ended, as the remote shell's after you leave `ssh`: the title from before comes back, unless your shell sets its own at its prompt.
-- An agent that a shell starts with `exec` no longer misses its first request for you.
-- `sleip add` tells a plugin kept at the version that `plugins.lock` holds, and that `sleip update` of it takes a newer one, rather than failing of an older Lokyr's version.
-- `sleip info` no longer counts a yanked version when it tells that this Lokyr takes none of a plugin's versions.
-- `sleip dev` checks again a plugin saved while it was linking it.
-
-## Before you update
-
-- Plugins installed for 0.9.0 keep working: the plugin API is 0.1.2, which takes 0.1.1's plugins.
-- From 1.0.0, Lokyr's versions follow semantic versioning.
-]]></description>
-            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.0.0/Lokyr-1.0.0.dmg" length="17851982" type="application/octet-stream" sparkle:edSignature="zxOMDZb1GzTB3hoatnttO55i2a0e4abPyJms2gJjHWQOzGnqsJTFxG+eIggLY4Dn2E5hglS3X4ACe2qJNX2TAg=="/>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: R5UFoOSxdJgXS0iA4fpCTkcdhoPCY8XLTxIEL8SDkXk7/rI6svoRci+vb6mrSg4mwWqrJzJj5qHujyiXXpAuBA==
-length: 15930
+edSignature: efeymIK/5Ve59pl7riiMwJLxkzueW068+d87GK63Vc+WmPhbOhemoGDNnwY49vAHD9p1dZH6R0LuKQAMRncLAw==
+length: 17649
 -->

@@ -29,7 +29,7 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.2.0 is out**, of its Theme Editor and themes made in the app: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.3.0 is out**, of programs' status on their tabs, a click in the command line, pinned and grouped tabs, a closed tab reopened, and hints: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -56,7 +56,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F3b | The settings window, then themes made in the app and the Keys page | ✔ |
 | F5a | The programs' and agents' status of OSC 7501, a click at the prompt, the tabs' groups, hints; blocks of commands, ssh integration | |
-| F5b | Sessions and iTerm2's power features: the scrollback restored, named sessions, broadcast, floating panes; tmux -CC, triggers, profiles | |
+| F5b | Sessions and power features: the scrollback restored, named sessions, broadcast, floating panes; tmux -CC, triggers, profiles | |
 | F5c | Graphics and feel: kitty graphics, sixel, smooth scrolling, the cursor's trail | |
 | F6 | Plugin API 1.0 and hardening | |
 | F7 | After 1.0: Linux, a mux daemon, Windows | |
