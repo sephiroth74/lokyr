@@ -23,6 +23,8 @@
 # - again: idle in two rounds more, the third and the fourth, then each
 #   throughput's workload in two more, to tell a package's wakeup and
 #   CJK's throughput from the session's noise.
+# - idle-long-1 and idle-long-2: idle over 240 s of each copy, a round each,
+#   AB then BA, to tell whether a package's wakeup at rest is the app's.
 #
 # The config is ab-F3b-20/config.toml's, the releases' of the least work
 # beside the terminal's own; the motion's, F3-152's.
@@ -35,7 +37,7 @@ BENCH=$REPO/target/release/lokyr-bench
 SPIKE=$REPO/spikes/wasmtime-notarized/build/Spike.app
 ONSCREEN=$REPO/tools/bench/onscreen.py
 W=/tmp/lokyr/workloads
-STEPS="prepare startup startup-again latency idle memory motion-1 motion-2 motion-3 motion-4 again"
+STEPS="prepare startup startup-again latency idle memory motion-1 motion-2 motion-3 motion-4 again idle-long-1 idle-long-2"
 DONE=$OUT/steps.done
 
 app() { echo $OUT/$1/Lokyr.app; }
@@ -58,6 +60,7 @@ minutes() {
     memory) echo "6 min" ;;
     motion-*) echo "2 min of the mouse left alone, then 10 min of figures, the Mac free" ;;
     again) echo "8 min" ;;
+    idle-long-*) echo "9 min" ;;
   esac
 }
 conditions() {
@@ -184,6 +187,19 @@ idle() {
     load
   done
 }
+# Idle over 240 s of each copy, of the round `$1`.
+idle_long() {
+  for v in $(order $1 v120 v130); do
+    name=$v-$1
+    log "idle-long $name"
+    started "$(app $v)" || { log "no pid for $name"; continue; }
+    sleep 20
+    $BENCH idle --pid $pid --duration 240 > $OUT/idle-long-$name.json
+    kill $pid
+    sleep 2
+  done
+  load
+}
 memory() {
   for round in 1 2 3 4; do
     for v in $(order $round v120 v130); do
@@ -302,7 +318,7 @@ motion() {
 run_step() {
   step=$1
   case $step in
-    prepare | startup | startup-again | latency | idle | memory | motion-1 | motion-2 | motion-3 | motion-4 | again) ;;
+    prepare | startup | startup-again | latency | idle | memory | motion-1 | motion-2 | motion-3 | motion-4 | again | idle-long-1 | idle-long-2) ;;
     *)
       echo "no step $step: $STEPS" >&2
       return 1
@@ -326,6 +342,8 @@ run_step() {
       idle 3 4
       throughput 3 4
       ;;
+    idle-long-1) idle_long 1 ;;
+    idle-long-2) idle_long 2 ;;
   esac
   status=$?
   if [ $status -ne 0 ]; then

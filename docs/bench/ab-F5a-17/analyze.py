@@ -174,6 +174,15 @@ print("## Idle (per s) and memory (MB)")
 for r in (1, 2, 3, 4):
     for v in order(r, A, B):
         rest(f"{v}-{r}")
+print("## Idle over 240 s")
+for r in (1, 2):
+    for v in order(r, A, B):
+        i = load(f"idle-long-{v}-{r}.json")
+        if i:
+            s = i["summary"]
+            when = [x["elapsed_ms"] for x in i["intervals"] if x["package_idle_wakeups"]]
+            print(f"{v}-{r}: package idle {s['package_idle_wakeups_per_s']:.4f}/s at {when} ms, "
+                  f"interrupt {s['interrupt_wakeups_per_s']:.3f}/s")
 print("## Memory at rest, four rounds")
 memory_rounds((1, 2, 3, 4))
 print("## Throughput on screen (MiB/s, median of the runs of every round) and frames (ms)")
