@@ -105,3 +105,162 @@
     box.appendChild(button);
   });
 })();
+
+// The benches' charts of the releases answer the pointer and the keyboard:
+// a release under the pointer, or of the arrows once the chart has the
+// focus, is marked in every panel of its chart, and a card tells its values
+// in the panel, each one's change from the release before and its share of
+// the budget; a click, or Return, opens the release's report; a legend's
+// item turns its series off and on.
+(function () {
+  var count = 0;
+  document.querySelectorAll('.doc svg.chart[data-chart="trends"]').forEach(function (svg) {
+    var panels = Array.prototype.slice.call(svg.querySelectorAll("g.panel"));
+    if (!panels.length) return;
+    var releases = Array.prototype.map.call(panels[0].querySelectorAll("rect.column"), function (column) {
+      return { label: column.getAttribute("data-release"), report: column.getAttribute("data-report") };
+    });
+    if (!releases.length) return;
+    var card = document.createElement("div");
+    card.className = "chart-card";
+    card.id = "chart-card-" + ++count;
+    card.hidden = true;
+    card.setAttribute("role", "status");
+    svg.parentElement.appendChild(card);
+    svg.setAttribute("tabindex", "0");
+    svg.setAttribute("role", "group");
+    svg.setAttribute("aria-describedby", card.id);
+    var at = { panel: 0, index: releases.length - 1 };
+
+    function amount(value, digits, unit) {
+      var text = Math.abs(value).toLocaleString("en-US", {
+        minimumFractionDigits: digits, maximumFractionDigits: digits,
+      });
+      return !unit ? text : unit.charAt(0) === "/" ? text + unit : text + " " + unit;
+    }
+
+    function line(parent, className, text) {
+      var element = document.createElement("div");
+      element.className = className;
+      element.textContent = text;
+      parent.appendChild(element);
+      return element;
+    }
+
+    function show(panelIndex, index) {
+      at = { panel: panelIndex, index: index };
+      var release = releases[index];
+      svg.querySelectorAll("rect.column").forEach(function (column) {
+        column.classList.toggle("on", column.getAttribute("data-release") === release.label);
+      });
+      var panel = panels[panelIndex];
+      var digits = Number(panel.getAttribute("data-digits") || 1);
+      var unit = panel.getAttribute("data-unit") || "";
+      var budget = panel.getAttribute("data-budget");
+      var names = (panel.getAttribute("data-names") || "").split("|");
+      card.textContent = "";
+      line(card, "chart-card-title", release.label + " · " + panel.getAttribute("data-title"));
+      var told = false;
+      [0, 1].forEach(function (series) {
+        if (svg.classList.contains("hide-" + series)) return;
+        var dots = Array.prototype.slice.call(panel.querySelectorAll('circle[data-series="' + series + '"]'));
+        var dot = dots.filter(function (d) { return d.getAttribute("data-release") === release.label; })[0];
+        if (!dot) return;
+        told = true;
+        var value = Number(dot.getAttribute("data-value"));
+        var name = names.length > 1 && names[series] ? names[series] + ": " : "";
+        line(card, "chart-card-value", name + amount(value, digits, unit));
+        var labels = releases.map(function (r) { return r.label; });
+        var before = dots.filter(function (d) {
+          return labels.indexOf(d.getAttribute("data-release")) < index;
+        }).pop();
+        if (before) {
+          var previous = Number(before.getAttribute("data-value"));
+          var change = value - previous;
+          var sign = change > 0 ? "+" : change < 0 ? "−" : "±";
+          var share = previous ? " (" + sign + Math.abs(change / previous * 100).toFixed(0) + " %)" : "";
+          line(card, "chart-card-change", sign + amount(change, digits, unit) + share + " from " +
+            before.getAttribute("data-release"));
+        }
+        if (budget !== null) {
+          line(card, "chart-card-budget", panel.getAttribute("data-better") === "higher"
+            ? "Budget ≥ " + amount(Number(budget), digits, unit)
+            : Math.round(value / Number(budget) * 100) + " % of the budget, " + amount(Number(budget), digits, unit));
+        }
+      });
+      if (!told) line(card, "chart-card-change", "Not measured");
+      if (release.report) {
+        line(card, "chart-card-report", "Click or press Return for its report, " +
+          release.report.replace(/\.md$/, ""));
+      }
+      card.hidden = false;
+      // Beside the release's column, inside the figure.
+      var figure = svg.parentElement.getBoundingClientRect();
+      var column = panel.querySelector('rect.column[data-index="' + index + '"]').getBoundingClientRect();
+      var left = column.right - figure.left + 8;
+      if (left + card.offsetWidth > figure.width) left = column.left - figure.left - card.offsetWidth - 8;
+      card.style.left = Math.max(0, left) + "px";
+      card.style.top = Math.max(0, column.top - figure.top) + "px";
+    }
+
+    function hide() {
+      card.hidden = true;
+      svg.querySelectorAll("rect.column.on").forEach(function (column) { column.classList.remove("on"); });
+    }
+
+    function open(index) {
+      var report = releases[index] && releases[index].report;
+      if (report) window.location.href = report.replace(/\.md$/, ".html");
+    }
+
+    svg.addEventListener("pointermove", function (event) {
+      var column = event.target.closest ? event.target.closest("rect.column") : null;
+      if (!column) return hide();
+      show(panels.indexOf(column.closest("g.panel")), Number(column.getAttribute("data-index")));
+    });
+    svg.addEventListener("pointerleave", function () {
+      if (document.activeElement !== svg) hide();
+    });
+    svg.addEventListener("click", function (event) {
+      var column = event.target.closest ? event.target.closest("rect.column") : null;
+      if (column) open(Number(column.getAttribute("data-index")));
+    });
+    svg.addEventListener("focus", function () { show(at.panel, at.index); });
+    svg.addEventListener("blur", hide);
+    svg.addEventListener("keydown", function (event) {
+      if (event.target !== svg) return;
+      var panel = at.panel, index = at.index;
+      switch (event.key) {
+        case "ArrowLeft": index = Math.max(0, index - 1); break;
+        case "ArrowRight": index = Math.min(releases.length - 1, index + 1); break;
+        case "ArrowUp": panel = Math.max(0, panel - 1); break;
+        case "ArrowDown": panel = Math.min(panels.length - 1, panel + 1); break;
+        case "Home": index = 0; break;
+        case "End": index = releases.length - 1; break;
+        case "Enter": open(index); return;
+        case "Escape": hide(); return;
+        default: return;
+      }
+      event.preventDefault();
+      show(panel, index);
+    });
+    svg.querySelectorAll("g.legend-item").forEach(function (item) {
+      var series = item.getAttribute("data-series");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("role", "button");
+      item.setAttribute("aria-pressed", "true");
+      function toggle() {
+        var hidden = svg.classList.toggle("hide-" + series);
+        item.setAttribute("aria-pressed", hidden ? "false" : "true");
+        if (!card.hidden) show(at.panel, at.index);
+      }
+      item.addEventListener("click", function (event) { event.stopPropagation(); toggle(); });
+      item.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          toggle();
+        }
+      });
+    });
+  });
+})();

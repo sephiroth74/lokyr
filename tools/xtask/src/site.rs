@@ -298,7 +298,11 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     )
     .context("writing the releases' feed")?;
     for (document, text) in documents.iter().zip(&texts) {
-        let page = page(document, text, &settings, &titles, &summary);
+        let page = with_charts(
+            root,
+            document,
+            &page(document, text, &settings, &titles, &summary),
+        );
         let target = out.join(page_path(document));
         if let Some(folder) = target.parent() {
             fs::create_dir_all(folder).with_context(|| format!("making {}", folder.display()))?;
@@ -909,6 +913,98 @@ fn page(
         &source,
         "",
     )
+}
+
+/// `page`, of `document`, of its charts' images in it as their SVG: a
+/// paragraph of an image alone of a chart of the benches, an SVG of the
+/// docs whose root tells its kind, `data-chart`, which the site's script
+/// makes answer the pointer and the keyboard, in the site's dark colors
+/// whatever the reader's appearance, of the width that the page gives it,
+/// its image's text its label; a page of a chart is wide, as its charts and
+/// its tables take more room than its text's column on a wide screen.
+fn with_charts(root: &Path, document: &Path, page: &str) -> String {
+    const START: &str = "<p><img src=\"";
+    let mut shown = String::with_capacity(page.len());
+    let mut rest = page;
+    let mut charts = 0;
+    while let Some(at) = rest.find(START) {
+        let tail = &rest[at..];
+        let Some(end) = tail.find("</p>") else {
+            break;
+        };
+        let paragraph = &tail[..end + 4];
+        shown.push_str(&rest[..at]);
+        match chart_of(root, document, paragraph) {
+            Some(figure) => {
+                shown.push_str(&figure);
+                charts += 1;
+            }
+            None => shown.push_str(paragraph),
+        }
+        rest = &tail[end + 4..];
+    }
+    shown.push_str(rest);
+    if charts == 0 {
+        return shown;
+    }
+    shown.replacen(
+        "<div class=\"wrap page has-nav",
+        "<div class=\"wrap page wide has-nav",
+        1,
+    )
+}
+
+/// The figure of a chart of `paragraph`, an image alone of `document`'s, as
+/// [`with_charts`] tells; none of another image.
+fn chart_of(root: &Path, document: &Path, paragraph: &str) -> Option<String> {
+    let (source, rest) = paragraph
+        .strip_prefix("<p><img src=\"")?
+        .split_once("\" alt=\"")?;
+    let label = rest.strip_suffix("\" /></p>")?;
+    if source.contains(':') || source.starts_with('/') || label.contains('"') {
+        return None;
+    }
+    let file = normalized(&document.parent().unwrap_or(Path::new("")).join(source))?;
+    if file.extension().is_none_or(|extension| extension != "svg") || !file.starts_with("docs") {
+        return None;
+    }
+    let svg = fs::read_to_string(root.join(&file)).ok()?;
+    let svg = svg.trim();
+    let open = svg.find('>')?;
+    let tag = &svg[..open];
+    if !tag.starts_with("<svg ") || !tag.contains(" data-chart=\"") {
+        return None;
+    }
+    // Its root of no size of its own, the page giving it its width, of the
+    // dark colors, and of the image's text.
+    let mut root_tag = String::new();
+    for (name, value) in attributes(&tag[5..]) {
+        let _ = match name {
+            "width" | "height" => Ok(()),
+            "class" => write!(root_tag, " class=\"{value} dark\""),
+            "aria-label" => write!(root_tag, " aria-label=\"{label}\""),
+            _ => write!(root_tag, " {name}=\"{value}\""),
+        };
+    }
+    Some(format!(
+        "<figure class=\"chart-figure\" data-pagefind-ignore><svg{root_tag}{}</figure>\n",
+        &svg[open..]
+    ))
+}
+
+/// The attributes of an element's opening tag, past its name: each name
+/// and its value, of double quotes.
+fn attributes(tag: &str) -> Vec<(&str, &str)> {
+    let mut found = Vec::new();
+    let mut rest = tag.trim_start();
+    while let Some((name, after)) = rest.split_once("=\"") {
+        let Some((value, next)) = after.split_once('"') else {
+            break;
+        };
+        found.push((name.trim(), value));
+        rest = next.trim_start();
+    }
+    found
 }
 
 /// The least sections of a page that has a table of contents.
@@ -2254,6 +2350,66 @@ mod tests {
                 "docs/releases/0.9.0.md is linked from no page of its collection: list it in docs/releases/README.md"
             ]
         );
+    }
+
+    #[test]
+    fn a_chart_of_the_benches_is_its_svg_in_a_wide_page_and_another_image_stays() {
+        let root = std::env::temp_dir().join(format!("lokyr-site-charts-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("docs/bench/releases")).unwrap();
+        fs::write(
+            root.join("docs/bench/releases/start.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"chart\" data-chart=\"trends\" width=\"680\" height=\"418\" viewBox=\"0 0 680 418\" role=\"img\" aria-label=\"Starting\">\n<style>.chart .surface { fill: #fcfcfb; }</style>\n<rect class=\"surface\"/>\n</svg>\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("docs/bench/plain.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"></svg>\n",
+        )
+        .unwrap();
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let text = "# The releases\n\n![Starting and typing: the gap & the echo](releases/start.svg)\n\n![A plain one](plain.svg)\n\nText ![inline](releases/start.svg) beside.\n";
+        let document = Path::new("docs/bench/RELEASES.md");
+        let made = with_charts(
+            &root,
+            document,
+            &page(
+                document,
+                text,
+                &Settings::default(),
+                &HashMap::new(),
+                &summary,
+            ),
+        );
+        // The chart's SVG, of no size of its own, of the dark colors, of the
+        // image's text, its own text out of the search.
+        assert!(
+            made.contains("<figure class=\"chart-figure\" data-pagefind-ignore><svg xmlns=\"http://www.w3.org/2000/svg\" class=\"chart dark\" data-chart=\"trends\" viewBox=\"0 0 680 418\" role=\"img\" aria-label=\"Starting and typing: the gap &amp; the echo\">\n<style>"),
+            "{made}"
+        );
+        assert!(made.contains("<rect class=\"surface\"/>\n</svg></figure>"));
+        // Another image, and a chart's beside text, stay images.
+        assert!(made.contains("<p><img src=\"plain.svg\" alt=\"A plain one\" /></p>"));
+        assert!(made.contains("Text <img src=\"releases/start.svg\" alt=\"inline\" /> beside."));
+        // Its page wide; a page of none not.
+        assert!(
+            made.contains("<div class=\"wrap page wide has-nav\">"),
+            "{made}"
+        );
+        let plain = with_charts(
+            &root,
+            document,
+            &page(
+                document,
+                "# Plain\n\n![A plain one](plain.svg)\n",
+                &Settings::default(),
+                &HashMap::new(),
+                &summary,
+            ),
+        );
+        assert!(!plain.contains("wide"));
+        assert!(!plain.contains("<figure"));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

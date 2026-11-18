@@ -44,15 +44,35 @@ class Trends(unittest.TestCase):
         self.assertIn(">26.6</text>", svg)
         build = [(label, True) for label, _ in columns]
         ringed = charts.trends("Starting", "The gap", build, [panel])
-        self.assertEqual(ringed.count('class="surface accent-line"'), 2)
+        self.assertEqual(ringed.count('class="surface accent-line s0"'), 2)
 
     def test_two_series_take_two_colors_and_a_legend(self):
         columns = [("0.5.0", False), ("0.5.1", False)]
         panel = {"title": "A drag", "unit": "/s", "digits": 1, "budget": None,
                  "series": [[57.3, 58.0], [58.0, 58.0]]}
         svg = charts.trends("Motion", "Frames", columns, [panel], ["opaque", "a blur"])
-        self.assertIn('class="second ring"', svg)
+        self.assertIn('class="second ring s1"', svg)
         self.assertIn(">a blur</text>", svg)
+
+    def test_a_chart_carries_its_panels_releases_and_values_for_the_site(self):
+        columns = [("1.2.0", False, "ab-F3b-29.md"), ("1.3.0", False, "ab-F5a-17.md")]
+        panel = {"title": "Latency p50, ms", "unit": "ms", "digits": 1, "budget": 33.3,
+                 "better": "lower", "names": ["opaque", "a blur"], "series": [[16.6, 17.3], [16.9, None]]}
+        svg = charts.trends("Starting", "The gap", columns, [panel], ["opaque", "a blur"])
+        self.assertIn('class="chart" data-chart="trends"', svg)
+        self.assertIn('<g class="panel" data-title="Latency p50, ms" data-unit="ms" data-digits="1" '
+                      'data-budget="33.3" data-better="lower" data-names="opaque|a blur">', svg)
+        # A column of each release, of its report, under its dots.
+        self.assertIn('data-release="1.3.0" data-index="1" data-report="ab-F5a-17.md"/>', svg)
+        self.assertLess(svg.index('class="column"'), svg.index("<circle class=\"accent ring"))
+        self.assertIn('data-release="1.3.0" data-series="0" data-value="17.3">', svg)
+        self.assertEqual(svg.count('data-series="1" data-value='), 1)
+        # Each series' marks of its class, which a legend's item turns off.
+        self.assertIn('<g class="legend-item" data-series="1">', svg)
+        self.assertIn(".chart.hide-1 .s1", svg)
+        # The dark colors as the reader asks for them, or as the page names them.
+        self.assertIn("@media (prefers-color-scheme: dark)", svg)
+        self.assertIn(".chart.dark .surface { fill: #1a1a19; }", svg)
 
 
 class Files(unittest.TestCase):

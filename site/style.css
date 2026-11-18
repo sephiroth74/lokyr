@@ -484,6 +484,54 @@ body {
 /* A name in a cell keeps whole, the cell's column widening for it. */
 .doc td code { white-space: nowrap; }
 
+/* A chart of the benches, its SVG in the page: of the page's width, its
+   marks letting the pointer through to its releases' columns, which the
+   script marks and tells of in a card. */
+.doc .chart-figure { position: relative; margin: 24px 0; }
+.doc .chart-figure svg.chart { display: block; width: 100%; height: auto; border-radius: 10px; }
+/* Its surface the site's raised one, and the dots' rings of it. */
+.doc svg.chart.dark .surface { fill: var(--bg-raised); }
+.doc svg.chart.dark .ring { stroke: var(--bg-raised); }
+.doc svg.chart :is(circle, line, text) { pointer-events: none; }
+.doc svg.chart .legend-item :is(circle, text) { pointer-events: auto; }
+.doc svg.chart .legend-item, .doc svg.chart .column[data-report] { cursor: pointer; }
+.doc svg.chart:focus-visible, .doc svg.chart .legend-item:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+.chart-card {
+  position: absolute;
+  z-index: 2;
+  min-width: 150px;
+  max-width: 260px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: rgba(19, 16, 29, 0.96);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  color: var(--muted);
+  font-size: var(--t-xs);
+  line-height: 1.45;
+  pointer-events: none;
+}
+.chart-card[hidden] { display: none; }
+.chart-card .chart-card-title { color: var(--fg); font-weight: 600; }
+.chart-card .chart-card-value { color: var(--fg); font-variant-numeric: tabular-nums; }
+.chart-card .chart-card-report { margin-top: 4px; color: var(--dim); }
+
+/* A page of charts or of a wide table: its column wider than the text's on
+   a wide screen, its prose kept to the text's measure, its charts and its
+   tables taking the rest. */
+@media (min-width: 1100px) {
+  .page.has-nav.wide { grid-template-columns: 220px minmax(0, 960px); }
+  .page.has-nav.wide .doc { max-width: 960px; }
+  .page.has-nav.wide .doc > :not(.chart-figure, table) { max-width: 700px; }
+}
+@media (min-width: 1360px) {
+  .wrap.page.has-nav.has-toc.wide {
+    width: min(1560px, 100% - 48px);
+    grid-template-columns: 220px minmax(0, 960px) 200px;
+  }
+  body:has(.page.has-nav.has-toc.wide) .top { width: min(1560px, 100% - 48px); }
+}
+
 footer {
   margin-top: 120px;
   padding: 32px 0 48px;

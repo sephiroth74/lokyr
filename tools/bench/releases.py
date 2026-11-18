@@ -152,7 +152,7 @@ def reference_pair(series):
 def chart_files(data):
     """Each chart's path and its SVG."""
     releases = data["releases"]
-    columns = [(r["label"], bool(r.get("build"))) for r in releases]
+    columns = [(r["label"], bool(r.get("build")), r.get("report")) for r in releases]
     measures = {m["id"]: m for m in data["measures"]}
     files = {}
     for chart in data["charts"]:
@@ -171,6 +171,7 @@ def chart_files(data):
                 "unit": series[0].get("unit", ""),
                 "digits": series[0].get("digits", 1),
                 "budget": series[0].get("budget"),
+                "better": series[0].get("better", "lower"),
                 "budget_label": series[0].get("budget_label"),
                 "names": chart.get("legend", [None, None]),
                 "series": [[m["values"].get(r["id"]) for r in shown] for m in series],

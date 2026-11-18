@@ -2,7 +2,9 @@
 bars of one value each, of which one stands out, and pairs of a value
 before and after a change. Each chart follows the reader's light or dark
 appearance, and tells each mark's value as the pointer rests on it, where
-the browser shows the SVG itself.
+the browser shows the SVG itself. A chart of trends carries its panels',
+releases' and values' data, of which the documentation's site, which puts
+it into its page, marks a release under the pointer and tells its values.
 
 The colors: the accent blue for what the chart is about, a gray for the
 rest, which recedes, and an orange for a second series beside the blue;
@@ -11,42 +13,52 @@ text, grid and axes in their own grays.
 from html import escape
 import math
 
-STYLE = """
-<style>
-  .surface { fill: #fcfcfb; }
-  .primary { fill: #0b0b0b; }
-  .secondary { fill: #52514e; }
-  .muted { fill: #898781; }
-  .grid { stroke: #e1e0d9; }
-  .base { stroke: #c3c2b7; }
-  .accent { fill: #2a78d6; }
-  .context { fill: #898781; }
-  .accent-line { stroke: #2a78d6; }
-  .context-line { stroke: #898781; }
-  .second { fill: #eb6834; }
-  .second-line { stroke: #eb6834; }
-  .ring { stroke: #fcfcfb; }
-  .budget { stroke: #52514e; }
-  text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  .tick { font-variant-numeric: tabular-nums; }
-  @media (prefers-color-scheme: dark) {
-    .surface { fill: #1a1a19; }
-    .primary { fill: #f0efec; }
-    .secondary { fill: #c3c2b7; }
-    .muted { fill: #898781; }
-    .grid { stroke: #2c2c2a; }
-    .base { stroke: #383835; }
-    .accent { fill: #3987e5; }
-    .context { fill: #6f6e69; }
-    .accent-line { stroke: #3987e5; }
-    .context-line { stroke: #6f6e69; }
-    .second { fill: #d95926; }
-    .second-line { stroke: #d95926; }
-    .ring { stroke: #1a1a19; }
-    .budget { stroke: #c3c2b7; }
-  }
-</style>
-"""
+# Each class's paint in the light and the dark appearance.
+PAINTS = [
+    ("surface", "fill", "#fcfcfb", "#1a1a19"),
+    ("primary", "fill", "#0b0b0b", "#f0efec"),
+    ("secondary", "fill", "#52514e", "#c3c2b7"),
+    ("muted", "fill", "#898781", "#898781"),
+    ("grid", "stroke", "#e1e0d9", "#2c2c2a"),
+    ("base", "stroke", "#c3c2b7", "#383835"),
+    ("accent", "fill", "#2a78d6", "#3987e5"),
+    ("context", "fill", "#898781", "#6f6e69"),
+    ("accent-line", "stroke", "#2a78d6", "#3987e5"),
+    ("context-line", "stroke", "#898781", "#6f6e69"),
+    ("second", "fill", "#eb6834", "#d95926"),
+    ("second-line", "stroke", "#eb6834", "#d95926"),
+    ("ring", "stroke", "#fcfcfb", "#1a1a19"),
+    ("budget", "stroke", "#52514e", "#c3c2b7"),
+]
+
+
+def paints(scope, dark):
+    """The rules of every class's paint under `scope`."""
+    rules = [f"{scope} .{name} {{ {kind}: {d if dark else l}; }}" for name, kind, l, d in PAINTS]
+    # A release's column under the pointer, of the accent, faint.
+    accent = "#3987e5" if dark else "#2a78d6"
+    rules.append(f"{scope} .column.on {{ fill: {accent}; fill-opacity: {0.16 if dark else 0.08}; }}")
+    return rules
+
+
+# The rules of a chart, each of its class, `chart`: the light appearance's,
+# the dark one's as the reader's appearance asks for it, or as a page that
+# shows the chart in its own colors names it, `chart dark`; a series turned
+# off of the page's legend, `hide-0` or `hide-1`.
+STYLE = "\n".join([
+    "<style>",
+    *("  " + rule for rule in paints(".chart", False)),
+    '  .chart text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }',
+    "  .chart .tick { font-variant-numeric: tabular-nums; }",
+    "  .chart .column { fill: transparent; }",
+    "  .chart.hide-0 .s0, .chart.hide-1 .s1 { display: none; }",
+    '  .chart.hide-0 .legend-item[data-series="0"], .chart.hide-1 .legend-item[data-series="1"] { opacity: 0.4; }',
+    "  @media (prefers-color-scheme: dark) {",
+    *("    " + rule for rule in paints(".chart", True)),
+    "  }",
+    *("  " + rule for rule in paints(".chart.dark", True)),
+    "</style>",
+])
 
 WIDTH = 680
 LEFT = 118
@@ -131,9 +143,10 @@ def top_of(subtitle):
     return TOP + SUBTITLE_LINE * (len(subtitle_lines(subtitle)) - 1)
 
 
-def header(title, subtitle, height):
+def header(title, subtitle, height, kind=None):
+    data = f' data-chart="{kind}"' if kind else ""
     parts = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{height}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" class="chart"{data} width="{WIDTH}" height="{height}" '
         f'viewBox="0 0 {WIDTH} {height}" role="img" aria-label="{escape(title)}">',
         STYLE,
         f'<rect class="surface" width="{WIDTH}" height="{height}" rx="8"/>',
@@ -388,8 +401,10 @@ SERIES = ("accent", "second")
 
 def trends(title, subtitle, columns, panels, legend=None):
     """Small multiples of measures over releases, a panel each, two to a
-    row: `columns`, `(label, is_build)` of each release, in their order;
-    `panels`, each `{"title", "unit", "digits", "budget", "series"}`,
+    row: `columns`, `(label, is_build)` of each release, in their order,
+    or `(label, is_build, report)` of its report's page;
+    `panels`, each `{"title", "unit", "digits", "budget", "series"}`, and
+    `better`, "lower" or "higher", of its budget,
     `series` one or two lists of a value for each release, or None where
     the release has none. Each panel has one scale from 0, its budget, if
     any, a dashed line, each release's value a dot, a build between
@@ -400,13 +415,15 @@ def trends(title, subtitle, columns, panels, legend=None):
     top = base + 18
     height = top + rows * PANEL_HEIGHT + 6
     width = (WIDTH - 32 - PANEL_GAP) / 2
-    parts = header(title, subtitle, height)
-    # The legend: the series' colors where there are two, and the ring of a
-    # build between releases.
+    parts = header(title, subtitle, height, "trends")
+    # The legend: the series' colors where there are two, each an item that
+    # the site turns its series off and on of, and the ring of a build
+    # between releases.
     x = 16
     for index, name in enumerate(legend or []):
-        parts.append(f'<circle class="{SERIES[index]}" cx="{x + 5}" cy="{base + 2}" r="4"/>')
-        parts.append(f'<text class="secondary" x="{x + 14}" y="{base + 6}" font-size="12">{escape(name)}</text>')
+        parts.append(f'<g class="legend-item" data-series="{index}">'
+                     f'<circle class="{SERIES[index]}" cx="{x + 5}" cy="{base + 2}" r="4"/>'
+                     f'<text class="secondary" x="{x + 14}" y="{base + 6}" font-size="12">{escape(name)}</text></g>')
         x += 32 + 7 * len(name)
     parts.append(f'<circle class="surface context-line" cx="{x + 5}" cy="{base + 2}" r="4" stroke-width="2"/>')
     parts.append(f'<text class="secondary" x="{x + 14}" y="{base + 6}" font-size="12">'
@@ -420,10 +437,19 @@ def trends(title, subtitle, columns, panels, legend=None):
 
 
 def trend_panel(panel, columns, left, y0, width):
-    """The parts of a panel of `trends`, at `left` and `y0`, `width` wide."""
-    parts = [f'<text class="primary" x="{left:.1f}" y="{y0 + 14}" font-size="12" '
-             f'font-weight="600">{escape(panel["title"])}</text>']
+    """The parts of a panel of `trends`, at `left` and `y0`, `width` wide:
+    a group of its title, unit, digits, budget and series' names, as data."""
     digits, unit, budget = panel.get("digits", 1), panel.get("unit", ""), panel.get("budget")
+    data = [f'data-title="{escape(panel["title"])}"', f'data-unit="{escape(unit)}"', f'data-digits="{digits}"']
+    if budget is not None:
+        data.append(f'data-budget="{budget:g}"')
+        data.append(f'data-better="{escape(panel.get("better", "lower"))}"')
+    names = [name for name in panel.get("names") or [] if name]
+    if len(panel["series"]) > 1 and names:
+        data.append(f'data-names="{escape("|".join(names))}"')
+    parts = [f'<g class="panel" {" ".join(data)}>',
+             f'<text class="primary" x="{left:.1f}" y="{y0 + 14}" font-size="12" '
+             f'font-weight="600">{escape(panel["title"])}</text>']
     references = [r for r in panel.get("references", []) if r]
     values = [v for series in panel["series"] for v in series if v is not None]
     ticks = nice_ticks(max(values + ([budget] if budget else []) + [r["value"] for r in references]), 3)
@@ -438,10 +464,20 @@ def trend_panel(panel, columns, left, y0, width):
                      f'y2="{y:.1f}" stroke-width="1"/>')
         parts.append(f'<text class="muted tick" x="{plot_left - 6:.1f}" y="{y + 3.5:.1f}" font-size="10" '
                      f'text-anchor="end">{compact(tick)}</text>')
-    for index, (label, build) in enumerate(columns):
+    for index, column in enumerate(columns):
+        label, build = column[0], column[1]
         style = ' font-style="italic"' if build else ""
         parts.append(f'<text class="muted" x="{xs(index):.1f}" y="{plot_bottom + 15:.1f}" font-size="10" '
                      f'text-anchor="middle"{style}>{escape(label)}</text>')
+    # Each release's column, under the marks, from its plot's top to its
+    # label: what the site marks under the pointer, of the release's report.
+    for index, column in enumerate(columns):
+        report = f' data-report="{escape(column[2])}"' if len(column) > 2 and column[2] else ""
+        x1 = max(xs(index) - step / 2, plot_left - 10)
+        x2 = min(xs(index) + step / 2, plot_right + 10)
+        parts.append(f'<rect class="column" x="{x1:.1f}" y="{plot_top - 6:.1f}" width="{x2 - x1:.1f}" '
+                     f'height="{PLOT_HEIGHT + 26}" data-release="{escape(column[0])}" '
+                     f'data-index="{index}"{report}/>')
     if budget is not None:
         y = ys(budget)
         label = panel.get("budget_label") or f"{budget:g}"
@@ -459,7 +495,8 @@ def trend_panel(panel, columns, left, y0, width):
     for which, reference in shown:
         y = ys(reference["value"])
         tone = "context" if len(panel["series"]) == 1 else SERIES[which]
-        parts.append(f'<line class="{tone}-line" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
+        # Of its series' class, which the legend turns off with the series.
+        parts.append(f'<line class="{tone}-line s{which}" x1="{plot_left:.1f}" y1="{y:.1f}" x2="{plot_right:.1f}" '
                      f'y2="{y:.1f}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round">'
                      f'<title>{escape(reference["label"])} {escape(unit)}</title></line>')
     if shown:
@@ -474,23 +511,26 @@ def trend_panel(panel, columns, left, y0, width):
         points = [(xs(i), ys(v), v, columns[i]) for i, v in enumerate(series) if v is not None]
         # The line, through the releases that have a value, one after another.
         for (x1, y1, _, _), (x2, y2, _, _) in zip(points, points[1:]):
-            parts.append(f'<line class="{tone}-line" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" '
+            parts.append(f'<line class="{tone}-line s{which}" x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" '
                          f'y2="{y2:.1f}" stroke-width="2" stroke-linecap="round"/>')
         name = panel.get("names", [None, None])[which]
-        for x, y, value, (label, build) in points:
+        for x, y, value, column in points:
+            label, build = column[0], column[1]
             tip = f'{escape(label)}{", " + escape(name) if name else ""}: {number(value, digits)} {escape(unit)}'
             # A release's dot of its series' color in a ring of the surface; a
             # build's a ring of the color.
             style = f"surface {tone}-line" if build else f"{tone} ring"
-            parts.append(f'<circle class="{style}" cx="{x:.1f}" cy="{y:.1f}" r="4" '
-                         f'stroke-width="2"><title>{tip}</title></circle>')
+            parts.append(f'<circle class="{style} s{which}" cx="{x:.1f}" cy="{y:.1f}" r="4" '
+                         f'stroke-width="2" data-release="{escape(label)}" data-series="{which}" '
+                         f'data-value="{value:g}"><title>{tip}</title></circle>')
         if points:
-            ends.append(points[-1])
+            ends.append((which, points[-1]))
     # The last value of each series beside its dot, but where two would meet,
     # the first series' alone, the legend and the tooltips telling the rest.
-    if len(ends) == 2 and abs(ends[0][1] - ends[1][1]) < 13:
+    if len(ends) == 2 and abs(ends[0][1][1] - ends[1][1][1]) < 13:
         ends = ends[:1]
-    for x, y, value, _ in ends:
-        parts.append(f'<text class="primary tick" x="{x + 9:.1f}" y="{y + 4:.1f}" font-size="11" '
+    for which, (x, y, value, _) in ends:
+        parts.append(f'<text class="primary tick s{which}" x="{x + 9:.1f}" y="{y + 4:.1f}" font-size="11" '
                      f'font-weight="600">{number(value, digits)}</text>')
+    parts.append("</g>")
     return parts
