@@ -251,6 +251,12 @@ pub enum Kind {
     /// that the menu highlights by `highlight`, of none as it closes, and
     /// of the choice made by `select`, which it gives in its next render.
     PopUp(PopUp),
+    /// A group box, as macOS 27's grouped rows of a form, as System
+    /// Settings shows them: a container of its rows, down a column, whose
+    /// box the host draws where its style gives none, a rounded fill of
+    /// `group.bg`, and a hairline of `group.separator` between each two
+    /// rows, as wide as their content, inside their padding.
+    Group,
     /// A line across its container, a point thick: upright in a row, flat
     /// in a column.
     Separator,
@@ -718,6 +724,7 @@ impl Kind {
             | Self::Icon(_)
             | Self::Spacer
             | Self::Separator
+            | Self::Group
             | Self::Progress(_)
             | Self::Image(_)
             | Self::ThemePreview(_)
@@ -817,7 +824,7 @@ impl Kind {
     pub fn has_children(&self) -> bool {
         matches!(
             self,
-            Self::Container | Self::Scroll | Self::Tabs(_) | Self::Themed(_)
+            Self::Container | Self::Group | Self::Scroll | Self::Tabs(_) | Self::Themed(_)
         )
     }
 }
@@ -1627,6 +1634,21 @@ impl Node {
             chosen,
             ..PopUp::default()
         }))
+    }
+
+    /// A group box of `rows`, down a column, as wide as its parent gives
+    /// it room: its box, a rounded fill, and the hairlines between its
+    /// rows, the host's.
+    pub fn group(rows: Vec<Node>) -> Self {
+        Self {
+            children: rows,
+            layout: Layout {
+                direction: Direction::Column,
+                width: Length::Fraction(1.0),
+                ..Layout::default()
+            },
+            ..Self::new(Kind::Group)
+        }
     }
 
     /// A view of `tabs`, of the tab `chosen`, whose page is `page`; its key,

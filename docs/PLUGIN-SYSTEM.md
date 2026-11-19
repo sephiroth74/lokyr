@@ -352,8 +352,11 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios"
-        | "pop-up" | "separator" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview"
-        | "terminal-specimen" | "themed",
+        | "pop-up" | "separator" | "group" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image"
+        | "theme-preview" | "terminal-specimen" | "themed",
+    -- A group node: a group box, as macOS 27's grouped rows of a form, a container of its rows, whose box the host
+    -- draws where its style gives none, a rounded fill of `group.bg`, and a hairline of `group.separator` between each
+    -- two rows, across their content, inside their padding; its title, if it has one, a text above it.
     text: string?, -- for text nodes; a button's, a toggle's, a switch's and a checkbox's label
     -- For icon nodes, by its name, one of the host's: the codicons, as "search" or "close", and two that the host draws
     -- as macOS 27's search field does, "magnifying-glass" and "clear-circle", its cross knocked out of a disc; a

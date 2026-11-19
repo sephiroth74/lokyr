@@ -3989,33 +3989,11 @@ fn row_of(children: Vec<Node>, gap: f32) -> Node {
     })
 }
 
-/// A group of `rows`, of the key `key`, in a rounded box, a line between
-/// each two, as macOS's settings group their rows.
+/// A group box of `rows`, of the key `key`, as macOS's settings group
+/// their rows: the host draws its rounded fill and a hairline between each
+/// two rows.
 fn group(rows: Vec<Node>, key: &str) -> Node {
-    let mut children = Vec::new();
-    for (at, row) in rows.into_iter().enumerate() {
-        if at > 0 {
-            children.push(Node::separator());
-        }
-        children.push(row);
-    }
-    Node::container(children)
-        .key(key)
-        .role(Role::Group)
-        .layout(Layout {
-            direction: Direction::Column,
-            width: Length::Fraction(1.0),
-            ..Layout::default()
-        })
-        .style(Style {
-            background: Some(Token::from("panel.bg")),
-            border: Some(Border {
-                color: Token::from("panel.border"),
-                width: 1.0,
-            }),
-            radius: 8.0,
-            ..Style::default()
-        })
+    Node::group(rows).key(key)
 }
 
 /// The layout of a text of as many lines as its width needs.

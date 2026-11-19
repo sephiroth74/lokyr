@@ -91,6 +91,10 @@
 "check.on.pressed.bg" = "mix(check.on.bg, #000000, 10%)"
 # A checkbox's check, and a radio button's dot · not released yet.
 "check.mark" = "button.default.fg"
+# A group box's fill, of grouped rows, as a settings page's · not released yet.
+"group.bg" = "text / 3%"
+# The hairline between a group box's rows · not released yet.
+"group.separator" = "text / 5%"
 # The shadow under a switch's knob · not released yet.
 "switch.knob.shadow" = { light = "#0000001f", dark = "transparent" }
 # The tooltips' background.

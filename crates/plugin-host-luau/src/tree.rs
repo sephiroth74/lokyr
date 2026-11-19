@@ -42,7 +42,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 20] = [
+pub(crate) const KINDS: [&str; 21] = [
     "container",
     "text",
     "icon",
@@ -55,6 +55,7 @@ pub(crate) const KINDS: [&str; 20] = [
     "radios",
     "pop-up",
     "separator",
+    "group",
     "list",
     "scroll",
     "progress",
@@ -69,7 +70,7 @@ pub(crate) const KINDS: [&str; 20] = [
 /// a kind of node.
 pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
     Some(match kind {
-        "container" | "spacer" | "separator" | "scroll" | "terminal-specimen" => &[],
+        "container" | "spacer" | "separator" | "group" | "scroll" | "terminal-specimen" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
         "field" => &[
@@ -341,6 +342,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             size: or_default(take("size"), "size", budget)?,
         }),
         "separator" => Kind::Separator,
+        "group" => Kind::Group,
         "list" => {
             let given = take("row");
             if given.is_nil() {
@@ -434,6 +436,7 @@ mod giving {
             Kind::Radios(_) => "radios",
             Kind::PopUp(_) => "pop-up",
             Kind::Separator => "separator",
+            Kind::Group => "group",
             Kind::List(_) => "list",
             Kind::Scroll => "scroll",
             Kind::Progress(_) => "progress",
@@ -483,6 +486,7 @@ mod giving {
                 Kind::Container
                 | Kind::Spacer
                 | Kind::Separator
+                | Kind::Group
                 | Kind::Scroll
                 | Kind::TerminalSpecimen => {}
                 Kind::Text(text) => table.raw_set("text", text.as_str())?,

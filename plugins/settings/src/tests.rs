@@ -484,6 +484,11 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         text_of(&tree, "description:size").as_deref(),
         Some("What size does")
     );
+    // The keys a group box of their rows, of no separator between them,
+    // whose hairlines the host draws.
+    let keys = find_node(&tree, "keys").unwrap();
+    assert_eq!(keys.kind, Kind::Group);
+    assert!(keys.children.iter().all(|row| row.kind != Kind::Separator));
     // Each key a group of its name, for VoiceOver.
     let row = find_node(&tree, "key:size").unwrap();
     assert_eq!(row.role, Some(Role::Group));

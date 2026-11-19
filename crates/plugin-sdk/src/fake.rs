@@ -5463,6 +5463,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
             }
         }
         Kind::Separator => out.push_str("separator"),
+        Kind::Group => out.push_str("group"),
         Kind::List(list) => {
             let _ = write!(
                 out,

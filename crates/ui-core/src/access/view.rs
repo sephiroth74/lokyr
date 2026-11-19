@@ -233,9 +233,15 @@ impl WindowTree {
             (_, None) if presses => Role::Button,
             (Kind::Icon(_), None) if label.is_none() => return None,
             (
-                Kind::Container | Kind::Themed(_) | Kind::Text(_) | Kind::Icon(_) | Kind::Scroll,
+                Kind::Container
+                | Kind::Group
+                | Kind::Themed(_)
+                | Kind::Text(_)
+                | Kind::Icon(_)
+                | Kind::Scroll,
                 Some(role),
             ) => role_of(role),
+            (Kind::Group, None) => Role::Group,
             (Kind::Container, None) if root => match access.panel {
                 Some(panel::Role::Tooltip) => Role::Tooltip,
                 Some(_) => Role::Group,
@@ -1271,15 +1277,23 @@ mod tests {
     }
 
     #[test]
-    fn a_search_field_is_a_search_input() {
+    fn a_search_field_is_a_search_input_and_a_group_box_a_group() {
         let root = column(vec![
             ViewNode::field("Search").key("search").search(),
             ViewNode::field("Find").key("find"),
         ]);
-        let surface = surface(&root);
-        let update = tree_of(&surface, None);
-        assert_eq!(keyed(&update, &surface, "search").role(), Role::SearchInput);
-        assert_eq!(keyed(&update, &surface, "find").role(), Role::TextInput);
+        let fields = surface(&root);
+        let update = tree_of(&fields, None);
+        assert_eq!(keyed(&update, &fields, "search").role(), Role::SearchInput);
+        assert_eq!(keyed(&update, &fields, "find").role(), Role::TextInput);
+        // A group box a group, of its rows.
+        let grouped = surface(&column(vec![
+            ViewNode::group(vec![ViewNode::text("row").key("row")]).key("rows"),
+        ]));
+        let update = tree_of(&grouped, None);
+        let rows = keyed(&update, &grouped, "rows");
+        assert_eq!(rows.role(), Role::Group);
+        assert_eq!(rows.children().len(), 1);
     }
 
     #[test]

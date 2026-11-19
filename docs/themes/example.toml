@@ -87,6 +87,10 @@ on.bg = "button.default.bg"
 on.pressed.bg = "mix(check.on.bg, #000000, 10%)"
 mark = "button.default.fg"
 
+[group]                             # the group boxes of grouped rows
+bg = "text / 3%"
+separator = "text / 5%"
+
 [tooltip]                           # the tooltips
 bg = "#323235"
 fg = "text"

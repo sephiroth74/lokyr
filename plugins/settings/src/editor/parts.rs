@@ -75,7 +75,14 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
     (
         "panel",
         "part-panel",
-        &["panel.bg", "panel.border", "shadow", "separator"],
+        &[
+            "panel.bg",
+            "panel.border",
+            "shadow",
+            "separator",
+            "group.bg",
+            "group.separator",
+        ],
     ),
     (
         "texts",

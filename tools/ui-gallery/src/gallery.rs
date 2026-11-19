@@ -822,6 +822,7 @@ impl Gallery {
                 section("The keyboard's focus", self.focus()),
                 section("Fields", self.fields()),
                 section("The four sizes", self.sizes()),
+                section("A group box", group_box()),
                 section("A list of 100 000 rows", self.list()),
                 section("Floating panels", self.panels()),
                 section("Animations", self.animations()),
@@ -1914,6 +1915,38 @@ fn boxes() -> Node {
         align: Align::Center,
         ..Layout::default()
     })
+}
+
+/// A group box of rows, each its name at its left and its value at its
+/// right, as macOS 27's forms: the host draws its fill and its hairlines.
+fn group_box() -> Node {
+    let row = |name: &str, value: &str| {
+        Node::container(vec![
+            Node::text(name),
+            Node::spacer(),
+            Node::text(value).style(Style {
+                color: Some(Token::from("text.secondary")),
+                ..Style::default()
+            }),
+        ])
+        .layout(Layout {
+            align: Align::Center,
+            height: Length::Points(42.0),
+            padding: Edges {
+                top: 2.0,
+                right: 10.0,
+                bottom: 2.0,
+                left: 10.0,
+            },
+            ..Layout::default()
+        })
+    };
+    Node::group(vec![
+        row("Version", "1.4.0"),
+        row("Font", "SF Mono 13"),
+        row("Theme", "Lokyr Dark"),
+    ])
+    .key("group-box")
 }
 
 /// Each of the host's icons, with its name.

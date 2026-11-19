@@ -187,6 +187,8 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `check.on.bg` | A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet | `button.default.bg` |
 | `check.on.pressed.bg` | A checkbox's box pressed while it is on or mixed · not released yet | `mix(check.on.bg, #000000, 10%)` |
 | `check.mark` | A checkbox's check, and a radio button's dot · not released yet | `button.default.fg` |
+| `group.bg` | A group box's fill, of grouped rows, as a settings page's · not released yet | `text / 3%` |
+| `group.separator` | The hairline between a group box's rows · not released yet | `text / 5%` |
 | `switch.knob.shadow` | The shadow under a switch's knob · not released yet | light `#0000001f`, dark `transparent` |
 | `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
 | `tooltip.fg` | The tooltips' text | `text` |

@@ -931,6 +931,7 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
         Kind::Progress(progress) => Content::Progress(progress.shape),
         Kind::TerminalSpecimen => Content::Specimen,
         Kind::Container
+        | Kind::Group
         | Kind::Themed(_)
         | Kind::Spacer
         | Kind::List(_)

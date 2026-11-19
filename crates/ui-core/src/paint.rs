@@ -527,6 +527,19 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 };
                 &boxed
             }
+            // A group box a rounded fill, as macOS 27's.
+            Kind::Group if own => {
+                boxed = Style {
+                    background: Some(view::Token::from("group.bg")),
+                    radius: if style.radius > 0.0 {
+                        style.radius
+                    } else {
+                        widget::GROUP_RADIUS
+                    },
+                    ..style.clone()
+                };
+                &boxed
+            }
             _ => style,
         };
         if self.focused == Some(id) && !style.hides_ring {
@@ -638,6 +651,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Image(image) => self.image(*image, frame),
             Kind::ThemePreview(name) => self.theme_preview(name, frame),
             Kind::TerminalSpecimen => self.terminal_specimen(frame),
+            Kind::Group => self.group_lines(id),
             Kind::Container | Kind::Themed(_) | Kind::Spacer | Kind::Separator | Kind::Scroll => {}
         }
         let children = tree.children(id);
@@ -1652,6 +1666,40 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 });
                 self.push_shape(Shape::filled(under, color));
             }
+        }
+    }
+
+    /// The hairlines between the rows of the group box `id`, of
+    /// `group.separator`, a point thick, each in the middle of the room
+    /// between two rows, across the upper one's content, inside its
+    /// padding, as macOS 27's forms draw them.
+    fn group_lines(&mut self, id: NodeId) {
+        let Some(color) = self.tokens.get("group.separator") else {
+            return;
+        };
+        let scale = self.layout.scale();
+        let thick = scale.round().max(1.0);
+        let rows: Vec<(Frame, view::Edges)> = self
+            .tree
+            .children(id)
+            .iter()
+            .filter_map(|&row| {
+                let frame = self.layout.frame(self.tree, row)?;
+                let padding = self.tree.layout(row).map(|own| own.padding)?;
+                Some((frame, padding))
+            })
+            .collect();
+        for pair in rows.windows(2) {
+            let ((above, padding), (below, _)) = (pair[0], pair[1]);
+            let middle = (above.y + above.height + below.y) / 2.0;
+            let left = above.x + padding.left * scale;
+            let line = Frame {
+                x: (left + self.origin.0).round(),
+                y: (middle - thick / 2.0 + self.origin.1).round(),
+                width: (above.width - (padding.left + padding.right) * scale).max(0.0),
+                height: thick,
+            };
+            self.push_shape(Shape::filled(rect(line), color));
         }
     }
 
@@ -4250,6 +4298,69 @@ mod tests {
             .filter(|item| matches!(item, Item::Glyphs(_)))
             .count();
         assert_eq!(texts, 2);
+    }
+
+    #[test]
+    fn a_group_box_paints_its_rounded_fill_and_a_hairline_between_each_two_rows() {
+        let row = |key: &str| {
+            Node::container(vec![Node::text(key)])
+                .key(key)
+                .layout(view::Layout {
+                    padding: Edges {
+                        top: 10.0,
+                        right: 12.0,
+                        bottom: 10.0,
+                        left: 12.0,
+                    },
+                    width: view::Length::Fraction(1.0),
+                    ..view::Layout::default()
+                })
+        };
+        let root = Node::container(vec![
+            Node::group(vec![row("first"), row("second"), row("third")]).key("group"),
+        ])
+        .layout(view::Layout {
+            direction: view::Direction::Column,
+            width: view::Length::Points(300.0),
+            ..view::Layout::default()
+        });
+        let (tree, layout, items) = painted(&root, 1.0, 300.0, (0.0, 0.0));
+        let shapes: Vec<Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let frame = |key: &str| {
+            rect(
+                layout
+                    .frame(&tree, tree.by_key(&key.into()).unwrap())
+                    .unwrap(),
+            )
+        };
+        let group = frame("group");
+        let fill = shapes
+            .iter()
+            .find(|shape| shape.rect == group)
+            .expect("the group's fill");
+        assert_eq!((fill.fill, fill.radius), (token("group.bg"), 12.0));
+        // Two hairlines, between the rows, inside their padding, none after
+        // the last.
+        let lines: Vec<Rect> = shapes
+            .iter()
+            .filter(|shape| shape.fill == token("group.separator"))
+            .map(|shape| shape.rect)
+            .collect();
+        let (first, second) = (frame("first"), frame("second"));
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(
+            (lines[0].x, lines[0].width, lines[0].height),
+            (group.x + 12, group.width - 24, 1)
+        );
+        assert!(lines[0].y >= first.y + first.height as i32 - 1 && lines[0].y <= second.y);
+        assert!(lines[1].y > lines[0].y);
     }
 
     #[test]

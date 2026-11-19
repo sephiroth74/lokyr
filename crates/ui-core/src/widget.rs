@@ -45,6 +45,9 @@ pub const GAP: f32 = 4.0;
 /// boxes, as macOS 27's.
 pub const RADIUS: f32 = 6.0;
 
+/// The radius of a group box's corners, in points, as macOS 27's forms.
+pub const GROUP_RADIUS: f32 = 12.0;
+
 /// The track of a switch of `size`, in points, its width and its height,
 /// as macOS 27's switches of the four sizes.
 pub fn track(size: ControlSize) -> (f32, f32) {

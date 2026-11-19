@@ -634,7 +634,8 @@ fn view_tree() -> Node {
 /// alone, which has the focus, one of an icon and a label; a toggle of an
 /// icon off, one on, one off under the pointer, a disabled one on, one of
 /// a label off; pop-up buttons of a choice, small, of none and disabled;
-/// search fields of a text, empty, and small of a text;
+/// search fields of a text, empty, and small of a text; a group box of two
+/// rows;
 /// upright separators between the groups, and a flat one under them; room
 /// below for the tooltip of the toggle under the pointer.
 fn widgets_tree() -> Node {
@@ -791,6 +792,32 @@ fn widgets_tree() -> Node {
                 ..Box::default()
             }),
     ]);
+    let detail = |name: &str, value: &str| {
+        Node::container(vec![
+            Node::text(name),
+            Node::spacer(),
+            Node::text(value).style(Style {
+                color: Some("text.secondary".into()),
+                ..Style::default()
+            }),
+        ])
+        .layout(Box {
+            align: Align::Center,
+            height: Length::Points(32.0),
+            padding: Edges {
+                top: 2.0,
+                right: 10.0,
+                bottom: 2.0,
+                left: 10.0,
+            },
+            ..Box::default()
+        })
+    };
+    let grouped = Node::group(vec![
+        detail("Version", "1.4.0"),
+        detail("Theme", "Lokyr Dark"),
+    ])
+    .key("grouped");
     let pop_ups = row(vec![
         pop_up(
             "cadence",
@@ -812,6 +839,7 @@ fn widgets_tree() -> Node {
         searches,
         toggles,
         Node::separator(),
+        grouped,
     ])
     .layout(Box {
         direction: Direction::Column,

@@ -163,6 +163,7 @@ fn every() -> Node {
             size: ControlSize::Small,
         }))
         .key("family"),
+        Node::group(vec![Node::text("row")]),
     ];
     root
 }
@@ -202,6 +203,8 @@ const EVERY: &str = r#"{
           chosen = 0, across = true, size = "mini" },
         { kind = "pop-up", key = "family", choices = { "SF Mono", "Menlo" }, chosen = 1,
           placeholder = "Not set", size = "small" },
+        { kind = "group", layout = { direction = "column", width = { fraction = 1 } },
+          children = { { kind = "text", text = "row" } } },
     },
 }"#;
 
@@ -238,6 +241,8 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         local family = view.children[19]
         assert(family.kind == "pop-up" and family.choices[2] == "Menlo" and family.chosen == 1)
         assert(family.placeholder == "Not set" and family.size == "small")
+        local rows = view.children[20]
+        assert(rows.kind == "group" and rows.children[1].text == "row")
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,
