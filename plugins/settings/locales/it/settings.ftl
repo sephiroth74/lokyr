@@ -102,9 +102,12 @@ section-plugin-splits = Pannelli divisi
 section-plugin-quick-terminal = Terminale rapido
 section-plugin-search = Trova
 section-plugin-command-header = Intestazione del comando
+section-plugin-blocks = Blocchi
 section-plugin-quick-tips = Suggerimenti rapidi
 section-plugin-links = Etichette
 
+# La sezione di un plugin sostituito, del plugin che lo sostituisce.
+settings-replaced = { $plugin } sostituisce questo plugin mentre è attivo: queste impostazioni valgono mentre è spento.
 # Una chiave.
 settings-plugin = Del plugin { $plugin }
 setting-unset = Non impostato

@@ -2173,6 +2173,7 @@ fn icon_of(section: &SettingsSection) -> &'static str {
             "quick-terminal" => "zap",
             "search" => "search",
             "command-header" => "pinned",
+            "blocks" => "pin",
             "quick-tips" => "lightbulb",
             "links" => "link",
             _ => "extensions",
@@ -2254,6 +2255,11 @@ fn section_part(
                 .style(secondary())
                 .layout(wrapped()),
         );
+    }
+    // A replaced plugin's keys, which apply once its replacer is off.
+    if let Some(replacer) = &section.replaced_by {
+        let text = message(cx, "settings-replaced", &[("plugin", replacer.clone())]);
+        part.push(callout(Tone::Info, &text, "replaced"));
     }
     // The keys that the search's words show, every one of none.
     let keys: Vec<&SettingKey> = section

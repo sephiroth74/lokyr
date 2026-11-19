@@ -801,7 +801,7 @@ fn the_guide_s_example_theme_holds_every_key_and_token() {
         assert!(partial.tokens.contains_key(token), "the token {token}");
     }
     // A plugin's, of a section of its own name.
-    assert!(partial.tokens.contains_key("command-header.pill"));
+    assert!(partial.tokens.contains_key("blocks.pill"));
     // And it resolves whole, of the theme that it extends, of nothing
     // told, as Lokyr Dark colors, its colors of other colors too.
     let dark = lokyr_plugin_sdk::theme::builtin::dark();

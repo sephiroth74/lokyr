@@ -232,6 +232,19 @@ padding-y = 1                        # points, 0 to 20, above and below it
 align = "left"                       # left | center | right: where its pill sits along the line
 max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
 
+[plugins.blocks]
+background = "panel.bg"              # the theme's token of the pill's background, by its name
+text = "text"                        # the theme's token of its text
+border = "panel.border"              # the theme's token of its border, as "accent"
+line = "panel.border"                # the theme's token of the line across the pane
+hover = "button.hover.bg"            # the theme's token over its background under the pointer
+font-size = 0                        # points, 0 to 200, of the terminal's font; 0 for its own size
+font-weight = "regular"              # light | regular | medium | semibold | bold | heavy
+padding-x = 8                        # points, 0 to 40, left and right of the text
+padding-y = 1                        # points, 0 to 20, above and below it
+align = "left"                       # left | center | right: where its pill sits along the line
+max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
+
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
 
@@ -1418,7 +1431,7 @@ active = { bg = "#1e1e20", fg = "#ffffff" }
 - **`[terminal]`** gives the terminal's colors: `background`, `foreground` and the 16 colors of `palette`, black to bright white, which every theme gives itself or through the theme that it extends; `cursor`, `cursor-text`, `selection`, `selection-text`, `bold`, `link` and `underline`, which it can give.
 - **What a theme leaves out** follows its terminal's colors: the tab bar, the panels, the fields, the buttons and the find bar's highlights take colors of its background, its text and its palette, so that a theme of `[terminal]` alone colors all of Lokyr.
 - **The other sections** give the interface's colors by their names: `[search]` the find bar's highlights, `match` and `current`; `[tabs]` the tab bar's, as `bar.bg`, `active.bg`, `active.fg`, `inactive.fg` and `hover.bg`; `[interface]` the rest of Lokyr's, as `panel.bg`, `field.bg`, `accent` or `text.secondary`.
-- **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them; the command's header names the theme's tokens that it takes, as [`[plugins.command-header]`](#pluginscommand-header) has them.
+- **A theme gives colors alone**: the tab bar's look, its place and the rest stay in the config, as [`[plugins.tabs]`](#pluginstabs) has them; the command's header names the theme's tokens that it takes, as [`[plugins.blocks]`](#pluginsblocks) has them.
 - **`extends`** names a theme, a file's or a built-in one, whose colors this one takes where it gives none, eight deep at most.
 - **As you save** a theme's file, or the config, the theme applies at once, in the open windows too.
 - **A file with an error** tells it, with its line, in the notice's card at the windows' top right, and the theme in force stays.
@@ -2098,6 +2111,96 @@ Whether a step past the last match goes on from the first, and past the first fr
 <sub>Platforms: macOS</sub>
 
 The command's header of the built-in plugin `lokyr/command-header`: while a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.
+
+`lokyr/blocks`, of the same header and a button to the block's end, replaces this plugin while it runs, as it does by default: the keys of this section apply while `lokyr/blocks` is off, and [`[plugins.blocks]`](#pluginsblocks) has them otherwise.
+
+### `background`, `text`, `border`, `line`, `hover`
+
+<sub>Platforms: macOS</sub>
+
+The theme's tokens of the header's colors, by their names: the pill's background, its text, its border, the line across the pane, and the color over the pill's background under the pointer.
+
+| Values | Default |
+|---|---|
+| a token's name, as `"accent"`, `"panel.bg"`, `"field.bg"` or `"text.secondary"` | `"panel.bg"`, `"text"`, `"panel.border"`, `"panel.border"`, `"button.hover.bg"` |
+
+- The tokens are those of the theme in force, as a theme's `[interface]` names them, and each follows the light and the dark appearance; a name that the theme lacks takes the color of its name without its last part, as `panel` for `panel.foo`, then none.
+- `border = "accent"` draws the pill's border in the theme's accent.
+- They apply at once, as you save the file, to a header that shows too.
+
+### `font-size`
+
+<sub>Platforms: macOS</sub>
+
+The size of the header's text, which takes the terminal's font, as [`[font]`](#font) names it.
+
+| Values | Default |
+|---|---|
+| points, from `0` to `200`; `0` for the terminal's own size | `0` |
+
+- Of the terminal's own size, the pill is about a row of the terminal high, its padding past it; a smaller size keeps it within the row.
+- It applies at once, as you save the file, to a header that shows too.
+
+### `font-weight`
+
+<sub>Platforms: macOS</sub>
+
+The weight of the header's text, of the terminal's font's faces, the nearest that it has.
+
+| Values | Default |
+|---|---|
+| `light`, `regular`, `medium`, `semibold`, `bold`, `heavy` | `regular` |
+
+- `regular` is the terminal's own face, as [`style`](#style) names it; the others the family's faces nearest to their weights, which a family of a single weight does not have.
+- It applies at once, as you save the file, to a header that shows too.
+
+### `padding-x`, `padding-y`
+
+<sub>Platforms: macOS</sub>
+
+The room in the pill around its text, in points: left and right, and above and below.
+
+| Values | Default |
+|---|---|
+| `padding-x` from `0` to `40`; `padding-y` from `0` to `20` | `8`, `1` |
+
+- The pill's ends stay round, of half its height.
+- They apply at once, as you save the file, to a header that shows too.
+
+### `align`
+
+<sub>Platforms: macOS</sub>
+
+Where the header's pill sits along the line across the pane.
+
+| Values | Default |
+|---|---|
+| `left`, `center`, `right` | `left` |
+
+- `left` and `right` keep it a little in from the pane's edge; `center` in the pane's middle.
+- It applies at once, as you save the file, to a header that shows too.
+
+### `max-length`
+
+<sub>Platforms: macOS</sub>
+
+The most characters of the command's line that the header shows.
+
+| Values | Default |
+|---|---|
+| characters, from `1` to `1000` | `80` |
+
+- A longer line is cut at its end of an ellipsis, `…`; its tooltip, and what VoiceOver reads, keep it whole.
+- Whatever its length, the pill stays within the pane, its line cut of an ellipsis where the pane is narrower.
+- It applies at once, as you save the file, to a header that shows too.
+
+## `[plugins.blocks]`
+
+<sub>Platforms: macOS</sub>
+
+The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.
+
+`lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and a notice tells them while `lokyr/blocks` runs.
 
 ### `background`, `text`, `border`, `line`, `hover`
 

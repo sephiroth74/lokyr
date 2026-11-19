@@ -730,6 +730,9 @@ pub struct App<B: Backend> {
     /// held then.
     pointer_told: Option<PointerTold>,
     pointer_mods: lokyr_platform_core::Modifiers,
+    /// The fingerprint of the plugins that follow the panes' views, as
+    /// [`Plugins::listeners`] gives it, as they were last told them.
+    viewport_listeners: u64,
     /// Whether the frame drawn changed the text under the pointer that the
     /// plugins were told of, as its row changed or its pane scrolled under
     /// it, of which they are told again.
@@ -1088,6 +1091,7 @@ impl<B: Backend> App<B> {
             editing_text: false,
             pointer_told: None,
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
+            viewport_listeners: 0,
             pointer_text_changed: false,
             title_timer: None,
             command_looks: BTreeMap::new(),
@@ -4149,6 +4153,16 @@ impl<B: Backend> App<B> {
                 &[("name", Arg::Text(&plugin)), ("fault", Arg::Text(&fault))],
             );
             self.report(platform, Diagnostic::new(Code::Fault, text, About::Other));
+        }
+        // A plugin that started following the panes' views, which heard
+        // none of them, hears each at the windows' next frames.
+        let listeners = self.plugins.listeners(plugins::VIEWPORT_CHANGED);
+        if listeners != self.viewport_listeners {
+            self.viewport_listeners = listeners;
+            for pane in self.workspace.panes_mut() {
+                pane.tell_viewport_again();
+            }
+            self.request_frames(platform);
         }
         // What the windows show changed only through the calls' writes; a
         // turn whose plugins wrote nothing, as the start's, whose events

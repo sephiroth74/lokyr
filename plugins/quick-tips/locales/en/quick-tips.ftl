@@ -37,6 +37,7 @@ tip-links = Hold ⌘ over a link to underline it, then click to open it.
 tip-prompt-click = Click in the command line to move the cursor there, in zsh, bash and fish; select part of it and press Backspace, or type, to replace it.
 tip-copy-output = Press { $keys } to copy the output of the last command, without its prompt; its context menu copies any command's.
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
+tip-block-header = Scrolled up through a long output? Click the command's header at the pane's top to go to its prompt, or its arrow to go to the output's end.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.

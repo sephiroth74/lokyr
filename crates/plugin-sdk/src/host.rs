@@ -1669,6 +1669,10 @@ pub struct SettingsSection {
     /// The plugin whose section it is, by its name; none of the app's.
     #[serde(default)]
     pub plugin: Option<String>,
+    /// The plugin that replaces its plugin, by its name, while it is
+    /// replaced: its keys apply once that one is off.
+    #[serde(default)]
+    pub replaced_by: Option<String>,
     /// What it holds, of its schema's description.
     #[serde(default)]
     pub description: String,

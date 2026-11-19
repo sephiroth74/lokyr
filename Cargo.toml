@@ -123,6 +123,7 @@ sleip-analyzer = { path = "sleip/analyzer" }
 sleip-index = { path = "sleip/index" }
 sleip-resolver = { path = "sleip/resolver" }
 lokyr-app-core = { path = "crates/app-core", default-features = false }
+lokyr-blocks = { path = "plugins/blocks" }
 lokyr-command-header = { path = "plugins/command-header" }
 lokyr-command-palette = { path = "plugins/command-palette" }
 lokyr-copy-mode = { path = "plugins/copy-mode" }

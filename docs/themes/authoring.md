@@ -246,19 +246,19 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 
 #### A plugin's tokens
 
-A plugin can take colors of a theme too: a section of the theme of a name of the plugin's gives tokens of that name, which the plugin's config names. The built-in command header names its colors so:
+A plugin can take colors of a theme too: a section of the theme of a name of the plugin's gives tokens of that name, which the plugin's config names. The built-in Blocks plugin names the colors of its command's header so:
 
 ```toml
 # In the theme
-[command-header]
+[blocks]
 pill = "#2a2a2d"
 
 # In the config
-[plugins.command-header]
-background = "command-header.pill"
+[plugins.blocks]
+background = "blocks.pill"
 ```
 
-A theme that lacks the token leaves the header the color of the name's first part, then none; [the command header's guide](../CONFIGURATION.md#pluginscommand-header) tells its keys.
+A theme that lacks the token leaves the header the color of the name's first part, then none; [the guide of `[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks) tells its keys, which [the command header](../CONFIGURATION.md#pluginscommand-header) shares while Blocks is off.
 
 ### `extends`
 

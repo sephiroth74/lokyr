@@ -135,5 +135,5 @@
       "x-example-comment": "characters, 1 to 1000, of the line, cut of … beyond them"
     }
   },
-  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe command's header of the built-in plugin `lokyr/command-header`: while a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance."
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe command's header of the built-in plugin `lokyr/command-header`: while a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.\n\n`lokyr/blocks`, of the same header and a button to the block's end, replaces this plugin while it runs, as it does by default: the keys of this section apply while `lokyr/blocks` is off, and [`[plugins.blocks]`](#pluginsblocks) has them otherwise."
 }

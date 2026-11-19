@@ -137,7 +137,7 @@ lokyr/
 │   └── app/               the `lokyr` binary: `main`, the backends for the target, their wiring + distribution
 ├── plugins/               first-party: depend ONLY on plugin-sdk
 │   ├── core-actions/ links/ tabs/ splits/ search/ quick-terminal/
-│   ├── keymap-macos/ command-palette/ progress/ command-header/ copy-mode/
+│   ├── keymap-macos/ command-palette/ progress/ command-header/ blocks/ copy-mode/
 │   ├── plugin-manager/ (F4) keymap-linux/ (F7)
 │   └── (F5) blocks/ tmux-cc/ triggers/ images/ …
 ├── dist/                  default.toml, minimal.toml

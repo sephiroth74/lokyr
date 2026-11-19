@@ -15,7 +15,7 @@ use super::SCHEMA;
 const OWN: [&str; 3] = ["config_version", "keys", "plugins"];
 
 /// The plugins' schemas, of their sections in the guide's example.
-const PLUGINS: [(&str, &str); 7] = [
+const PLUGINS: [(&str, &str); 8] = [
     (
         "tabs",
         include_str!("../../../../../plugins/tabs/tabs.schema.json"),
@@ -35,6 +35,10 @@ const PLUGINS: [(&str, &str); 7] = [
     (
         "command-header",
         include_str!("../../../../../plugins/command-header/command-header.schema.json"),
+    ),
+    (
+        "blocks",
+        include_str!("../../../../../plugins/blocks/blocks.schema.json"),
     ),
     (
         "quick-tips",
@@ -612,7 +616,7 @@ fn a_number_is_its_default_of_the_same_value_whole_or_not() {
 fn a_table_of_entries_of_fields_is_a_map_whose_entries_are_checked() {
     use lokyr_plugin_sdk::host::SettingKind;
     use lokyr_plugin_sdk::message::Data;
-    let links: super::Ordered = serde_json::from_str(PLUGINS[6].1).unwrap();
+    let links: super::Ordered = serde_json::from_str(PLUGINS[7].1).unwrap();
     let section = super::section("links", Some("lokyr/links"), &links, |_| None);
     let hints = section.keys.iter().find(|key| key.name == "hints").unwrap();
     let SettingKind::Map { fields } = &hints.kind else {

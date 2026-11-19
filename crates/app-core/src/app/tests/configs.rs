@@ -175,7 +175,7 @@ fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer(
 }
 
 #[test]
-fn the_command_header_s_section_is_checked_against_its_schema() {
+fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_keys_told() {
     let directory =
         std::env::temp_dir().join(format!("lokyr-app-header-config-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -183,7 +183,7 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
     let path = directory.join("config.toml");
     std::fs::write(
         &path,
-        "[plugins.command-header]\nborder = \"accent\"\nalign = \"middle\"\n",
+        "[plugins.blocks]\nborder = \"accent\"\nalign = \"middle\"\n",
     )
     .unwrap();
     let mut fake = Fake::default();
@@ -195,19 +195,32 @@ fn the_command_header_s_section_is_checked_against_its_schema() {
         .shown_diagnostic()
         .cloned()
         .expect("a notice");
-    assert_eq!(
-        shown.about,
-        About::PluginConfig("command-header".to_owned())
-    );
+    assert_eq!(shown.about, About::PluginConfig("blocks".to_owned()));
     assert!(shown.text.contains("middle"), "{}", shown.text);
     // Of its values, it takes the section.
     std::fs::write(
         &path,
-        "[plugins.command-header]\nborder = \"accent\"\nfont-weight = \"bold\"\npadding-x = 10\n",
+        "[plugins.blocks]\nborder = \"accent\"\nfont-weight = \"bold\"\npadding-x = 10\n",
     )
     .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.diagnostics.shown_diagnostic(), None);
+    // The plain header's keys, which apply once the blocks are off, are
+    // told while they run.
+    std::fs::write(&path, "[plugins.command-header]\nborder = \"accent\"\n").unwrap();
+    change(&mut fake, &mut app);
+    let shown = app
+        .diagnostics
+        .shown_diagnostic()
+        .cloned()
+        .expect("a notice");
+    assert!(
+        shown.text.ends_with(
+            "the keys of `[plugins.command-header]` apply while `lokyr/blocks`, which replaces `lokyr/command-header`, is off"
+        ),
+        "{}",
+        shown.text
+    );
     let _ = std::fs::remove_dir_all(&directory);
 }
 

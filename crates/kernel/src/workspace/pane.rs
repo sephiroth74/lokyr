@@ -928,6 +928,13 @@ impl Pane {
         (self.told_viewport.replace(now) != Some(now)).then_some(now)
     }
 
+    /// Forgets the view that [`Pane::viewport_changed`] told, so that the
+    /// next frame tells it again, as a plugin that starts following the
+    /// views hears it.
+    pub fn tell_viewport_again(&mut self) {
+        self.told_viewport = None;
+    }
+
     /// The commands that the shell marked whose rows meet the rows
     /// numbered from `top` to before `bottom`, as
     /// [`Terminal::commands_meeting`] gives them.

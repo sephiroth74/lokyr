@@ -1056,6 +1056,7 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
     let plugin_settings = vec![SettingsSection {
         name: "greeter".to_owned(),
         plugin: Some("acme/greeter".to_owned()),
+        replaced_by: None,
         description: "Greets".to_owned(),
         keys: vec![SettingKey {
             name: "count".to_owned(),

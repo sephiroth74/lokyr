@@ -24,7 +24,7 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 
 - **Jump between prompts**: ⌘↑ and ⌘↓ (`pane.prompt-previous`, `pane.prompt-next`), as [copy, paste and scrolling](plugins/core-actions.md) lists them.
 - **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
-- **The command you're reading**: when a command's line scrolls away, the [command header](plugins/command-header.md) shows it at the pane's top.
+- **The command you're reading**: when a command's line scrolls away, the header of its [block](blocks.md) shows it at the pane's top, with an arrow to the end of its output · not released yet.
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it.
 - **Hear when a long command ends**: a notification lets you know when a command that ran for 10 seconds or more ends while its window is in the background. [`[notifications] long-command`](CONFIGURATION.md#long-command) sets how long.
 - **New tabs in the same folder**: a new tab or a split starts in the folder that its pane's shell reported last, as [`[window] new-directory`](CONFIGURATION.md#new-directory) says.
@@ -187,6 +187,7 @@ Other options of `A`, and the right prompt:
 
 ## See also
 
+- [Blocks](blocks.md)
 - [The command header](plugins/command-header.md)
 - [AI agents](agents.md), where a program's reported state ends when the shell's next prompt starts
 - [The configuration guide](CONFIGURATION.md): [`shell-integration`](CONFIGURATION.md#shell-integration), [`click-to-move`](CONFIGURATION.md#click-to-move), [`gutter`](CONFIGURATION.md#gutter), [`long-command`](CONFIGURATION.md#long-command), [`new-directory`](CONFIGURATION.md#new-directory)

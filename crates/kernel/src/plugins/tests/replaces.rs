@@ -305,3 +305,57 @@ fn a_third_party_replacement_is_asked_with_the_capabilities_and_holds_once_grant
     assert!(plugins.activate(&mut app.context()).is_empty());
     assert_eq!(plugins.status("lokyr/header"), Some(Status::Active));
 }
+
+/// A plugin of a config schema of one key, `size`, whose section the
+/// settings tell.
+struct Schemed;
+
+impl Plugin for Schemed {
+    fn config_schema(&self) -> Option<std::borrow::Cow<'static, str>> {
+        Some(
+            r#"{"type": "object", "properties": {"size": {"type": "integer", "default": 1}}}"#
+                .into(),
+        )
+    }
+}
+
+fn make_schemed() -> Box<dyn Plugin + Send> {
+    Box::new(Schemed)
+}
+
+#[test]
+fn the_settings_tell_a_replaced_plugin_s_section_of_its_replacer_while_it_is_replaced() {
+    const SCHEMA: &str = "[contributes]\nconfig-schema = \"own.schema.json\"\n";
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    for manifest in [
+        format!("{HEADER}{SCHEMA}"),
+        format!("{BLOCKS_MANIFEST}{SCHEMA}"),
+    ] {
+        let manifest: &'static str = Box::leak(manifest.into_boxed_str());
+        plugins
+            .add_registered(Registration {
+                manifest,
+                make: make_schemed,
+            })
+            .unwrap();
+    }
+    let replacer = |plugins: &mut Plugins, name: &str| {
+        plugins
+            .settings_sections()
+            .iter()
+            .find(|section| section.name == name)
+            .map(|section| section.replaced_by.clone())
+            .expect("its section")
+    };
+    assert!(applied(&mut plugins, &mut app, "").is_empty());
+    assert_eq!(
+        replacer(&mut plugins, "header").as_deref(),
+        Some("lokyr/blocks")
+    );
+    assert_eq!(replacer(&mut plugins, "blocks"), None);
+    // The replacer off: the other's section, of none.
+    let off = "[plugins.blocks]\nenabled = false\n";
+    assert!(applied(&mut plugins, &mut app, off).is_empty());
+    assert_eq!(replacer(&mut plugins, "header"), None);
+}

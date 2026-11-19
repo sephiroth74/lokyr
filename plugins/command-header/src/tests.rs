@@ -1,11 +1,14 @@
 //! The plugin against the SDK's fake host, whose pane holds three commands
 //! and tells the views that the test gives.
 
+use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::{ShellCommand, TabId};
-use lokyr_plugin_sdk::message::Request;
-use lokyr_plugin_sdk::view::{Key, Kind};
+use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand, TabId, Viewport};
+use lokyr_plugin_sdk::message::{Data, Request};
+use lokyr_plugin_sdk::ui::{Anchor, PanelId, Role};
+use lokyr_plugin_sdk::view::{FontFamily, FontWeight, Key, Kind, Length, Token, UiEventKind};
 
+use super::header::{END, LEAD, PILL};
 use super::*;
 
 /// The plugin's name, as its calls give it.
@@ -47,6 +50,11 @@ fn host() -> (FakeHost, Header) {
     let mut plugin = Header::default();
     host.activate(&mut plugin).unwrap();
     (host, plugin)
+}
+
+/// The id of `pane`'s header's panel.
+fn panel(pane: PaneId) -> PanelId {
+    PanelId(format!("{PANEL}{}", pane.0))
 }
 
 /// A view of 24 rows from `top`, of the primary screen or not.
@@ -166,8 +174,10 @@ fn a_click_on_the_header_scrolls_to_its_command_s_prompt() {
             scroll: Scroll::Row(30),
         }]
     );
-    // A click elsewhere on the panel does nothing.
+    // A click elsewhere on the panel does nothing, nor one of the key of
+    // a button to the block's end, which this header has none of.
     host.ui_event(&mut plugin, &click("other")).unwrap();
+    host.ui_event(&mut plugin, &click(END)).unwrap();
     assert!(host.take_done().is_empty());
 }
 
@@ -294,7 +304,7 @@ fn a_closed_pane_s_header_goes_and_a_moved_one_s_or_one_that_the_host_closed_ope
     }));
     host.deliver(&mut plugin).unwrap();
     assert!(!host.panels().contains_key(&panel(PANE)));
-    assert!(plugin.panes.is_empty());
+    assert!(plugin.0.panes.is_empty());
 }
 
 /// A config of the pairs of `values`, texts, numbers or integers.

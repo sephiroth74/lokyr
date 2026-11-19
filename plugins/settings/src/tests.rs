@@ -190,6 +190,7 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "font".to_owned(),
                 plugin: None,
+                replaced_by: None,
                 description: "The font of the text".to_owned(),
                 keys: vec![
                     key("family", None, None, text),
@@ -206,6 +207,7 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "window".to_owned(),
                 plugin: None,
+                replaced_by: None,
                 description: String::new(),
                 keys: vec![
                     key(
@@ -233,6 +235,7 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "theme".to_owned(),
                 plugin: None,
+                replaced_by: None,
                 description: "The themes".to_owned(),
                 keys: vec![
                     controlled("light", Some("Lokyr Light"), "theme"),
@@ -253,6 +256,7 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "tabs".to_owned(),
                 plugin: Some("lokyr/tabs".to_owned()),
+                replaced_by: None,
                 description: "The tab bar".to_owned(),
                 keys: vec![
                     key(
@@ -1896,6 +1900,7 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
     let section = |name: &str, plugin: bool| SettingsSection {
         name: name.to_owned(),
         plugin: plugin.then(|| format!("lokyr/{name}")),
+        replaced_by: None,
         description: String::new(),
         keys: Vec::new(),
     };
@@ -1925,6 +1930,7 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
         "quick-terminal",
         "search",
         "command-header",
+        "blocks",
         "quick-tips",
     ];
     let mut icons: Vec<&str> = app
@@ -2770,6 +2776,7 @@ fn host_of_hints(hints: Option<Data>) -> (FakeHost, SettingsPage) {
     settings.sections.push(SettingsSection {
         name: "links".to_owned(),
         plugin: Some("lokyr/links".to_owned()),
+        replaced_by: None,
         description: "The hints".to_owned(),
         keys: vec![key(
             "hints",
@@ -3063,6 +3070,7 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     let app_links = SettingsSection {
         name: "links".to_owned(),
         plugin: None,
+        replaced_by: None,
         description: "What a link does".to_owned(),
         keys: vec![key("editor", None, None, text.clone())],
     };
@@ -3070,6 +3078,7 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     settings.sections.push(SettingsSection {
         name: "links".to_owned(),
         plugin: Some("lokyr/links".to_owned()),
+        replaced_by: None,
         description: "The hints".to_owned(),
         keys: vec![key("alphabet", None, None, text.clone())],
     });
@@ -3078,12 +3087,14 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     settings.sections.push(SettingsSection {
         name: "window".to_owned(),
         plugin: Some("lokyr/window".to_owned()),
+        replaced_by: None,
         description: String::new(),
         keys: vec![key("programs", None, None, text.clone())],
     });
     settings.sections.push(SettingsSection {
         name: "font".to_owned(),
         plugin: Some("acme/font".to_owned()),
+        replaced_by: None,
         description: String::new(),
         keys: vec![key("ligatures", None, None, text)],
     });
@@ -3250,4 +3261,61 @@ fn a_map_s_editor_writes_what_its_fields_show() {
         held(&tree, &name).and_then(|(text, _)| text).as_deref(),
         Some("jira")
     );
+}
+
+#[test]
+fn a_replaced_plugin_s_section_tells_the_plugin_that_replaces_it() {
+    let mut settings = settings();
+    let text = SettingKind::Text {
+        min_length: Some(1),
+        max_length: Some(256),
+        examples: Vec::new(),
+    };
+    for (name, replaced_by) in [
+        ("command-header", Some("lokyr/blocks".to_owned())),
+        ("blocks", None),
+    ] {
+        settings.sections.push(SettingsSection {
+            name: name.to_owned(),
+            plugin: Some(format!("lokyr/{name}")),
+            replaced_by,
+            description: String::new(),
+            keys: vec![key("border", None, None, text.clone())],
+        });
+    }
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let told = "lokyr/blocks replaces this plugin while it runs";
+    host.set_message(
+        "settings-replaced",
+        &[("plugin", Data::Text("lokyr/blocks".to_owned()))],
+        Some(told),
+    );
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        sidebar_of(&tree),
+        [
+            "font",
+            "window",
+            "theme",
+            "tabs",
+            "command-header",
+            "blocks"
+        ]
+    );
+    // The replaced one's part, of a callout over its keys, which it keeps.
+    host.ui_event(&mut plugin, &choose(4)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(text_of(&tree, "replaced").as_deref(), Some(told));
+    assert!(held(&tree, "field:border").is_some());
+    // Its replacer's, of none.
+    host.ui_event(&mut plugin, &choose(5)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "replaced").is_none());
+    assert!(held(&tree, "field:border").is_some());
 }

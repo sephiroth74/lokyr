@@ -913,6 +913,7 @@ export type Settings = {
 export type SettingsSection = {
     name: string,
     plugin: string?,
+    replaced_by: string?,
     description: string?,
     keys: { SettingKey },
 }

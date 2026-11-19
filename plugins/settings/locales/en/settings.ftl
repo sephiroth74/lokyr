@@ -103,9 +103,12 @@ section-plugin-splits = Splits
 section-plugin-quick-terminal = Quick Terminal
 section-plugin-search = Find
 section-plugin-command-header = Command Header
+section-plugin-blocks = Blocks
 section-plugin-quick-tips = Quick Tips
 section-plugin-links = Hints
 
+# A replaced plugin's section, of the plugin that replaces it.
+settings-replaced = { $plugin } replaces this plugin while it runs: these settings apply while it is off.
 # A key.
 settings-plugin = Of the plugin { $plugin }
 setting-unset = Not set

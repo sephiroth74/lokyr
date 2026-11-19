@@ -4,6 +4,9 @@
 
 The command whose output you are looking at, at the top of its pane, once its line has scrolled above the view: a pill of the command as you typed it, in the terminal's font, on a thin line across the pane.
 
+> [!NOTE]
+> [Blocks](../blocks.md) replaces this plugin while it runs, as it does by default: it shows the same header, with an arrow to the end of the command's output, and its keys are in [`[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks). The command header comes back when you turn Blocks off, with the keys of `[plugins.command-header]` · not released yet
+
 ## The header
 
 - **It shows** while the pane's first row shows a command's output and the command's line is above the view, as when you scroll up through a long output, or as a running command's output pushes its line off the top.
@@ -48,6 +51,8 @@ The header's colors are the theme's tokens that its keys name, so that they foll
 [plugins.command-header]
 enabled = false
 ```
+
+While [Blocks](../blocks.md) runs, the command header is off already, and the Plugins page of the settings window shows it as replaced by Blocks · not released yet.
 
 ## Permissions
 

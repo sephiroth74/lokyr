@@ -2149,6 +2149,8 @@ impl Plugins {
             if entry.state.replaced_by != replacer {
                 entry.state.replaced_by = replacer;
                 self.out.written = true;
+                // The settings tell the replaced plugins' sections.
+                self.generation += 1;
             }
         }
         cycles
@@ -2689,7 +2691,7 @@ impl Plugins {
     /// The plugins' sections of the settings: each plugin's of a config
     /// schema, in their order, of its schema's order and of its keys'
     /// values as the config file writes them, whether the plugin takes them
-    /// or not; the same list until a plugin comes or goes or the
+    /// or not, and of the plugin that replaces it, if one does; the same list until a plugin comes or goes or the
     /// config applies anew, a change of which the plugins that subscribe to
     /// `settings-changed` hear.
     pub fn settings_sections(&mut self) -> Arc<[host::SettingsSection]> {
@@ -2712,12 +2714,14 @@ impl Plugins {
                     Data::Map(values) => values.clone(),
                     _ => BTreeMap::new(),
                 };
-                Some(crate::config::schema::section(
+                let mut section = crate::config::schema::section(
                     &state.namespace,
                     Some(&state.name),
                     &node,
                     |key| values.get(key).cloned(),
-                ))
+                );
+                section.replaced_by = state.replaced_by.clone();
+                Some(section)
             })
             .collect();
         let sections: Arc<[host::SettingsSection]> = Arc::from(sections);
@@ -3533,6 +3537,21 @@ impl Plugins {
                         .iter()
                         .any(|trigger| matches!(trigger, Trigger::Event(event) if event == name))
             })
+    }
+
+    /// A fingerprint of the active plugins that subscribed to the events of
+    /// `name`, each of its run: it changes as a plugin starts following
+    /// them, or starts again, which heard nothing of what came before, as
+    /// the panes' views, which the app then tells anew.
+    pub fn listeners(&self, name: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for state in self.active() {
+            if state.subscribed.iter().any(|subscribed| subscribed == name) {
+                (&state.name, state.starts).hash(&mut hasher);
+            }
+        }
+        hasher.finish()
     }
 
     /// Whether events wait for the next delivery: those of the reads of

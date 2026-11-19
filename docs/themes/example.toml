@@ -163,8 +163,8 @@ running = "accent"
 succeeded = "#ffffff40"
 failed = "#ff5f57"
 
-# A plugin's tokens, of a section of its own name: [command-header]'s
-# "pill" is the token "command-header.pill", which the plugin's config
-# names, as [plugins.command-header] background = "command-header.pill".
-[command-header]
+# A plugin's tokens, of a section of its own name: [blocks]'s "pill" is
+# the token "blocks.pill", which the plugin's config names, as
+# [plugins.blocks] background = "blocks.pill".
+[blocks]
 pill = "#2a2a2d"

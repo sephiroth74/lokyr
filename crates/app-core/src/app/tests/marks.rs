@@ -1,7 +1,8 @@
 //! The commands that the shell marks and the panes' views in the app: a
 //! plugin hears each command's start and end, reads their marks, and
 //! follows its pane's view through its scroll, output and the scrollback's
-//! limit; and the command's header over the pane's top.
+//! limit; and the command's header over the pane's top, of `lokyr/blocks`
+//! and of `lokyr/command-header` while that one is off.
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -242,7 +243,7 @@ fn a_plugin_follows_three_commands_and_its_pane_s_view_through_output_and_the_sc
 fn header(app: &App, window: WindowId) -> Option<(Frame, Frame)> {
     let state = &app.windows[&window];
     let pane = state.views.first()?.pane;
-    let id = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    let id = ViewId::Panel(PanelId(format!("block-header-{}", pane.get())));
     let view = state.chrome.iter().find(|view| view.view == id)?;
     let frame = view.frame?;
     let node = view.surface.tree.by_key(&"command".into())?;
@@ -357,7 +358,7 @@ fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
     // Its header stays in none of the window that it left, which shows the
     // other tab's own.
     let pane = app.windows[&moved].views[0].pane;
-    let own = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    let own = ViewId::Panel(PanelId(format!("block-header-{}", pane.get())));
     assert!(
         app.windows[&window]
             .chrome
@@ -371,7 +372,7 @@ fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
 fn header_text(app: &App, window: WindowId) -> Option<(String, Frame)> {
     let state = &app.windows[&window];
     let pane = state.views.first()?.pane;
-    let id = ViewId::Panel(PanelId(format!("command-header-{}", pane.get())));
+    let id = ViewId::Panel(PanelId(format!("block-header-{}", pane.get())));
     let view = state.chrome.iter().find(|view| view.view == id)?;
     let tree = &view.surface.tree;
     let pill = tree.by_key(&"command".into())?;
@@ -443,4 +444,88 @@ fn the_command_s_header_takes_the_text_s_new_size() {
     let (line, after) = header_text(&app, window).unwrap();
     assert_eq!(line, "long");
     assert!(after.width > before.width, "{before:?} {after:?}");
+}
+
+/// The frame, in pixels, of the key `key` of the header of `window`'s
+/// pane whose panel's id is `prefix` and the pane's, if it shows.
+fn header_part(app: &App, window: WindowId, prefix: &str, key: &str) -> Option<Frame> {
+    let state = &app.windows[&window];
+    let pane = state.views.first()?.pane;
+    let id = ViewId::Panel(PanelId(format!("{prefix}{}", pane.get())));
+    let view = state.chrome.iter().find(|view| view.view == id)?;
+    let frame = view.frame?;
+    let node = view.surface.tree.by_key(&key.into())?;
+    let part = view.surface.layout.frame(&view.surface.tree, node)?;
+    Some(Frame {
+        x: part.x + frame.x,
+        y: part.y + frame.y,
+        ..part
+    })
+}
+
+#[test]
+fn the_block_s_button_scrolls_to_its_end_and_the_plain_header_comes_back_as_blocks_goes() {
+    // Three commands of 100 lines each, then a prompt, on the screen's last
+    // row: the view, at the screen, shows the third's end.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "seq 1 100; m 'D;0'; done; m A; printf '$ '; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let end = |app: &App| header_part(app, window, "block-header-", "end");
+    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
+    assert!(end(&app).is_none());
+    // Up into the third's output: its end below the view, the button
+    // beside the pill.
+    let scale = fake.window(window).unwrap().size.scale;
+    let rect = app.windows[&window].views[0].rect;
+    let inside = Point {
+        x: (f64::from(rect.x) + f64::from(rect.width) / 2.0) / scale,
+        y: (f64::from(rect.y) + f64::from(rect.height) / 2.0) / scale,
+    };
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Scroll {
+            delta: ScrollDelta::Lines { x: 0.0, y: 10.0 },
+            phase: None,
+            momentum: false,
+            position: inside,
+            mods: Modifiers::NONE,
+        },
+    );
+    run_until(&mut fake, &mut app, |_, app| end(app).is_some());
+    // Its click puts the block's last row at the view's bottom, under the
+    // header, which stays, of no button.
+    let at = middle(end(&app).unwrap(), scale);
+    fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        header(app, window).is_some() && end(app).is_none()
+    });
+    let rows = app.pane(window).snapshot().rows();
+    assert_eq!(row(&app, window, rows - 1), "100");
+    // Turned off, its header goes, and the plain one comes back of the view
+    // that shows, without a scroll.
+    // The window's own keys kept, so that nothing but the plugins changes.
+    let off = concat!(
+        "[window]\npadding-x = 0\npadding-y = 0\ngutter = false\ncolumns = 200\nrows = 62\n",
+        "[plugins.blocks]\nenabled = false\n",
+    );
+    app.apply(
+        &mut fake,
+        Config::parse(off, Path::new("config.toml")).unwrap(),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        header(app, window).is_none()
+            && header_part(app, window, "command-header-", "command").is_some()
+    });
+    assert!(header_part(&app, window, "command-header-", "end").is_none());
 }

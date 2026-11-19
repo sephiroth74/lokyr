@@ -1,0 +1,16 @@
+# The manifest of the built-in plugin of the commands' blocks.
+[plugin]
+name = "lokyr/blocks"
+kind = "builtin"
+license = "MIT"
+description = "Each command and its output a block: the command's header at the pane's top while its line is above the view, which a click scrolls to, and its button to the block's end"
+# The plain header, which comes back while this plugin is off.
+replaces = ["lokyr/command-header"]
+
+[capabilities]
+terminal-read = true
+history-read = true
+pane-view = true
+
+[contributes]
+config-schema = "blocks.schema.json"

@@ -1341,7 +1341,7 @@ installed ──▶ resolved ──▶ consent ──▶ loaded ──▶ active
 | `command-palette` | Command palette and theme picker | F3 |
 | `settings` | The settings' window's first page, Settings: every key of the config and of the plugins' sections, of the config's schema and the plugins', by its section, of its value in force | F3b |
 | `plugin-manager` | The settings' window's Plugins page, of the packages' service: every plugin of its state, active or disabled, and its capabilities' decisions, disabled, enabled, updated or removed, and the registry's plugins, filtered, of their versions and capabilities, to install, Lokyr › Plugins… | F3b |
-| `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3 | F5a |
+| `blocks` | Command + output blocks, over the prompts' marks that the kernel keeps since F3: the command's header of `command-header`'s module, which both crates hold by its path, and its button to the block's end; it replaces `command-header` (`[plugin] replaces`) · not released yet | F5a |
 | `quick-terminal` | The quick terminal: its command, which shows and hides its quick window, its autohide and its place, of `[plugins.quick-terminal]`, through the quick windows and the global keys of `global-hotkey` | F3 |
 | `progress` | The programs' progress (OSC 9;4), in the `window-strip` slot; the tab shows it with `tabs` | F3 |
 | `command-header` | The command whose output the view shows, at the pane's top, a pill of its line on a hairline across the pane, in an overlay of the pane's top, over OSC 133's marks, as iTerm2's | F3 |
