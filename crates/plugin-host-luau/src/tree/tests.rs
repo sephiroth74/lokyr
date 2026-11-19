@@ -1,7 +1,7 @@
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{
-    ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, Progress, ProgressShape,
-    ProgressState, RadioOption, Radios, Role, Style, Switch, Tab,
+    Checkbox, ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, Progress,
+    ProgressShape, ProgressState, RadioOption, Radios, Role, Style, Switch, Tab,
 };
 use mlua::Lua;
 
@@ -134,7 +134,12 @@ fn every() -> Node {
             size: ControlSize::Small,
         }))
         .key("notify"),
-        Node::checkbox("Verify", true).key("verify"),
+        Node::new(Kind::Checkbox(Checkbox {
+            label: "Verify".to_owned(),
+            mixed: true,
+            ..Checkbox::default()
+        }))
+        .key("verify"),
         Node::new(Kind::Radios(Radios {
             options: vec![
                 RadioOption::new("Daily"),
@@ -182,7 +187,7 @@ const EVERY: &str = r#"{
         { kind = "themed", theme = "Lokyr Light",
           children = { { kind = "text", text = "part" }, { kind = "terminal-specimen" } } },
         { kind = "switch", key = "notify", text = "Notify", on = true, disabled = true, size = "small" },
-        { kind = "checkbox", key = "verify", text = "Verify", on = true },
+        { kind = "checkbox", key = "verify", text = "Verify", mixed = true },
         { kind = "radios", key = "every", options = { { label = "Daily" }, { label = "Monthly", disabled = true } },
           chosen = 0, across = true, size = "mini" },
     },
@@ -214,7 +219,8 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         local switch = view.children[16]
         assert(switch.kind == "switch" and switch.text == "Notify" and switch.size == "small")
         assert(switch.on == true and switch.disabled == true)
-        assert(view.children[17].kind == "checkbox" and view.children[17].on == true)
+        local verify = view.children[17]
+        assert(verify.kind == "checkbox" and verify.on == false and verify.mixed == true)
         local every = view.children[18]
         assert(every.kind == "radios" and every.chosen == 0 and every.options[2].disabled == true)
         -- A field of its default left out.

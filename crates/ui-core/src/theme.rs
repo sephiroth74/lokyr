@@ -725,7 +725,7 @@ mod tests {
     }
 
     /// The tokens that came after the derivation, of their rules alone.
-    const LATE: [&str; 14] = [
+    const LATE: [&str; 16] = [
         "cursor.guide",
         "hints.label.bg",
         "hints.label.fg",
@@ -738,7 +738,9 @@ mod tests {
         "button.default.fg",
         "button.destructive.fg",
         "check.off.bg",
+        "check.off.pressed.bg",
         "check.on.bg",
+        "check.on.pressed.bg",
         "check.mark",
     ];
 

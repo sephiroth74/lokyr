@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn a_group_s_options_go_down_its_column_or_across_its_row() {
-        // Each its circle of 16, 6 of room and its label, 6 a character;
+        // Each its circle of 16, 3 of room and its label, 6 a character;
         // 6 between two down a column, 16 across a row.
         let (tree, layout, node) = laid(Some(0), false);
         let options: Vec<(f32, f32, f32)> = layout
@@ -154,7 +154,7 @@ mod tests {
             .collect();
         assert_eq!(
             options,
-            [(0.0, 64.0, 16.0), (22.0, 64.0, 16.0), (44.0, 64.0, 16.0)]
+            [(0.0, 61.0, 16.0), (22.0, 61.0, 16.0), (44.0, 61.0, 16.0)]
         );
         let (tree, layout, node) = laid(Some(0), true);
         let options: Vec<(f32, f32)> = layout
@@ -162,7 +162,7 @@ mod tests {
             .iter()
             .map(|option| (option.x, option.width))
             .collect();
-        assert_eq!(options, [(0.0, 52.0), (68.0, 58.0), (142.0, 64.0)]);
+        assert_eq!(options, [(0.0, 49.0), (65.0, 55.0), (136.0, 61.0)]);
     }
 
     #[test]

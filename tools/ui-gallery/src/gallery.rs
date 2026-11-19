@@ -422,6 +422,14 @@ impl Gallery {
                     self.distribution = distribution;
                 }
             }
+            // Both switches its two checkboxes together, mixed while they
+            // differ.
+            UiEventKind::Toggle { on } if key == "check-both" => {
+                for each in ["check", "check-small"] {
+                    self.toggles.insert(each.to_owned(), on);
+                }
+                self.pressed = format!("`{key}` {}", if on { "on" } else { "off" });
+            }
             UiEventKind::ListRange { first, count } => self.window = (first, first + count),
             UiEventKind::Select { item } => self.listed = format!("selected item {item}"),
             UiEventKind::Activate { item } => self.listed = format!("activated item {item}"),
@@ -1517,9 +1525,18 @@ impl Gallery {
         if let Kind::Radios(radios) = &mut every.kind {
             radios.across = true;
         }
+        let on_of = |key: &str| self.toggles.get(key).copied().unwrap_or(false);
+        let both = (on_of("check"), on_of("check-small"));
         let checks = row(vec![
             checkbox("check", "Compress", ControlSize::Regular),
             checkbox("check-small", "Encrypt", ControlSize::Small),
+            Node::new(Kind::Checkbox(view::Checkbox {
+                label: "Both".to_owned(),
+                on: both == (true, true),
+                mixed: both.0 != both.1,
+                ..view::Checkbox::default()
+            }))
+            .key("check-both"),
             Node::new(Kind::Checkbox(view::Checkbox {
                 label: "Verify, and disabled".to_owned(),
                 on: true,
@@ -2134,6 +2151,7 @@ mod tests {
             "compact",
             "check",
             "check-small",
+            "check-both",
             "every",
             "less",
             "more",

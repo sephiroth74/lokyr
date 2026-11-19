@@ -75,7 +75,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "button" => &["text", "icon", "disabled", "link", "size", "variant"],
         "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
-        "checkbox" => &["text", "on", "disabled", "size"],
+        "checkbox" => &["text", "on", "mixed", "disabled", "size"],
         "radios" => &["options", "chosen", "across", "disabled", "size"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
         "progress" => &["progress"],
@@ -312,6 +312,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
         "checkbox" => Kind::Checkbox(Checkbox {
             label: or_default(take("text"), "text", budget)?,
             on: or_default(take("on"), "on", budget)?,
+            mixed: or_default(take("mixed"), "mixed", budget)?,
             disabled: or_default(take("disabled"), "disabled", budget)?,
             size: or_default(take("size"), "size", budget)?,
         }),
@@ -513,15 +514,22 @@ mod giving {
                     on,
                     disabled,
                     size,
-                })
-                | Kind::Checkbox(Checkbox {
+                }) => {
+                    table.raw_set("text", label.as_str())?;
+                    table.raw_set("on", *on)?;
+                    table.raw_set("disabled", *disabled)?;
+                    set(lua, &table, "size", size)?;
+                }
+                Kind::Checkbox(Checkbox {
                     label,
                     on,
+                    mixed,
                     disabled,
                     size,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("on", *on)?;
+                    table.raw_set("mixed", *mixed)?;
                     table.raw_set("disabled", *disabled)?;
                     set(lua, &table, "size", size)?;
                 }

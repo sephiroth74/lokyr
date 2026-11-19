@@ -113,16 +113,27 @@ pub fn check_side(size: ControlSize) -> f32 {
 }
 
 /// The radius of a checkbox's corners, a share of its side, as macOS 27
-/// rounds them.
-pub const CHECK_ROUNDING: f32 = 0.34;
+/// rounds them: 5.5 points of 16.
+pub const CHECK_ROUNDING: f32 = 0.34375;
 
 /// The share of a radio button's side that its dot takes while it is
 /// chosen.
 pub const RADIO_DOT: f32 = 0.375;
 
+/// The share of a checkbox's side that its check's line is thick, as macOS
+/// 27's.
+pub const CHECK_THICKNESS: f32 = 0.11;
+
+/// The share of a checkbox's side that its dash is long while it is mixed,
+/// 6.5 points of 16, as macOS 27's.
+pub const DASH_LENGTH: f32 = 0.40625;
+
+/// The share of a checkbox's side that its dash is thick, 2 points of 16.
+pub const DASH_THICKNESS: f32 = 0.125;
+
 /// The room between a checkbox's or a radio button's box and its label, in
-/// points.
-pub const CHECK_GAP: f32 = 6.0;
+/// points, as macOS 27's.
+pub const CHECK_GAP: f32 = 3.0;
 
 /// The room between a group's radio buttons down a column, in points.
 pub const RADIO_DOWN: f32 = 6.0;
@@ -245,7 +256,9 @@ pub fn pressed(tree: &Tree, node: NodeId) -> Option<NodeEvent> {
         Kind::Button(button) if !button.disabled => UiEventKind::Click,
         Kind::Toggle(toggle) if !toggle.disabled => UiEventKind::Toggle { on: !toggle.on },
         Kind::Switch(switch) if !switch.disabled => UiEventKind::Toggle { on: !switch.on },
-        Kind::Checkbox(checkbox) if !checkbox.disabled => UiEventKind::Toggle { on: !checkbox.on },
+        Kind::Checkbox(checkbox) if !checkbox.disabled => UiEventKind::Toggle {
+            on: checkbox.mixed || !checkbox.on,
+        },
         _ => return None,
     };
     Some(NodeEvent {
@@ -541,10 +554,18 @@ mod tests {
                 ..view::Checkbox::default()
             }))
             .key("held"),
+            Node::new(Kind::Checkbox(view::Checkbox {
+                mixed: true,
+                ..view::Checkbox::default()
+            }))
+            .key("some"),
         ]))
         .unwrap();
         let children = tree.children(tree.root().unwrap());
         let (checkbox, held) = (children[0], children[1]);
+        // A mixed one turns on, as macOS's does.
+        let some = pressed(&tree, children[2]).map(|event| event.kind);
+        assert_eq!(some, Some(UiEventKind::Toggle { on: true }));
         let on = vec![("compress".to_owned(), UiEventKind::Toggle { on: true })];
         let spaced = super::key(
             &tree,
@@ -562,7 +583,7 @@ mod tests {
         assert_eq!(check_size("", ControlSize::Large, (0.0, 0.0)), (18.0, 18.0));
         assert_eq!(
             check_size("Notify", ControlSize::Mini, (36.0, 11.0)),
-            (54.0, 12.0)
+            (51.0, 12.0)
         );
     }
 }

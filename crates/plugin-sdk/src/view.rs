@@ -229,9 +229,10 @@ pub enum Kind {
     /// slides the knob.
     Switch(Switch),
     /// A checkbox, as macOS's: a box of the accent's fill and a white check
-    /// while it is on, its label after it, which a click on either, Space
-    /// or Return switches: its plugin learns of the state asked as a
-    /// `toggle`, as a toggle's, and gives it in its next render.
+    /// while it is on, or a dash while it is mixed, its label after it,
+    /// which a click on either, Space or Return switches: its plugin learns
+    /// of the state asked as a `toggle`, as a toggle's, on of a mixed one,
+    /// and gives it in its next render.
     Checkbox(Checkbox),
     /// A group of radio buttons, as macOS's, of one choice among its
     /// options, in a column or across a row: a click on an option, or an
@@ -582,6 +583,11 @@ pub struct Checkbox {
     pub label: String,
     /// Whether it is on.
     pub on: bool,
+    /// Whether it shows mixed, of a choice of several that differ, as a
+    /// checkbox of a group whose items are some on and some off: a dash in
+    /// place of its check, whatever `on` says; a click asks for it on.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub mixed: bool,
     /// Whether it is dimmed, and takes neither a click nor the focus.
     pub disabled: bool,
     /// Its size.
@@ -1890,6 +1896,18 @@ mod tests {
             serde_json::from_str(r#"{"checkbox":{"label":"Verify","on":true}}"#).unwrap();
         assert_eq!(checkbox, Node::checkbox("Verify", true).kind);
         assert!(checkbox.presses() && checkbox.is_control());
+        // Mixed, of its key, which a checkbox that is not leaves out.
+        let mixed: Kind = serde_json::from_str(r#"{"checkbox":{"mixed":true}}"#).unwrap();
+        let Kind::Checkbox(some) = &mixed else {
+            panic!("{mixed:?}");
+        };
+        assert!(some.mixed && !some.on);
+        assert!(
+            serde_json::to_string(&mixed)
+                .unwrap()
+                .contains(r#""mixed":true"#)
+        );
+        assert!(!serde_json::to_string(&checkbox).unwrap().contains("mixed"));
         let radios = Node::radios(vec![RadioOption::new("Daily")], None).kind;
         assert_eq!(
             serde_json::to_string(&radios).unwrap(),

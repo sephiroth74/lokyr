@@ -737,15 +737,20 @@ fn widgets_tree() -> Node {
     let checks = row(vec![
         checkbox("compress", "Compress", (true, false)),
         checkbox("encrypt", "Encrypt", (false, false)),
+        Node::new(Kind::Checkbox(view::Checkbox {
+            label: "Both".to_owned(),
+            mixed: true,
+            ..view::Checkbox::default()
+        }))
+        .key("both"),
         checkbox("verify", "", (true, true)),
-        Node::separator(),
-        every,
     ]);
     let panel = Node::container(vec![
         buttons,
         actions,
         switches,
         checks,
+        row(vec![every]),
         toggles,
         Node::separator(),
     ])

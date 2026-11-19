@@ -88,8 +88,8 @@ struct ShapeInstance {
     _padding: f32,
     fill: [f32; 4],
     border_color: [f32; 4],
-    /// An arc's start and span, in turns, its thickness, and 1, or 0 for a
-    /// shape of no arc.
+    /// An arc's start and span, in turns, its thickness, and 1; or a check
+    /// mark's thickness and 2; or 0 for a shape of neither.
     arc: [f32; 4],
 }
 
@@ -1258,18 +1258,21 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = (Blend, ShapeInstance)
         _padding: 0.0,
         fill: rgba(shape.fill),
         border_color: rgba(shape.border_color),
-        arc: shape.arc.map_or([0.0; 4], |arc| {
-            [
+        arc: match (shape.arc, shape.check) {
+            (Some(arc), _) => [
                 arc.start.rem_euclid(1.0),
                 arc.span.clamp(0.0, 1.0),
                 arc.thickness.max(0.0),
                 1.0,
-            ]
-        }),
+            ],
+            (None, Some(thickness)) => [0.0, 0.0, thickness.max(0.0), 2.0],
+            (None, None) => [0.0; 4],
+        },
     };
-    // An arc casts no shadow.
-    let shadow = shadow.filter(|_| shape.arc.is_none());
-    let knockout = shape.knockout && shape.arc.is_none();
+    // An arc and a check cast no shadow.
+    let line = shape.arc.is_some() || shape.check.is_some();
+    let shadow = shadow.filter(|_| !line);
+    let knockout = shape.knockout && !line;
     let own: Vec<(Blend, ShapeInstance)> = if knockout {
         let fill = ShapeInstance {
             border: 0.0,

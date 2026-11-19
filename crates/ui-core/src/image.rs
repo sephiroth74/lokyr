@@ -443,6 +443,7 @@ pub fn compose<B: FontBackend>(
         }),
         arc: None,
         knockout: false,
+        check: None,
     }])];
     let origin = (at(outer + padding_x), at(outer + bar + padding_y));
     let batch = cells::cells_with(snapshot, &cell, origin, None, None, look, font);
@@ -470,6 +471,7 @@ pub fn compose<B: FontBackend>(
                     shadow: None,
                     arc: None,
                     knockout: false,
+                    check: None,
                 }
             })
             .collect();

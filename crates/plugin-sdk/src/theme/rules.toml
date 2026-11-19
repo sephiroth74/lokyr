@@ -83,8 +83,12 @@
 "switch.knob.bg" = "#ffffff"
 # A checkbox's box, and a radio button's circle, that is off · not released yet.
 "check.off.bg" = "text / 10%"
+# A checkbox's box pressed while it is off · not released yet.
+"check.off.pressed.bg" = "text / 19%"
 # A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet.
 "check.on.bg" = "button.default.bg"
+# A checkbox's box pressed while it is on or mixed · not released yet.
+"check.on.pressed.bg" = "mix(check.on.bg, #000000, 10%)"
 # A checkbox's check, and a radio button's dot · not released yet.
 "check.mark" = "button.default.fg"
 # The shadow under a switch's knob · not released yet.

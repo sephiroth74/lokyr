@@ -10,7 +10,7 @@ use crate::host::Scroll;
 use crate::host::SearchQuery;
 use crate::ui::{Anchor, Role, Slot};
 use crate::view::{
-    ControlSize, ListItem, ProgressShape, ProgressState, Role as NodeRole, Switch, Tab,
+    Checkbox, ControlSize, ListItem, ProgressShape, ProgressState, Role as NodeRole, Switch, Tab,
 };
 
 type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
@@ -650,6 +650,12 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         Node::toggle("case", true).key("case"),
         Node::switch("Wrap", false).key("wrap"),
         Node::checkbox("Verify", true).key("verify"),
+        Node::new(Kind::Checkbox(Checkbox {
+            label: "Some".to_owned(),
+            mixed: true,
+            ..Checkbox::default()
+        }))
+        .key("some"),
         Node::radios(
             vec![
                 crate::view::RadioOption::new("Daily"),
@@ -721,6 +727,7 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  toggle \"\" icon=\"case\" on key=case\n",
             "  switch \"Wrap\" off key=wrap\n",
             "  checkbox \"Verify\" on key=verify\n",
+            "  checkbox \"Some\" mixed key=some\n",
             "  radios \"Daily\" | \"Monthly\" disabled chosen 0 key=every\n",
             "  switch \"Live\" on small disabled key=live\n",
             "  button \"Next\" key=next label=\"Next match\"\n",

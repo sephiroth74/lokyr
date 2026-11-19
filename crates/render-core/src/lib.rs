@@ -338,8 +338,8 @@ pub struct PlacedGlyph {
 
 /// A shape of the interface: a rectangle of rounded corners, filled to its
 /// edges under its border, over its shadow, as a panel or a button; or an
-/// arc of the ring inscribed in its rectangle, as a progress's; none of no
-/// width or height.
+/// arc of the ring inscribed in its rectangle, as a progress's; or a check
+/// mark within its rectangle, as a checkbox's; none of no width or height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shape {
     /// Its rectangle, the border's outer edges.
@@ -358,6 +358,11 @@ pub struct Shape {
     /// The arc of the ring inscribed in its rectangle that it draws, of its
     /// fill, in place of the rectangle, its border and its shadow.
     pub arc: Option<Arc>,
+    /// A check mark that it draws within its rectangle, as macOS 27's
+    /// checkbox draws its check, of its line's thickness in pixels and of
+    /// round ends, of its fill, in place of the rectangle, its border and
+    /// its shadow.
+    pub check: Option<f32>,
     /// Whether its fill takes the place of what is under it, by the part of
     /// each pixel that it covers, rather than going over it: a background
     /// that shows a translucent window's opacity over what the window
@@ -392,6 +397,7 @@ impl Shape {
             border_color: Color::CLEAR,
             shadow: None,
             arc: None,
+            check: None,
             knockout: false,
         }
     }

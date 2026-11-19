@@ -357,6 +357,8 @@ type Node = {
     text: string?, -- for text nodes; a button's, a toggle's, a switch's and a checkbox's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle, switch and checkbox nodes, the plugin's state
+    mixed: boolean?, -- for checkbox nodes: neither on nor off, a dash in place of its check, as a checkbox over
+    -- others of which some are on; its click asks for on
     disabled: boolean?, -- for button, toggle, switch, checkbox and radios nodes: dimmed, and takes neither a click nor the focus
     -- For radios nodes, a group of radio buttons of one choice: its options, each of its label and whether it is
     -- disabled; the option chosen, from 0, nil of none; whether they go across a row rather than down a column.

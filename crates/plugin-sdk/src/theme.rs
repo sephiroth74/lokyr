@@ -37,7 +37,7 @@ pub const TERMINAL_KEYS: [&str; 9] = [
 /// The interface's tokens of the host's, by their names, which a theme can
 /// give, and which the host derives of its terminal's colors where it does
 /// not: a plugin's own tokens, of a section of its name, come beside them.
-pub const TOKENS: [&str; 74] = [
+pub const TOKENS: [&str; 76] = [
     "text",
     "text.secondary",
     "text.disabled",
@@ -69,7 +69,9 @@ pub const TOKENS: [&str; 74] = [
     "switch.knob.bg",
     "switch.knob.shadow",
     "check.off.bg",
+    "check.off.pressed.bg",
     "check.on.bg",
+    "check.on.pressed.bg",
     "check.mark",
     "tooltip.bg",
     "tooltip.fg",

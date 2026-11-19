@@ -5406,7 +5406,11 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         }
         Kind::Checkbox(checkbox) => {
             let _ = write!(out, "checkbox {}", quoted(&checkbox.label));
-            out.push_str(if checkbox.on { " on" } else { " off" });
+            out.push_str(match (checkbox.mixed, checkbox.on) {
+                (true, _) => " mixed",
+                (false, true) => " on",
+                (false, false) => " off",
+            });
             if checkbox.disabled {
                 out.push_str(" disabled");
             }

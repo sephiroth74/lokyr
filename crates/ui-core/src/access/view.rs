@@ -299,7 +299,9 @@ impl WindowTree {
                 pressable(&mut node, switch.disabled);
             }
             Kind::Checkbox(checkbox) => {
-                node.set_toggled(if checkbox.on {
+                node.set_toggled(if checkbox.mixed {
+                    Toggled::Mixed
+                } else if checkbox.on {
                     Toggled::True
                 } else {
                     Toggled::False
@@ -1175,6 +1177,12 @@ mod tests {
     fn a_checkbox_is_a_check_box_and_a_group_a_radio_group_of_its_options_a_client_chooses() {
         let root = column(vec![
             ViewNode::checkbox("Compress", true).key("compress"),
+            ViewNode::new(view::Kind::Checkbox(view::Checkbox {
+                label: "All".to_owned(),
+                mixed: true,
+                ..view::Checkbox::default()
+            }))
+            .key("all"),
             ViewNode::radios(
                 vec![
                     view::RadioOption::new("Daily"),
@@ -1196,6 +1204,9 @@ mod tests {
         assert_eq!(compress.label(), Some("Compress"));
         assert_eq!(compress.toggled(), Some(Toggled::True));
         assert!(compress.supports_action(AxAction::Click));
+        // A mixed one, of neither state.
+        let all = keyed(&update, &surface, "all");
+        assert_eq!(all.toggled(), Some(Toggled::Mixed));
         // The group, of its label, its options radio buttons of their
         // labels and states, the disabled one of no press.
         let every = keyed(&update, &surface, "every");

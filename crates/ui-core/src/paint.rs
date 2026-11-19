@@ -346,6 +346,7 @@ pub fn tooltip<B: FontBackend>(
         }),
         arc: None,
         knockout: false,
+        check: None,
     };
     let baseline = y + (down * scale).round() + (ascent * scale).round();
     let (glyphs, _) = font.interface_text(
@@ -620,7 +621,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 self.widget((label, icon), (frame, *size), color, link);
             }
             Kind::Switch(switch) => self.switch(id, switch, frame, color),
-            Kind::Checkbox(checkbox) => self.checkbox(checkbox, frame, color),
+            Kind::Checkbox(checkbox) => self.checkbox(id, checkbox, frame, color),
             Kind::Radios(radios) => self.radios(id, radios, color),
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
@@ -1115,6 +1116,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             shadow: None,
             arc: None,
             knockout: false,
+            check: None,
         })
     }
 
@@ -1156,6 +1158,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 .background
                 .as_ref()
                 .is_some_and(|token| self.tokens.knocks_out(&token.0)),
+            check: None,
         })
     }
 
@@ -1220,6 +1223,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 shadow: None,
                 arc: None,
                 knockout: false,
+                check: None,
             });
             // Over the box's own colors, as its theme's veils are.
             if let Some(fill) = fill {
@@ -1722,15 +1726,20 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         self.text(label, at, Some(natural), color);
     }
 
-    /// The checkbox `checkbox` at `frame`: its box, of the off state's fill
-    /// or the on state's and its check, as macOS 27 draws it, and its label
+    /// The checkbox `id`, `checkbox`, at `frame`: its box, of the off
+    /// state's fill or the on state's, darker while it is pressed, and its
+    /// check while it is on, or its dash while it is mixed, as macOS 27
+    /// draws them, a line of round ends of the mark's color, and its label
     /// after it in `color`.
-    fn checkbox(&mut self, checkbox: &view::Checkbox, frame: Frame, color: Color) {
+    fn checkbox(&mut self, id: NodeId, checkbox: &view::Checkbox, frame: Frame, color: Color) {
         let side = self.check_box(frame, checkbox.size);
-        let fill = self.tokens.get(if checkbox.on {
-            "check.on.bg"
-        } else {
-            "check.off.bg"
+        let marked = checkbox.on || checkbox.mixed;
+        let pressed = self.pressed == Some(id) && !checkbox.disabled;
+        let fill = self.tokens.get(match (marked, pressed) {
+            (true, false) => "check.on.bg",
+            (true, true) => "check.on.pressed.bg",
+            (false, false) => "check.off.bg",
+            (false, true) => "check.off.pressed.bg",
         });
         if let Some(fill) = fill {
             self.push_shape(Shape {
@@ -1738,10 +1747,26 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 ..Shape::filled(rect(side), fill)
             });
         }
-        if checkbox.on
-            && let Some(mark) = self.tokens.get("check.mark")
-        {
-            self.icon("check", side, mark);
+        if let (true, Some(mark)) = (marked, self.tokens.get("check.mark")) {
+            if checkbox.mixed {
+                let long = (side.width * widget::DASH_LENGTH).round();
+                let thick = (side.width * widget::DASH_THICKNESS).round().max(1.0);
+                let dash = Frame {
+                    x: (side.x + (side.width - long) / 2.0).round(),
+                    y: (side.y + (side.height - thick) / 2.0).round(),
+                    width: long,
+                    height: thick,
+                };
+                self.push_shape(Shape {
+                    radius: thick / 2.0,
+                    ..Shape::filled(rect(dash), mark)
+                });
+            } else {
+                self.push_shape(Shape {
+                    check: Some(side.width * widget::CHECK_THICKNESS),
+                    ..Shape::filled(rect(side), mark)
+                });
+            }
         }
         self.check_label(&checkbox.label, (side, frame), color);
     }
@@ -3197,6 +3222,7 @@ mod tests {
                     shadow: None,
                     arc: None,
                     knockout: false,
+                    check: None,
                 }]
             );
             // Without the focus, or of a node that the tree lacks, no ring.
@@ -3978,19 +4004,15 @@ mod tests {
         let on = shape(at(4, 4, 16));
         assert_eq!(on.fill, token("check.on.bg"));
         assert!((on.radius - 16.0 * widget::CHECK_ROUNDING).abs() < 1e-4);
-        let glyphs: Vec<&PlacedGlyph> = items
+        // Its check a line of round ends, an eighth of its side thick,
+        // over its box.
+        let check = shapes
             .iter()
-            .filter_map(|item| match item {
-                Item::Glyphs(glyphs) => Some(glyphs.iter()),
-                _ => None,
-            })
-            .flatten()
-            .collect();
-        assert!(
-            glyphs
-                .iter()
-                .any(|glyph| glyph.color == token("check.mark"))
-        );
+            .find(|shape| shape.check.is_some())
+            .expect("the check");
+        assert_eq!(check.rect, at(4, 4, 16));
+        assert_eq!(check.fill, token("check.mark"));
+        assert_eq!(check.check, Some(16.0 * widget::CHECK_THICKNESS));
         assert_eq!(shape(at(24, 4, 16)).fill, token("check.off.bg"));
         // The group: the chosen option's circle of the on state's fill and
         // its dot of 6 in its middle; the disabled one's of the off state's
@@ -4006,6 +4028,69 @@ mod tests {
         let mut dimmed = token("check.off.bg");
         dimmed.alpha *= 0.5;
         assert_eq!(shape(at(second, 4, 16)).fill, dimmed);
+    }
+
+    #[test]
+    fn a_mixed_checkbox_paints_its_dash_and_a_pressed_one_its_darker_box() {
+        use lokyr_plugin_sdk::view::Kind;
+        let checkbox = |on: bool, mixed: bool, disabled: bool| {
+            let mut node = Node::checkbox("", on);
+            if let Kind::Checkbox(checkbox) = &mut node.kind {
+                checkbox.mixed = mixed;
+                checkbox.disabled = disabled;
+            }
+            node
+        };
+        let shapes_of = |first: Node| {
+            let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+            let root = Node::container(vec![
+                first.key("first"),
+                checkbox(true, false, false).key("second"),
+            ]);
+            let (_, _, items) = painted_tree(&root, &mut font);
+            items
+                .into_iter()
+                .filter_map(|item| match item {
+                    Item::Shapes(shapes) => Some(shapes),
+                    _ => None,
+                })
+                .flatten()
+                .collect::<Vec<Shape>>()
+        };
+        let box_at = |shapes: &[Shape], x: i32| {
+            shapes
+                .iter()
+                .find(|shape| shape.rect.x == x && shape.rect.width == 16)
+                .map(|shape| shape.fill)
+        };
+        let token = |name: &str| Theme::builtin().dark.tokens.get(name).unwrap();
+        // Mixed and pressed: the on state's box, darker, and its dash of
+        // 7 by 2 in its middle, of round ends, no check.
+        let shapes = shapes_of(checkbox(false, true, false));
+        assert_eq!(box_at(&shapes, 0), Some(token("check.on.pressed.bg")));
+        let dash = shapes
+            .iter()
+            .find(|shape| shape.rect.height == 2)
+            .expect("the dash");
+        let dash_at = (dash.rect.x, dash.rect.y, dash.rect.width);
+        assert_eq!((dash_at, dash.radius), ((5, 7, 7), 1.0));
+        assert_eq!((dash.fill, dash.check), (token("check.mark"), None));
+        // Only the other, on and not pressed, has a check.
+        let checks: Vec<i32> = shapes
+            .iter()
+            .filter(|shape| shape.check.is_some())
+            .map(|shape| shape.rect.x)
+            .collect();
+        assert_eq!(checks, [16]);
+        assert_eq!(box_at(&shapes, 16), Some(token("check.on.bg")));
+        // Off and pressed, darker too; disabled, as it rests, at half its
+        // opacity.
+        let shapes = shapes_of(checkbox(false, false, false));
+        assert_eq!(box_at(&shapes, 0), Some(token("check.off.pressed.bg")));
+        let shapes = shapes_of(checkbox(false, false, true));
+        let mut dimmed = token("check.off.bg");
+        dimmed.alpha *= 0.5;
+        assert_eq!(box_at(&shapes, 0), Some(dimmed));
     }
 
     /// `root` laid out at a scale of 1 in 400 points, and painted of the

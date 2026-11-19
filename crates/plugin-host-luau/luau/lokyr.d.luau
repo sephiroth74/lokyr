@@ -256,6 +256,7 @@ export type Node = {
     link: boolean?,
     variant: ButtonVariant?,
     on: boolean?,
+    mixed: boolean?,
     options: { RadioOption }?,
     chosen: number?,
     across: boolean?,

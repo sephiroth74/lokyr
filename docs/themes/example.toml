@@ -82,7 +82,9 @@ knob.shadow = "transparent"
 
 [check]                             # the checkboxes and the radio buttons
 off.bg = "text / 10%"
+off.pressed.bg = "text / 19%"
 on.bg = "button.default.bg"
+on.pressed.bg = "mix(check.on.bg, #000000, 10%)"
 mark = "button.default.fg"
 
 [tooltip]                           # the tooltips

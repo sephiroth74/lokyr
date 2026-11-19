@@ -238,7 +238,8 @@ fragment float4 line_fragment(LineFragment in [[stage_in]]) {
 // edges; the deviation of its blur, for a shadow, or a negative one for the
 // shape itself; what fills it, or its shadow; its border's color; and the
 // arc of its inscribed ring that it draws instead, its start and its span in
-// turns clockwise from the top, its thickness, and 1, or 0 for none.
+// turns clockwise from the top, its thickness, and 1; or a check mark's
+// thickness and 2; or 0 for neither.
 struct Shape {
     float2 position;
     float2 size;
@@ -317,6 +318,28 @@ static float arc_coverage(float2 p, float outer, float4 arc) {
     return across * along;
 }
 
+// The distance from `p` to the segment from `a` to `b`.
+static float segment_distance(float2 p, float2 a, float2 b) {
+    float2 pa = p - a;
+    float2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// The part of a pixel at `p`, from a shape's centre, of half its size
+// `extent`, that a check mark covers, as macOS 27's checkbox draws it: a
+// line of `thickness` and round ends down from the left to its bottom and
+// up to the right, at shares of the shape's size, the drawable's y going
+// down.
+static float check_coverage(float2 p, float2 extent, float thickness) {
+    float2 size = extent * 2.0;
+    float2 a = (float2(0.2652, 0.5181) - 0.5) * size;
+    float2 b = (float2(0.4383, 0.7328) - 0.5) * size;
+    float2 c = (float2(0.7355, 0.2771) - 0.5) * size;
+    float distance = min(segment_distance(p, a, b), segment_distance(p, b, c));
+    return clamp(thickness / 2.0 + 0.5 - distance, 0.0, 1.0);
+}
+
 // A shadow covers a pixel as a Gaussian blur of the outline's edge, the
 // error function across its distance; a shape, the part of the pixel within
 // its outline, filled to it, and its border over the fill, between its
@@ -324,6 +347,9 @@ static float arc_coverage(float2 p, float outer, float4 arc) {
 // fill under it, as CSS's `border-box` has it.
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
+    if (in.arc.w > 1.5) {
+        return in.fill * check_coverage(p, in.extent, in.arc.z);
+    }
     if (in.arc.w > 0.0) {
         return in.fill * arc_coverage(p, min(in.extent.x, in.extent.y), in.arc);
     }
