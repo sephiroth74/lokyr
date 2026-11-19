@@ -188,6 +188,8 @@ Ordered by what people ask of terminals, as the trackers of fifteen terminals an
   - a block shared as an image, `snap`'s.
 - **ssh integration**: installs the terminfo on the remote host, or falls back to `xterm-256color` automatically, and the shell's integration remote.
 - **Two plugins of the registry**, published by the project as examples for authors: the scrollback, or a command's output, opened in the editor; a status bar of the folder, the branch and the clock.
+- **The controls polished**: a switch for the settings' on and off, the controls' sizes, focus ring and states made alike, of macOS's look, and the controls that the settings' pages lack.
+- **A plugin that replaces another** in the same place, as the blocks replace the plain sticky header: the other plugin off while it is on, and back as it goes, of nothing written to the config.
 
 ### F5b — Sessions and iTerm2 power features
 
