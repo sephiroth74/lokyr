@@ -200,7 +200,10 @@ fn a_replacer_that_waits_to_start_again_replaces_still_and_one_turned_off_by_its
     let mut app = App::default();
     let mut plugins = Plugins::new();
     for (manifest, make) in [
-        (HEADER, make_header as fn() -> Box<dyn Plugin + Send>),
+        (
+            HEADER,
+            make_uncounted_header as fn() -> Box<dyn Plugin + Send>,
+        ),
         (FAULTY_MANIFEST, make_faulty),
     ] {
         plugins
