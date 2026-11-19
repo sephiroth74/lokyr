@@ -211,6 +211,12 @@ pub enum Kind {
     Text(String),
     /// An icon of the host's, by its name.
     Icon(String),
+    /// A shortcut drawn as key caps, as the platform writes it, as `⇧⌘N`
+    /// on macOS: each of its modifiers' symbols and its key in a cap of its
+    /// own, of `keycap.bg` and `keycap.fg`, of the node's text's size; a
+    /// sequence's combinations, written apart, as `⌃A N`, each of its caps.
+    /// A list's row takes one, of an item's text, as it takes a text.
+    Keys(String),
     /// Room, which grows by default, as between the left and the right of a
     /// bar.
     Spacer,
@@ -541,6 +547,11 @@ pub struct Button {
     /// What its press does, which its look tells.
     #[serde(skip_serializing_if = "ButtonVariant::is_plain")]
     pub variant: ButtonVariant,
+    /// Whether its label is a shortcut, as the platform writes it, drawn
+    /// as key caps, as [`Kind::Keys`]'s, as a binding's keys that a click
+    /// lets change.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub keycaps: bool,
 }
 
 /// What a button's press does, as macOS's buttons tell it.
@@ -689,6 +700,47 @@ impl RadioOption {
     }
 }
 
+/// The tone of a callout or a tag, of its colors: of a notice's level, or
+/// neutral, of a button's.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Tone {
+    /// Of no level, of a button's fill and the secondary text.
+    #[default]
+    Neutral,
+    /// Of something to know, of the accent.
+    Info,
+    /// Of something that went well, green.
+    Success,
+    /// Of something to look at, yellow.
+    Warning,
+    /// Of something that failed, red.
+    Error,
+}
+
+impl Tone {
+    /// Its tokens: its fill's, and its text's and icon's.
+    pub fn tokens(self) -> (&'static str, &'static str) {
+        match self {
+            Self::Neutral => ("button.bg", "text.secondary"),
+            Self::Info => ("callout.info.bg", "callout.info.fg"),
+            Self::Success => ("callout.success.bg", "callout.success.fg"),
+            Self::Warning => ("callout.warning.bg", "callout.warning.fg"),
+            Self::Error => ("callout.error.bg", "callout.error.fg"),
+        }
+    }
+
+    /// The host's icon of its level.
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Neutral | Self::Info => "info",
+            Self::Success => "check",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
+}
+
 /// The size of a control, as macOS 27's controls have their sizes: a
 /// button, a toggle, a field or a segmented control 28, 24, 20 or 16
 /// points high, of the interface's text, the small's smaller and the
@@ -722,6 +774,7 @@ impl Kind {
             Self::Container
             | Self::Text(_)
             | Self::Icon(_)
+            | Self::Keys(_)
             | Self::Spacer
             | Self::Separator
             | Self::Group
@@ -1507,6 +1560,118 @@ impl Node {
         Self::new(Kind::Icon(name.into()))
     }
 
+    /// A shortcut of key caps, `keys` as the platform writes them, as `⇧⌘N`
+    /// on macOS: [`crate::keys::macos_text`] writes a binding's so.
+    pub fn keys(keys: impl Into<String>) -> Self {
+        Self::new(Kind::Keys(keys.into()))
+    }
+
+    /// An empty state, as macOS's: its icon `icon` large, its title, and
+    /// its line `line`, of as many lines as it needs, of the secondary
+    /// text, down a column in the middle of the room that its parent gives
+    /// it, as a search that finds nothing tells it.
+    pub fn empty_state(
+        icon: impl Into<String>,
+        title: impl Into<String>,
+        line: impl Into<String>,
+    ) -> Self {
+        let secondary = || Some(Token::from("text.secondary"));
+        Node::container(vec![
+            Node::icon(icon).style(Style {
+                color: secondary(),
+                font_size: Some(32.0),
+                ..Style::default()
+            }),
+            Node::text(title).style(Style {
+                font_weight: Some(FontWeight::Semibold),
+                ..Style::default()
+            }),
+            Node::text(line)
+                .style(Style {
+                    color: secondary(),
+                    text_size: Some(TextSize::Small),
+                    ..Style::default()
+                })
+                .layout(Layout {
+                    lines: Some(0),
+                    ..Layout::default()
+                }),
+        ])
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 6.0,
+            justify: Justify::Center,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            grow: 1.0,
+            padding: Edges::all(24.0),
+            ..Layout::default()
+        })
+    }
+
+    /// A callout of `tone`, as macOS's: a box tinted of its fill, its
+    /// level's icon of its color at its left, and `text` beside it, of as
+    /// many lines as it needs, across its parent, as a file that does not
+    /// read or a value refused tells it.
+    pub fn callout(tone: Tone, text: impl Into<String>) -> Self {
+        let (fill, color) = tone.tokens();
+        Node::container(vec![
+            Node::icon(tone.icon()).style(Style {
+                color: Some(Token::from(color)),
+                ..Style::default()
+            }),
+            Node::text(text).layout(Layout {
+                lines: Some(0),
+                grow: 1.0,
+                min_width: Length::Points(0.0),
+                ..Layout::default()
+            }),
+        ])
+        .layout(Layout {
+            gap: 8.0,
+            align: Align::Start,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 8.0,
+                right: 10.0,
+                bottom: 8.0,
+                left: 10.0,
+            },
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from(fill)),
+            radius: 8.0,
+            ..Style::default()
+        })
+    }
+
+    /// A tag of `tone`, as macOS's: `text`, small, in a capsule of its
+    /// fill, of its color, as a plugin's state.
+    pub fn tag(tone: Tone, text: impl Into<String>) -> Self {
+        let (fill, color) = tone.tokens();
+        Node::container(vec![Node::text(text).style(Style {
+            color: Some(Token::from(color)),
+            text_size: Some(TextSize::Small),
+            ..Style::default()
+        })])
+        .layout(Layout {
+            padding: Edges {
+                top: 1.0,
+                right: 7.0,
+                bottom: 1.0,
+                left: 7.0,
+            },
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from(fill)),
+            // A capsule: the host keeps a radius within half the height.
+            radius: 100.0,
+            ..Style::default()
+        })
+    }
+
     /// A text field, of its placeholder; its key, which it needs, follows.
     pub fn field(placeholder: impl Into<String>) -> Self {
         Self::new(Kind::Field(Field {
@@ -2050,6 +2215,37 @@ mod tests {
         assert_eq!(unset_pop_up.shown(), "Unset");
         assert_eq!(unset.control_size(), Some(ControlSize::Small));
         assert!(unset.disabled() && !unset.takes_focus());
+        // A shortcut of key caps, of its keys as macOS writes them; a
+        // button's label of key caps.
+        assert_eq!(
+            serde_json::to_string(&Node::keys("⇧⌘P").kind).unwrap(),
+            r#"{"keys":"⇧⌘P"}"#
+        );
+        let caps: Kind =
+            serde_json::from_str(r#"{"button":{"label":"⌘K","keycaps":true}}"#).unwrap();
+        assert!(matches!(&caps, Kind::Button(button) if button.keycaps));
+        // The tones' tokens and icons, a callout's and a tag's.
+        assert_eq!(
+            Tone::Error.tokens(),
+            ("callout.error.bg", "callout.error.fg")
+        );
+        assert_eq!(
+            (Tone::Warning.icon(), Tone::Neutral.tokens().0),
+            ("warning", "button.bg")
+        );
+        let callout = Node::callout(Tone::Success, "Saved");
+        assert_eq!(
+            callout.style.background,
+            Some(Token::from("callout.success.bg"))
+        );
+        assert_eq!(callout.children[0].kind, Kind::Icon("check".to_owned()));
+        let tag = Node::tag(Tone::Info, "Replaced");
+        assert_eq!(
+            tag.children[0].style.color,
+            Some(Token::from("callout.info.fg"))
+        );
+        let empty = Node::empty_state("search", "No match", "Try other words.");
+        assert_eq!(empty.children.len(), 3);
         let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
         assert_eq!(separator, Node::separator());
         // A list, of its window of items and its row's template; a scroll

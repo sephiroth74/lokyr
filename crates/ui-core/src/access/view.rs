@@ -237,10 +237,13 @@ impl WindowTree {
                 | Kind::Group
                 | Kind::Themed(_)
                 | Kind::Text(_)
+                | Kind::Keys(_)
                 | Kind::Icon(_)
                 | Kind::Scroll,
                 Some(role),
             ) => role_of(role),
+            // A shortcut a label of its keys, as macOS writes them.
+            (Kind::Keys(_), None) => Role::Label,
             (Kind::Group, None) => Role::Group,
             (Kind::Container, None) if root => match access.panel {
                 Some(panel::Role::Tooltip) => Role::Tooltip,
@@ -439,7 +442,7 @@ fn label(tree: &Tree, id: tree::NodeId, kind: &Kind) -> Option<String> {
     tree.label(id)
         .map(str::to_owned)
         .or_else(|| match kind {
-            Kind::Text(text) => Some(text.clone()),
+            Kind::Text(text) | Kind::Keys(text) => Some(text.clone()),
             Kind::Button(button) if !button.label.is_empty() => Some(button.label.clone()),
             Kind::Toggle(toggle) if !toggle.label.is_empty() => Some(toggle.label.clone()),
             Kind::Switch(switch) if !switch.label.is_empty() => Some(switch.label.clone()),

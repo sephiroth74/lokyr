@@ -635,7 +635,7 @@ fn view_tree() -> Node {
 /// icon off, one on, one off under the pointer, a disabled one on, one of
 /// a label off; pop-up buttons of a choice, small, of none and disabled;
 /// search fields of a text, empty, and small of a text; a group box of two
-/// rows;
+/// rows; a shortcut of key caps, tags, and a callout;
 /// upright separators between the groups, and a flat one under them; room
 /// below for the tooltip of the toggle under the pointer.
 fn widgets_tree() -> Node {
@@ -647,6 +647,7 @@ fn widgets_tree() -> Node {
             link: false,
             size: Default::default(),
             variant: Default::default(),
+            keycaps: false,
         }))
         .key(key)
     };
@@ -813,6 +814,16 @@ fn widgets_tree() -> Node {
             ..Box::default()
         })
     };
+    let notes = row(vec![
+        Node::keys("⇧⌘P"),
+        Node::tag(view::Tone::Success, "Active"),
+        Node::tag(view::Tone::Neutral, "Disabled"),
+        Node::tag(view::Tone::Info, "Replaced"),
+    ]);
+    let callout = Node::callout(
+        view::Tone::Warning,
+        "config.toml does not read at line 3: expected a value.",
+    );
     let grouped = Node::group(vec![
         detail("Version", "1.4.0"),
         detail("Theme", "Lokyr Dark"),
@@ -840,6 +851,8 @@ fn widgets_tree() -> Node {
         toggles,
         Node::separator(),
         grouped,
+        notes,
+        callout,
     ])
     .layout(Box {
         direction: Direction::Column,
@@ -883,6 +896,7 @@ fn themed_tree() -> Node {
                 link,
                 size: Default::default(),
                 variant: Default::default(),
+                keycaps: false,
             }))
             .key(key(name).as_str())
         };

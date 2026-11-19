@@ -34,6 +34,7 @@ registry-search = Search
 registry-reading = Reading the registry…
 registry-failed = The registry could not be read: { $message }
 registry-none = No plugin matches.
+registry-none-line = Search reads the registry again, for the plugins published since.
 plugin-install = Install
 plugin-installing = Installing…
 plugin-update = Update to { $version }

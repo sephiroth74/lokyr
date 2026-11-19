@@ -42,10 +42,11 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 21] = [
+pub(crate) const KINDS: [&str; 22] = [
     "container",
     "text",
     "icon",
+    "keys",
     "spacer",
     "field",
     "button",
@@ -73,6 +74,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "container" | "spacer" | "separator" | "group" | "scroll" | "terminal-specimen" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
+        "keys" => &["keys"],
         "field" => &[
             "placeholder",
             "text",
@@ -81,7 +83,9 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
             "search",
             "size",
         ],
-        "button" => &["text", "icon", "disabled", "link", "size", "variant"],
+        "button" => &[
+            "text", "icon", "disabled", "link", "size", "variant", "keycaps",
+        ],
         "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
         "checkbox" => &["text", "on", "mixed", "disabled", "size"],
@@ -290,6 +294,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
     let kind = match kind.as_str() {
         "text" => Kind::Text(field(take("text"), "text", budget)?),
         "icon" => Kind::Icon(field(take("icon"), "icon", budget)?),
+        "keys" => Kind::Keys(field(take("keys"), "keys", budget)?),
         "spacer" => Kind::Spacer,
         "field" => Kind::Field(Field {
             placeholder: or_default(take("placeholder"), "placeholder", budget)?,
@@ -306,6 +311,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             link: or_default(take("link"), "link", budget)?,
             size: or_default(take("size"), "size", budget)?,
             variant: or_default(take("variant"), "variant", budget)?,
+            keycaps: or_default(take("keycaps"), "keycaps", budget)?,
         }),
         "toggle" => Kind::Toggle(Toggle {
             label: or_default(take("text"), "text", budget)?,
@@ -427,6 +433,7 @@ mod giving {
             Kind::Container => "container",
             Kind::Text(_) => "text",
             Kind::Icon(_) => "icon",
+            Kind::Keys(_) => "keys",
             Kind::Spacer => "spacer",
             Kind::Field(_) => "field",
             Kind::Button(_) => "button",
@@ -491,6 +498,7 @@ mod giving {
                 | Kind::TerminalSpecimen => {}
                 Kind::Text(text) => table.raw_set("text", text.as_str())?,
                 Kind::Icon(icon) => table.raw_set("icon", icon.as_str())?,
+                Kind::Keys(keys) => table.raw_set("keys", keys.as_str())?,
                 Kind::Field(Field {
                     placeholder,
                     text,
@@ -513,6 +521,7 @@ mod giving {
                     link,
                     size,
                     variant,
+                    keycaps,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("icon", icon.as_str())?;
@@ -520,6 +529,7 @@ mod giving {
                     table.raw_set("link", *link)?;
                     set(lua, &table, "size", size)?;
                     set(lua, &table, "variant", variant)?;
+                    table.raw_set("keycaps", *keycaps)?;
                 }
                 Kind::Toggle(Toggle {
                     label,

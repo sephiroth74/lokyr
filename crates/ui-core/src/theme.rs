@@ -725,7 +725,7 @@ mod tests {
     }
 
     /// The tokens that came after the derivation, of their rules alone.
-    const LATE: [&str; 18] = [
+    const LATE: [&str; 28] = [
         "cursor.guide",
         "hints.label.bg",
         "hints.label.fg",
@@ -744,6 +744,16 @@ mod tests {
         "check.mark",
         "group.bg",
         "group.separator",
+        "keycap.bg",
+        "keycap.fg",
+        "callout.info.bg",
+        "callout.info.fg",
+        "callout.success.bg",
+        "callout.success.fg",
+        "callout.warning.bg",
+        "callout.warning.fg",
+        "callout.error.bg",
+        "callout.error.fg",
     ];
 
     /// Asserts that `theme` resolves to the derivation of before the

@@ -657,12 +657,13 @@ fn height(row: &Row) -> f32 {
         .map_or(0.0, |frame| frame.height / row.layout.scale())
 }
 
-/// `template` of `texts`: its texts and its icons, in the tree's order,
-/// each of the next text, those past `texts` as they are.
+/// `template` of `texts`: its texts, its icons and its shortcuts of key
+/// caps, in the tree's order, each of the next text, those past `texts` as
+/// they are.
 fn fill(template: &Node, texts: &[String]) -> Node {
     fn walk(node: &mut Node, texts: &mut std::slice::Iter<'_, String>) {
         match &mut node.kind {
-            Kind::Text(text) | Kind::Icon(text) => {
+            Kind::Text(text) | Kind::Icon(text) | Kind::Keys(text) => {
                 if let Some(given) = texts.next() {
                     text.clone_from(given);
                 }
@@ -684,6 +685,18 @@ mod tests {
     use lokyr_vt_core::input::Mods;
 
     use super::*;
+
+    #[test]
+    fn a_row_s_shortcut_of_key_caps_takes_an_item_s_text_as_a_text_does() {
+        let template = Node::container(vec![Node::text(""), Node::spacer(), Node::keys("")]);
+        let filled = fill(&template, &["Copy".to_owned(), "⌘C".to_owned()]);
+        assert_eq!(filled.children[0].kind, Kind::Text("Copy".to_owned()));
+        assert_eq!(filled.children[2].kind, Kind::Keys("⌘C".to_owned()));
+        // A list of such a row is a tree that the host takes.
+        let mut tree = Tree::new();
+        let list = Node::list(template, 1, (0, Vec::new())).key("commands");
+        assert!(tree.update(&Node::container(vec![list])).is_ok());
+    }
 
     /// A font of the tests': a character 6 points wide, a text 14 points
     /// high, or 30 of one that starts with `tall`; an icon of 16.

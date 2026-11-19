@@ -51,6 +51,7 @@ fn every() -> Node {
         link: true,
         size: Default::default(),
         variant: Default::default(),
+        keycaps: true,
     }));
     button.key = Some(Key::from("go"));
     button.focusable = true;
@@ -164,6 +165,7 @@ fn every() -> Node {
         }))
         .key("family"),
         Node::group(vec![Node::text("row")]),
+        Node::keys("⇧⌘P"),
     ];
     root
 }
@@ -180,7 +182,7 @@ const EVERY: &str = r#"{
         { kind = "field", placeholder = "Find", text = "needle", stepped = true, records = true,
           search = true },
         { kind = "button", key = "go", text = "Go", icon = "play", disabled = true, link = true,
-          focusable = true, tooltip = "Run it" },
+          keycaps = true, focusable = true, tooltip = "Run it" },
         { kind = "toggle", key = "case", text = "Aa", icon = "case", on = true, disabled = true },
         { kind = "separator" },
         { kind = "list", count = 100, first = 10, items = { { texts = { "a" } } },
@@ -205,6 +207,7 @@ const EVERY: &str = r#"{
           placeholder = "Not set", size = "small" },
         { kind = "group", layout = { direction = "column", width = { fraction = 1 } },
           children = { { kind = "text", text = "row" } } },
+        { kind = "keys", keys = "⇧⌘P" },
     },
 }"#;
 
@@ -243,6 +246,7 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         assert(family.placeholder == "Not set" and family.size == "small")
         local rows = view.children[20]
         assert(rows.kind == "group" and rows.children[1].text == "row")
+        assert(view.children[21].kind == "keys" and view.children[21].keys == "⇧⌘P")
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

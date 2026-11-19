@@ -618,7 +618,8 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
 }
 
 /// Whether `row`, a list's row template at the level `depth`, is one that a
-/// row takes: of containers, texts, icons, spacers and separators, of no
+/// row takes: of containers, texts, icons, shortcuts of key caps, spacers
+/// and separators, of no
 /// key, focus or tooltip, [`DEEPEST`] levels at most, its numbers finite
 /// and in their ranges.
 fn template(row: &Node, depth: usize) -> Result<(), Invalid> {
@@ -628,7 +629,12 @@ fn template(row: &Node, depth: usize) -> Result<(), Invalid> {
     numbers(row)?;
     let plain = matches!(
         row.kind,
-        Kind::Container | Kind::Text(_) | Kind::Icon(_) | Kind::Spacer | Kind::Separator
+        Kind::Container
+            | Kind::Text(_)
+            | Kind::Icon(_)
+            | Kind::Keys(_)
+            | Kind::Spacer
+            | Kind::Separator
     );
     if !plain
         || row.key.is_some()

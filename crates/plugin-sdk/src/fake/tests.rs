@@ -688,6 +688,7 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         Node::spacer(),
         Node::separator(),
         Node::group(vec![Node::text("row")]),
+        Node::keys("⇧⌘P"),
         Node::progress(ProgressShape::Bar, ProgressState::Normal, 0.5),
         Node::progress(ProgressShape::Ring, ProgressState::Indeterminate, 0.0),
         Node::list(
@@ -748,6 +749,7 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  separator\n",
             "  group\n",
             "    text \"row\"\n",
+            "  keys \"⇧⌘P\"\n",
             "  progress Bar Normal 0.5\n",
             "  progress Ring Indeterminate\n",
             "  list of 100, 2 given from 10 key=results\n",

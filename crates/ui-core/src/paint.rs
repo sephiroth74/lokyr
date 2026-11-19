@@ -612,6 +612,14 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 }
             },
             Kind::Icon(name) => self.icon(name, frame, color),
+            Kind::Keys(keys) => {
+                // Of `keycap.fg`, but where the node names a color.
+                let color = match &given.color {
+                    Some(_) => color,
+                    None => self.tokens.get("keycap.fg").unwrap_or(color),
+                };
+                self.keys(keys, frame, color, false);
+            }
             Kind::Field(field) => self.field(id, field, (frame, style), color),
             Kind::Button(view::Button {
                 label, icon, size, ..
@@ -639,7 +647,14 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     },
                     _ => color,
                 };
-                self.widget((label, icon), (frame, *size), color, link);
+                match kind {
+                    // A label of key caps, in the middle of its box.
+                    Kind::Button(button) if button.keycaps => {
+                        let color = self.tokens.get("keycap.fg").unwrap_or(color);
+                        self.keys(label, frame, color, true);
+                    }
+                    _ => self.widget((label, icon), (frame, *size), color, link),
+                }
             }
             Kind::Switch(switch) => self.switch(id, switch, frame, color),
             Kind::Checkbox(checkbox) => self.checkbox(id, checkbox, frame, color),
@@ -1666,6 +1681,54 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 });
                 self.push_shape(Shape::filled(under, color));
             }
+        }
+    }
+
+    /// The shortcut `keys` as key caps from `frame`'s left, or in its
+    /// middle where `centered`, in the middle of its height: each cap a
+    /// rounded fill of `keycap.bg`, its symbol in its middle, in `color`.
+    fn keys(&mut self, keys: &str, frame: Frame, color: Color, centered: bool) {
+        let scale = self.layout.scale();
+        let fill = self.tokens.get("keycap.bg");
+        let caps: Vec<(String, (f32, f32))> = widget::keycaps(keys)
+            .into_iter()
+            .map(|cap| {
+                let text = Measure::text(&mut *self.font, &cap);
+                (cap, text)
+            })
+            .collect();
+        let whole = caps
+            .iter()
+            .map(|(_, text)| widget::keycap_size(*text).0)
+            .sum::<f32>()
+            + caps.len().saturating_sub(1) as f32 * widget::KEYCAP_GAP;
+        let mut x = if centered {
+            frame.x + (frame.width - whole * scale) / 2.0
+        } else {
+            frame.x
+        };
+        for (cap, text) in caps {
+            let (wide, tall) = widget::keycap_size(text);
+            let (wide, tall) = (wide * scale, tall * scale);
+            let place = Frame {
+                x: x.round(),
+                y: (frame.y + (frame.height - tall) / 2.0).round(),
+                width: wide.round(),
+                height: tall.round(),
+            };
+            if let Some(fill) = fill {
+                self.push_shape(Shape {
+                    radius: widget::KEYCAP_RADIUS * scale,
+                    ..Shape::filled(rect(place), fill)
+                });
+            }
+            let symbol = Frame {
+                x: (place.x + (place.width - text.0 * scale) / 2.0).round(),
+                width: text.0 * scale,
+                ..place
+            };
+            self.text(&cap, symbol, Some(text.0), color);
+            x += wide + widget::KEYCAP_GAP * scale;
         }
     }
 
@@ -4298,6 +4361,56 @@ mod tests {
             .filter(|item| matches!(item, Item::Glyphs(_)))
             .count();
         assert_eq!(texts, 2);
+    }
+
+    #[test]
+    fn a_shortcut_paints_a_cap_of_each_key_and_a_button_of_key_caps_in_its_middle() {
+        let mut button = Node::button("⌘K").key("change");
+        if let view::Kind::Button(own) = &mut button.kind {
+            own.keycaps = true;
+        }
+        let root =
+            Node::container(vec![Node::keys("⇧⌘N").key("shown"), button]).layout(view::Layout {
+                direction: view::Direction::Column,
+                ..view::Layout::default()
+            });
+        let (tree, layout, items) = painted(&root, 1.0, 300.0, (0.0, 0.0));
+        let caps: Vec<Rect> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .filter(|shape| shape.fill == token("keycap.bg"))
+            .map(|shape| shape.rect)
+            .collect();
+        let frame = |key: &str| {
+            rect(
+                layout
+                    .frame(&tree, tree.by_key(&key.into()).unwrap())
+                    .unwrap(),
+            )
+        };
+        let (shown, change) = (frame("shown"), frame("change"));
+        // Three caps from the shortcut's left, side by side, 2 apart, of
+        // the shortcut's height; two in the button's middle.
+        let (of_shown, of_change): (Vec<Rect>, Vec<Rect>) =
+            caps.into_iter().partition(|cap| cap.y < change.y);
+        assert_eq!(of_shown.len(), 3, "{of_shown:?}");
+        assert_eq!(of_shown[0].x, shown.x);
+        assert_eq!(of_shown[1].x, of_shown[0].x + of_shown[0].width as i32 + 2);
+        assert_eq!(of_shown[0].height, shown.height);
+        assert_eq!(of_change.len(), 2, "{of_change:?}");
+        let left = of_change[0].x - change.x;
+        let right = change.x + change.width as i32 - (of_change[1].x + of_change[1].width as i32);
+        assert!((left - right).abs() <= 1, "{left} and {right}");
+        // Each cap's symbol a text.
+        let glyphs = items
+            .iter()
+            .filter(|item| matches!(item, Item::Glyphs(_)))
+            .count();
+        assert!(glyphs >= 1);
     }
 
     #[test]

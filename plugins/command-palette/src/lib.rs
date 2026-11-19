@@ -608,8 +608,8 @@ struct Texts {
 
 /// The palette's view of `open`: its field, a search field, large, of no
 /// box and no ring, a thin line, and the list of the commands that it
-/// ranks, each of its title and its keys at its end, of a menu's look, or a
-/// line of none.
+/// ranks, each of its title and its keys at its end, as key caps, of a
+/// menu's look, or a line of none.
 fn palette(open: &Open, texts: &Texts) -> Node {
     let field = Node::container(vec![
         Node::field(texts.placeholder.as_str())
@@ -642,8 +642,16 @@ fn palette(open: &Open, texts: &Texts) -> Node {
             ..Style::default()
         })
     };
-    // A row: its title, and its keys at its end.
-    let row = Node::container(vec![Node::text(""), Node::spacer(), secondary("")]).layout(Layout {
+    // A row: its title, and its keys at its end, as key caps of the
+    // commands', a secondary text of the themes' and the agents'.
+    let end = match open.mode {
+        Mode::Commands => Node::keys("").style(Style {
+            text_size: Some(TextSize::Small),
+            ..Style::default()
+        }),
+        Mode::Themes(_) | Mode::Agents => secondary(""),
+    };
+    let row = Node::container(vec![Node::text(""), Node::spacer(), end]).layout(Layout {
         gap: 8.0,
         align: Align::Center,
         padding: Edges {

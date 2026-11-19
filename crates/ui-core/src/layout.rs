@@ -129,6 +129,24 @@ pub trait Measure {
         widget::pop_up_size(size, widest)
     }
 
+    /// The size of a shortcut of key caps, `caps`, in points: its caps side
+    /// by side, the room between them.
+    fn keys(&mut self, caps: &[String]) -> (f32, f32) {
+        let (_, line) = self.text("");
+        let sizes: Vec<(f32, f32)> = caps
+            .iter()
+            .map(|cap| widget::keycap_size(self.text(cap)))
+            .collect();
+        let gaps = sizes.len().saturating_sub(1) as f32 * widget::KEYCAP_GAP;
+        let width = sizes.iter().map(|size| size.0).sum::<f32>() + gaps;
+        let height = sizes
+            .iter()
+            .fold(widget::keycap_size((0.0, line)).1, |tall, size| {
+                tall.max(size.1)
+            });
+        (width, height)
+    }
+
     /// The size of a separator, in points, a point thick: its parent
     /// stretches it across.
     fn separator(&mut self) -> (f32, f32) {
@@ -178,10 +196,13 @@ enum Content {
     Text(String, Option<u16>),
     Icon(String),
     Field(ControlSize),
+    /// A button or a toggle, of its label, its icon and its size, and
+    /// whether its label is drawn as key caps.
     Button {
         label: String,
         icon: String,
         size: ControlSize,
+        keycaps: bool,
     },
     Switch {
         label: String,
@@ -191,6 +212,8 @@ enum Content {
         label: String,
         size: ControlSize,
     },
+    /// A shortcut of key caps, of its caps.
+    Keys(Vec<String>),
     /// A pop-up button, of its items' texts and its placeholder, and of its
     /// size.
     PopUp {
@@ -889,16 +912,19 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
     let content = match kind {
         Kind::Text(text) => Content::Text(text.clone(), layout.lines),
         Kind::Icon(name) => Content::Icon(name.clone()),
+        Kind::Keys(keys) => Content::Keys(widget::keycaps(keys)),
         Kind::Field(field) => Content::Field(field.size),
         Kind::Button(button) => Content::Button {
             label: button.label.clone(),
             icon: button.icon.clone(),
             size: button.size,
+            keycaps: button.keycaps,
         },
         Kind::Toggle(toggle) => Content::Button {
             label: toggle.label.clone(),
             icon: toggle.icon.clone(),
             size: toggle.size,
+            keycaps: false,
         },
         Kind::Switch(switch) => Content::Switch {
             label: switch.label.clone(),
@@ -987,8 +1013,26 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
     let size = match content {
         Content::Text(text, _) => measure.text(text),
         Content::Icon(name) => measure.icon(name),
+        Content::Keys(caps) => measure.keys(caps),
         Content::Field(size) => measure.field(*size),
-        Content::Button { label, icon, size } => measure.button(label, icon, *size),
+        // A label of key caps of their size.
+        Content::Button {
+            label,
+            icon,
+            size,
+            keycaps: true,
+        } => {
+            let caps = measure.keys(&widget::keycaps(label));
+            let glyph = if icon.is_empty() {
+                (0.0, 0.0)
+            } else {
+                measure.icon(icon)
+            };
+            widget::size(label, icon, (caps, glyph), *size)
+        }
+        Content::Button {
+            label, icon, size, ..
+        } => measure.button(label, icon, *size),
         Content::Switch { label, size } => measure.switch(label, *size),
         Content::Checkbox { label, size } => measure.checkbox(label, *size),
         Content::PopUp { texts, size } => measure.pop_up(texts, *size),
@@ -1507,6 +1551,7 @@ mod tests {
                 link: false,
                 size: Default::default(),
                 variant: Default::default(),
+                keycaps: false,
             }))
             .key("settings"),
             Node::separator(),

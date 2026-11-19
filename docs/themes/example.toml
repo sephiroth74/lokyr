@@ -91,6 +91,20 @@ mark = "button.default.fg"
 bg = "text / 3%"
 separator = "text / 5%"
 
+[keycap]                            # the key caps of shortcuts
+bg = "text / 8%"
+fg = "text.secondary"
+
+[callout]                           # the callouts and the tags, of their tones
+info.bg = "accent / 12%"
+info.fg = "accent"
+success.bg = "text.success / 12%"
+success.fg = "text.success"
+warning.bg = "text.warning / 12%"
+warning.fg = "text.warning"
+error.bg = "progress.error / 12%"
+error.fg = "progress.error"
+
 [tooltip]                           # the tooltips
 bg = "#323235"
 fg = "text"

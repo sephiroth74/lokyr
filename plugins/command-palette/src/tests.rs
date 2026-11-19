@@ -290,6 +290,11 @@ fn each_row_tells_its_title_and_its_keys_in_a_menu_s_list() {
     let list = found.expect("the list");
     assert!(list.menu);
     assert_eq!(list.items[0].texts, ["New Window", "⌘N"]);
+    // Its keys key caps, at the row's end.
+    assert!(matches!(
+        list.row.children.last().map(|node| &node.kind),
+        Some(lokyr_plugin_sdk::view::Kind::Keys(_))
+    ));
 }
 
 #[test]

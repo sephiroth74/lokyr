@@ -826,6 +826,7 @@ impl Gallery {
                 section("A list of 100 000 rows", self.list()),
                 section("Floating panels", self.panels()),
                 section("Animations", self.animations()),
+                section("Key caps, tags, callouts and an empty state", notes()),
             ],
         );
         let halves = Node::container(vec![half(left), half(right)]).layout(Layout {
@@ -1440,6 +1441,7 @@ impl Gallery {
                 link: false,
                 size: Default::default(),
                 variant: Default::default(),
+                keycaps: false,
             }))
             .key(key)
         };
@@ -1947,6 +1949,65 @@ fn group_box() -> Node {
         row("Theme", "Lokyr Dark"),
     ])
     .key("group-box")
+}
+
+/// Shortcuts of key caps, a tag of each tone, a callout of each level, and
+/// an empty state, as a search that finds nothing shows it.
+fn notes() -> Node {
+    let wrapping = |children: Vec<Node>| {
+        Node::container(children).layout(Layout {
+            gap: 8.0,
+            align: Align::Center,
+            ..Layout::default()
+        })
+    };
+    let empty = Node::container(vec![Node::empty_state(
+        "search",
+        "No setting matches the search.",
+        "Try other words, or fewer of them.",
+    )])
+    .layout(Layout {
+        direction: Direction::Column,
+        height: Length::Points(160.0),
+        ..Layout::default()
+    })
+    .style(Style {
+        border: Some(Border {
+            color: Token::from("separator"),
+            width: 1.0,
+        }),
+        radius: 8.0,
+        ..Style::default()
+    });
+    Node::container(vec![
+        wrapping(vec![
+            Node::keys("⇧⌘P"),
+            Node::keys("⌃A N"),
+            Node::keys("⌥⌘←"),
+            Node::keys("F12"),
+        ]),
+        wrapping(vec![
+            Node::tag(view::Tone::Success, "Active"),
+            Node::tag(view::Tone::Neutral, "Disabled"),
+            Node::tag(view::Tone::Info, "Replaced by lokyr/blocks"),
+            Node::tag(view::Tone::Warning, "Update"),
+            Node::tag(view::Tone::Error, "Faulted"),
+        ]),
+        Node::callout(view::Tone::Info, "Lokyr reads the registry again as the page shows."),
+        Node::callout(view::Tone::Success, "The theme was saved."),
+        Node::callout(
+            view::Tone::Warning,
+            "config.toml does not read at line 3: expected a value. The settings show as they were.",
+        ),
+        Node::callout(view::Tone::Error, "A whole number between 4 and 200."),
+        empty,
+    ])
+    .layout(Layout {
+        direction: Direction::Column,
+        gap: 8.0,
+        width: Length::Fraction(1.0),
+        ..Layout::default()
+    })
 }
 
 /// Each of the host's icons, with its name.

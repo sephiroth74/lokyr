@@ -5374,6 +5374,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
         Kind::Icon(name) => {
             let _ = write!(out, "icon {}", quoted(name));
         }
+        Kind::Keys(keys) => {
+            let _ = write!(out, "keys {}", quoted(keys));
+        }
         Kind::Spacer => out.push_str("spacer"),
         Kind::TerminalSpecimen => out.push_str("terminal-specimen"),
         Kind::Themed(name) => {

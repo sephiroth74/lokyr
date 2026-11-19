@@ -128,6 +128,23 @@ fn the_page_lists_every_token_by_groups_of_its_color_value_and_origin() {
 }
 
 #[test]
+fn every_word_of_the_previews_is_one_that_the_editor_reads() {
+    let asked = std::cell::RefCell::new(Vec::new());
+    let words = |id: &str| {
+        asked.borrow_mut().push(id.to_owned());
+        id.to_owned()
+    };
+    parts::previews("Lokyr Dark", &|_| false, &words, parts::Samples::default());
+    let missing: Vec<String> = asked
+        .borrow()
+        .iter()
+        .filter(|id| !parts::WORDS.contains(&id.as_str()))
+        .cloned()
+        .collect();
+    assert!(missing.is_empty(), "{missing:?}");
+}
+
+#[test]
 fn the_filter_keeps_the_tokens_of_its_words_and_empties() {
     let (mut host, mut plugin) = shown();
     let typed = |text: &str| UiEvent {

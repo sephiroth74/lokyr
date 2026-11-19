@@ -375,15 +375,19 @@ fn a_plugin_is_active_in_green_whether_it_runs_or_waits_replaced_or_disabled_and
         };
         (text.clone(), node.style.color.clone().unwrap().0)
     };
+    // Each a tag of its tone's colors: active green, disabled neutral.
     assert_eq!(
         state("acme/notes"),
-        ("plugin-state-active".to_owned(), "text.success".to_owned())
+        (
+            "plugin-state-active".to_owned(),
+            "callout.success.fg".to_owned()
+        )
     );
     assert_eq!(
         state("acme/sync"),
         (
             "plugin-state-disabled".to_owned(),
-            "text.warning".to_owned()
+            "text.secondary".to_owned()
         )
     );
     assert_eq!(state("lokyr/tabs").0, "plugin-state-disabled");
@@ -400,7 +404,7 @@ fn a_plugin_is_active_in_green_whether_it_runs_or_waits_replaced_or_disabled_and
         state("lokyr/command-header"),
         (
             "plugin-state-replaced".to_owned(),
-            "text.secondary".to_owned()
+            "callout.info.fg".to_owned()
         )
     );
     assert_eq!(

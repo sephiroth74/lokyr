@@ -32,7 +32,7 @@ use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiE
 use lokyr_plugin_sdk::view::{
     Align, Border, ButtonVariant, ControlSize, Direction, Edges, FontFamily, FontWeight, Hover,
     Justify, Kind, Layout, Length, ListItem, Node, PointerShape, ProgressShape, ProgressState,
-    Role, Style, TextSize, Token, UiEventKind,
+    Role, Style, TextSize, Token, Tone, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -1982,11 +1982,11 @@ fn tree(
     let chosen_part = parts.get(chosen).filter(|_| shown.contains(&chosen));
     let mut part = match chosen_part {
         Some(part) => section_part(cx, part, words, (refused, typed, new_entries)),
-        None if !words.is_empty() => vec![
-            Node::text(message(cx, "settings-no-match", &[]))
-                .key("no-match")
-                .style(secondary()),
-        ],
+        None if !words.is_empty() => vec![empty(
+            "search",
+            (message(cx, "settings-no-match", &[]), "no-match"),
+            message(cx, "settings-no-match-line", &[]),
+        )],
         None => vec![
             Node::text(message(cx, "settings-none", &[]))
                 .key("none")
@@ -2044,27 +2044,7 @@ fn file_error(cx: &mut Cx<'_>, settings: &Settings) -> Option<Node> {
             &[("message", problem.message.clone())],
         ),
     };
-    Some(
-        Node::text(text)
-            .key("file-error")
-            .role(Role::Group)
-            .style(Style {
-                color: Some(Token::from("text.warning")),
-                background: Some(Token::from("panel.bg")),
-                border: Some(Border {
-                    color: Token::from("text.warning"),
-                    width: 1.0,
-                }),
-                radius: 8.0,
-                ..Style::default()
-            })
-            .layout(Layout {
-                lines: Some(0),
-                padding: Edges::all(10.0),
-                width: Length::Fraction(1.0),
-                ..Layout::default()
-            }),
-    )
+    Some(callout(Tone::Warning, &text, "file-error").role(Role::Group))
 }
 
 /// The page of the bindings of keys, of `settings`: their part, of the
@@ -2438,16 +2418,7 @@ fn key_row(
         about.push(map_editor(cx, key, fields, (all_typed, new_texts)));
     }
     if let Some(why) = refused {
-        about.push(
-            Node::text(why.clone())
-                .key(format!("refused:{name}").as_str())
-                .style(Style {
-                    color: Some(Token::from("progress.error")),
-                    text_size: Some(TextSize::Small),
-                    ..Style::default()
-                })
-                .layout(wrapped()),
-        );
+        about.push(refusal(why, &format!("refused:{name}")));
     }
     let about = Node::container(about).layout(Layout {
         direction: Direction::Column,
@@ -3120,11 +3091,11 @@ fn keys_part(
         .filter(|(_, binding)| filter.is_empty() || binding_holds(cx, binding, filter))
         .collect();
     if shown.is_empty() && !filter.is_empty() {
-        part.push(
-            Node::text(message(cx, "keys-filter-none", &[]))
-                .key("keys-no-match")
-                .style(secondary()),
-        );
+        part.push(empty(
+            "keyboard",
+            (message(cx, "keys-filter-none", &[]), "keys-no-match"),
+            message(cx, "keys-filter-none-line", &[]),
+        ));
     }
     for category in CATEGORIES {
         let mut of: Vec<(usize, &SettingBinding)> = shown
@@ -3369,15 +3340,17 @@ fn binding_row(
                 ..Layout::default()
             })
     } else if changes(binding) {
-        Node::button(shown.as_str())
+        // Its keys as key caps, a button that lets them change.
+        let mut button = Node::button(shown.as_str())
             .key(format!("{BINDING_KEYS}{at}").as_str())
             .label(message(cx, "binding-change", &[("keys", shown.clone())]))
-            .tooltip(message(cx, "binding-change", &[("keys", shown.clone())]))
-            .style(terminal.clone())
+            .tooltip(message(cx, "binding-change", &[("keys", shown.clone())]));
+        if let Kind::Button(own) = &mut button.kind {
+            own.keycaps = true;
+        }
+        button
     } else {
-        Node::text(shown.as_str())
-            .key(format!("{KEYS_TEXT}{at}").as_str())
-            .style(terminal.clone())
+        Node::keys(shown.as_str()).key(format!("{KEYS_TEXT}{at}").as_str())
     };
     let mut row = vec![about, keys_node];
     if binding.command.is_none() {
@@ -3895,14 +3868,26 @@ fn theme_card(variant: &str, name: &str, chosen: bool) -> Node {
 
 /// The text of `why`, a write refused, under its control, of `key`.
 fn refusal(why: &str, key: &str) -> Node {
-    Node::text(why)
-        .key(key)
-        .style(Style {
-            color: Some(Token::from("progress.error")),
-            text_size: Some(TextSize::Small),
-            ..Style::default()
-        })
-        .layout(wrapped())
+    callout(Tone::Error, why, key)
+}
+
+/// A callout of `tone` and `text`, its text of the key `key`.
+fn callout(tone: Tone, text: &str, key: &str) -> Node {
+    let mut callout = Node::callout(tone, text);
+    if let Some(text) = callout.children.get_mut(1) {
+        text.key = Some(key.into());
+    }
+    callout
+}
+
+/// An empty state of the icon `icon`, of the title `title`, of the key
+/// `key`, and of the line `line`.
+fn empty(icon: &str, (title, key): (String, &str), line: String) -> Node {
+    let mut empty = Node::empty_state(icon, title, line);
+    if let Some(title) = empty.children.get_mut(1) {
+        title.key = Some(key.into());
+    }
+    empty
 }
 
 /// The layout of a row of a group: its texts at its left, growing, and its

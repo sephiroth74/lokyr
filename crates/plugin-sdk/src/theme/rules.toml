@@ -95,6 +95,26 @@
 "group.bg" = "text / 3%"
 # The hairline between a group box's rows · not released yet.
 "group.separator" = "text / 5%"
+# A key cap's fill, of a shortcut drawn as key caps · not released yet.
+"keycap.bg" = "text / 8%"
+# A key cap's symbol · not released yet.
+"keycap.fg" = "text.secondary"
+# A callout's and a tag's fill, of something to know · not released yet.
+"callout.info.bg" = "accent / 12%"
+# A callout's icon and a tag's text, of something to know · not released yet.
+"callout.info.fg" = "accent"
+# A callout's and a tag's fill, of something that went well · not released yet.
+"callout.success.bg" = "text.success / 12%"
+# A callout's icon and a tag's text, of something that went well · not released yet.
+"callout.success.fg" = "text.success"
+# A callout's and a tag's fill, of something to look at · not released yet.
+"callout.warning.bg" = "text.warning / 12%"
+# A callout's icon and a tag's text, of something to look at · not released yet.
+"callout.warning.fg" = "text.warning"
+# A callout's and a tag's fill, of something that failed · not released yet.
+"callout.error.bg" = "progress.error / 12%"
+# A callout's icon and a tag's text, of something that failed · not released yet.
+"callout.error.fg" = "progress.error"
 # The shadow under a switch's knob · not released yet.
 "switch.knob.shadow" = { light = "#0000001f", dark = "transparent" }
 # The tooltips' background.

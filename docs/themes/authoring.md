@@ -189,6 +189,16 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `check.mark` | A checkbox's check, and a radio button's dot · not released yet | `button.default.fg` |
 | `group.bg` | A group box's fill, of grouped rows, as a settings page's · not released yet | `text / 3%` |
 | `group.separator` | The hairline between a group box's rows · not released yet | `text / 5%` |
+| `keycap.bg` | A key cap's fill, of a shortcut drawn as key caps · not released yet | `text / 8%` |
+| `keycap.fg` | A key cap's symbol · not released yet | `text.secondary` |
+| `callout.info.bg` | A callout's and a tag's fill, of something to know · not released yet | `accent / 12%` |
+| `callout.info.fg` | A callout's icon and a tag's text, of something to know · not released yet | `accent` |
+| `callout.success.bg` | A callout's and a tag's fill, of something that went well · not released yet | `text.success / 12%` |
+| `callout.success.fg` | A callout's icon and a tag's text, of something that went well · not released yet | `text.success` |
+| `callout.warning.bg` | A callout's and a tag's fill, of something to look at · not released yet | `text.warning / 12%` |
+| `callout.warning.fg` | A callout's icon and a tag's text, of something to look at · not released yet | `text.warning` |
+| `callout.error.bg` | A callout's and a tag's fill, of something that failed · not released yet | `progress.error / 12%` |
+| `callout.error.fg` | A callout's icon and a tag's text, of something that failed · not released yet | `progress.error` |
 | `switch.knob.shadow` | The shadow under a switch's knob · not released yet | light `#0000001f`, dark `transparent` |
 | `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
 | `tooltip.fg` | The tooltips' text | `text` |

@@ -915,8 +915,9 @@ fn keys_of(tree: &Node, at: usize) -> Option<String> {
     let node = find_node(tree, &format!("keys:{at}"))
         .or_else(|| find_node(tree, &format!("keys-text:{at}")))?;
     match &node.kind {
-        Kind::Button(button) => Some(button.label.clone()),
-        Kind::Text(text) => Some(text.clone()),
+        // Of key caps, a button's that lets them change, or a shortcut's.
+        Kind::Button(button) if button.keycaps => Some(button.label.clone()),
+        Kind::Keys(keys) => Some(keys.clone()),
         _ => None,
     }
 }
@@ -982,10 +983,15 @@ fn the_bindings_in_force_are_listed_by_category_of_their_keys_titles_and_context
         text_of(&tree, &format!("command:{REOPEN}")).as_deref(),
         Some("acme.reopen")
     );
-    // macOS's own: its keys a text, of no change nor removal.
+    // macOS's own: its keys key caps, of no change nor removal; another's
+    // a button of key caps.
     assert!(matches!(
         find_node(&tree, &format!("keys-text:{SETTINGS}")).map(|node| &node.kind),
-        Some(Kind::Text(text)) if text == "⌘,"
+        Some(Kind::Keys(keys)) if keys == "⌘,"
+    ));
+    assert!(matches!(
+        find_node(&tree, &format!("keys:{CLEAR}")).map(|node| &node.kind),
+        Some(Kind::Button(button)) if button.keycaps && button.label == "⌘K"
     ));
     assert!(labelled(&tree, &format!("unbind:{SETTINGS}")).is_none());
     assert_eq!(

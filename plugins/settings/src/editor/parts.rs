@@ -9,7 +9,7 @@
 
 use lokyr_plugin_sdk::view::{
     Align, Border, Button, ButtonVariant, Direction, Edges, Kind, Layout, Length, Node,
-    ProgressShape, ProgressState, Role, Shadow, Style, Tab, TextSize, Toggle, Token,
+    ProgressShape, ProgressState, Role, Shadow, Style, Tab, TextSize, Toggle, Token, Tone,
 };
 
 /// A part's key, of its id.
@@ -26,7 +26,7 @@ pub(super) const PANEL: &str = "editor-panel";
 
 /// The parts, each of its id, its title's message and the tokens that it
 /// takes: the window's, then the panel's.
-pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
+pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
     (
         "tabs",
         "part-tabs",
@@ -172,11 +172,27 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
             "accent",
         ],
     ),
+    (
+        "callouts",
+        "part-callouts",
+        &[
+            "callout.info.bg",
+            "callout.info.fg",
+            "callout.success.bg",
+            "callout.success.fg",
+            "callout.warning.bg",
+            "callout.warning.fg",
+            "callout.error.bg",
+            "callout.error.fg",
+            "keycap.bg",
+            "keycap.fg",
+        ],
+    ),
 ];
 
 /// The messages of the parts' titles and of the previews' texts, which the
 /// page reads before it builds them.
-pub(super) const WORDS: [&str; 32] = [
+pub(super) const WORDS: [&str; 38] = [
     "part-tabs",
     "part-terminal",
     "part-scrollbar",
@@ -190,6 +206,7 @@ pub(super) const WORDS: [&str; 32] = [
     "part-progress",
     "part-tooltip",
     "part-buttons",
+    "part-callouts",
     "sample-title",
     "sample-about",
     "sample-folder",
@@ -209,6 +226,11 @@ pub(super) const WORDS: [&str; 32] = [
     "sample-restore",
     "sample-cancel",
     "sample-back-up",
+    "sample-verify",
+    "sample-notify",
+    "sample-delete",
+    "sample-callout",
+    "sample-active",
 ];
 
 /// What the panel's controls show, as the pointer left them: its toggles,
@@ -825,6 +847,28 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
             8.0,
         ),
     );
+    // The callout of the room that the tag and the keys leave.
+    let mut callout = Node::callout(Tone::Warning, built.word("sample-callout"));
+    callout.layout.width = Length::Points(0.0);
+    callout.layout.grow = 1.0;
+    let callouts = built.part(
+        "callouts",
+        row(
+            vec![
+                callout,
+                Node::tag(Tone::Success, built.word("sample-active")),
+                Node::keys("⇧⌘B"),
+            ],
+            8.0,
+        )
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
+    );
     let tooltip = built.part(
         "tooltip",
         boxed(
@@ -881,6 +925,7 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
         toggles,
         segments,
         progresses,
+        callouts,
         log(),
         Node::separator(),
         footer,

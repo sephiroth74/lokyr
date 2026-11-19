@@ -236,7 +236,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "highlight", item: any? }
 
 export type Node = {
-    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios" | "pop-up" | "separator" | "group" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
+    kind: "container" | "text" | "icon" | "keys" | "spacer" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios" | "pop-up" | "separator" | "group" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
     key: Key?,
     layout: NodeLayout?,
     style: Style?,
@@ -249,6 +249,7 @@ export type Node = {
     children: { Node }?,
     text: string?,
     icon: string?,
+    keys: string?,
     placeholder: string?,
     stepped: boolean?,
     records: boolean?,
@@ -257,6 +258,7 @@ export type Node = {
     disabled: boolean?,
     link: boolean?,
     variant: ButtonVariant?,
+    keycaps: boolean?,
     on: boolean?,
     mixed: boolean?,
     options: { RadioOption }?,

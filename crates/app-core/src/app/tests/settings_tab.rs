@@ -237,7 +237,10 @@ fn page_text(app: &App, window: WindowId, key: &str) -> String {
         .surface
         .tree;
     match tree.by_key(&key.into()).and_then(|node| tree.kind(node)) {
-        Some(lokyr_kernel::plugins::view::Kind::Text(text)) => text.clone(),
+        Some(
+            lokyr_kernel::plugins::view::Kind::Text(text)
+            | lokyr_kernel::plugins::view::Kind::Keys(text),
+        ) => text.clone(),
         _ => String::new(),
     }
 }
@@ -1850,7 +1853,7 @@ fn the_keys_page_lists_the_defaults_and_a_default_changed_moves_its_shortcut() {
     );
     assert_eq!(row("window.close", "cmd+w"), None);
     assert!(row("window.close", "cmd+shift+w").is_some());
-    // macOS's own, as Quit's, a text of no change.
+    // macOS's own, as Quit's, key caps of no change.
     let quit = row("app.quit", "cmd+q").expect("Quit's default");
     assert_eq!(page_text(&app, own, &format!("keys-text:{quit}")), "⌘Q");
     // Changed: its new keys and `false` for the old, in the file, and the

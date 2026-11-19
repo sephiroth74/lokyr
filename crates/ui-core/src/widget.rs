@@ -48,6 +48,64 @@ pub const RADIUS: f32 = 6.0;
 /// The radius of a group box's corners, in points, as macOS 27's forms.
 pub const GROUP_RADIUS: f32 = 12.0;
 
+/// The room inside a key cap's edges before and after its symbol, in
+/// points.
+pub const KEYCAP_ACROSS: f32 = 4.0;
+
+/// The room inside a key cap's edges above and below its symbol, in
+/// points.
+pub const KEYCAP_DOWN: f32 = 1.0;
+
+/// The room between two key caps, in points.
+pub const KEYCAP_GAP: f32 = 2.0;
+
+/// The radius of a key cap's corners, in points.
+pub const KEYCAP_RADIUS: f32 = 4.0;
+
+/// The modifiers' symbols as macOS writes them, each a cap of its own.
+const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
+
+/// The caps of a shortcut, `keys`, as the platform writes it: each word of
+/// it, apart, of each of its leading modifiers' symbols a cap and the rest
+/// one, as `⇧⌘N`'s ⇧, ⌘ and N; or each of its parts written of `+`, as
+/// `Ctrl+Shift+P`'s.
+pub fn keycaps(keys: &str) -> Vec<String> {
+    let mut caps = Vec::new();
+    for word in keys.split_whitespace() {
+        if word.chars().count() > 1 && word.contains('+') {
+            caps.extend(
+                word.split('+')
+                    .filter(|part| !part.is_empty())
+                    .map(str::to_owned),
+            );
+            continue;
+        }
+        let mut rest = word;
+        while let Some(symbol) = rest
+            .chars()
+            .next()
+            .filter(|first| MODIFIERS.contains(first))
+        {
+            if rest.len() == symbol.len_utf8() {
+                break;
+            }
+            caps.push(symbol.to_string());
+            rest = &rest[symbol.len_utf8()..];
+        }
+        if !rest.is_empty() {
+            caps.push(rest.to_owned());
+        }
+    }
+    caps
+}
+
+/// The size of a cap of a symbol of `text`'s size, in points: its symbol
+/// and its room, at least as wide as tall.
+pub fn keycap_size(text: (f32, f32)) -> (f32, f32) {
+    let tall = text.1 + 2.0 * KEYCAP_DOWN;
+    ((text.0 + 2.0 * KEYCAP_ACROSS).max(tall), tall)
+}
+
 /// The track of a switch of `size`, in points, its width and its height,
 /// as macOS 27's switches of the four sizes.
 pub fn track(size: ControlSize) -> (f32, f32) {
@@ -643,6 +701,22 @@ mod tests {
             check_size("Notify", ControlSize::Mini, (36.0, 11.0)),
             (51.0, 12.0)
         );
+    }
+
+    #[test]
+    fn a_shortcut_s_caps_are_its_modifiers_symbols_and_its_key_each_at_least_square() {
+        assert_eq!(keycaps("⇧⌘N"), ["⇧", "⌘", "N"]);
+        assert_eq!(keycaps("⌃A N"), ["⌃", "A", "N"]);
+        assert_eq!(keycaps("⌘⌫"), ["⌘", "⌫"]);
+        assert_eq!(keycaps("⇧ Space"), ["⇧", "Space"]);
+        assert_eq!(keycaps("F12"), ["F12"]);
+        assert_eq!(keycaps("⌘"), ["⌘"]);
+        assert_eq!(keycaps("Ctrl+Shift+P"), ["Ctrl", "Shift", "P"]);
+        assert_eq!(keycaps("+"), ["+"]);
+        assert!(keycaps("").is_empty());
+        // A symbol's room, as wide as tall at least.
+        assert_eq!(keycap_size((7.0, 14.0)), (16.0, 16.0));
+        assert_eq!(keycap_size((30.0, 14.0)), (38.0, 16.0));
     }
 
     #[test]

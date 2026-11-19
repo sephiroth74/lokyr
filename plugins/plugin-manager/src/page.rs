@@ -11,7 +11,7 @@ use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::plugin::Cx;
 use lokyr_plugin_sdk::view::{
     Align, ButtonVariant, Direction, Edges, FontWeight, Kind, Layout, Length, ListItem, Node,
-    ProgressShape, ProgressState, Role, Style, TextSize, Token,
+    ProgressShape, ProgressState, Role, Style, TextSize, Token, Tone,
 };
 
 use super::registry::{self, Found, Info};
@@ -247,11 +247,15 @@ fn registry_part(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo]) -> 
         })
         .collect();
     if shown.is_empty() {
-        part.push(
-            Node::text(message(cx, "registry-none", &[]))
-                .key("none-found")
-                .style(secondary()),
+        let mut empty = Node::empty_state(
+            "extensions",
+            message(cx, "registry-none", &[]),
+            message(cx, "registry-none-line", &[]),
         );
+        if let Some(title) = empty.children.get_mut(1) {
+            title.key = Some("none-found".into());
+        }
+        part.push(empty);
     } else {
         let rows = shown
             .iter()
@@ -396,23 +400,20 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
     // plugin that runs, or disabled, turned off or stopped; a fault tells
     // why on a line of its own. A replaced one is enabled, of its Disable.
     let active = is_active(plugin.state);
-    let (state, color) = match (plugin.state, &plugin.replaced_by) {
+    let (state, tone) = match (plugin.state, &plugin.replaced_by) {
         (PluginState::Replaced, Some(by)) => (
             message(cx, "plugin-state-replaced", &[("plugin", by.clone())]),
-            "text.secondary",
+            Tone::Info,
         ),
-        _ if active => (message(cx, "plugin-state-active", &[]), "text.success"),
-        _ => (message(cx, "plugin-state-disabled", &[]), "text.warning"),
+        _ if active => (message(cx, "plugin-state-active", &[]), Tone::Success),
+        _ => (message(cx, "plugin-state-disabled", &[]), Tone::Neutral),
     };
-    about.push(
-        Node::text(state)
-            .key(format!("state:{name}").as_str())
-            .style(Style {
-                color: Some(Token::from(color)),
-                text_size: Some(TextSize::Small),
-                ..Style::default()
-            }),
-    );
+    // A tag of its state, of its own width, at the row's left.
+    let mut tag = Node::tag(tone, state);
+    if let Some(text) = tag.children.get_mut(0) {
+        text.key = Some(format!("state:{name}").as_str().into());
+    }
+    about.push(Node::container(vec![tag]));
     if let (PluginState::Faulted, Some(fault)) = (plugin.state, &plugin.fault) {
         about.push(failure(
             message(cx, "plugin-fault", &[("fault", fault.clone())]),
@@ -725,14 +726,11 @@ fn loader(text: String) -> Node {
 
 /// A failure's text, of the key `key`.
 fn failure(text: String, key: &str) -> Node {
-    Node::text(text)
-        .key(key)
-        .style(Style {
-            color: Some(Token::from("progress.error")),
-            text_size: Some(TextSize::Small),
-            ..Style::default()
-        })
-        .layout(wrapped())
+    let mut callout = Node::callout(Tone::Error, text);
+    if let Some(text) = callout.children.get_mut(1) {
+        text.key = Some(key.into());
+    }
+    callout
 }
 
 /// A row of `children`, `gap` points apart, in the middle of its height.
