@@ -49,6 +49,7 @@ fn every() -> Node {
         icon: "play".to_owned(),
         disabled: true,
         link: true,
+        size: Default::default(),
     }));
     button.key = Some(Key::from("go"));
     button.focusable = true;
@@ -58,6 +59,7 @@ fn every() -> Node {
         icon: "case".to_owned(),
         on: true,
         disabled: true,
+        size: Default::default(),
     }));
     toggle.key = Some(Key::from("case"));
     let mut tab = Node::text("src");
@@ -96,6 +98,7 @@ fn every() -> Node {
         ],
         chosen: 1,
         distribution: Distribution::FillEqually,
+        size: Default::default(),
     }));
     tabs.children = vec![Node::text("page")];
     root.children = vec![
@@ -107,6 +110,7 @@ fn every() -> Node {
             text: Some("needle".to_owned()),
             stepped: true,
             records: true,
+            size: Default::default(),
         })),
         button,
         toggle,

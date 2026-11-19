@@ -291,6 +291,9 @@ pub struct Tabs {
     pub chosen: usize,
     /// How its tabs share its control's width.
     pub distribution: Distribution,
+    /// The size of its control.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
 }
 
 /// How a view of tabs' tabs share its control's width, as macOS's
@@ -476,6 +479,9 @@ pub struct Field {
     /// plugins alone: another's is a plain field.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub records: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
 }
 
 /// A button's own properties.
@@ -493,6 +499,9 @@ pub struct Button {
     /// color, of no box.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub link: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
 }
 
 /// A toggle's own properties.
@@ -508,6 +517,9 @@ pub struct Toggle {
     pub on: bool,
     /// Whether it is dimmed, and takes neither a click nor the focus.
     pub disabled: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
 }
 
 /// A switch's own properties.
@@ -525,15 +537,22 @@ pub struct Switch {
     pub size: ControlSize,
 }
 
-/// The size of a control, as macOS's controls have their sizes.
+/// The size of a control, as macOS 27's controls have their sizes: a
+/// button, a toggle, a field or a segmented control 28, 24, 20 or 16
+/// points high, of the interface's text, the small's smaller and the
+/// mini's smaller still.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ControlSize {
-    /// Of the interface's text, beside a button.
+    /// Taller, as a window's main action.
+    Large,
+    /// Of the interface's text, as by default.
     #[default]
     Regular,
-    /// Smaller, for a dense list.
+    /// Smaller, of the small text, as a find bar's.
     Small,
+    /// Smaller still, of the mini text, for a dense list.
+    Mini,
 }
 
 impl ControlSize {
@@ -599,6 +618,19 @@ impl Kind {
     /// switches.
     pub fn presses(&self) -> bool {
         matches!(self, Self::Button(_) | Self::Toggle(_) | Self::Switch(_))
+    }
+
+    /// The size of a node of the kind, of a control that has one: a button,
+    /// a toggle, a switch, a field or a view of tabs' control.
+    pub fn control_size(&self) -> Option<ControlSize> {
+        match self {
+            Self::Button(button) => Some(button.size),
+            Self::Toggle(toggle) => Some(toggle.size),
+            Self::Switch(switch) => Some(switch.size),
+            Self::Field(field) => Some(field.size),
+            Self::Tabs(tabs) => Some(tabs.size),
+            _ => None,
+        }
     }
 
     /// Whether a node of the kind is a widget that is disabled, which takes
@@ -818,6 +850,9 @@ pub enum TextSize {
     /// Larger, as a palette's field: eighteen thirteenths of the
     /// interface's size.
     Large,
+    /// Smaller still, as macOS's mini controls have it: nine thirteenths of
+    /// the interface's size.
+    Mini,
 }
 
 /// The family of a node's text.
@@ -1294,6 +1329,7 @@ impl Node {
             text: None,
             stepped: false,
             records: false,
+            size: Default::default(),
         }))
     }
 
@@ -1383,6 +1419,7 @@ impl Node {
                 tabs,
                 chosen,
                 distribution: Distribution::Fit,
+                size: Default::default(),
             }))
         }
     }
@@ -1806,6 +1843,7 @@ mod tests {
             }],
             chosen: 0,
             distribution: Distribution::Fit,
+            size: Default::default(),
         });
         let filled: Tabs =
             serde_json::from_str(r#"{"tabs":[],"distribution":"fill-proportionally"}"#).unwrap();

@@ -14,7 +14,7 @@ use std::mem::{Discriminant, discriminant};
 
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{
-    FontFamily, FontWeight, Key, Kind, Layout, Length, Node, Role, Style, TextSize,
+    ControlSize, FontFamily, FontWeight, Key, Kind, Layout, Length, Node, Role, Style, TextSize,
 };
 
 /// A node of the arena: its slot, and the slot's generation, which a node
@@ -268,11 +268,11 @@ impl Tree {
         self.entry(id)?.parent
     }
 
-    /// How the text of `id` is set: its size, of its style or of its
-    /// nearest parent's that names one, a size in points or one of its
-    /// family's; its weight and its family, each of its style or of its
-    /// nearest parent's that names one; the interface's regular text
-    /// otherwise.
+    /// How the text of `id` is set: its size, of its style, or of its size
+    /// of a small or a mini control, or of its nearest parent's style that
+    /// names one, a size in points or one of its family's; its weight and
+    /// its family, each of its style or of its nearest parent's that names
+    /// one; the interface's regular text otherwise.
     pub fn typeset(&self, id: NodeId) -> Typeset {
         let mut typeset = Typeset::default();
         let (mut sized, mut weighed, mut named) = (false, false, false);
@@ -293,6 +293,18 @@ impl Tree {
                 if !named && let Some(family) = style.font_family {
                     typeset.family = family;
                     named = true;
+                }
+            }
+            // A small or a mini control's own text, as macOS's.
+            if !sized && node == id {
+                let size = match self.kind(node).and_then(Kind::control_size) {
+                    Some(ControlSize::Small) => Some(TextSize::Small),
+                    Some(ControlSize::Mini) => Some(TextSize::Mini),
+                    _ => None,
+                };
+                if let Some(size) = size {
+                    typeset.size = size;
+                    sized = true;
                 }
             }
             at = self.parent(node);

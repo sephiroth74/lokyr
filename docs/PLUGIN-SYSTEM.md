@@ -322,7 +322,7 @@ type Style = {
     hides_indicator: boolean?, -- of a scroll area, no indicator of its scroll, as a bar of tabs
     holds_ring: boolean?, -- the ring of the keyboard's focus of a node inside it round its own box, as a search field's box round its text
     hides_ring: boolean?, -- no ring of the keyboard's focus round it, as a palette's field, whose caret alone tells it
-    text_size: ("regular" | "small" | "large")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field; large, eighteen thirteenths, as a palette's field
+    text_size: ("regular" | "small" | "large" | "mini")?, -- its texts' size, its children's too, unless they give their own: small, eleven thirteenths of the interface's, as a find bar's count and field; large, eighteen thirteenths, as a palette's field; mini, nine thirteenths, as a mini control's
     font_size: number?, -- its texts' size in points, 4 to 200, in place of text_size's, its children's too
     font_weight: ("light" | "regular" | "medium" | "semibold" | "bold" | "heavy")?, -- its texts' weight, its family's face nearest to it, its children's too; regular of the terminal's family its own face
     font_family: ("interface" | "terminal")?, -- its texts' family, its children's too: the interface's, or the terminal's, of [font]'s face and size, as a command's line
@@ -357,7 +357,10 @@ type Node = {
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle and switch nodes, the plugin's state
     disabled: boolean?, -- for button, toggle and switch nodes: dimmed, and takes neither a click nor the focus
-    size: ("regular" | "small")?, -- for switch nodes: regular beside a button, by default, or small in a dense list
+    -- For button, toggle, switch, field and tabs nodes, the control's size, as macOS 27's: "large", 28 points high,
+    -- "regular", 24, by default, "small", 20, of the small text, or "mini", 16, of the mini text; a switch 64 by 28,
+    -- 54 by 24, 44 by 20 or 36 by 16.
+    size: ("large" | "regular" | "small" | "mini")?,
     placeholder: string?, -- for field nodes, shown while the field is empty
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.

@@ -67,13 +67,13 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "container" | "spacer" | "separator" | "scroll" | "terminal-specimen" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
-        "field" => &["placeholder", "text", "stepped", "records"],
-        "button" => &["text", "icon", "disabled", "link"],
-        "toggle" => &["text", "icon", "on", "disabled"],
+        "field" => &["placeholder", "text", "stepped", "records", "size"],
+        "button" => &["text", "icon", "disabled", "link", "size"],
+        "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
         "progress" => &["progress"],
-        "tabs" => &["tabs", "chosen", "distribution"],
+        "tabs" => &["tabs", "chosen", "distribution", "size"],
         "image" => &["image"],
         "theme-preview" | "themed" => &["theme"],
         _ => return None,
@@ -280,18 +280,21 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             text: field(take("text"), "text", budget)?,
             stepped: or_default(take("stepped"), "stepped", budget)?,
             records: or_default(take("records"), "records", budget)?,
+            size: or_default(take("size"), "size", budget)?,
         }),
         "button" => Kind::Button(Button {
             label: or_default(take("text"), "text", budget)?,
             icon: or_default(take("icon"), "icon", budget)?,
             disabled: or_default(take("disabled"), "disabled", budget)?,
             link: or_default(take("link"), "link", budget)?,
+            size: or_default(take("size"), "size", budget)?,
         }),
         "toggle" => Kind::Toggle(Toggle {
             label: or_default(take("text"), "text", budget)?,
             icon: or_default(take("icon"), "icon", budget)?,
             on: or_default(take("on"), "on", budget)?,
             disabled: or_default(take("disabled"), "disabled", budget)?,
+            size: or_default(take("size"), "size", budget)?,
         }),
         "switch" => Kind::Switch(Switch {
             label: or_default(take("text"), "text", budget)?,
@@ -324,6 +327,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             tabs: or_default(take("tabs"), "tabs", budget)?,
             chosen: or_default(take("chosen"), "chosen", budget)?,
             distribution: or_default(take("distribution"), "distribution", budget)?,
+            size: or_default(take("size"), "size", budget)?,
         }),
         "image" => Kind::Image(field(take("image"), "image", budget)?),
         "theme-preview" => Kind::ThemePreview(field(take("theme"), "theme", budget)?),
@@ -446,33 +450,39 @@ mod giving {
                     text,
                     stepped,
                     records,
+                    size,
                 }) => {
                     table.raw_set("placeholder", placeholder.as_str())?;
                     set(lua, &table, "text", text)?;
                     table.raw_set("stepped", *stepped)?;
                     table.raw_set("records", *records)?;
+                    set(lua, &table, "size", size)?;
                 }
                 Kind::Button(Button {
                     label,
                     icon,
                     disabled,
                     link,
+                    size,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("icon", icon.as_str())?;
                     table.raw_set("disabled", *disabled)?;
                     table.raw_set("link", *link)?;
+                    set(lua, &table, "size", size)?;
                 }
                 Kind::Toggle(Toggle {
                     label,
                     icon,
                     on,
                     disabled,
+                    size,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("icon", icon.as_str())?;
                     table.raw_set("on", *on)?;
                     table.raw_set("disabled", *disabled)?;
+                    set(lua, &table, "size", size)?;
                 }
                 Kind::Switch(Switch {
                     label,
@@ -511,10 +521,12 @@ mod giving {
                     tabs,
                     chosen,
                     distribution,
+                    size,
                 }) => {
                     set(lua, &table, "tabs", tabs)?;
                     set(lua, &table, "chosen", chosen)?;
                     set(lua, &table, "distribution", distribution)?;
+                    set(lua, &table, "size", size)?;
                 }
             }
             if *layout != Layout::default() {

@@ -251,10 +251,10 @@ export type Node = {
     placeholder: string?,
     stepped: boolean?,
     records: boolean?,
+    size: ControlSize?,
     disabled: boolean?,
     link: boolean?,
     on: boolean?,
-    size: ControlSize?,
     row: Node?,
     count: number?,
     first: number?,
@@ -470,8 +470,10 @@ export type ConfigProblem = {
 }
 
 export type ControlSize =
+    | "large"
     | "regular"
     | "small"
+    | "mini"
 
 export type Corner =
     | "top-left"
@@ -996,6 +998,7 @@ export type TextSize =
     | "regular"
     | "small"
     | "large"
+    | "mini"
 
 export type TextStyle = {
     foreground: Color?,

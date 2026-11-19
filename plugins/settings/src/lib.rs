@@ -30,9 +30,9 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontFamily, FontWeight, Hover, Justify, Kind, Layout, Length,
-    ListItem, Node, PointerShape, ProgressShape, ProgressState, Role, Style, TextSize, Token,
-    UiEventKind,
+    Align, Border, ControlSize, Direction, Edges, FontFamily, FontWeight, Hover, Justify, Kind,
+    Layout, Length, ListItem, Node, PointerShape, ProgressShape, ProgressState, Role, Style,
+    TextSize, Token, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -2992,9 +2992,15 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Nod
     let name = &key.name;
     let terminal = code();
     Some(match &key.kind {
-        SettingKind::Boolean => Node::switch("", key.value == Some(Data::Boolean(true)))
-            .key(format!("{SET}{name}").as_str())
-            .label(name.clone()),
+        SettingKind::Boolean => {
+            let mut switch = Node::switch("", key.value == Some(Data::Boolean(true)))
+                .key(format!("{SET}{name}").as_str())
+                .label(name.clone());
+            if let Kind::Switch(own) = &mut switch.kind {
+                own.size = ControlSize::Small;
+            }
+            switch
+        }
         SettingKind::Choice { .. } => menu_button(cx, key),
         SettingKind::Text { .. } if menu_control(key) => {
             let button = menu_button(cx, key);

@@ -63,7 +63,7 @@ ring = "accent / 60%"
 
 [button]                            # the buttons
 bg = "#ffffff14"
-hover.bg = "#ffffff1f"
+hover.bg = "#ffffff1a"
 pressed.bg = "#ffffff2e"
 
 [toggle]                            # the toggles that are on

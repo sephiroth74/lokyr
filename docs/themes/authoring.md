@@ -171,7 +171,7 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `field.selection` | A text field's selected text, and the terminal's selection where the theme gives none | light `mix(background, accent, 30%)`, dark `mix(background, accent, 40%)` |
 | `focus.ring` | The ring of the keyboard's focus | light `accent / 50%`, dark `accent / 60%` |
 | `button.bg` | A button at rest | light `text / 6%`, dark `text / 8%` |
-| `button.hover.bg` | A button under the pointer | light `text / 10%`, dark `text / 12%` |
+| `button.hover.bg` | A button under the pointer | light `text / 8%`, dark `text / 10%` |
 | `button.pressed.bg` | A button pressed | light `text / 16%`, dark `text / 18%` |
 | `toggle.on.bg` | A toggle that is on | light `accent / 12%`, dark `accent / 20%` |
 | `toggle.on.fg` | The mark of a toggle that is on | `accent` |

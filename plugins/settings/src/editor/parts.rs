@@ -371,6 +371,7 @@ fn button(id: &str, name: &str, label: String, (link, disabled): (bool, bool)) -
         icon: String::new(),
         disabled,
         link,
+        size: Default::default(),
     }))
     .key(sample(id, name).as_str())
 }
@@ -673,6 +674,7 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
             icon: String::new(),
             on,
             disabled: false,
+            size: Default::default(),
         }))
         .key(sample("toggles", name).as_str())
     };

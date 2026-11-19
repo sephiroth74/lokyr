@@ -1684,8 +1684,9 @@ mod tests {
 
     #[test]
     fn the_input_method_s_rectangle_is_the_composition_s_or_the_caret_s() {
-        // At a scale of 2: the text 12 pixels in, its line 8 pixels down,
-        // 28 high; 20 pixels an ASCII character, 40 another.
+        // At a scale of 2: the text 12 pixels in, the field's inside 8
+        // pixels down, 32 high, of a regular control's height; 20 pixels an
+        // ASCII character, 40 another.
         let mut field = Typing::new();
         let (tree, layout, node) = field_tree(2.0);
         field.tree = tree;
@@ -1700,9 +1701,9 @@ mod tests {
                 .unwrap();
             (area.x - frame.x, area.y - frame.y, area.width, area.height)
         };
-        assert_eq!(area(&field.fields), (52.0, 8.0, 1.0, 28.0));
+        assert_eq!(area(&field.fields), (52.0, 8.0, 1.0, 32.0));
         field.fields.compose(&field.tree, node, "にほ", 6..6);
-        assert_eq!(area(&field.fields), (52.0, 8.0, 80.0, 28.0));
+        assert_eq!(area(&field.fields), (52.0, 8.0, 80.0, 32.0));
         // A field of no state yet, its start; a node that is no field,
         // none.
         // Scrolled, of 30 characters, 300 points, by 152.
@@ -1712,9 +1713,9 @@ mod tests {
         field
             .fields
             .follow(&field.tree, &layout, Some(node), &mut Fixed);
-        assert_eq!(area(&field.fields), (308.0, 8.0, 1.0, 28.0));
+        assert_eq!(area(&field.fields), (308.0, 8.0, 1.0, 32.0));
         let fields = Fields::new();
-        assert_eq!(area(&fields), (12.0, 8.0, 1.0, 28.0));
+        assert_eq!(area(&fields), (12.0, 8.0, 1.0, 32.0));
         let root = field.tree.root().unwrap();
         assert_eq!(
             fields.text_area(&field.tree, &layout, root, &mut Fixed),

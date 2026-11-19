@@ -631,7 +631,7 @@ mod tests {
             ("field.selection", mix(bg, accent, pick(0.3, 0.4))),
             ("focus.ring", accent.with_alpha(pick(0.5, 0.6))),
             ("button.bg", veil(pick(0.06, 0.08))),
-            ("button.hover.bg", veil(pick(0.1, 0.12))),
+            ("button.hover.bg", veil(pick(0.08, 0.1))),
             ("button.pressed.bg", veil(pick(0.16, 0.18))),
             ("toggle.on.bg", accent.with_alpha(pick(0.12, 0.2))),
             ("toggle.on.fg", accent),

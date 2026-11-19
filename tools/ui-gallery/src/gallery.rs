@@ -782,6 +782,7 @@ impl Gallery {
                 section("The pointer", self.pointer()),
                 section("The keyboard's focus", self.focus()),
                 section("Fields", self.fields()),
+                section("The four sizes", self.sizes()),
                 section("A list of 100 000 rows", self.list()),
                 section("Floating panels", self.panels()),
                 section("Animations", self.animations()),
@@ -1397,6 +1398,7 @@ impl Gallery {
                 icon: icon.to_owned(),
                 disabled,
                 link: false,
+                size: Default::default(),
             }))
             .key(key)
         };
@@ -1478,6 +1480,74 @@ impl Gallery {
                 secondary("a click leaves the focus; Tab reaches them with Keyboard navigation on"),
             ],
         )
+    }
+
+    /// A row of each size, large, regular, small and mini, as macOS 27's: a
+    /// button, a button of an icon, a toggle of a label, a field and a
+    /// switch.
+    fn sizes(&self) -> Node {
+        let rows = [
+            ("large", ControlSize::Large),
+            ("regular", ControlSize::Regular),
+            ("small", ControlSize::Small),
+            ("mini", ControlSize::Mini),
+        ]
+        .into_iter()
+        .map(|(name, size)| {
+            let key = |part: &str| format!("size.{name}.{part}");
+            let wrap = key("wrap");
+            let switch = key("switch");
+            Node::container(vec![
+                secondary(name).layout(Layout {
+                    width: Length::Points(52.0),
+                    ..Layout::default()
+                }),
+                Node::new(Kind::Button(view::Button {
+                    label: "Replace".to_owned(),
+                    size,
+                    ..view::Button::default()
+                }))
+                .key(key("replace").as_str()),
+                Node::new(Kind::Button(view::Button {
+                    icon: "add".to_owned(),
+                    size,
+                    ..view::Button::default()
+                }))
+                .key(key("add").as_str())
+                .tooltip("New Tab"),
+                Node::new(Kind::Toggle(view::Toggle {
+                    label: "Wrap Around".to_owned(),
+                    on: self.toggles.get(&wrap).copied().unwrap_or(false),
+                    size,
+                    ..view::Toggle::default()
+                }))
+                .key(wrap.as_str()),
+                Node::new(Kind::Field(view::Field {
+                    placeholder: "Find".to_owned(),
+                    size,
+                    ..view::Field::default()
+                }))
+                .key(key("find").as_str())
+                .layout(Layout {
+                    width: Length::Points(110.0),
+                    ..Layout::default()
+                }),
+                Node::new(Kind::Switch(view::Switch {
+                    on: self.toggles.get(&switch).copied().unwrap_or(true),
+                    size,
+                    ..view::Switch::default()
+                }))
+                .key(switch.as_str())
+                .label(format!("A {name} switch").as_str()),
+            ])
+            .layout(Layout {
+                gap: 8.0,
+                align: Align::Center,
+                ..Layout::default()
+            })
+        })
+        .collect();
+        column(8.0, rows)
     }
 
     fn fields(&self) -> Node {
@@ -1950,14 +2020,36 @@ mod tests {
         ];
         // The focus starts at the first field, `find`, as a panel's does as
         // it opens, and Tab goes on in the nodes' order, round to the start.
-        let from_field = |order: Vec<&'static str>| {
-            let at = order.iter().position(|&key| key == "find").unwrap();
+        let from_field = |order: Vec<String>| {
+            let at = order.iter().position(|key| key == "find").unwrap();
             [&order[at..], &order[..at]].concat()
+        };
+        let owned = |keys: &[&str]| keys.iter().map(|&key| key.to_owned()).collect::<Vec<_>>();
+        // The four sizes' rows, each of a button, one of an icon, a
+        // toggle, a field and a switch; of their fields alone without the
+        // system's keyboard navigation.
+        let sized = |every: bool| -> Vec<String> {
+            ["large", "regular", "small", "mini"]
+                .iter()
+                .flat_map(|name| {
+                    let parts: &[&str] = if every {
+                        &["replace", "add", "wrap", "find", "switch"]
+                    } else {
+                        &["find"]
+                    };
+                    parts.iter().map(move |part| format!("size.{name}.{part}"))
+                })
+                .collect()
         };
         // Without the system's keyboard navigation, the buttons, the
         // toggles, the switches and the view of tabs are left out, the
         // disabled ones always.
-        assert_eq!(order(false), from_field(rest.to_vec()));
+        // The sizes' section right after the fields', before the list.
+        let (fields, after) = rest.split_at(rest.len() - 1);
+        assert_eq!(
+            order(false),
+            from_field([owned(fields), sized(false), owned(after)].concat())
+        );
         let controls = [
             "replace",
             "settings",
@@ -1989,7 +2081,16 @@ mod tests {
         ];
         assert_eq!(
             order(true),
-            from_field([&controls[..], &rest[..], &openers[..]].concat())
+            from_field(
+                [
+                    owned(&controls),
+                    owned(fields),
+                    sized(true),
+                    owned(after),
+                    owned(&openers),
+                ]
+                .concat()
+            )
         );
     }
 

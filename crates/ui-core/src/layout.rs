@@ -66,16 +66,21 @@ pub trait Measure {
     /// The size of the icon `name`, in points.
     fn icon(&mut self, name: &str) -> (f32, f32);
 
-    /// The natural size of a text field, in points: of its width, and of a
-    /// line of text within its padding.
-    fn field(&mut self) -> (f32, f32) {
+    /// The natural size of a text field of `size`, in points: of its width,
+    /// and of its control's height, or of a line of text within the least
+    /// room above and below where that is taller.
+    fn field(&mut self, size: ControlSize) -> (f32, f32) {
         let (_, line) = self.text("");
-        (field::WIDTH, line + 2.0 * field::PADDING.0)
+        (
+            field::WIDTH,
+            widget::height(size).max(line + 2.0 * widget::LEAST_DOWN),
+        )
     }
 
     /// The size of a button or a toggle of `label` and `icon`, either
-    /// empty, in points: its padding around them, side by side.
-    fn button(&mut self, label: &str, icon: &str) -> (f32, f32) {
+    /// empty, and of `size`, in points: its control's height, its padding
+    /// around them, side by side.
+    fn button(&mut self, label: &str, icon: &str, size: ControlSize) -> (f32, f32) {
         let text = if label.is_empty() {
             (0.0, 0.0)
         } else {
@@ -86,7 +91,7 @@ pub trait Measure {
         } else {
             self.icon(icon)
         };
-        widget::size(label, icon, (text, glyph))
+        widget::size(label, icon, (text, glyph), size)
     }
 
     /// The size of a switch of `label`, which may be empty, and of `size`,
@@ -148,10 +153,11 @@ enum Content {
     /// A text, and the most lines that it takes, as its layout's `lines`.
     Text(String, Option<u16>),
     Icon(String),
-    Field,
+    Field(ControlSize),
     Button {
         label: String,
         icon: String,
+        size: ControlSize,
     },
     Switch {
         label: String,
@@ -159,8 +165,9 @@ enum Content {
     },
     Separator,
     Progress(ProgressShape),
-    /// A view of tabs' control, of each tab's label and icon.
-    Segments(Vec<(String, String)>),
+    /// A view of tabs' control, of each tab's label and icon, and of its
+    /// size.
+    Segments(Vec<(String, String)>, ControlSize),
     /// A terminal's specimen, of its grid's cells.
     Specimen,
 }
@@ -321,6 +328,7 @@ impl Layout {
                 .iter()
                 .map(|tab| (tab.label.clone(), tab.icon.clone()))
                 .collect(),
+            view.size,
         );
         let style = control_style(self.scale, view.distribution);
         if let Some(&control) = self.controls.get(&id) {
@@ -794,14 +802,16 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
     let content = match kind {
         Kind::Text(text) => Content::Text(text.clone(), layout.lines),
         Kind::Icon(name) => Content::Icon(name.clone()),
-        Kind::Field(_) => Content::Field,
+        Kind::Field(field) => Content::Field(field.size),
         Kind::Button(button) => Content::Button {
             label: button.label.clone(),
             icon: button.icon.clone(),
+            size: button.size,
         },
         Kind::Toggle(toggle) => Content::Button {
             label: toggle.label.clone(),
             icon: toggle.icon.clone(),
+            size: toggle.size,
         },
         Kind::Switch(switch) => Content::Switch {
             label: switch.label.clone(),
@@ -866,16 +876,16 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
     let size = match content {
         Content::Text(text, _) => measure.text(text),
         Content::Icon(name) => measure.icon(name),
-        Content::Field => measure.field(),
-        Content::Button { label, icon } => measure.button(label, icon),
+        Content::Field(size) => measure.field(*size),
+        Content::Button { label, icon, size } => measure.button(label, icon, *size),
         Content::Switch { label, size } => measure.switch(label, *size),
         Content::Separator => measure.separator(),
         Content::Progress(shape) => progress::natural(*shape),
         Content::Specimen => crate::specimen::natural(measure.cell_size()),
-        Content::Segments(tabs) => {
+        Content::Segments(tabs, size) => {
             let sizes: Vec<(f32, f32)> = tabs
                 .iter()
-                .map(|(label, icon)| measure.button(label, icon))
+                .map(|(label, icon)| measure.button(label, icon, *size))
                 .collect();
             let width = sizes.iter().map(|size| size.0).sum();
             let height = sizes
@@ -1353,6 +1363,7 @@ mod tests {
                 icon: "settings".to_owned(),
                 disabled: false,
                 link: false,
+                size: Default::default(),
             }))
             .key("settings"),
             Node::separator(),
@@ -1378,19 +1389,18 @@ mod tests {
             let [replace, add, settings, upright, regex] = tree.children(row).to_vec()[..] else {
                 panic!();
             };
-            // A label of 7 characters, 42 points, and 8 at each side; 3
-            // above and below its line of 14, in the middle of the row,
-            // which an icon's 16 makes 22 high.
-            assert_eq!(frame(replace), [0.0, 1.0, 58.0, 20.0]);
-            assert_eq!(frame(add), [62.0, 0.0, 22.0, 22.0]);
+            // A label of 7 characters, 42 points, and 10 at each side, of a
+            // regular control's height, 24; an icon's a square of it.
+            assert_eq!(frame(replace), [0.0, 0.0, 62.0, 24.0]);
+            assert_eq!(frame(add), [66.0, 0.0, 24.0, 24.0]);
             // The icon, 4 points, then the label, 24.
-            assert_eq!(frame(settings), [88.0, 0.0, 60.0, 22.0]);
+            assert_eq!(frame(settings), [94.0, 0.0, 64.0, 24.0]);
             // Upright, a point wide, as tall as the row.
-            assert_eq!(frame(upright), [152.0, 0.0, 1.0, 22.0]);
-            assert_eq!(frame(regex), [157.0, 0.0, 22.0, 22.0]);
+            assert_eq!(frame(upright), [162.0, 0.0, 1.0, 24.0]);
+            assert_eq!(frame(regex), [167.0, 0.0, 24.0, 24.0]);
             // Flat, a point high, as wide as the column.
             let flat = tree.children(root)[1];
-            assert_eq!(frame(flat), [0.0, 22.0, 300.0, 1.0]);
+            assert_eq!(frame(flat), [0.0, 24.0, 300.0, 1.0]);
         }
     }
 

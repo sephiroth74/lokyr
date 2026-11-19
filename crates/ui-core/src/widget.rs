@@ -11,35 +11,56 @@ use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
 use crate::pointer::NodeEvent;
 use crate::tree::{NodeId, Tree};
 
-/// The room inside a button's edges, in points, of a label: above and
-/// below it, and before and after its content.
-pub const PADDING: (f32, f32) = (3.0, 8.0);
+/// The height of a control of `size`, in points, as macOS 27's: a button,
+/// a toggle, a field or a segmented control; taller only where its text
+/// needs more, as of a large interface's font.
+pub fn height(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Large => 28.0,
+        ControlSize::Regular => 24.0,
+        ControlSize::Small => 20.0,
+        ControlSize::Mini => 16.0,
+    }
+}
 
-/// The room inside the edges of a button of an icon alone, in points, on
-/// every side.
-pub const ICON_PADDING: f32 = 3.0;
+/// The room inside a button's edges, in points, before and after its
+/// content of a label, of `size`.
+pub fn across(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Large => 12.0,
+        ControlSize::Regular => 10.0,
+        ControlSize::Small => 8.0,
+        ControlSize::Mini => 6.0,
+    }
+}
+
+/// The least room above and below a control's text, in points, which a
+/// text taller than its control's height takes.
+pub const LEAST_DOWN: f32 = 2.0;
 
 /// The room between a button's icon and its label, in points.
 pub const GAP: f32 = 4.0;
 
-/// The radius of a button's corners, in points, of its own box.
-pub const RADIUS: f32 = 5.0;
+/// The radius of a button's and a field's corners, in points, of their own
+/// boxes, as macOS 27's.
+pub const RADIUS: f32 = 6.0;
 
-/// The track of a switch of `size`, in points, its width and its height:
-/// macOS's small switch at the regular size, beside a button, and its mini
-/// one at the small.
+/// The track of a switch of `size`, in points, its width and its height,
+/// as macOS 27's switches of the four sizes.
 pub fn track(size: ControlSize) -> (f32, f32) {
     match size {
-        ControlSize::Regular => (44.0, 20.0),
-        ControlSize::Small => (36.0, 16.0),
+        ControlSize::Large => (64.0, 28.0),
+        ControlSize::Regular => (54.0, 24.0),
+        ControlSize::Small => (44.0, 20.0),
+        ControlSize::Mini => (36.0, 16.0),
     }
 }
 
 /// The room between a switch's knob and its track's edges, in points.
 pub fn knob_inset(size: ControlSize) -> f32 {
     match size {
-        ControlSize::Regular => 2.0,
-        ControlSize::Small => 1.5,
+        ControlSize::Mini => 1.5,
+        _ => 2.0,
     }
 }
 
@@ -80,33 +101,33 @@ pub fn knob(
     )
 }
 
-/// The size of a button of `label` and `icon`, either empty, in points,
-/// of their sizes: its padding around them, side by side.
-pub fn size(label: &str, icon: &str, (text, glyph): ((f32, f32), (f32, f32))) -> (f32, f32) {
+/// The size of a button of `label` and `icon`, either empty, and of
+/// `size`, in points, of their sizes: its control's height, or its
+/// content's and the least room above and below where that is taller, and
+/// its room before and after them, side by side; a square of an icon alone.
+pub fn size(
+    label: &str,
+    icon: &str,
+    (text, glyph): ((f32, f32), (f32, f32)),
+    size: ControlSize,
+) -> (f32, f32) {
     let (text, glyph) = (
         if label.is_empty() { (0.0, 0.0) } else { text },
         if icon.is_empty() { (0.0, 0.0) } else { glyph },
     );
-    let gap = if label.is_empty() || icon.is_empty() {
-        0.0
-    } else {
-        GAP
-    };
-    let (down, across) = padding(label);
-    (
-        glyph.0 + gap + text.0 + 2.0 * across,
-        text.1.max(glyph.1) + 2.0 * down,
-    )
+    let tall = height(size).max(text.1.max(glyph.1) + 2.0 * LEAST_DOWN);
+    if label.is_empty() {
+        return (tall, tall);
+    }
+    let gap = if icon.is_empty() { 0.0 } else { GAP };
+    (glyph.0 + gap + text.0 + 2.0 * across(size), tall)
 }
 
-/// The room inside the edges of a button of `label`, in points: above and
-/// below its content, and before and after it.
-pub fn padding(label: &str) -> (f32, f32) {
-    if label.is_empty() {
-        (ICON_PADDING, ICON_PADDING)
-    } else {
-        PADDING
-    }
+/// The room inside the edges of a button of `label` and of `size`, in
+/// points, before and after its content: none past its icon's square of an
+/// icon alone, which sits in its middle.
+pub fn padding(label: &str, size: ControlSize) -> f32 {
+    if label.is_empty() { 0.0 } else { across(size) }
 }
 
 /// What `key` does to the node `node` of `tree`, which has the keyboard's
@@ -163,12 +184,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_button_takes_its_padding_around_its_icon_and_its_label() {
+    fn a_button_takes_its_control_s_height_and_its_padding_around_its_icon_and_its_label() {
         let (text, glyph) = ((60.0, 16.0), (16.0, 16.0));
-        assert_eq!(size("Replace", "", (text, glyph)), (76.0, 22.0));
-        assert_eq!(size("", "add", (text, glyph)), (22.0, 22.0));
-        assert_eq!(size("Settings", "settings", (text, glyph)), (96.0, 22.0));
-        assert_eq!(size("Tall", "", ((20.0, 30.0), glyph)), (36.0, 36.0));
+        let regular = ControlSize::Regular;
+        assert_eq!(size("Replace", "", (text, glyph), regular), (80.0, 24.0));
+        // A square of an icon alone, its icon in its middle.
+        assert_eq!(size("", "add", (text, glyph), regular), (24.0, 24.0));
+        assert_eq!(padding("", regular), 0.0);
+        assert_eq!(
+            size("Settings", "settings", (text, glyph), regular),
+            (100.0, 24.0)
+        );
+        // Taller where its text needs more room than its control's height.
+        assert_eq!(
+            size("Tall", "", ((20.0, 30.0), glyph), regular),
+            (40.0, 34.0)
+        );
+        // The four sizes, as macOS 27's, of their own room across.
+        let small = ((60.0, 11.0), (12.0, 12.0));
+        assert_eq!(
+            size("Replace", "", (text, glyph), ControlSize::Large),
+            (84.0, 28.0)
+        );
+        assert_eq!(size("Replace", "", small, ControlSize::Small), (76.0, 20.0));
+        assert_eq!(size("Replace", "", small, ControlSize::Mini), (72.0, 16.0));
+        assert_eq!(size("", "add", small, ControlSize::Mini), (16.0, 16.0));
     }
 
     /// A button, a toggle that is on, a disabled one, and a text, of keys.
@@ -266,16 +306,18 @@ mod tests {
     #[test]
     fn a_switch_takes_its_track_and_its_label_after_it_and_its_knob_slides_across() {
         let text = (42.0, 16.0);
-        // macOS's small switch and its mini one; a label after a gap, of
+        // macOS 27's switches of the four sizes; a label after a gap, of
         // the taller of the two.
-        assert_eq!(switch_size("", ControlSize::Regular, text), (44.0, 20.0));
-        assert_eq!(switch_size("", ControlSize::Small, text), (36.0, 16.0));
+        assert_eq!(switch_size("", ControlSize::Large, text), (64.0, 28.0));
+        assert_eq!(switch_size("", ControlSize::Regular, text), (54.0, 24.0));
+        assert_eq!(switch_size("", ControlSize::Small, text), (44.0, 20.0));
+        assert_eq!(switch_size("", ControlSize::Mini, text), (36.0, 16.0));
         assert_eq!(
             switch_size("Notify", ControlSize::Regular, text),
-            (92.0, 20.0)
+            (102.0, 24.0)
         );
         assert_eq!(
-            switch_size("Notify", ControlSize::Small, (42.0, 18.0)),
+            switch_size("Notify", ControlSize::Mini, (42.0, 18.0)),
             (84.0, 18.0)
         );
         // The knob inset of its track, from its left, off, to its right,

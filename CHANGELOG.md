@@ -16,6 +16,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- Lokyr's controls take macOS 27's sizes: buttons, toggles, fields and segmented controls are 24 points high, as macOS's regular controls, with rounder corners; a disabled control dims whole, its box too; the highlight under the pointer is fainter. The plugin API gives each control a size, large, regular, small or mini, 28, 24, 20 or 16 points high, of smaller text at small and mini, and a switch's sizes are macOS's.
 - The Settings page shows each on-or-off key as a switch, as macOS's, in place of an On or Off button: its knob slides across as you click it, at once where Reduce motion is on, and VoiceOver reads it as a switch of the key's name.
 
 ## [1.3.0] - 2026-11-18

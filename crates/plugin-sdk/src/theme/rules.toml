@@ -60,7 +60,7 @@
 # A button at rest.
 "button.bg" = { light = "text / 6%", dark = "text / 8%" }
 # A button under the pointer.
-"button.hover.bg" = { light = "text / 10%", dark = "text / 12%" }
+"button.hover.bg" = { light = "text / 8%", dark = "text / 10%" }
 # A button pressed.
 "button.pressed.bg" = { light = "text / 16%", dark = "text / 18%" }
 # A toggle that is on.

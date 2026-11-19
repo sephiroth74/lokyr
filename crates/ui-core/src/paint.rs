@@ -32,8 +32,9 @@ const MENU_RADIUS: f32 = 6.0;
 
 const RING: f32 = 3.0;
 
-/// The opacity of a disabled switch, as macOS dims one.
-const DISABLED_SWITCH: f32 = 0.5;
+/// The opacity of a disabled control, its box and its label alike, as macOS
+/// dims one.
+const DISABLED: f32 = 0.5;
 
 /// The shadow of a switch's knob, in points: how far down, and how far its
 /// edge blurs.
@@ -415,6 +416,10 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 opacity += (hovered - opacity) * amount;
             }
         }
+        // A disabled control dims whole, its box too.
+        if self.tree.kind(id).is_some_and(Kind::disabled) {
+            opacity *= DISABLED;
+        }
         let (dx, dy) = (offset.0.round() as i32, offset.1.round() as i32);
         if (dx, dy) == (0, 0) && opacity >= 1.0 {
             self.node_itself(id, inherited);
@@ -563,18 +568,21 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             },
             Kind::Icon(name) => self.icon(name, frame, color),
             Kind::Field(field) => self.field(id, field, (frame, style), color),
-            Kind::Button(view::Button { label, icon, .. })
-            | Kind::Toggle(view::Toggle { label, icon, .. }) => {
+            Kind::Button(view::Button {
+                label, icon, size, ..
+            })
+            | Kind::Toggle(view::Toggle {
+                label, icon, size, ..
+            }) => {
                 let link = matches!(kind, Kind::Button(button) if button.link);
                 let color = match kind {
-                    _ if kind.disabled() => self.tokens.get("text.disabled").unwrap_or(color),
                     Kind::Toggle(toggle) if toggle.on => {
                         self.tokens.get("toggle.on.fg").unwrap_or(color)
                     }
                     _ if link => self.tokens.get("accent").unwrap_or(color),
                     _ => color,
                 };
-                self.widget((label, icon), frame, color, link);
+                self.widget((label, icon), (frame, *size), color, link);
             }
             Kind::Switch(switch) => self.switch(id, switch, frame, color),
             Kind::List(list) => self.list(id, list, (frame, style), color),
@@ -712,7 +720,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             } else {
                 color
             };
-            self.widget((&tab.label, &tab.icon), *segment, text, false);
+            self.widget((&tab.label, &tab.icon), (*segment, view.size), text, false);
         }
     }
 
@@ -1508,7 +1516,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     fn widget(
         &mut self,
         (label, icon): (&str, &str),
-        frame: Frame,
+        (frame, size): (Frame, view::ControlSize),
         color: Color,
         underlined: bool,
     ) {
@@ -1528,7 +1536,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         } else {
             widget::GAP * scale
         };
-        let (_, across) = widget::padding(label);
+        let across = widget::padding(label, size);
         let room = (frame.width - 2.0 * across * scale - side - gap).max(0.0);
         let width = (natural * scale).min(room);
         let left = (frame.x + (frame.width - (side + gap + width)) / 2.0).round();
@@ -1583,19 +1591,13 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// state's color crossfaded to the on state's as far as its knob went,
     /// its knob, of its shadow, as far across as its slide went, from off
     /// at the left to on at the right, and its label after it in `color`;
-    /// a disabled one dimmed, its label of the dimmed text's color.
+    /// a disabled one dims whole, as its node does.
     fn switch(&mut self, id: NodeId, switch: &view::Switch, frame: Frame, color: Color) {
         let scale = self.layout.scale();
         let target = if switch.on { 1.0 } else { 0.0 };
         let amount = match (self.motion, self.tree.key(id)) {
             (Some((animations, now)), Some(key)) => animations.switched(key, switch.on, now),
             _ => target,
-        };
-        let dim = |mut color: Color| {
-            if switch.disabled {
-                color.alpha *= DISABLED_SWITCH;
-            }
-            color
         };
         let track = self.switch_track(frame, switch.size);
         let fill = match (
@@ -1608,7 +1610,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         if let Some(fill) = fill {
             self.push_shape(Shape {
                 radius: track.height / 2.0,
-                ..Shape::filled(rect(track), dim(fill))
+                ..Shape::filled(rect(track), fill)
             });
         }
         let (x, y, width, height) = widget::knob(
@@ -1626,7 +1628,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     x: 0.0,
                     y: KNOB_SHADOW.0 * scale,
                     blur: KNOB_SHADOW.1 * scale,
-                    color: dim(shadow),
+                    color: shadow,
                 });
             self.push_shape(Shape {
                 radius: height / 2.0,
@@ -1638,7 +1640,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                         width,
                         height,
                     }),
-                    dim(knob),
+                    knob,
                 )
             });
         }
@@ -1649,11 +1651,6 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 x: left,
                 width: (frame.x + frame.width - left).max(0.0),
                 ..frame
-            };
-            let color = if switch.disabled {
-                self.tokens.get("text.disabled").unwrap_or(color)
-            } else {
-                color
             };
             self.text(&switch.label, at, Some(natural), color);
         }
@@ -1783,7 +1780,7 @@ fn field_box(style: &Style) -> Style {
         radius: if style.radius > 0.0 {
             style.radius
         } else {
-            4.0
+            widget::RADIUS
         },
         ..style.clone()
     }
@@ -3128,9 +3125,9 @@ mod tests {
             }
             fn write(&mut self, _: &str) {}
         }
-        // At a scale of 2, a field of 160 by 21 points, its text of 13
-        // points, 7.8 a character, from its padding of 6, 12 pixels in, on
-        // its line 26 high, 8 down.
+        // At a scale of 2, a field of 160 by 24 points, a regular control's
+        // height, its text of 13 points, 7.8 a character, from its padding
+        // of 6, 12 pixels in, on its line 26 high, 11 down, in its middle.
         let scale = 2.0;
         let mut font = Font::new(Blocks, FontConfig::default(), scale).unwrap();
         let mut tree = Tree::new();
@@ -3140,7 +3137,7 @@ mod tests {
         layout.update(&tree, &changes);
         layout.compute(&tree, Some(200.0 * scale), None, &mut font);
         let field = tree.children(tree.root().unwrap())[0];
-        assert_eq!(layout.frame(&tree, field).unwrap().height, 42.0);
+        assert_eq!(layout.frame(&tree, field).unwrap().height, 48.0);
         let tokens = &Theme::builtin().dark.tokens;
         let mut fields = Fields::new();
         let painted = |font: &mut Font<Blocks>, fields: &Fields, focused: Option<NodeId>| {
@@ -3168,11 +3165,11 @@ mod tests {
             x: 2,
             y: 2,
             width: 316,
-            height: 38,
+            height: 44,
         };
         let line = |left: i32, right: i32| Rect {
             x: left,
-            y: 8,
+            y: 11,
             width: (right - left) as u32,
             height: 26,
         };
@@ -3334,7 +3331,7 @@ mod tests {
         };
         let line = |left: i32, right: i32| Rect {
             x: left,
-            y: 8,
+            y: 11,
             width: (right - left) as u32,
             height: 26,
         };
@@ -3438,8 +3435,8 @@ mod tests {
         assert_eq!(
             marks[..],
             [
-                Shape::filled(rect(43, 31, 31, 2), color),
-                Shape::filled(rect(59, 8, 2, 26), color)
+                Shape::filled(rect(43, 34, 31, 2), color),
+                Shape::filled(rect(59, 11, 2, 26), color)
             ]
         );
         // `に` selected: its part twice as thick, and no caret.
@@ -3451,8 +3448,8 @@ mod tests {
         assert_eq!(
             marks[..],
             [
-                Shape::filled(rect(43, 31, 31, 2), color),
-                Shape::filled(rect(43, 31, 16, 4), color)
+                Shape::filled(rect(43, 34, 31, 2), color),
+                Shape::filled(rect(43, 34, 16, 4), color)
             ]
         );
     }
@@ -3547,19 +3544,23 @@ mod tests {
         };
         // At rest: a button's background, none of a toggle of an icon that
         // is off, a tint of one that is on, a button's of one of a label;
-        // a disabled button's background, of its dimmed label; the
-        // separator's line.
+        // a disabled button dimmed whole, its background and its label at
+        // half their opacity; the separator's line.
+        let half = |mut color: Color| {
+            color.alpha *= 0.5;
+            color
+        };
         let (fills, glyphs) = painted(None, None);
         assert_eq!(box_of(&fills, go), Some(token("button.bg")));
         assert_eq!(box_of(&fills, off), None);
         assert_eq!(box_of(&fills, on), Some(token("toggle.on.bg")));
-        assert_eq!(box_of(&fills, all), Some(token("button.bg")));
+        assert_eq!(box_of(&fills, all), Some(half(token("button.bg"))));
         assert_eq!(box_of(&fills, separator), Some(token("separator")));
         assert_eq!(box_of(&fills, wrap), Some(token("button.bg")));
         assert_eq!(ink_of(&glyphs, go), token("text"));
         assert_eq!(ink_of(&glyphs, off), token("text"));
         assert_eq!(ink_of(&glyphs, on), token("toggle.on.fg"));
-        assert_eq!(ink_of(&glyphs, all), token("text.disabled"));
+        assert_eq!(ink_of(&glyphs, all), half(token("text")));
         // The pointer over them, and pressing them.
         let (fills, _) = painted(Some(off), None);
         assert_eq!(box_of(&fills, off), Some(token("button.hover.bg")));
@@ -3571,7 +3572,7 @@ mod tests {
         assert_eq!(box_of(&fills, on), Some(token("toggle.on.bg")));
         // A widget disabled shows neither.
         let (fills, _) = painted(Some(all), Some(all));
-        assert_eq!(box_of(&fills, all), Some(token("button.bg")));
+        assert_eq!(box_of(&fills, all), Some(half(token("button.bg"))));
         // A label too long for its button's room is clipped across, within
         // its padding.
         let narrow = Node::container(vec![Node::button("Replace All").key("all").layout(
@@ -3595,7 +3596,7 @@ mod tests {
         });
         assert_eq!(
             clipped.map(|clip| (clip.x, clip.width)),
-            Some((all.x + 8, all.width - 16))
+            Some((all.x + 10, all.width - 20))
         );
         // Of a box of its own, the plugin's style draws it, whatever its
         // state.
@@ -3641,12 +3642,13 @@ mod tests {
         layout.compute(&tree, Some(400.0), None, &mut font);
         let node = |index: usize| tree.children(tree.root().unwrap())[index];
         let [on, off, small] = [0, 1, 2].map(node);
-        // Its track and its label after it, of its track's height.
+        // Its track and its label after it, of its track's height: a
+        // regular one 54 by 24, a small one 44 by 20.
         let frame = layout.frame(&tree, on).unwrap();
-        assert_eq!((frame.x, frame.y, frame.height), (4.0, 4.0, 20.0));
-        assert!(frame.width > 44.0 + widget::SWITCH_GAP);
-        assert_eq!(layout.frame(&tree, off).unwrap().width, 44.0);
-        assert_eq!(layout.frame(&tree, small).unwrap().width, 36.0);
+        assert_eq!((frame.x, frame.y, frame.height), (4.0, 4.0, 24.0));
+        assert!(frame.width > 54.0 + widget::SWITCH_GAP);
+        assert_eq!(layout.frame(&tree, off).unwrap().width, 54.0);
+        assert_eq!(layout.frame(&tree, small).unwrap().width, 44.0);
         let mut painted = |tokens: &Tokens| {
             let fields = Fields::new();
             paint(
@@ -3693,27 +3695,28 @@ mod tests {
         };
         // On: the accent's track, its knob at its right, a capsule 1.6
         // times as wide as tall, inset 2 points, of no shadow in the dark.
-        let track = shape(at(4, 4, 44, 20));
-        assert_eq!((track.fill, track.radius), (token("switch.on.bg"), 10.0));
-        let knob = shape(at(20, 6, 26, 16));
-        assert_eq!((knob.fill, knob.radius), (token("switch.knob.bg"), 8.0));
+        let track = shape(at(4, 4, 54, 24));
+        assert_eq!((track.fill, track.radius), (token("switch.on.bg"), 12.0));
+        let knob = shape(at(24, 6, 32, 20));
+        assert_eq!((knob.fill, knob.radius), (token("switch.knob.bg"), 10.0));
         assert_eq!(knob.shadow, None);
         // Off: the off track's color, its knob at its left, and the ring
         // of the focus round its track alone, of its corners.
         let x = rect(layout.frame(&tree, off).unwrap()).x;
-        assert_eq!(shape(at(x, 4, 44, 20)).fill, token("switch.off.bg"));
-        assert_eq!(shape(at(x + 2, 6, 26, 16)).fill, token("switch.knob.bg"));
+        assert_eq!(shape(at(x, 4, 54, 24)).fill, token("switch.off.bg"));
+        assert_eq!(shape(at(x + 2, 6, 32, 20)).fill, token("switch.knob.bg"));
         let ring = shapes
             .iter()
             .find(|shape| shape.border_color == token("focus.ring"))
             .expect("the ring");
-        assert_eq!(ring.rect, at(x - 3, 1, 50, 26));
-        assert_eq!(ring.radius, 13.0);
-        // Small and disabled: a track of 36 by 16, half as opaque.
+        assert_eq!(ring.rect, at(x - 3, 1, 60, 30));
+        assert_eq!(ring.radius, 15.0);
+        // Small and disabled: a track of 44 by 20, half as opaque, as a
+        // disabled control dims whole.
         let x = rect(layout.frame(&tree, small).unwrap()).x;
         let mut dimmed = token("switch.on.bg");
         dimmed.alpha *= 0.5;
-        assert_eq!(shape(at(x, 6, 36, 16)).fill, dimmed);
+        assert_eq!(shape(at(x, 6, 44, 20)).fill, dimmed);
         // Its label after its track, of the text's color.
         let glyphs: Vec<&PlacedGlyph> = items
             .iter()
@@ -3724,7 +3727,7 @@ mod tests {
             .flatten()
             .collect();
         assert_eq!(glyphs.len(), "Notify".len());
-        assert!(glyphs.iter().all(|glyph| glyph.x >= 4 + 44 + 6));
+        assert!(glyphs.iter().all(|glyph| glyph.x >= 4 + 54 + 6));
         assert!(glyphs.iter().all(|glyph| glyph.color == token("text")));
         // In the light, the knob casts its shadow, a point down.
         let light = Theme::builtin().light.tokens;

@@ -76,6 +76,10 @@ pub const SMALL: f32 = 11.0 / 13.0;
 /// points of thirteen, as a palette's field.
 pub const LARGE: f32 = 18.0 / 13.0;
 
+/// The share of the interface's size that its mini text takes: nine points
+/// of thirteen, as macOS's mini controls' text of its regular ones'.
+pub const MINI: f32 = 9.0 / 13.0;
+
 /// The fewest points of a node's text, as the interface's font's are.
 pub const MOST_SMALL: f32 = 4.0;
 
@@ -1221,6 +1225,7 @@ impl<B: FontBackend> Font<B> {
                 TextSize::Regular => regular.size(),
                 TextSize::Small => regular.size() * SMALL,
                 TextSize::Large => regular.size() * LARGE,
+                TextSize::Mini => regular.size() * MINI,
             },
             |points| {
                 if points.is_nan() {

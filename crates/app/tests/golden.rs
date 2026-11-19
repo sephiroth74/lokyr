@@ -642,6 +642,7 @@ fn widgets_tree() -> Node {
             icon: icon.to_owned(),
             disabled,
             link: false,
+            size: Default::default(),
         }))
         .key(key)
     };
@@ -651,6 +652,7 @@ fn widgets_tree() -> Node {
             icon: icon.to_owned(),
             on,
             disabled,
+            size: Default::default(),
         }))
         .key(key)
     };
@@ -735,6 +737,7 @@ fn themed_tree() -> Node {
                 icon: String::new(),
                 disabled: false,
                 link,
+                size: Default::default(),
             }))
             .key(key(name).as_str())
         };
@@ -746,6 +749,7 @@ fn themed_tree() -> Node {
                 icon: String::new(),
                 on: true,
                 disabled: false,
+                size: Default::default(),
             }))
             .key(key("toggle").as_str()),
             button("link", "More Info", true),

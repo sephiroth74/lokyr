@@ -187,38 +187,39 @@ mod tests {
 
     #[test]
     fn the_control_s_segments_go_side_by_side_in_the_middle_over_the_page() {
-        // Of a button's sizes: `General` 42 and 16 of padding, `Look` of
-        // its icon too, 60 and 22 high, `Advanced` 64, `Keys` 40; in the
-        // middle of the 276 points inside the box's room, 8 below its top.
+        // Of a regular button's sizes: `General` 42 and 20 of padding,
+        // `Look` of its icon too, 64, `Advanced` 68, `Keys` 44, each 24
+        // high; in the middle of the 276 points inside the box's room, 8
+        // below its top.
         let (tree, layout, node) = laid(0, 1.0);
         let frame = |x, width| Frame {
             x,
             y: 8.0,
             width,
-            height: 22.0,
+            height: 24.0,
         };
-        assert_eq!(layout.control(&tree, node), Some(frame(39.0, 222.0)));
+        assert_eq!(layout.control(&tree, node), Some(frame(31.0, 238.0)));
         assert_eq!(
             layout.segments(&tree, node),
             [
-                frame(39.0, 58.0),
-                frame(97.0, 60.0),
-                frame(157.0, 64.0),
-                frame(221.0, 40.0)
+                frame(31.0, 62.0),
+                frame(93.0, 64.0),
+                frame(157.0, 68.0),
+                frame(225.0, 44.0)
             ]
         );
         // The page below it, of the box's room; the view about it.
         let page = layout
             .frame(&tree, tree.by_key(&"page".into()).unwrap())
             .unwrap();
-        assert_eq!((page.x, page.y), (12.0, 42.0));
+        assert_eq!((page.x, page.y), (12.0, 44.0));
         assert_eq!(
             layout.frame(&tree, node).unwrap().height,
-            42.0 + 14.0 + 12.0
+            44.0 + 14.0 + 12.0
         );
         // At a scale of 2, in pixels.
         let (tree, layout, node) = laid(0, 2.0);
-        assert_eq!(layout.segments(&tree, node)[1].x, 194.0);
+        assert_eq!(layout.segments(&tree, node)[1].x, 186.0);
         // A label that changes measures anew.
         let mut tree = tree;
         let mut layout = layout;
@@ -229,14 +230,14 @@ mod tests {
         let changes = tree.update(&longer).unwrap();
         layout.update(&tree, &changes);
         layout.compute(&tree, None, None, &mut Fixed);
-        assert_eq!(layout.segments(&tree, node)[0].width, 2.0 * (54.0 + 16.0));
+        assert_eq!(layout.segments(&tree, node)[0].width, 2.0 * (54.0 + 20.0));
         // Of another scale, its page below it by the room of that scale.
         layout.set_scale(&tree, 1.0);
         layout.compute(&tree, None, None, &mut Fixed);
         let page = layout
             .frame(&tree, tree.by_key(&"page".into()).unwrap())
             .unwrap();
-        assert_eq!(page.y, 42.0);
+        assert_eq!(page.y, 44.0);
         // Of another font, measured anew.
         struct Wide;
         impl Measure for Wide {
@@ -249,7 +250,7 @@ mod tests {
         }
         layout.measure_again();
         layout.compute(&tree, None, None, &mut Wide);
-        assert_eq!(layout.segments(&tree, node)[0].width, 90.0 + 16.0);
+        assert_eq!(layout.segments(&tree, node)[0].width, 90.0 + 20.0);
     }
 
     #[test]
@@ -319,7 +320,7 @@ mod tests {
         let changes = tree.update(&settings(0)).unwrap();
         layout.update(&tree, &changes);
         layout.compute(&tree, None, None, &mut Fixed);
-        assert_eq!(layout.control(&tree, node).unwrap().x, 39.0);
+        assert_eq!(layout.control(&tree, node).unwrap().x, 31.0);
     }
 
     #[test]
@@ -331,13 +332,13 @@ mod tests {
         assert_eq!(click((120.0, 10.0)), None);
         assert_eq!(click((180.0, 10.0)), None);
         // On the edge between two tabs, the one after it: the chosen one.
-        assert_eq!(click((97.0, 10.0)), None);
-        assert_eq!(click((96.5, 10.0)), Some(UiEventKind::Select { item: 0 }));
+        assert_eq!(click((93.0, 10.0)), None);
+        assert_eq!(click((92.5, 10.0)), Some(UiEventKind::Select { item: 0 }));
         // Past the control, nothing: beside it, above it in the box, below
         // it.
         assert_eq!(click((20.0, 10.0)), None);
         assert_eq!(click((50.0, 4.0)), None);
-        assert_eq!(click((50.0, 30.0)), None);
+        assert_eq!(click((50.0, 33.0)), None);
         // Through the pointer, a click's release over the tab.
         let mut pointer = Pointer::default();
         pointer.pressed(&tree, &layout, (50.0, 10.0), Button::Primary);
