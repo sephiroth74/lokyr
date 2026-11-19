@@ -37,6 +37,7 @@ sample-folder = Cartella
 sample-compress = Comprimi
 sample-encrypt = Cifra
 sample-notify = Avvisa alla fine
+sample-verify = Verifica
 sample-files = File
 sample-schedule = Pianificazione
 sample-log = Registro

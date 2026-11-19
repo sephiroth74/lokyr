@@ -228,6 +228,17 @@ pub enum Kind {
     /// toggle's, and gives it in its next render, from which the host
     /// slides the knob.
     Switch(Switch),
+    /// A checkbox, as macOS's: a box of the accent's fill and a white check
+    /// while it is on, its label after it, which a click on either, Space
+    /// or Return switches: its plugin learns of the state asked as a
+    /// `toggle`, as a toggle's, and gives it in its next render.
+    Checkbox(Checkbox),
+    /// A group of radio buttons, as macOS's, of one choice among its
+    /// options, in a column or across a row: a click on an option, or an
+    /// arrow while the group has the focus, chooses one, past those that
+    /// are disabled, which its plugin learns of by `select`, and gives in
+    /// its next render.
+    Radios(Radios),
     /// A line across its container, a point thick: upright in a row, flat
     /// in a column.
     Separator,
@@ -563,6 +574,62 @@ pub struct Switch {
     pub size: ControlSize,
 }
 
+/// A checkbox's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Checkbox {
+    /// Its label, after it, if it has one.
+    pub label: String,
+    /// Whether it is on.
+    pub on: bool,
+    /// Whether it is dimmed, and takes neither a click nor the focus.
+    pub disabled: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
+}
+
+/// A group of radio buttons' own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Radios {
+    /// Its options, in their order.
+    pub options: Vec<RadioOption>,
+    /// The option chosen, by its index, if one is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chosen: Option<usize>,
+    /// Whether its options go across a row, rather than down a column.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub across: bool,
+    /// Whether the whole group is dimmed, and takes neither a click nor
+    /// the focus.
+    pub disabled: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
+}
+
+/// An option of a group of radio buttons.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct RadioOption {
+    /// Its label.
+    pub label: String,
+    /// Whether it is dimmed, and cannot be chosen.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
+}
+
+impl RadioOption {
+    /// An option of `label`, which can be chosen.
+    pub fn new(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            disabled: false,
+        }
+    }
+}
+
 /// The size of a control, as macOS 27's controls have their sizes: a
 /// button, a toggle, a field or a segmented control 28, 24, 20 or 16
 /// points high, of the interface's text, the small's smaller and the
@@ -607,6 +674,8 @@ impl Kind {
             | Self::Button(_)
             | Self::Toggle(_)
             | Self::Switch(_)
+            | Self::Checkbox(_)
+            | Self::Radios(_)
             | Self::List(_)
             | Self::Scroll
             | Self::Tabs(_) => true,
@@ -623,6 +692,10 @@ impl Kind {
             Self::Button(button) => !button.disabled,
             Self::Toggle(toggle) => !toggle.disabled,
             Self::Switch(switch) => !switch.disabled,
+            Self::Checkbox(checkbox) => !checkbox.disabled,
+            Self::Radios(radios) => {
+                !radios.disabled && radios.options.iter().any(|option| !option.disabled)
+            }
             Self::Tabs(tabs) => tabs.tabs.iter().any(|tab| !tab.disabled),
             _ => false,
         }
@@ -635,15 +708,23 @@ impl Kind {
     pub fn is_control(&self) -> bool {
         matches!(
             self,
-            Self::Button(_) | Self::Toggle(_) | Self::Switch(_) | Self::Tabs(_)
+            Self::Button(_)
+                | Self::Toggle(_)
+                | Self::Switch(_)
+                | Self::Checkbox(_)
+                | Self::Radios(_)
+                | Self::Tabs(_)
         )
     }
 
     /// Whether a node of the kind is a widget that a click, Space or Return
-    /// presses: a button, which clicks, and a toggle or a switch, which
-    /// switches.
+    /// presses: a button, which clicks, and a toggle, a switch or a
+    /// checkbox, which switches.
     pub fn presses(&self) -> bool {
-        matches!(self, Self::Button(_) | Self::Toggle(_) | Self::Switch(_))
+        matches!(
+            self,
+            Self::Button(_) | Self::Toggle(_) | Self::Switch(_) | Self::Checkbox(_)
+        )
     }
 
     /// The size of a node of the kind, of a control that has one: a button,
@@ -653,6 +734,8 @@ impl Kind {
             Self::Button(button) => Some(button.size),
             Self::Toggle(toggle) => Some(toggle.size),
             Self::Switch(switch) => Some(switch.size),
+            Self::Checkbox(checkbox) => Some(checkbox.size),
+            Self::Radios(radios) => Some(radios.size),
             Self::Field(field) => Some(field.size),
             Self::Tabs(tabs) => Some(tabs.size),
             _ => None,
@@ -666,6 +749,8 @@ impl Kind {
             Self::Button(button) => button.disabled,
             Self::Toggle(toggle) => toggle.disabled,
             Self::Switch(switch) => switch.disabled,
+            Self::Checkbox(checkbox) => checkbox.disabled,
+            Self::Radios(radios) => radios.disabled,
             _ => false,
         }
     }
@@ -1436,6 +1521,26 @@ impl Node {
         }))
     }
 
+    /// A checkbox of `label`, which may be empty, on or off; its key, which
+    /// it needs, follows.
+    pub fn checkbox(label: impl Into<String>, on: bool) -> Self {
+        Self::new(Kind::Checkbox(Checkbox {
+            label: label.into(),
+            on,
+            ..Checkbox::default()
+        }))
+    }
+
+    /// A group of radio buttons of `options`, of the option `chosen` if
+    /// one is, in a column; its key, which it needs, follows.
+    pub fn radios(options: Vec<RadioOption>, chosen: Option<usize>) -> Self {
+        Self::new(Kind::Radios(Radios {
+            options,
+            chosen,
+            ..Radios::default()
+        }))
+    }
+
     /// A view of `tabs`, of the tab `chosen`, whose page is `page`; its key,
     /// which it needs, follows.
     pub fn tabs(tabs: Vec<Tab>, chosen: usize, page: Node) -> Self {
@@ -1778,6 +1883,28 @@ mod tests {
         assert!(switch.kind.presses() && switch.kind.takes_focus() && switch.kind.is_control());
         assert!(switch.kind.holds_state() && !switch.kind.disabled());
         assert!(small.disabled() && !small.takes_focus());
+        // A checkbox presses as a switch does; a group of radio buttons of
+        // its options, of no choice left out, takes the focus while one
+        // can be chosen.
+        let checkbox: Kind =
+            serde_json::from_str(r#"{"checkbox":{"label":"Verify","on":true}}"#).unwrap();
+        assert_eq!(checkbox, Node::checkbox("Verify", true).kind);
+        assert!(checkbox.presses() && checkbox.is_control());
+        let radios = Node::radios(vec![RadioOption::new("Daily")], None).kind;
+        assert_eq!(
+            serde_json::to_string(&radios).unwrap(),
+            r#"{"radios":{"options":[{"label":"Daily"}],"disabled":false}}"#
+        );
+        assert!(radios.takes_focus() && !radios.presses() && radios.holds_state());
+        let none = Node::radios(
+            vec![RadioOption {
+                label: "Off".to_owned(),
+                disabled: true,
+            }],
+            None,
+        )
+        .kind;
+        assert!(!none.takes_focus());
         let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
         assert_eq!(separator, Node::separator());
         // A list, of its window of items and its row's template; a scroll

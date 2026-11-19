@@ -105,6 +105,17 @@ pub trait Measure {
         widget::switch_size(label, size, text)
     }
 
+    /// The size of a checkbox, or of a radio button, of `label`, which may
+    /// be empty, and of `size`, in points: its box, and its label after it.
+    fn checkbox(&mut self, label: &str, size: ControlSize) -> (f32, f32) {
+        let text = if label.is_empty() {
+            (0.0, 0.0)
+        } else {
+            self.text(label)
+        };
+        widget::check_size(label, size, text)
+    }
+
     /// The size of a separator, in points, a point thick: its parent
     /// stretches it across.
     fn separator(&mut self) -> (f32, f32) {
@@ -162,6 +173,17 @@ enum Content {
     Switch {
         label: String,
         size: ControlSize,
+    },
+    Checkbox {
+        label: String,
+        size: ControlSize,
+    },
+    /// A group of radio buttons, of each option's label, of its size, and
+    /// whether its options go across a row.
+    Radios {
+        options: Vec<String>,
+        size: ControlSize,
+        across: bool,
     },
     Separator,
     Progress(ProgressShape),
@@ -382,6 +404,52 @@ impl Layout {
             width: laid.size.width,
             height: laid.size.height,
         })
+    }
+
+    /// The options of the group of radio buttons `id` of `tree`, in pixels
+    /// from the root's corner, each of its own length along the group, as
+    /// its content measured it, and of the group's breadth across it: down
+    /// its column, or across its row; none of another node.
+    pub fn options(&self, tree: &Tree, id: NodeId) -> Vec<Frame> {
+        let (Some(Kind::Radios(radios)), Some(frame), Some(&node)) =
+            (tree.kind(id), self.frame(tree, id), self.nodes.get(&id))
+        else {
+            return Vec::new();
+        };
+        let Some(parts) = self
+            .taffy
+            .get_node_context(node)
+            .map(|leaf| leaf.parts.as_slice())
+        else {
+            return Vec::new();
+        };
+        let gap = if radios.across {
+            widget::RADIO_ACROSS
+        } else {
+            widget::RADIO_DOWN
+        } * self.scale;
+        let mut at = if radios.across { frame.x } else { frame.y };
+        parts
+            .iter()
+            .map(|&points| {
+                let length = points * self.scale;
+                let option = if radios.across {
+                    Frame {
+                        x: at,
+                        width: length,
+                        ..frame
+                    }
+                } else {
+                    Frame {
+                        y: at,
+                        height: length,
+                        ..frame
+                    }
+                };
+                at += length + gap;
+                option
+            })
+            .collect()
     }
 
     /// The frames of the segments of the control of the view of tabs `id`
@@ -817,6 +885,19 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
             label: switch.label.clone(),
             size: switch.size,
         },
+        Kind::Checkbox(checkbox) => Content::Checkbox {
+            label: checkbox.label.clone(),
+            size: checkbox.size,
+        },
+        Kind::Radios(radios) => Content::Radios {
+            options: radios
+                .options
+                .iter()
+                .map(|option| option.label.clone())
+                .collect(),
+            size: radios.size,
+            across: radios.across,
+        },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
         Kind::TerminalSpecimen => Content::Specimen,
@@ -879,6 +960,36 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
         Content::Field(size) => measure.field(*size),
         Content::Button { label, icon, size } => measure.button(label, icon, *size),
         Content::Switch { label, size } => measure.switch(label, *size),
+        Content::Checkbox { label, size } => measure.checkbox(label, *size),
+        Content::Radios {
+            options,
+            size,
+            across,
+        } => {
+            // Each option's length along the group, its parts, and the
+            // group's size of them and of the room between them.
+            let sizes: Vec<(f32, f32)> = options
+                .iter()
+                .map(|label| measure.checkbox(label, *size))
+                .collect();
+            let count = sizes.len().saturating_sub(1) as f32;
+            let (width, height) = if *across {
+                (
+                    sizes.iter().map(|size| size.0).sum::<f32>() + count * widget::RADIO_ACROSS,
+                    sizes.iter().fold(0.0_f32, |tall, size| tall.max(size.1)),
+                )
+            } else {
+                (
+                    sizes.iter().fold(0.0_f32, |wide, size| wide.max(size.0)),
+                    sizes.iter().map(|size| size.1).sum::<f32>() + count * widget::RADIO_DOWN,
+                )
+            };
+            let parts = sizes
+                .into_iter()
+                .map(|size| if *across { size.0 } else { size.1 })
+                .collect();
+            return ((width, height), parts);
+        }
         Content::Separator => measure.separator(),
         Content::Progress(shape) => progress::natural(*shape),
         Content::Specimen => crate::specimen::natural(measure.cell_size()),

@@ -710,22 +710,60 @@ fn widgets_tree() -> Node {
         switch("locked", "Locked", (true, true, ControlSize::Regular)),
         switch("held", "", (false, true, ControlSize::Small)),
     ]);
-    let panel = Node::container(vec![buttons, actions, switches, toggles, Node::separator()])
-        .layout(Box {
-            direction: Direction::Column,
-            gap: 10.0,
-            padding: Edges::all(12.0),
-            ..Box::default()
-        })
-        .style(Style {
-            background: Some("panel.bg".into()),
-            border: Some(Border {
-                color: "panel.border".into(),
-                width: 1.0,
-            }),
-            radius: 8.0,
-            ..Style::default()
-        });
+    let checkbox = |key: &str, label: &str, (on, disabled): (bool, bool)| {
+        Node::new(Kind::Checkbox(view::Checkbox {
+            label: label.to_owned(),
+            on,
+            disabled,
+            ..view::Checkbox::default()
+        }))
+        .key(key)
+    };
+    let mut every = Node::radios(
+        vec![
+            view::RadioOption::new("Daily"),
+            view::RadioOption::new("Weekly"),
+            view::RadioOption {
+                label: "Monthly".to_owned(),
+                disabled: true,
+            },
+        ],
+        Some(1),
+    )
+    .key("every");
+    if let Kind::Radios(radios) = &mut every.kind {
+        radios.across = true;
+    }
+    let checks = row(vec![
+        checkbox("compress", "Compress", (true, false)),
+        checkbox("encrypt", "Encrypt", (false, false)),
+        checkbox("verify", "", (true, true)),
+        Node::separator(),
+        every,
+    ]);
+    let panel = Node::container(vec![
+        buttons,
+        actions,
+        switches,
+        checks,
+        toggles,
+        Node::separator(),
+    ])
+    .layout(Box {
+        direction: Direction::Column,
+        gap: 10.0,
+        padding: Edges::all(12.0),
+        ..Box::default()
+    })
+    .style(Style {
+        background: Some("panel.bg".into()),
+        border: Some(Border {
+            color: "panel.border".into(),
+            width: 1.0,
+        }),
+        radius: 8.0,
+        ..Style::default()
+    });
     Node::container(vec![panel]).layout(Box {
         direction: Direction::Column,
         padding: Edges {

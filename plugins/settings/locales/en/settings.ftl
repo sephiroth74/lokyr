@@ -37,6 +37,7 @@ sample-folder = Folder
 sample-compress = Compress
 sample-encrypt = Encrypt
 sample-notify = Notify When Done
+sample-verify = Verify
 sample-files = Files
 sample-schedule = Schedule
 sample-log = Log

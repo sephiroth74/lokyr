@@ -182,6 +182,9 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `switch.off.bg` | A switch's track that is off · not released yet | `text / 10%` |
 | `switch.on.bg` | A switch's track that is on · not released yet | `accent` |
 | `switch.knob.bg` | A switch's knob · not released yet | `#ffffff` |
+| `check.off.bg` | A checkbox's box, and a radio button's circle, that is off · not released yet | `text / 10%` |
+| `check.on.bg` | A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet | `button.default.bg` |
+| `check.mark` | A checkbox's check, and a radio button's dot · not released yet | `button.default.fg` |
 | `switch.knob.shadow` | The shadow under a switch's knob · not released yet | light `#0000001f`, dark `transparent` |
 | `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
 | `tooltip.fg` | The tooltips' text | `text` |

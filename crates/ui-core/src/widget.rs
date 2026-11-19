@@ -101,6 +101,46 @@ pub fn knob(
     )
 }
 
+/// The side of a checkbox's box and of a radio button's circle of `size`,
+/// in points, as macOS 27's.
+pub fn check_side(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Large => 18.0,
+        ControlSize::Regular => 16.0,
+        ControlSize::Small => 14.0,
+        ControlSize::Mini => 12.0,
+    }
+}
+
+/// The radius of a checkbox's corners, a share of its side, as macOS 27
+/// rounds them.
+pub const CHECK_ROUNDING: f32 = 0.34;
+
+/// The share of a radio button's side that its dot takes while it is
+/// chosen.
+pub const RADIO_DOT: f32 = 0.375;
+
+/// The room between a checkbox's or a radio button's box and its label, in
+/// points.
+pub const CHECK_GAP: f32 = 6.0;
+
+/// The room between a group's radio buttons down a column, in points.
+pub const RADIO_DOWN: f32 = 6.0;
+
+/// The room between a group's radio buttons across a row, in points.
+pub const RADIO_ACROSS: f32 = 16.0;
+
+/// The size of a checkbox, or of a radio button, of `label`, which may be
+/// empty, and of `size`, in points, of its label's size, `text`: its box,
+/// and its label after it, of the taller of the two.
+pub fn check_size(label: &str, size: ControlSize, text: (f32, f32)) -> (f32, f32) {
+    let side = check_side(size);
+    if label.is_empty() {
+        return (side, side);
+    }
+    (side + CHECK_GAP + text.0, side.max(text.1))
+}
+
 /// The size of a button of `label` and `icon`, either empty, and of
 /// `size`, in points, of their sizes: its control's height, or its
 /// content's and the least room above and below where that is taller, and
@@ -205,6 +245,7 @@ pub fn pressed(tree: &Tree, node: NodeId) -> Option<NodeEvent> {
         Kind::Button(button) if !button.disabled => UiEventKind::Click,
         Kind::Toggle(toggle) if !toggle.disabled => UiEventKind::Toggle { on: !toggle.on },
         Kind::Switch(switch) if !switch.disabled => UiEventKind::Toggle { on: !switch.on },
+        Kind::Checkbox(checkbox) if !checkbox.disabled => UiEventKind::Toggle { on: !checkbox.on },
         _ => return None,
     };
     Some(NodeEvent {
@@ -486,6 +527,42 @@ mod tests {
             default_key(&tree, node("regex"), &released)
                 .unwrap()
                 .is_empty()
+        );
+    }
+
+    #[test]
+    fn space_and_a_press_switch_a_checkbox_unless_it_is_disabled() {
+        let mut tree = Tree::new();
+        tree.update(&Node::container(vec![
+            Node::checkbox("Compress", false).key("compress"),
+            Node::new(Kind::Checkbox(view::Checkbox {
+                on: true,
+                disabled: true,
+                ..view::Checkbox::default()
+            }))
+            .key("held"),
+        ]))
+        .unwrap();
+        let children = tree.children(tree.root().unwrap());
+        let (checkbox, held) = (children[0], children[1]);
+        let on = vec![("compress".to_owned(), UiEventKind::Toggle { on: true })];
+        let spaced = super::key(
+            &tree,
+            checkbox,
+            &pressed_key(Key::Char(' '), KeyAction::Press, Mods::NONE),
+        )
+        .map(|events| {
+            events
+                .into_iter()
+                .map(|event| (event.key.0, event.kind))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(spaced, Some(on));
+        assert!(pressed(&tree, held).is_none());
+        assert_eq!(check_size("", ControlSize::Large, (0.0, 0.0)), (18.0, 18.0));
+        assert_eq!(
+            check_size("Notify", ControlSize::Mini, (36.0, 11.0)),
+            (54.0, 12.0)
         );
     }
 }

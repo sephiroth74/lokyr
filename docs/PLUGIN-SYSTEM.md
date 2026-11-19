@@ -351,15 +351,22 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "switch" | "separator" | "list"
-        | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
-    text: string?, -- for text nodes; a button's, a toggle's and a switch's label
+    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios"
+        | "separator" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview"
+        | "terminal-specimen" | "themed",
+    text: string?, -- for text nodes; a button's, a toggle's, a switch's and a checkbox's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
-    on: boolean?, -- for toggle and switch nodes, the plugin's state
-    disabled: boolean?, -- for button, toggle and switch nodes: dimmed, and takes neither a click nor the focus
-    -- For button, toggle, switch, field and tabs nodes, the control's size, as macOS 27's: "large", 28 points high,
+    on: boolean?, -- for toggle, switch and checkbox nodes, the plugin's state
+    disabled: boolean?, -- for button, toggle, switch, checkbox and radios nodes: dimmed, and takes neither a click nor the focus
+    -- For radios nodes, a group of radio buttons of one choice: its options, each of its label and whether it is
+    -- disabled; the option chosen, from 0, nil of none; whether they go across a row rather than down a column.
+    -- A click on an option, or an arrow while the group has the focus, tells a "select" of its index.
+    options: { { label: string, disabled: boolean? } }?,
+    chosen: number?,
+    across: boolean?,
+    -- For button, toggle, switch, checkbox, radios, field and tabs nodes, the control's size, as macOS 27's: "large", 28 points high,
     -- "regular", 24, by default, "small", 20, of the small text, or "mini", 16, of the mini text; a switch 64 by 28,
-    -- 54 by 24, 44 by 20 or 36 by 16.
+    -- 54 by 24, 44 by 20 or 36 by 16; a checkbox's box and a radio button's circle 18, 16, 14 or 12.
     size: ("large" | "regular" | "small" | "mini")?,
     placeholder: string?, -- for field nodes, shown while the field is empty
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a

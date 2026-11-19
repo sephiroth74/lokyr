@@ -5404,6 +5404,34 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
                 out.push_str(" disabled");
             }
         }
+        Kind::Checkbox(checkbox) => {
+            let _ = write!(out, "checkbox {}", quoted(&checkbox.label));
+            out.push_str(if checkbox.on { " on" } else { " off" });
+            if checkbox.disabled {
+                out.push_str(" disabled");
+            }
+        }
+        Kind::Radios(radios) => {
+            let options: Vec<String> = radios
+                .options
+                .iter()
+                .map(|option| {
+                    let label = quoted(&option.label);
+                    if option.disabled {
+                        format!("{label} disabled")
+                    } else {
+                        label
+                    }
+                })
+                .collect();
+            let _ = write!(out, "radios {}", options.join(" | "));
+            if let Some(chosen) = radios.chosen {
+                let _ = write!(out, " chosen {chosen}");
+            }
+            if radios.disabled {
+                out.push_str(" disabled");
+            }
+        }
         Kind::Switch(switch) => {
             let _ = write!(out, "switch {}", quoted(&switch.label));
             out.push_str(if switch.on { " on" } else { " off" });

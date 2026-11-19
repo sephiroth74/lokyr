@@ -18,7 +18,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use lokyr_plugin_sdk::view::{Button, Field, Kind, List, Node, Switch, Tabs, Toggle};
+use lokyr_plugin_sdk::view::{
+    Button, Checkbox, Field, Kind, List, Node, Radios, Switch, Tabs, Toggle,
+};
 use mlua::Value;
 use serde::de::DeserializeOwned;
 
@@ -40,7 +42,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 17] = [
+pub(crate) const KINDS: [&str; 19] = [
     "container",
     "text",
     "icon",
@@ -49,6 +51,8 @@ pub(crate) const KINDS: [&str; 17] = [
     "button",
     "toggle",
     "switch",
+    "checkbox",
+    "radios",
     "separator",
     "list",
     "scroll",
@@ -71,6 +75,8 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "button" => &["text", "icon", "disabled", "link", "size", "variant"],
         "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
+        "checkbox" => &["text", "on", "disabled", "size"],
+        "radios" => &["options", "chosen", "across", "disabled", "size"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
         "progress" => &["progress"],
         "tabs" => &["tabs", "chosen", "distribution", "size"],
@@ -303,6 +309,19 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             disabled: or_default(take("disabled"), "disabled", budget)?,
             size: or_default(take("size"), "size", budget)?,
         }),
+        "checkbox" => Kind::Checkbox(Checkbox {
+            label: or_default(take("text"), "text", budget)?,
+            on: or_default(take("on"), "on", budget)?,
+            disabled: or_default(take("disabled"), "disabled", budget)?,
+            size: or_default(take("size"), "size", budget)?,
+        }),
+        "radios" => Kind::Radios(Radios {
+            options: or_default(take("options"), "options", budget)?,
+            chosen: field(take("chosen"), "chosen", budget)?,
+            across: or_default(take("across"), "across", budget)?,
+            disabled: or_default(take("disabled"), "disabled", budget)?,
+            size: or_default(take("size"), "size", budget)?,
+        }),
         "separator" => Kind::Separator,
         "list" => {
             let given = take("row");
@@ -375,7 +394,7 @@ pub(crate) use giving::to_lua;
 #[cfg(any(test, feature = "testing", feature = "test-host"))]
 mod giving {
     use lokyr_plugin_sdk::view::{
-        Button, Field, Kind, Layout, List, Node, Style, Switch, Tabs, Toggle,
+        Button, Checkbox, Field, Kind, Layout, List, Node, Radios, Style, Switch, Tabs, Toggle,
     };
     use mlua::{Lua, Table};
     use serde::Serialize;
@@ -392,6 +411,8 @@ mod giving {
             Kind::Button(_) => "button",
             Kind::Toggle(_) => "toggle",
             Kind::Switch(_) => "switch",
+            Kind::Checkbox(_) => "checkbox",
+            Kind::Radios(_) => "radios",
             Kind::Separator => "separator",
             Kind::List(_) => "list",
             Kind::Scroll => "scroll",
@@ -492,9 +513,28 @@ mod giving {
                     on,
                     disabled,
                     size,
+                })
+                | Kind::Checkbox(Checkbox {
+                    label,
+                    on,
+                    disabled,
+                    size,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("on", *on)?;
+                    table.raw_set("disabled", *disabled)?;
+                    set(lua, &table, "size", size)?;
+                }
+                Kind::Radios(Radios {
+                    options,
+                    chosen,
+                    across,
+                    disabled,
+                    size,
+                }) => {
+                    set(lua, &table, "options", options)?;
+                    set(lua, &table, "chosen", chosen)?;
+                    table.raw_set("across", *across)?;
                     table.raw_set("disabled", *disabled)?;
                     set(lua, &table, "size", size)?;
                 }

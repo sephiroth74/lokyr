@@ -345,7 +345,8 @@ impl Pointer {
             // over them.
             (Button::Primary, Some((node, _)))
                 if tree.kind(node).is_some_and(|kind| {
-                    kind.presses() || matches!(kind, Kind::Field(_) | Kind::List(_))
+                    kind.presses()
+                        || matches!(kind, Kind::Field(_) | Kind::List(_) | Kind::Radios(_))
                 }) => {}
             (Button::Primary, Some((node, key))) => {
                 self.drag = Some(Drag {
@@ -403,6 +404,11 @@ impl Pointer {
         }
         if button == Button::Primary && matches!(tree.kind(node), Some(Kind::Tabs(_))) {
             events.extend(tabs::clicked(tree, layout, node, at));
+            return events;
+        }
+        // A group of radio buttons chooses the option under the release.
+        if button == Button::Primary && matches!(tree.kind(node), Some(Kind::Radios(_))) {
+            events.extend(crate::radios::clicked(tree, layout, node, at));
             return events;
         }
         let kinds = match button {

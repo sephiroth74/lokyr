@@ -537,6 +537,29 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                     self.switch_track(frame, switch.size),
                     widget::track(switch.size).1 / 2.0,
                 )),
+                // A checkbox's round its box, a group's round the circle of
+                // its option chosen, or of its first that can be.
+                Kind::Checkbox(checkbox) => Some((
+                    self.check_box(frame, checkbox.size),
+                    widget::check_side(checkbox.size) * widget::CHECK_ROUNDING,
+                )),
+                Kind::Radios(radios) => {
+                    let at = radios
+                        .chosen
+                        .or_else(|| radios.options.iter().position(|option| !option.disabled))
+                        .unwrap_or(0);
+                    self.layout.options(tree, id).get(at).map(|option| {
+                        let option = Frame {
+                            x: option.x + self.origin.0,
+                            y: option.y + self.origin.1,
+                            ..*option
+                        };
+                        (
+                            self.check_box(option, radios.size),
+                            widget::check_side(radios.size) / 2.0,
+                        )
+                    })
+                }
                 _ => None,
             };
             let rounded = |radius| Style {
@@ -597,6 +620,8 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 self.widget((label, icon), (frame, *size), color, link);
             }
             Kind::Switch(switch) => self.switch(id, switch, frame, color),
+            Kind::Checkbox(checkbox) => self.checkbox(checkbox, frame, color),
+            Kind::Radios(radios) => self.radios(id, radios, color),
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
@@ -1665,6 +1690,114 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 ..frame
             };
             self.text(&switch.label, at, Some(natural), color);
+        }
+    }
+
+    /// The box of a checkbox, or a radio button's circle, of `size` within
+    /// `frame`, in pixels: at its left, in the middle of its height, on
+    /// whole pixels.
+    fn check_box(&self, frame: Frame, size: view::ControlSize) -> Frame {
+        let side = (widget::check_side(size) * self.layout.scale()).round();
+        Frame {
+            x: frame.x.round(),
+            y: (frame.y + (frame.height - side) / 2.0).round(),
+            width: side,
+            height: side,
+        }
+    }
+
+    /// The label of a checkbox or a radio button, `label`, after its box,
+    /// `side`, within `frame`, in `color`.
+    fn check_label(&mut self, label: &str, (side, frame): (Frame, Frame), color: Color) {
+        if label.is_empty() {
+            return;
+        }
+        let natural = Measure::text(&mut *self.font, label).0;
+        let left = side.x + side.width + widget::CHECK_GAP * self.layout.scale();
+        let at = Frame {
+            x: left,
+            width: (frame.x + frame.width - left).max(0.0),
+            ..frame
+        };
+        self.text(label, at, Some(natural), color);
+    }
+
+    /// The checkbox `checkbox` at `frame`: its box, of the off state's fill
+    /// or the on state's and its check, as macOS 27 draws it, and its label
+    /// after it in `color`.
+    fn checkbox(&mut self, checkbox: &view::Checkbox, frame: Frame, color: Color) {
+        let side = self.check_box(frame, checkbox.size);
+        let fill = self.tokens.get(if checkbox.on {
+            "check.on.bg"
+        } else {
+            "check.off.bg"
+        });
+        if let Some(fill) = fill {
+            self.push_shape(Shape {
+                radius: side.width * widget::CHECK_ROUNDING,
+                ..Shape::filled(rect(side), fill)
+            });
+        }
+        if checkbox.on
+            && let Some(mark) = self.tokens.get("check.mark")
+        {
+            self.icon("check", side, mark);
+        }
+        self.check_label(&checkbox.label, (side, frame), color);
+    }
+
+    /// The group of radio buttons `id`, of `radios`: each option's circle,
+    /// of the off state's fill, or the on state's and its dot while it is
+    /// chosen, and its label after it in `color`; an option disabled at half
+    /// its opacity, its label of the dimmed text's color.
+    fn radios(&mut self, id: NodeId, radios: &view::Radios, color: Color) {
+        let origin = self.origin;
+        let frames = self.layout.options(self.tree, id);
+        let scale = self.layout.scale();
+        for (at, (option, frame)) in radios.options.iter().zip(frames).enumerate() {
+            let frame = Frame {
+                x: frame.x + origin.0,
+                y: frame.y + origin.1,
+                ..frame
+            };
+            let chosen = radios.chosen == Some(at);
+            let dim = |mut color: Color| {
+                if option.disabled {
+                    color.alpha *= DISABLED;
+                }
+                color
+            };
+            let circle = self.check_box(frame, radios.size);
+            let fill = self.tokens.get(if chosen {
+                "check.on.bg"
+            } else {
+                "check.off.bg"
+            });
+            if let Some(fill) = fill {
+                self.push_shape(Shape {
+                    radius: circle.width / 2.0,
+                    ..Shape::filled(rect(circle), dim(fill))
+                });
+            }
+            if chosen && let Some(mark) = self.tokens.get("check.mark") {
+                let dot = (widget::check_side(radios.size) * widget::RADIO_DOT * scale).round();
+                let at = Frame {
+                    x: (circle.x + (circle.width - dot) / 2.0).round(),
+                    y: (circle.y + (circle.height - dot) / 2.0).round(),
+                    width: dot,
+                    height: dot,
+                };
+                self.push_shape(Shape {
+                    radius: dot / 2.0,
+                    ..Shape::filled(rect(at), dim(mark))
+                });
+            }
+            let color = if option.disabled {
+                self.tokens.get("text.disabled").unwrap_or(color)
+            } else {
+                color
+            };
+            self.check_label(&option.label, (circle, frame), color);
         }
     }
 
@@ -3763,6 +3896,116 @@ mod tests {
             .expect("the knob's shadow");
         assert_eq!((shadow.x, shadow.y, shadow.blur), (0.0, 1.0, 2.0));
         assert_eq!(shadow.color, light.get("switch.knob.shadow").unwrap());
+    }
+
+    #[test]
+    fn checkboxes_and_radio_buttons_paint_their_boxes_of_their_state_and_their_marks() {
+        use lokyr_plugin_sdk::view::{Kind, RadioOption};
+        let mut every = Node::radios(
+            vec![
+                RadioOption::new("Daily"),
+                RadioOption {
+                    label: "Monthly".to_owned(),
+                    disabled: true,
+                },
+            ],
+            Some(0),
+        )
+        .key("every");
+        if let Kind::Radios(radios) = &mut every.kind {
+            radios.across = true;
+        }
+        let root = Node::container(vec![
+            Node::checkbox("", true).key("on"),
+            Node::checkbox("", false).key("off"),
+            every,
+        ])
+        .layout(view::Layout {
+            gap: 4.0,
+            padding: Edges::all(4.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: None,
+                pressed: None,
+                lists: &Lists::new(),
+                motion: None,
+                fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
+            },
+        );
+        let shapes: Vec<&Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let at = |x, y, side| Rect {
+            x,
+            y,
+            width: side,
+            height: side,
+        };
+        let shape = |rect: Rect| {
+            shapes
+                .iter()
+                .copied()
+                .find(|shape| shape.rect == rect)
+                .unwrap_or_else(|| panic!("{rect:?} in {shapes:#?}"))
+        };
+        // On: a box of 16 of the on state's fill, corners a third of its
+        // side round, and its check of the mark's color; off: the off
+        // state's fill, of no check.
+        let on = shape(at(4, 4, 16));
+        assert_eq!(on.fill, token("check.on.bg"));
+        assert!((on.radius - 16.0 * widget::CHECK_ROUNDING).abs() < 1e-4);
+        let glyphs: Vec<&PlacedGlyph> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(glyphs) => Some(glyphs.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(
+            glyphs
+                .iter()
+                .any(|glyph| glyph.color == token("check.mark"))
+        );
+        assert_eq!(shape(at(24, 4, 16)).fill, token("check.off.bg"));
+        // The group: the chosen option's circle of the on state's fill and
+        // its dot of 6 in its middle; the disabled one's of the off state's
+        // at half its opacity.
+        let group = tree.children(tree.root().unwrap())[2];
+        let options = layout.options(&tree, group);
+        let first = rect(options[0]).x;
+        let circle = shape(at(first, 4, 16));
+        assert_eq!((circle.fill, circle.radius), (token("check.on.bg"), 8.0));
+        let dot = shape(at(first + 5, 9, 6));
+        assert_eq!(dot.fill, token("check.mark"));
+        let second = rect(options[1]).x;
+        let mut dimmed = token("check.off.bg");
+        dimmed.alpha *= 0.5;
+        assert_eq!(shape(at(second, 4, 16)).fill, dimmed);
     }
 
     /// `root` laid out at a scale of 1 in 400 points, and painted of the

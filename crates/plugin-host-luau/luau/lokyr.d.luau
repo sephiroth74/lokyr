@@ -235,7 +235,7 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "recorded", keys: any? }
 
 export type Node = {
-    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "switch" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
+    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
     key: Key?,
     layout: NodeLayout?,
     style: Style?,
@@ -256,6 +256,9 @@ export type Node = {
     link: boolean?,
     variant: ButtonVariant?,
     on: boolean?,
+    options: { RadioOption }?,
+    chosen: number?,
+    across: boolean?,
     row: Node?,
     count: number?,
     first: number?,
@@ -264,7 +267,6 @@ export type Node = {
     menu: boolean?,
     progress: Progress?,
     tabs: { Tab }?,
-    chosen: number?,
     distribution: Distribution?,
     image: number?,
     theme: string?,
@@ -811,6 +813,11 @@ export type QuickScreen =
     | "main"
     | "pointer"
     | "menu-bar"
+
+export type RadioOption = {
+    label: string?,
+    disabled: boolean?,
+}
 
 export type ScreenPoint = {
     x: number,

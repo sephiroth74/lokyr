@@ -81,6 +81,12 @@
 "switch.on.bg" = "accent"
 # A switch's knob · not released yet.
 "switch.knob.bg" = "#ffffff"
+# A checkbox's box, and a radio button's circle, that is off · not released yet.
+"check.off.bg" = "text / 10%"
+# A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet.
+"check.on.bg" = "button.default.bg"
+# A checkbox's check, and a radio button's dot · not released yet.
+"check.mark" = "button.default.fg"
 # The shadow under a switch's knob · not released yet.
 "switch.knob.shadow" = { light = "#0000001f", dark = "transparent" }
 # The tooltips' background.

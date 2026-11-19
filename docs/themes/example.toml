@@ -80,6 +80,11 @@ on.bg = "accent"
 knob.bg = "#ffffff"
 knob.shadow = "transparent"
 
+[check]                             # the checkboxes and the radio buttons
+off.bg = "text / 10%"
+on.bg = "button.default.bg"
+mark = "button.default.fg"
+
 [tooltip]                           # the tooltips
 bg = "#323235"
 fg = "text"

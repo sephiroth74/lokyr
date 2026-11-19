@@ -1,7 +1,7 @@
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{
     ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, Progress, ProgressShape,
-    ProgressState, Role, Style, Switch, Tab,
+    ProgressState, RadioOption, Radios, Role, Style, Switch, Tab,
 };
 use mlua::Lua;
 
@@ -134,6 +134,21 @@ fn every() -> Node {
             size: ControlSize::Small,
         }))
         .key("notify"),
+        Node::checkbox("Verify", true).key("verify"),
+        Node::new(Kind::Radios(Radios {
+            options: vec![
+                RadioOption::new("Daily"),
+                RadioOption {
+                    label: "Monthly".to_owned(),
+                    disabled: true,
+                },
+            ],
+            chosen: Some(0),
+            across: true,
+            disabled: false,
+            size: ControlSize::Mini,
+        }))
+        .key("every"),
     ];
     root
 }
@@ -167,6 +182,9 @@ const EVERY: &str = r#"{
         { kind = "themed", theme = "Lokyr Light",
           children = { { kind = "text", text = "part" }, { kind = "terminal-specimen" } } },
         { kind = "switch", key = "notify", text = "Notify", on = true, disabled = true, size = "small" },
+        { kind = "checkbox", key = "verify", text = "Verify", on = true },
+        { kind = "radios", key = "every", options = { { label = "Daily" }, { label = "Monthly", disabled = true } },
+          chosen = 0, across = true, size = "mini" },
     },
 }"#;
 
@@ -196,6 +214,9 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         local switch = view.children[16]
         assert(switch.kind == "switch" and switch.text == "Notify" and switch.size == "small")
         assert(switch.on == true and switch.disabled == true)
+        assert(view.children[17].kind == "checkbox" and view.children[17].on == true)
+        local every = view.children[18]
+        assert(every.kind == "radios" and every.chosen == 0 and every.options[2].disabled == true)
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

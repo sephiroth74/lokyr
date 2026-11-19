@@ -649,6 +649,18 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         field,
         Node::toggle("case", true).key("case"),
         Node::switch("Wrap", false).key("wrap"),
+        Node::checkbox("Verify", true).key("verify"),
+        Node::radios(
+            vec![
+                crate::view::RadioOption::new("Daily"),
+                crate::view::RadioOption {
+                    label: "Monthly".to_owned(),
+                    disabled: true,
+                },
+            ],
+            Some(0),
+        )
+        .key("every"),
         Node::new(Kind::Switch(Switch {
             label: "Live".to_owned(),
             on: true,
@@ -708,6 +720,8 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  field \"Find\" key=query tooltip=\"What to find\" focusable\n",
             "  toggle \"\" icon=\"case\" on key=case\n",
             "  switch \"Wrap\" off key=wrap\n",
+            "  checkbox \"Verify\" on key=verify\n",
+            "  radios \"Daily\" | \"Monthly\" disabled chosen 0 key=every\n",
             "  switch \"Live\" on small disabled key=live\n",
             "  button \"Next\" key=next label=\"Next match\"\n",
             "  button \"\" icon=\"gear\" key=settings\n",

@@ -109,6 +109,9 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
             "switch.on.bg",
             "switch.knob.bg",
             "switch.knob.shadow",
+            "check.off.bg",
+            "check.on.bg",
+            "check.mark",
         ],
     ),
     (
@@ -203,14 +206,14 @@ pub(super) const WORDS: [&str; 32] = [
 /// and the segment chosen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Samples {
-    pub(super) toggles: [bool; 3],
+    pub(super) toggles: [bool; 4],
     pub(super) segment: usize,
 }
 
 impl Default for Samples {
     fn default() -> Self {
         Self {
-            toggles: [true, false, true],
+            toggles: [true, false, true, true],
             segment: 0,
         }
     }
@@ -223,6 +226,7 @@ impl Samples {
             "compress" => self.toggles[0] = on,
             "encrypt" => self.toggles[1] = on,
             "notify" => self.toggles[2] = on,
+            "verify" => self.toggles[3] = on,
             _ => {}
         }
     }
@@ -765,6 +769,8 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
             vec![
                 toggle("compress", "sample-compress", samples.toggles[0]),
                 toggle("encrypt", "sample-encrypt", samples.toggles[1]),
+                Node::checkbox(built.word("sample-verify"), samples.toggles[3])
+                    .key(sample("toggles", "verify").as_str()),
                 room(),
                 Node::switch(built.word("sample-notify"), samples.toggles[2])
                     .key(sample("toggles", "notify").as_str()),

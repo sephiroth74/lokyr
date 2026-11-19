@@ -33,6 +33,7 @@ pub mod pane;
 pub mod panel;
 pub mod pointer;
 pub mod progress;
+pub mod radios;
 pub mod reorder;
 pub mod scrollbar;
 pub mod specimen;

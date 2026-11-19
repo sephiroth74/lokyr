@@ -476,6 +476,7 @@ impl Surface {
             .or_else(|| widget::default_key(&self.tree, node, key))
             .or_else(|| widget::key(&self.tree, node, key))
             .or_else(|| tabs::key(&self.tree, node, key))
+            .or_else(|| crate::radios::key(&self.tree, node, key))
             .or_else(|| self.lists.key(&self.tree, node, key))
     }
 

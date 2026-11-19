@@ -28,8 +28,8 @@ use crate::layout::Frame;
 use crate::panel;
 use crate::pointer::NodeEvent;
 use crate::surface::Surface;
-use crate::tabs;
 use crate::tree::{self, Tree};
+use crate::{radios, tabs};
 
 /// The top bits of the id of a surface's node, a row of a list, and a tab
 /// of a view of tabs: above every pane's.
@@ -92,7 +92,8 @@ enum Part {
     Node { index: u32, generation: u32 },
     /// A row of a list, by the list's slot and its item.
     Row { list: u32, item: usize },
-    /// A tab of a view of tabs, by the view's slot and its place.
+    /// A tab of a view of tabs, or a radio button of a group, by the
+    /// view's or the group's slot and its place.
     Tab { view: u32, tab: usize },
 }
 
@@ -163,15 +164,20 @@ pub fn perform<P: Copy + Eq>(
                 Action::SetValue(_) => Vec::new(),
             }
         }
+        // A choice of a node of choices: a view of tabs' tab, or a group's
+        // radio button.
         Part::Tab { view, tab } => {
             let Some(node) = found(tree, view, |node| {
-                matches!(tree.kind(node), Some(Kind::Tabs(_)))
+                matches!(tree.kind(node), Some(Kind::Tabs(_) | Kind::Radios(_)))
             }) else {
                 return Vec::new();
             };
             match (asked, tree.kind(node)) {
                 (Action::Press, Some(Kind::Tabs(tabs))) => {
                     tabs::chosen(tree, node, tabs, tab).into_iter().collect()
+                }
+                (Action::Press, Some(Kind::Radios(group))) => {
+                    radios::chosen(tree, node, group, tab).into_iter().collect()
                 }
                 (Action::Focus, _) => action::perform(Action::Focus, (panel, tree, node), focus),
                 _ => Vec::new(),
@@ -234,6 +240,8 @@ impl WindowTree {
             (Kind::Field(_), _) => Role::TextInput,
             (Kind::Button(_) | Kind::Toggle(_), _) => Role::Button,
             (Kind::Switch(_), _) => Role::Switch,
+            (Kind::Checkbox(_), _) => Role::CheckBox,
+            (Kind::Radios(_), _) => Role::RadioGroup,
             (Kind::List(_), _) => Role::ListBox,
             (Kind::Progress(_), _) => Role::ProgressIndicator,
             (Kind::Tabs(_), _) => Role::TabList,
@@ -289,6 +297,39 @@ impl WindowTree {
                     Toggled::False
                 });
                 pressable(&mut node, switch.disabled);
+            }
+            Kind::Checkbox(checkbox) => {
+                node.set_toggled(if checkbox.on {
+                    Toggled::True
+                } else {
+                    Toggled::False
+                });
+                pressable(&mut node, checkbox.disabled);
+            }
+            // Each option a radio button, of its label and whether it is
+            // chosen, which a client presses to choose it.
+            Kind::Radios(radios) => {
+                let options = surface.layout.options(tree, id);
+                for (place, option) in radios.options.iter().enumerate() {
+                    let option_id = part_id(TAB, access.number, id, place);
+                    let mut node_of_option = Node::new(Role::RadioButton);
+                    node_of_option.set_label(option.label.as_str());
+                    let chosen = radios.chosen == Some(place);
+                    node_of_option.set_toggled(if chosen {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    });
+                    if let Some(&frame) = options.get(place) {
+                        node_of_option.set_bounds(bounds(access.corner, frame));
+                    }
+                    pressable(&mut node_of_option, option.disabled || radios.disabled);
+                    if chosen {
+                        node.set_active_descendant(option_id);
+                    }
+                    children.push(option_id);
+                    self.nodes.push((option_id, node_of_option));
+                }
             }
             Kind::Progress(progress) if progress.state != ProgressState::Indeterminate => {
                 node.set_numeric_value(f64::from(progress.value.clamp(0.0, 1.0)) * 100.0);
@@ -374,6 +415,7 @@ fn label(tree: &Tree, id: tree::NodeId, kind: &Kind) -> Option<String> {
             Kind::Button(button) if !button.label.is_empty() => Some(button.label.clone()),
             Kind::Toggle(toggle) if !toggle.label.is_empty() => Some(toggle.label.clone()),
             Kind::Switch(switch) if !switch.label.is_empty() => Some(switch.label.clone()),
+            Kind::Checkbox(checkbox) if !checkbox.label.is_empty() => Some(checkbox.label.clone()),
             _ => None,
         })
         .or_else(|| tree.tooltip(id).map(str::to_owned))
@@ -1126,6 +1168,74 @@ mod tests {
         assert_eq!(
             told(events),
             [("notify".to_owned(), UiEventKind::Toggle { on: false })]
+        );
+    }
+
+    #[test]
+    fn a_checkbox_is_a_check_box_and_a_group_a_radio_group_of_its_options_a_client_chooses() {
+        let root = column(vec![
+            ViewNode::checkbox("Compress", true).key("compress"),
+            ViewNode::radios(
+                vec![
+                    view::RadioOption::new("Daily"),
+                    view::RadioOption::new("Weekly"),
+                    view::RadioOption {
+                        label: "Monthly".to_owned(),
+                        disabled: true,
+                    },
+                ],
+                Some(0),
+            )
+            .key("every")
+            .label("Back up"),
+        ]);
+        let mut surface = surface(&root);
+        let update = tree_of(&surface, None);
+        let compress = keyed(&update, &surface, "compress");
+        assert_eq!(compress.role(), Role::CheckBox);
+        assert_eq!(compress.label(), Some("Compress"));
+        assert_eq!(compress.toggled(), Some(Toggled::True));
+        assert!(compress.supports_action(AxAction::Click));
+        // The group, of its label, its options radio buttons of their
+        // labels and states, the disabled one of no press.
+        let every = keyed(&update, &surface, "every");
+        assert_eq!(every.role(), Role::RadioGroup);
+        assert_eq!(every.label(), Some("Back up"));
+        let options: Vec<_> = every
+            .children()
+            .iter()
+            .map(|&id| node(&update, id))
+            .collect();
+        assert_eq!(options.len(), 3);
+        assert!(
+            options
+                .iter()
+                .all(|option| option.role() == Role::RadioButton)
+        );
+        assert_eq!(options[0].label(), Some("Daily"));
+        assert_eq!(options[0].toggled(), Some(Toggled::True));
+        assert_eq!(options[1].toggled(), Some(Toggled::False));
+        assert!(options[2].is_disabled());
+        // A client's press of Weekly chooses it; of Monthly, nothing.
+        let mut focus: Focus<u8> = Focus::new();
+        let weekly = every.children()[1];
+        let events = perform(
+            &request(AxAction::Click, weekly, None),
+            (3, &mut surface),
+            &mut focus,
+        );
+        assert_eq!(
+            told(events),
+            [("every".to_owned(), UiEventKind::Select { item: 1 })]
+        );
+        let monthly = every.children()[2];
+        assert!(
+            perform(
+                &request(AxAction::Click, monthly, None),
+                (3, &mut surface),
+                &mut focus
+            )
+            .is_empty()
         );
     }
 }

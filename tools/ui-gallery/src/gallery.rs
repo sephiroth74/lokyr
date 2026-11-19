@@ -97,6 +97,8 @@ pub struct Gallery {
     order: Vec<usize>,
     boxed: bool,
     slow: bool,
+    /// The option chosen of the group of radio buttons.
+    radio: Option<usize>,
     /// The tab bar's tabs, the one chosen, and whether the bar goes in
     /// the titlebar, or below a titlebar of the window's title.
     tabs: usize,
@@ -165,6 +167,7 @@ impl Gallery {
             order: vec![0, 1, 2, 3],
             boxed: true,
             slow: false,
+            radio: Some(0),
             tabs: 3,
             chosen: 0,
             in_titlebar: true,
@@ -408,6 +411,10 @@ impl Gallery {
                 self.pressed = format!("click on `{key}`");
             }
             UiEventKind::Select { item } if key == "views" => self.page = item,
+            UiEventKind::Select { item } if key == "every" => {
+                self.radio = Some(item);
+                self.pressed = format!("`every` chose {item}");
+            }
             UiEventKind::Toggle { .. } if DISTRIBUTIONS.iter().any(|(named, ..)| *named == key) => {
                 if let Some(&(_, _, distribution)) =
                     DISTRIBUTIONS.iter().find(|(named, ..)| *named == key)
@@ -778,7 +785,10 @@ impl Gallery {
                 section("Columns", columns()),
                 section("Boxes and clips", boxes()),
                 section("Drags and scrolls", self.drags()),
-                section("Buttons, toggles, switches and separators", self.buttons()),
+                section(
+                    "Buttons, toggles, switches, checkboxes and radio buttons",
+                    self.buttons(),
+                ),
                 section("Progress", self.progress()),
                 section("A view of tabs", self.views()),
             ],
@@ -1482,6 +1492,43 @@ impl Gallery {
             }))
             .key("locked"),
         ]);
+        let checkbox = |key: &str, label: &str, size: ControlSize| {
+            Node::new(Kind::Checkbox(view::Checkbox {
+                label: label.to_owned(),
+                on: self.toggles.get(key).copied().unwrap_or(false),
+                size,
+                ..view::Checkbox::default()
+            }))
+            .key(key)
+        };
+        let mut every = Node::radios(
+            vec![
+                view::RadioOption::new("Daily"),
+                view::RadioOption::new("Weekly"),
+                view::RadioOption {
+                    label: "Monthly".to_owned(),
+                    disabled: true,
+                },
+            ],
+            self.radio,
+        )
+        .key("every")
+        .label("Back up");
+        if let Kind::Radios(radios) = &mut every.kind {
+            radios.across = true;
+        }
+        let checks = row(vec![
+            checkbox("check", "Compress", ControlSize::Regular),
+            checkbox("check-small", "Encrypt", ControlSize::Small),
+            Node::new(Kind::Checkbox(view::Checkbox {
+                label: "Verify, and disabled".to_owned(),
+                on: true,
+                disabled: true,
+                ..view::Checkbox::default()
+            }))
+            .key("check-held"),
+        ]);
+        let radios = row(vec![secondary("Back up"), every]);
         let on: Vec<&str> = self
             .toggles
             .iter()
@@ -1494,6 +1541,8 @@ impl Gallery {
                 buttons,
                 toggles,
                 switches,
+                checks,
+                radios,
                 Node::separator(),
                 secondary(&format!("last: {}", self.pressed)),
                 secondary(&format!("on: {}", on.join(", "))),
@@ -2083,6 +2132,9 @@ mod tests {
             "wrap",
             "notify",
             "compact",
+            "check",
+            "check-small",
+            "every",
             "less",
             "more",
             "spin",
