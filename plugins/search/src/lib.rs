@@ -485,12 +485,12 @@ fn plain(node: Node, side: f32, on: bool, label: &str) -> Node {
 }
 
 /// The find bar of `view`, of `texts`: a search field of macOS's look, a
-/// capsule of its magnifying glass, which lists the recent searches, its
-/// text, its toggles of case, whole words and regexes, and at its end the
-/// button that empties it while it holds text, of its room kept, so that
-/// the toggles do not move; the count, of a width of its own, so that the
-/// bar keeps its width whatever it tells; and the buttons of the next and
-/// the previous match and of the close.
+/// box of rounded corners of its magnifying glass, which lists the recent
+/// searches, its text, its toggles of case, whole words and regexes, and at
+/// its end the button that empties it while it holds text, of its room
+/// kept, so that the toggles do not move; the count, of a width of its own,
+/// so that the bar keeps its width whatever it tells; and the buttons of
+/// the next and the previous match and of the close.
 pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
     let options = view.options;
     let text = Node::field(texts.placeholder.as_str())
@@ -539,12 +539,7 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
         width: Length::Points(FIELD_WIDTH),
         min_width: Length::Points(FIELD_WIDTH),
         gap: 1.0,
-        padding: Edges {
-            top: 2.0,
-            right: 4.0,
-            bottom: 2.0,
-            left: 4.0,
-        },
+        padding: Edges::all(2.0),
         align: Align::Center,
         ..Layout::default()
     })
@@ -554,9 +549,9 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             color: Token::from("field.border"),
             width: 1.0,
         }),
-        // A capsule, as macOS's search fields: half its height, of its
-        // field's 24 points and its padding.
-        radius: 14.0,
+        // Of a text field's rounded corners, rather than a search field's
+        // capsule, within the bar's own rounded box.
+        radius: 6.0,
         // The ring of its text's focus round the whole field, and the
         // I-beam over it, but over its buttons.
         holds_ring: true,
