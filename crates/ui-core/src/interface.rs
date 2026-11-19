@@ -229,9 +229,17 @@ const ICONS: &[(&str, char)] = &[
     ("zap", '\u{ea86}'),
 ];
 
-/// The names of the host's icons, in their order.
+/// The icons that the host draws of its own, as macOS 27's search field
+/// draws them, of SF Symbols' forms: its magnifying glass, and its clear
+/// button's cross knocked out of a disc.
+pub const DRAWN: [&str; 2] = ["clear-circle", "magnifying-glass"];
+
+/// The names of the host's icons, the symbols' font's and those that it
+/// draws of its own, in their order.
 pub fn icons() -> impl Iterator<Item = &'static str> {
-    ICONS.iter().map(|(name, _)| *name)
+    let mut names: Vec<&'static str> = ICONS.iter().map(|(name, _)| *name).chain(DRAWN).collect();
+    names.sort_unstable();
+    names.into_iter()
 }
 
 /// The character of the icon `name`, of the symbols' font, if the host has
@@ -265,7 +273,10 @@ mod tests {
         assert_eq!(icon("pulse"), Some('\u{eb31}'));
         assert_eq!(icon("Terminal"), None);
         assert_eq!(icon(""), None);
-        assert_eq!(icons().count(), ICONS.len());
-        assert!(icons().all(|name| icon(name).is_some()));
+        assert_eq!(icons().count(), ICONS.len() + DRAWN.len());
+        assert!(
+            icons().all(|name| icon(name).is_some() != DRAWN.contains(&name)),
+            "each of the font or drawn"
+        );
     }
 }

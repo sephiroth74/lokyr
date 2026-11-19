@@ -189,6 +189,7 @@ fn registry_part(manager: &Manager, cx: &mut Cx<'_>, plugins: &[PluginInfo]) -> 
     let field = Node::field(message(cx, "registry-filter", &[]))
         .key(QUERY)
         .label(message(cx, "registry-filter", &[]))
+        .search()
         .layout(Layout {
             grow: 1.0,
             min_width: Length::Points(0.0),

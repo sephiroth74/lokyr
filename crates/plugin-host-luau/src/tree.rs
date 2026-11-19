@@ -72,7 +72,14 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "container" | "spacer" | "separator" | "scroll" | "terminal-specimen" => &[],
         "text" => &["text"],
         "icon" => &["icon"],
-        "field" => &["placeholder", "text", "stepped", "records", "size"],
+        "field" => &[
+            "placeholder",
+            "text",
+            "stepped",
+            "records",
+            "search",
+            "size",
+        ],
         "button" => &["text", "icon", "disabled", "link", "size", "variant"],
         "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
@@ -288,6 +295,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             text: field(take("text"), "text", budget)?,
             stepped: or_default(take("stepped"), "stepped", budget)?,
             records: or_default(take("records"), "records", budget)?,
+            search: or_default(take("search"), "search", budget)?,
             size: or_default(take("size"), "size", budget)?,
         }),
         "button" => Kind::Button(Button {
@@ -484,12 +492,14 @@ mod giving {
                     text,
                     stepped,
                     records,
+                    search,
                     size,
                 }) => {
                     table.raw_set("placeholder", placeholder.as_str())?;
                     set(lua, &table, "text", text)?;
                     table.raw_set("stepped", *stepped)?;
                     table.raw_set("records", *records)?;
+                    table.raw_set("search", *search)?;
                     set(lua, &table, "size", size)?;
                 }
                 Kind::Button(Button {

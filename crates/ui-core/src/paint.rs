@@ -503,8 +503,16 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 };
                 &boxed
             }
-            Kind::Field(_) if own => {
-                boxed = field_box(style);
+            Kind::Field(field) if own => {
+                // A search field a capsule, as macOS's.
+                boxed = if field.search && style.radius <= 0.0 {
+                    Style {
+                        radius: frame.height / self.layout.scale() / 2.0,
+                        ..field_box(style)
+                    }
+                } else {
+                    field_box(style)
+                };
                 &boxed
             }
             Kind::Button(_) | Kind::Toggle(_) | Kind::PopUp(_) if own => {
@@ -1404,7 +1412,9 @@ impl<'a, B: FontBackend> Painter<'a, B> {
     /// The field `id` within its box at `frame`, of `style`, inside its
     /// border: its selection, behind its text, its text in `color` or its
     /// placeholder in the secondary text's, scrolled across as its state
-    /// has it, and its caret, while it has the keyboard's focus.
+    /// has it, and its caret, while it has the keyboard's focus; a search
+    /// field's text between its magnifying glass, in `color`, and its clear
+    /// button, of the secondary text's, while it holds text.
     fn field(
         &mut self,
         id: NodeId,
@@ -1422,9 +1432,39 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         let top = (frame.y + (frame.height - line) / 2.0).round();
         let baseline = top + ascent.round();
         let scroll = state.map_or(0.0, FieldState::scroll);
-        let start = frame.x + field::PADDING.1 * scale - scroll * scale;
-        self.items
-            .push(Item::PushClip(inside_border(rect(frame), style, scale)));
+        let (left, right) = field::insets(self.tree, id);
+        let start = frame.x + left * scale - scroll * scale;
+        let parts = field::search_parts(self.tree, self.layout, id).map(|(glass, clear)| {
+            let moved = |part: Frame| Frame {
+                x: part.x + self.origin.0,
+                y: part.y + self.origin.1,
+                ..part
+            };
+            (moved(glass), moved(clear))
+        });
+        if let Some((glass, clear)) = parts {
+            let glyph = field::search_glyph(self.tree.typeset(id)) * scale;
+            self.push_shape(Shape {
+                mark: Some(Mark::Magnifier(glyph)),
+                ..Shape::filled(rect(glass), color)
+            });
+            if !text.is_empty() {
+                let secondary = self.tokens.get("text.secondary").unwrap_or(color);
+                self.push_shape(Shape {
+                    mark: Some(Mark::Clear(glyph)),
+                    ..Shape::filled(rect(clear), secondary)
+                });
+            }
+        }
+        // A search field's text between its glyphs.
+        let mut within = inside_border(rect(frame), style, scale);
+        if parts.is_some() {
+            let from = (frame.x + left * scale).round() as i32;
+            let to = (frame.x + frame.width - right * scale).round() as i32;
+            within.x = from;
+            within.width = u32::try_from(to - from).unwrap_or(0);
+        }
+        self.items.push(Item::PushClip(within));
         let places = self.font.interface_carets(text);
         let x = |byte: usize| (start + field::place(&places, byte) * scale).round();
         // Between two places, either first, as a run from right to left
@@ -1858,13 +1898,35 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         }
     }
 
-    /// The glyph of the icon `name`, in the middle of `frame`.
+    /// The glyph of the icon `name`, in the middle of `frame`, or its form
+    /// that the host draws of its own.
     fn icon(&mut self, name: &str, frame: Frame, color: Color) {
         let side = frame.width.min(frame.height);
         let corner = (
             frame.x + (frame.width - side) / 2.0,
             frame.y + (frame.height - side) / 2.0,
         );
+        // The icons drawn of the host's own, as a search field's glyphs, of
+        // 13 points in a square of 16, as macOS 27's.
+        let size = side * 13.0 / 16.0;
+        let mark = match name {
+            "magnifying-glass" => Some(Mark::Magnifier(size)),
+            "clear-circle" => Some(Mark::Clear(size)),
+            _ => None,
+        };
+        if let Some(mark) = mark {
+            let square = Frame {
+                x: corner.0,
+                y: corner.1,
+                width: side,
+                height: side,
+            };
+            self.push_shape(Shape {
+                mark: Some(mark),
+                ..Shape::filled(rect(square), color)
+            });
+            return;
+        }
         if let Some(glyph) = self
             .font
             .interface_icon(name, corner, side, color, self.dark)
@@ -4188,6 +4250,89 @@ mod tests {
             .filter(|item| matches!(item, Item::Glyphs(_)))
             .count();
         assert_eq!(texts, 2);
+    }
+
+    #[test]
+    fn a_search_field_paints_a_capsule_its_glass_and_its_clear_button_while_it_holds_text() {
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let root = Node::container(vec![
+            Node::field("Search").key("full").search(),
+            Node::field("Search").key("empty").search(),
+            Node::icon("clear-circle"),
+        ]);
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        let mut fields = Fields::new();
+        fields.set_text(&"full".into(), "abc");
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            &Theme::builtin().dark.tokens,
+            (0.0, 0.0),
+            Shown {
+                fields: &fields,
+                ..shown(true, None)
+            },
+        );
+        let shapes: Vec<Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let children = tree.children(tree.root().unwrap());
+        let frame = |node| rect(layout.frame(&tree, node).unwrap());
+        let (full, empty) = (frame(children[0]), frame(children[1]));
+        let token = |name: &str| Theme::builtin().dark.tokens.get(name).unwrap();
+        // Each a capsule of the field's colors.
+        for field in [full, empty] {
+            let capsule = shapes
+                .iter()
+                .find(|shape| shape.rect == field && shape.mark.is_none())
+                .expect("the field's box");
+            assert_eq!(capsule.fill, token("field.bg"));
+            assert_eq!(capsule.radius, field.height as f32 / 2.0);
+        }
+        // Each its glass, of 13 points; the full one alone its clear
+        // button, of the secondary text's color; the icon of the clear
+        // button's form, drawn.
+        let marks: Vec<(i32, Mark)> = shapes
+            .iter()
+            .filter_map(|shape| shape.mark.map(|mark| (shape.rect.x, mark)))
+            .collect();
+        let glasses = marks
+            .iter()
+            .filter(|(_, mark)| *mark == Mark::Magnifier(13.0))
+            .count();
+        assert_eq!(glasses, 2);
+        let clears: Vec<i32> = marks
+            .iter()
+            .filter(|(_, mark)| matches!(mark, Mark::Clear(_)))
+            .map(|(x, _)| *x)
+            .collect();
+        assert_eq!(clears.len(), 2, "{marks:?}");
+        assert!(clears[0] > full.x && clears[0] < full.x + full.width as i32);
+        assert!(clears[1] >= empty.x + empty.width as i32, "the icon's");
+        let clear = shapes
+            .iter()
+            .find(|shape| matches!(shape.mark, Some(Mark::Clear(13.0))))
+            .unwrap();
+        assert_eq!(clear.fill, token("text.secondary"));
+        // Its text clipped between its glyphs.
+        let clip = items
+            .iter()
+            .find_map(|item| match item {
+                Item::PushClip(clip) if clip.y == full.y + 1 => Some(*clip),
+                _ => None,
+            })
+            .expect("the text's clip");
+        assert_eq!((clip.x, clip.width), (full.x + 26, full.width - 52));
     }
 
     /// `root` laid out at a scale of 1 in 400 points, and painted of the

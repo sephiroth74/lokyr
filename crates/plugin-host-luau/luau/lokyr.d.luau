@@ -252,6 +252,7 @@ export type Node = {
     placeholder: string?,
     stepped: boolean?,
     records: boolean?,
+    search: boolean?,
     size: ControlSize?,
     disabled: boolean?,
     link: boolean?,

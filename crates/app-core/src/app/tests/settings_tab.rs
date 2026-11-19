@@ -1787,6 +1787,26 @@ fn a_search_of_the_settings_shows_its_sections_and_selects_the_one_chosen_of_the
     let at = all.iter().position(|title| *title == titles[0]).unwrap();
     assert!(at >= titles.len(), "{at} of {titles:?}");
     assert_eq!(selected, Some(at));
+    // Typed into, the search field holds its text; Escape empties it, its
+    // keyboard kept, every section back; a second Escape goes out of it, to
+    // the page, whose first field it is.
+    assert_eq!(focused_key(&app, own), ("search".to_owned(), true));
+    fake.send(
+        &mut app,
+        own,
+        key_event(KeyCode::KeyX, "x", Modifiers::NONE, true),
+    );
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "x");
+    let escape = || key_event(KeyCode::Escape, "\u{1b}", Modifiers::NONE, true);
+    fake.send(&mut app, own, escape());
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "");
+    assert_eq!(focused_key(&app, own), ("search".to_owned(), true));
+    assert_eq!(page_sidebar(&app, own).0, all);
+    fake.send(&mut app, own, escape());
+    frames(&mut fake, &mut app, own);
+    assert_eq!(page_field(&app, own, "search"), "");
 }
 
 #[test]

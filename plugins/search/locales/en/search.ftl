@@ -20,3 +20,4 @@ find-next = Find Next
 find-previous = Find Previous
 find-history = Recent Searches
 find-close = Close
+find-clear = Clear

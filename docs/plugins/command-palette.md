@@ -2,7 +2,7 @@
 
 <sub>`lokyr/command-palette` · bundled · [source](../../plugins/command-palette)</sub>
 
-A panel near the top of the window that lists Lokyr's commands, the plugins' too, ranks them as you type, and runs the one you choose: a large field, «Execute Command…», above a thin line and the list.
+A panel near the top of the window that lists Lokyr's commands, the plugins' too, ranks them as you type, and runs the one you choose: a large search field, «Execute Command…», above a thin line and the list.
 
 ## The palette
 

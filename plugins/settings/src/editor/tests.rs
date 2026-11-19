@@ -148,7 +148,8 @@ fn the_filter_keeps_the_tokens_of_its_words_and_empties() {
         rows(&page(&mut host, &mut plugin)),
         ["cursor", "focus.ring"]
     );
-    host.ui_event(&mut plugin, &click(FILTER_CLEAR)).unwrap();
+    // Emptied, as its clear button or Escape tells it.
+    host.ui_event(&mut plugin, &typed("")).unwrap();
     assert_eq!(rows(&page(&mut host, &mut plugin)).len(), 6);
 }
 

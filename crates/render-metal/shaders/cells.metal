@@ -239,7 +239,8 @@ fragment float4 line_fragment(LineFragment in [[stage_in]]) {
 // shape itself; what fills it, or its shadow; its border's color; and the
 // arc of its inscribed ring that it draws instead, its start and its span in
 // turns clockwise from the top, its thickness, and 1; or a check mark's
-// thickness and 2; or a pair of chevrons' size and 3; or 0 for none.
+// thickness and 2; or the size of a pair of chevrons and 3, of a magnifying
+// glass and 4, or of a search field's clear button and 5; or 0 for none.
 struct Shape {
     float2 position;
     float2 size;
@@ -354,6 +355,38 @@ static float chevrons_coverage(float2 p, float size) {
     return clamp(thickness / 2.0 + 0.5 - distance, 0.0, 1.0);
 }
 
+// The part of a pixel at `p`, from a shape's centre, that a magnifying glass
+// covers, as macOS 27's search field draws it, SF Symbols' magnifyingglass
+// of the medium weight: a ring up and to the left of the centre and a
+// handle of round ends down to the right, at shares of `size`, the size of
+// the text that it goes with.
+static float magnifier_coverage(float2 p, float size) {
+    float2 centre = float2(-0.0850, -0.0875) * size;
+    float radius = 0.3467 * size;
+    float ring = 0.1016 * size;
+    float2 start = float2(0.1602, 0.1577) * size;
+    float2 end = float2(0.4109, 0.4188) * size;
+    float handle = 0.1398 * size;
+    float around = clamp(ring / 2.0 + 0.5 - abs(length(p - centre) - radius), 0.0, 1.0);
+    float along = clamp(handle / 2.0 + 0.5 - segment_distance(p, start, end), 0.0, 1.0);
+    return max(around, along);
+}
+
+// The part of a pixel at `p`, from a shape's centre, that a search field's
+// clear button covers, as macOS 27's draws it, SF Symbols'
+// xmark.circle.fill of the medium weight: a disc, of a cross of round ends
+// knocked out of it, at shares of `size`, the size of the text that it goes
+// with.
+static float clear_coverage(float2 p, float size) {
+    float disc = clamp(0.5039 * size + 0.5 - length(p), 0.0, 1.0);
+    float arm = 0.1648 * size;
+    float apart = min(
+        segment_distance(p, float2(-arm, -arm), float2(arm, arm)),
+        segment_distance(p, float2(-arm, arm), float2(arm, -arm)));
+    float cross_out = clamp(0.0938 * size / 2.0 + 0.5 - apart, 0.0, 1.0);
+    return disc * (1.0 - cross_out);
+}
+
 // A shadow covers a pixel as a Gaussian blur of the outline's edge, the
 // error function across its distance; a shape, the part of the pixel within
 // its outline, filled to it, and its border over the fill, between its
@@ -361,6 +394,12 @@ static float chevrons_coverage(float2 p, float size) {
 // fill under it, as CSS's `border-box` has it.
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
+    if (in.arc.w > 4.5) {
+        return in.fill * clear_coverage(p, in.arc.z);
+    }
+    if (in.arc.w > 3.5) {
+        return in.fill * magnifier_coverage(p, in.arc.z);
+    }
     if (in.arc.w > 2.5) {
         return in.fill * chevrons_coverage(p, in.arc.z);
     }

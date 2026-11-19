@@ -381,6 +381,14 @@ pub enum Mark {
     /// button draws them, in the middle of the rectangle, of the size of
     /// the text that they go with, in pixels, about as tall.
     Chevrons(f32),
+    /// A magnifying glass, as macOS 27's search field draws it, in the
+    /// middle of the rectangle, of the size of the text that it goes with,
+    /// in pixels, about as tall.
+    Magnifier(f32),
+    /// A cross knocked out of a disc, as macOS 27's search field draws its
+    /// button that empties it, in the middle of the rectangle, of the size
+    /// of the text that it goes with, in pixels, about as tall.
+    Clear(f32),
 }
 
 /// An arc of a ring: a line along the circle inscribed in a shape's

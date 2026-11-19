@@ -19,3 +19,4 @@ find-next = Trova successivo
 find-previous = Trova precedente
 find-history = Ricerche recenti
 find-close = Chiudi
+find-clear = Svuota

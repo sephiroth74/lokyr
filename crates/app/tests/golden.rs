@@ -634,6 +634,7 @@ fn view_tree() -> Node {
 /// alone, which has the focus, one of an icon and a label; a toggle of an
 /// icon off, one on, one off under the pointer, a disabled one on, one of
 /// a label off; pop-up buttons of a choice, small, of none and disabled;
+/// search fields of a text, empty, and small of a text;
 /// upright separators between the groups, and a flat one under them; room
 /// below for the tooltip of the toggle under the pointer.
 fn widgets_tree() -> Node {
@@ -760,6 +761,36 @@ fn widgets_tree() -> Node {
     if let Kind::PopUp(own) = &mut held.kind {
         own.disabled = true;
     }
+    let small = Style {
+        text_size: Some(lokyr_plugin_sdk::view::TextSize::Small),
+        ..Style::default()
+    };
+    let searches = row(vec![
+        Node::field("Search")
+            .key("search")
+            .search()
+            .holding("needle")
+            .layout(Box {
+                width: Length::Points(140.0),
+                ..Box::default()
+            }),
+        Node::field("Search")
+            .key("search-empty")
+            .search()
+            .layout(Box {
+                width: Length::Points(120.0),
+                ..Box::default()
+            }),
+        Node::field("Search")
+            .key("search-small")
+            .search()
+            .holding("small")
+            .style(small)
+            .layout(Box {
+                width: Length::Points(120.0),
+                ..Box::default()
+            }),
+    ]);
     let pop_ups = row(vec![
         pop_up(
             "cadence",
@@ -778,6 +809,7 @@ fn widgets_tree() -> Node {
         checks,
         row(vec![every]),
         pop_ups,
+        searches,
         toggles,
         Node::separator(),
     ])
@@ -1070,6 +1102,9 @@ fn check_tree_of(
     let frame = layout.frame(&tree, tree.root().unwrap()).unwrap();
     let (width, height) = (frame.width as u32, frame.height as u32);
     let (focused, hovered, pressed, tip) = states(&tree);
+    // The texts that the fields' nodes give.
+    let mut fields = Fields::new();
+    fields.updated(&tree);
     drawing.font.begin_frame();
     let mut items = paint(
         &tree,
@@ -1080,7 +1115,7 @@ fn check_tree_of(
         Shown {
             dark,
             focused,
-            fields: &Fields::new(),
+            fields: &fields,
             hovered,
             pressed,
             lists: &Lists::new(),
@@ -1582,7 +1617,8 @@ fn panes_headers_draw_as_their_golden_images() {
 fn the_find_bar_draws_as_its_golden_images() {
     use lokyr_search_plugin::{BarTexts, BarView, Options, find_bar};
     // Of no option, of no result, its field's placeholder showing; then
-    // of case and regex, a count, the pointer over the up arrow.
+    // of case and regex, a count, its clear button, the pointer over the
+    // up arrow.
     let quiet = find_bar(
         &BarView {
             count: "No results".to_owned(),
@@ -1590,7 +1626,7 @@ fn the_find_bar_draws_as_its_golden_images() {
         },
         &BarTexts::default(),
     );
-    let busy = find_bar(
+    let mut busy = find_bar(
         &BarView {
             options: Options {
                 sensitive: true,
@@ -1598,9 +1634,20 @@ fn the_find_bar_draws_as_its_golden_images() {
                 whole_word: false,
             },
             count: "3 of 12".to_owned(),
+            filled: true,
         },
         &BarTexts::default(),
     );
+    // Its field's text, as the host holds it.
+    let mut left = vec![&mut busy];
+    while let Some(node) = left.pop() {
+        if node.key.as_ref().is_some_and(|key| key.0 == "query")
+            && let Kind::Field(field) = &mut node.kind
+        {
+            field.text = Some("needle".to_owned());
+        }
+        left.extend(node.children.iter_mut());
+    }
     let room = |bar: Node| {
         Node::container(vec![bar]).layout(Box {
             width: Length::Points(470.0),

@@ -89,8 +89,9 @@ struct ShapeInstance {
     fill: [f32; 4],
     border_color: [f32; 4],
     /// An arc's start and span, in turns, its thickness, and 1; or a check
-    /// mark's thickness and 2; or a pair of chevrons' size and 3; or 0 for
-    /// a shape of none.
+    /// mark's thickness and 2; or the size of a pair of chevrons and 3, of a
+    /// magnifying glass and 4, or of a search field's clear button and 5;
+    /// or 0 for a shape of none.
     arc: [f32; 4],
 }
 
@@ -1268,6 +1269,8 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = (Blend, ShapeInstance)
             ],
             (None, Some(Mark::Check(thickness))) => [0.0, 0.0, thickness.max(0.0), 2.0],
             (None, Some(Mark::Chevrons(size))) => [0.0, 0.0, size.max(0.0), 3.0],
+            (None, Some(Mark::Magnifier(size))) => [0.0, 0.0, size.max(0.0), 4.0],
+            (None, Some(Mark::Clear(size))) => [0.0, 0.0, size.max(0.0), 5.0],
             (None, None) => [0.0; 4],
         },
     };

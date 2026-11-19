@@ -54,6 +54,7 @@ const UP: &str = "up";
 const DOWN: &str = "down";
 const PAST: &str = "recent";
 const CLOSE: &str = "close";
+const CLEAR: &str = "clear";
 
 /// The prefix of the key of a recent search's item, of its place.
 const PAST_ITEM: &str = "recent-";
@@ -98,7 +99,7 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The texts of the bar, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 12] = [
+const ENGLISH: [(&str, &str); 13] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-invalid", "Invalid regex"),
@@ -109,6 +110,7 @@ const ENGLISH: [(&str, &str); 12] = [
     ("find-previous", "Find Previous"),
     ("find-history", "Recent Searches"),
     ("find-close", "Close"),
+    ("find-clear", "Clear"),
     ("find-count-unknown", "{ $count } found"),
     ("find-count", "{ $current } of { $count }"),
 ];
@@ -367,6 +369,8 @@ pub struct BarView {
     pub options: Options,
     /// The count's text.
     pub count: String,
+    /// Whether its field holds text, which its clear button empties.
+    pub filled: bool,
 }
 
 /// The texts of the find bar, in the language shown: its field's
@@ -390,6 +394,8 @@ pub struct BarTexts {
     pub recent: String,
     /// The close button's label.
     pub close: String,
+    /// The label of the button that empties its field.
+    pub clear: String,
 }
 
 impl Default for BarTexts {
@@ -410,8 +416,35 @@ impl Default for BarTexts {
             previous: english("find-previous"),
             recent: english("find-history"),
             close: english("find-close"),
+            clear: english("find-clear"),
         }
     }
+}
+
+/// The button that empties the find bar's field, `filled` or not, of
+/// `label`: its cross knocked out of a disc in the secondary text's color,
+/// as macOS's search fields', while the field holds text; else room as
+/// wide, so that what comes before it does not move.
+fn clear(filled: bool, label: &str) -> Node {
+    if !filled {
+        return Node::spacer().layout(Layout {
+            width: Length::Points(IN_FIELD),
+            min_width: Length::Points(IN_FIELD),
+            grow: 0.0,
+            ..Layout::default()
+        });
+    }
+    let button = plain(
+        Node::icon_button("clear-circle").key(CLEAR),
+        IN_FIELD,
+        false,
+        label,
+    );
+    let style = Style {
+        color: Some(Token::from("text.secondary")),
+        ..button.style.clone()
+    };
+    button.style(style)
 }
 
 /// `node`, a button or a toggle of an icon of `side` points, without a
@@ -451,11 +484,13 @@ fn plain(node: Node, side: f32, on: bool, label: &str) -> Node {
         })
 }
 
-/// The find bar of `view`, of `texts`: a search field of macOS's look,
-/// its magnifying glass, which lists the recent searches, its text, and
-/// its toggles of case, whole words and regexes at its end; the count, of
-/// a width of its own, so that the bar keeps its width whatever it tells;
-/// and the buttons of the next and the previous match and of the close.
+/// The find bar of `view`, of `texts`: a search field of macOS's look, a
+/// capsule of its magnifying glass, which lists the recent searches, its
+/// text, its toggles of case, whole words and regexes, and at its end the
+/// button that empties it while it holds text, of its room kept, so that
+/// the toggles do not move; the count, of a width of its own, so that the
+/// bar keeps its width whatever it tells; and the buttons of the next and
+/// the previous match and of the close.
 pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
     let options = view.options;
     let text = Node::field(texts.placeholder.as_str())
@@ -474,7 +509,7 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
         });
     let field = Node::container(vec![
         plain(
-            Node::icon_button("search").key(PAST),
+            Node::icon_button("magnifying-glass").key(PAST),
             IN_FIELD,
             false,
             &texts.recent,
@@ -498,12 +533,18 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             options.regex,
             &texts.regex,
         ),
+        clear(view.filled, &texts.clear),
     ])
     .layout(Layout {
         width: Length::Points(FIELD_WIDTH),
         min_width: Length::Points(FIELD_WIDTH),
         gap: 1.0,
-        padding: Edges::all(2.0),
+        padding: Edges {
+            top: 2.0,
+            right: 4.0,
+            bottom: 2.0,
+            left: 4.0,
+        },
         align: Align::Center,
         ..Layout::default()
     })
@@ -513,7 +554,9 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             color: Token::from("field.border"),
             width: 1.0,
         }),
-        radius: 6.0,
+        // A capsule, as macOS's search fields: half its height, of its
+        // field's 24 points and its padding.
+        radius: 14.0,
         // The ring of its text's focus round the whole field, and the
         // I-beam over it, but over its buttons.
         holds_ring: true,
@@ -659,6 +702,7 @@ impl Plugin for Search {
             let view = BarView {
                 options: find.options,
                 count: find.shown.clone(),
+                filled: !find.text.is_empty(),
             };
             let texts = texts(cx);
             return Some(find_bar(&view, &texts));
@@ -733,6 +777,12 @@ impl Plugin for Search {
                 }
                 self.options = find.options;
                 self.keep(cx);
+                self.search(cx)
+            }
+            // Emptied by its button, as typing would empty it.
+            (UiEventKind::Click, CLEAR) => {
+                find.text.clear();
+                cx.set_text(bar(), FIELD, "", find.revision)?;
                 self.search(cx)
             }
             (UiEventKind::Click, UP) => self.step(cx, Step::Up),
@@ -813,6 +863,7 @@ fn texts(cx: &mut Cx<'_>) -> BarTexts {
         previous: text("find-previous"),
         recent: text("find-history"),
         close: text("find-close"),
+        clear: text("find-clear"),
     }
 }
 

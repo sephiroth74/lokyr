@@ -2034,11 +2034,11 @@ fn selected(host: &mut FakeHost) -> Vec<usize> {
 fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     let (mut host, mut plugin) = host();
     let tree = rendered(&mut host, &mut plugin);
-    assert!(find_node(&tree, SEARCH).is_some(), "{}", snapshot(&tree));
-    assert!(find_node(&tree, SEARCH_CLEAR).is_none());
-    // The field's box, of the ring of its text's focus.
-    let field = find_node(&tree, "search-row").unwrap();
-    assert!(field.style.holds_ring && field.style.border.is_some());
+    // A search field, of the page's small text, which the host draws of its
+    // magnifying glass and of the button that empties it.
+    let field = find_node(&tree, SEARCH).unwrap_or_else(|| panic!("{}", snapshot(&tree)));
+    assert!(matches!(&field.kind, Kind::Field(own) if own.search));
+    assert_eq!(field.style.text_size, Some(TextSize::Small));
 
     // A key's name, of its case aside: the font's section alone, of that
     // key alone, still chosen.
@@ -2048,10 +2048,6 @@ fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     assert_eq!(sidebar_of(&tree), ["font"], "{}", snapshot(&tree));
     assert!(reset_of(&tree, "size").is_some(), "{}", snapshot(&tree));
     assert!(reset_of(&tree, "family").is_none());
-    // The button that empties it, inside the field's box, at its end.
-    let field = find_node(&tree, "search-row").unwrap();
-    let last = field.children.last().and_then(|node| node.key.as_ref());
-    assert_eq!(last.map(|key| key.0.as_str()), Some(SEARCH_CLEAR));
 
     // Words in any order, of keys' names and what they do, across
     // sections: the first of them chosen, as the font's holds none.
@@ -2139,10 +2135,10 @@ fn filter(text: &str) -> UiEvent {
 fn the_keys_page_s_filter_shows_the_bindings_of_its_words_and_empties_as_the_page_shows_anew() {
     let (mut host, mut plugin) = keyed_host();
     let tree = keys_rendered(&mut host, &mut plugin);
-    // Beside Add, of no button that empties it while it is empty.
-    assert!(find_node(&tree, "keys-filter").is_some());
+    // Beside Add, a search field.
+    let field = find_node(&tree, "keys-filter").unwrap();
+    assert!(matches!(&field.kind, Kind::Field(own) if own.search));
     assert!(find_node(&tree, "add-binding").is_some());
-    assert!(find_node(&tree, "keys-filter-clear").is_none());
     // A command's title, keys as macOS writes them and as the config does,
     // and a context.
     for (words, shown) in [
@@ -2159,19 +2155,14 @@ fn the_keys_page_s_filter_shows_the_bindings_of_its_words_and_empties_as_the_pag
             .filter(|&at| at != shown && keys_of(&tree, at).is_some())
             .collect();
         assert!(others.is_empty(), "{words}: {others:?}");
-        assert!(find_node(&tree, "keys-filter-clear").is_some());
     }
     // Words of no binding: said so.
     host.ui_event(&mut plugin, &filter("nothing at all"))
         .unwrap();
     let tree = keys_rendered(&mut host, &mut plugin);
     assert!(text_of(&tree, "keys-no-match").is_some());
-    // Its button empties it, every binding back.
-    host.ui_event(
-        &mut plugin,
-        &on_keys("keys-filter-clear", UiEventKind::Click),
-    )
-    .unwrap();
+    // Emptied, as its clear button or Escape tells it, every binding back.
+    host.ui_event(&mut plugin, &filter("")).unwrap();
     let tree = keys_rendered(&mut host, &mut plugin);
     assert!(keys_of(&tree, QUIT).is_some() && keys_of(&tree, CLEAR).is_some());
     // The page shown anew, of an empty field, filters nothing.
@@ -2216,15 +2207,9 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
         snapshot(&tree)
     );
 
-    // The button empties the field, every section back, the one chosen
-    // before still chosen.
-    host.take_done();
-    host.ui_event(&mut plugin, &on(SEARCH_CLEAR, UiEventKind::Click))
-        .unwrap();
-    assert!(host.take_done().iter().any(|request| matches!(
-        request,
-        Request::SetText { key, text, .. } if key.0 == SEARCH && text.is_empty()
-    )));
+    // Emptied, as its clear button or Escape tells it: every section
+    // back, the one chosen before still chosen.
+    host.ui_event(&mut plugin, &search("")).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["font", "window", "theme", "tabs"]);
     assert!(
@@ -2232,7 +2217,6 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
         "{}",
         snapshot(&tree)
     );
-    assert!(find_node(&tree, SEARCH_CLEAR).is_none());
 }
 
 /// Highlights the item `at` of the menu of `name`, as the arrows or the

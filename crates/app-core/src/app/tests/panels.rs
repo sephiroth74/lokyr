@@ -1175,6 +1175,27 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     run_until(&mut fake, &mut app, |_, app| tabs(app) == 2);
     assert!(panel_frame(&app, window, "command-palette").is_none());
     assert_eq!(fake.windows().count(), 1);
+    // Its field a search field: Escape, though it holds text, closes the
+    // palette, which Escape closes, rather than emptying it.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyP, "P", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("new".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "command-palette").is_none());
 }
 
 /// The shapes that `window`'s last frame drew.

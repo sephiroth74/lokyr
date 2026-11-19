@@ -5384,6 +5384,9 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
             if let Some(text) = &field.text {
                 let _ = write!(out, " text={}", quoted(text));
             }
+            if field.search {
+                out.push_str(" search");
+            }
         }
         Kind::Button(button) => {
             let _ = write!(out, "button {}", quoted(&button.label));

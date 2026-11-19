@@ -21,13 +21,12 @@ use lokyr_plugin_sdk::view::{
     Token, UiEventKind,
 };
 
-use super::{code, message, search_box, secondary, themes_page, words};
+use super::{code, message, search_field, secondary, themes_page, words};
 
 mod parts;
 
-/// The filter's field, and its button that empties it.
+/// The filter's field.
 const FILTER: &str = "editor-filter";
-const FILTER_CLEAR: &str = "editor-filter-clear";
 
 /// The button of the theme shown, and its menu of the themes.
 const THEME: &str = "editor-theme";
@@ -333,11 +332,6 @@ impl Editor {
                     text.clone_into(&mut self.filter);
                     self.ask_render(cx)?;
                 }
-            }
-            (UiEventKind::Click, FILTER_CLEAR) => {
-                cx.set_text(themes_page(), FILTER, "", u64::MAX)?;
-                self.filter.clear();
-                self.ask_render(cx)?;
             }
             (UiEventKind::Click, LOCK) => self.unlock(cx)?,
             (UiEventKind::Click, GUIDE) => cx.open(GUIDE_ADDRESS)?,
@@ -797,17 +791,7 @@ impl Editor {
             align: Align::Center,
             ..Layout::default()
         });
-        let filter = search_box(
-            cx,
-            (FILTER, FILTER_CLEAR, "editor-filter-row"),
-            ("editor-filter", "editor-filter-clear"),
-            !self.filter.is_empty(),
-        )
-        .layout(Layout {
-            direction: Direction::Row,
-            gap: 2.0,
-            padding: Edges::all(2.0),
-            align: Align::Center,
+        let filter = search_field(cx, FILTER, "editor-filter").layout(Layout {
             width: Length::Fraction(1.0),
             ..Layout::default()
         });

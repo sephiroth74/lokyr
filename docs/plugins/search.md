@@ -13,6 +13,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 - **It goes from the bottom up**, as the newest output is at the bottom: the first match is the one nearest the bottom, the next one the one above it, the previous one the one below it. The view follows the current match, and stays there while the program prints on.
 - **The toggles** at the field's end count case, take whole words alone, and read the text as a regular expression, of the syntax of Rust's `regex`; they keep their states for the next search.
 - **The magnifying glass** at the field's start lists your last twenty searches, which Lokyr keeps.
+- **The clear button**, a cross in a disc at the field's end while it holds text, empties it, and the search ends · not released yet.
 - **Escape**, or its close button, closes it: the highlights go, and the current match is selected, ready for ⌘C.
 
 ## Commands

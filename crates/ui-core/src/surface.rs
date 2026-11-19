@@ -362,9 +362,10 @@ impl Surface {
 
     /// `button` went down at `at`, in pixels from the tree's corner, of
     /// `clicks` in a row, Shift held or not: a field's composition kept as
-    /// it stands; a field's caret placed, a list's row selected, or a
-    /// pop-up button's menu asked for, as macOS's opens at the press, under
-    /// the primary button; the pointer's events; the tooltip hidden.
+    /// it stands; a field's caret placed, a search field emptied by its
+    /// clear button, a list's row selected, or a pop-up button's menu asked
+    /// for, as macOS's opens at the press, under the primary button; the
+    /// pointer's events; the tooltip hidden.
     pub fn pressed(
         &mut self,
         at: (f32, f32),
@@ -384,6 +385,15 @@ impl Surface {
             && let Some(&node) = pressed.path.last()
         {
             match self.tree.kind(node) {
+                // A search field's clear button empties it, of no caret
+                // placed.
+                Some(Kind::Field(_))
+                    if self.fields.clears_at((&self.tree, &self.layout), node, at) =>
+                {
+                    pressed
+                        .events
+                        .extend(self.fields.clear(&self.tree, node).unwrap_or_default());
+                }
                 Some(Kind::Field(_)) => self.fields.press(
                     (&self.tree, &self.layout),
                     node,
@@ -417,6 +427,13 @@ impl Surface {
         let events = self.pointer.cancel(&self.tree);
         self.show_pointer(now);
         events
+    }
+
+    /// Escape in the field `node`, which has the keyboard's focus: a search
+    /// field that holds text empties, its events; `None` of one that holds
+    /// none, which Escape then leaves, or of another node.
+    pub fn escape_search(&mut self, node: NodeId) -> Option<Vec<NodeEvent>> {
+        self.fields.clear(&self.tree, node)
     }
 
     /// Escape, at `now`: the drag of a node among its siblings under way
@@ -867,6 +884,68 @@ mod tests {
         // A choice past its items is refused.
         let past = Node::container(vec![Node::pop_up(fonts, Some(2)).key("family")]);
         assert!(surface.update(&past).is_err());
+    }
+
+    #[test]
+    fn a_search_field_s_clear_button_empties_it_as_escape_does_and_takes_the_arrow() {
+        let mut surface = Surface::new(1.0);
+        surface
+            .update(&Node::container(vec![
+                Node::field("Search").key("search").search(),
+            ]))
+            .unwrap();
+        surface.lay_out((Some(300.0), None), &mut Fixed);
+        let search = surface.tree.by_key(&"search".into()).unwrap();
+        let (glass, clear) =
+            crate::field::search_parts(&surface.tree, &surface.layout, search).unwrap();
+        let middle =
+            |part: crate::layout::Frame| (part.x + part.width / 2.0, part.y + part.height / 2.0);
+        // The arrow over its glyphs, the I-beam over its text, the arrow
+        // around it.
+        let shapes: Vec<_> = pointer::areas(&surface.tree, &surface.layout)
+            .into_iter()
+            .map(|area| area.shape)
+            .collect();
+        use lokyr_plugin_sdk::view::PointerShape::{Arrow, Text};
+        assert_eq!(shapes, [Arrow, Arrow, Text, Arrow]);
+        // Empty, its clear button's room takes a press as the field's.
+        assert!(
+            kinds(
+                &surface
+                    .pressed(middle(clear), (Button::Primary, 1, false), &mut Fixed)
+                    .events
+            )
+            .is_empty()
+        );
+        surface.released(middle(clear), (Button::Primary, 1), Instant::now());
+        // Holding text: a press on it empties it, of no caret placed.
+        surface.fields.set_text(&"search".into(), "abc");
+        let pressed = surface.pressed(middle(clear), (Button::Primary, 1, false), &mut Fixed);
+        assert_eq!(
+            kinds(&pressed.events),
+            [(
+                "search".to_owned(),
+                UiEventKind::InputChanged {
+                    text: String::new(),
+                    revision: 1
+                }
+            )]
+        );
+        assert!(!surface.fields.selecting());
+        surface.released(middle(clear), (Button::Primary, 1), Instant::now());
+        // Escape empties it while it holds text, and takes nothing of none.
+        surface.fields.set_text(&"search".into(), "abc");
+        assert_eq!(
+            surface
+                .escape_search(search)
+                .map(|events| kinds(&events).len()),
+            Some(1)
+        );
+        assert_eq!(surface.escape_search(search), None);
+        // A press on its glass places its caret.
+        surface.fields.set_text(&"search".into(), "abc");
+        surface.pressed(middle(glass), (Button::Primary, 1, false), &mut Fixed);
+        assert!(surface.fields.selecting());
     }
 
     #[test]

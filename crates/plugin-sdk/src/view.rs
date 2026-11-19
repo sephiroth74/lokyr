@@ -47,8 +47,10 @@ pub fn dismantle(node: Node) {
 }
 
 /// The names of the host's icons, in their order, which a node's icon
-/// names: the codicons of Symbols Nerd Font.
-pub const ICONS: [&str; 56] = [
+/// names: the codicons of Symbols Nerd Font, and two that the host draws
+/// as macOS 27's search field draws them, `magnifying-glass` and
+/// `clear-circle`, its button's cross knocked out of a disc.
+pub const ICONS: [&str; 58] = [
     "add",
     "arrow-down",
     "arrow-up",
@@ -63,6 +65,7 @@ pub const ICONS: [&str; 56] = [
     "chevron-up",
     "circle",
     "circle-filled",
+    "clear-circle",
     "clippy",
     "close",
     "cloud-download",
@@ -85,6 +88,7 @@ pub const ICONS: [&str; 56] = [
     "lightbulb",
     "link",
     "lock",
+    "magnifying-glass",
     "megaphone",
     "pin",
     "pinned",
@@ -498,6 +502,13 @@ pub struct Field {
     /// plugins alone: another's is a plain field.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub records: bool,
+    /// Whether it is a search field, as macOS's: a capsule, of no box of
+    /// its own where its style gives it one, a magnifying glass inside at
+    /// its left, and, while it holds text, a button inside at its right
+    /// that empties it, telling `input-changed`, as Escape does first
+    /// while it has the keyboard, but in a panel that Escape closes.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub search: bool,
     /// Its size.
     #[serde(skip_serializing_if = "ControlSize::is_regular")]
     pub size: ControlSize,
@@ -1496,6 +1507,7 @@ impl Node {
             text: None,
             stepped: false,
             records: false,
+            search: false,
             size: Default::default(),
         }))
     }
@@ -1516,6 +1528,16 @@ impl Node {
     pub fn stepped(mut self) -> Self {
         if let Kind::Field(field) = &mut self.kind {
             field.stepped = true;
+        }
+        self
+    }
+
+    /// The node, a field, a search field, as [`Field::search`] has it; any
+    /// other node as it is.
+    #[must_use]
+    pub fn search(mut self) -> Self {
+        if let Kind::Field(field) = &mut self.kind {
+            field.search = true;
         }
         self
     }

@@ -534,6 +534,25 @@ impl<B: Backend> App<B> {
                     continue;
                 }
             }
+            // Escape empties a search field that holds text, which has the
+            // keyboard, before it leaves it, but in a panel that Escape
+            // closes, as a find bar's or a palette's.
+            if event.key == vt::Key::Escape
+                && event.action == KeyAction::Press
+                && let Target::Node { panel, node } = state.focus.target()
+                && !state
+                    .panels
+                    .options(panel)
+                    .is_some_and(|options| options.dismiss.escape)
+                && let Some(view) = view_mut(&mut state.chrome, panel)
+                && let Some(events) = view.surface.escape_search(node)
+            {
+                let events: Vec<_> = told(view, events).collect();
+                self.ui_events.extend(events);
+                self.views_changed(window);
+                platform.request_frame(window);
+                continue;
+            }
             let before = state.focus.target();
             state.focus.set_every_control(every_control);
             let routed = {

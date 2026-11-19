@@ -126,8 +126,20 @@ fn hit_node(
 pub fn shape(tree: &Tree, path: &[NodeId]) -> PointerShape {
     path.iter()
         .rev()
-        .find_map(|&id| tree.style(id)?.pointer.or_else(|| link_hand(tree, id)))
+        .find_map(|&id| own_shape(tree, id))
         .unwrap_or_default()
+}
+
+/// The pointer's shape that `id` of `tree` names: its style's, or of its
+/// own, a link's pointing hand and a search field's I-beam.
+fn own_shape(tree: &Tree, id: NodeId) -> Option<PointerShape> {
+    tree.style(id)?
+        .pointer
+        .or_else(|| link_hand(tree, id))
+        .or_else(|| {
+            matches!(tree.kind(id), Some(Kind::Field(field)) if field.search)
+                .then_some(PointerShape::Text)
+        })
 }
 
 /// The pointing hand of `id` of `tree` if it is a link, which takes it of
@@ -185,11 +197,9 @@ fn areas_of(
         ..local
     };
     let pixels = rect(frame);
-    // A link takes the pointing hand of its own; dimmed, its parent's.
-    let shape = style
-        .pointer
-        .or_else(|| link_hand(tree, id))
-        .unwrap_or(inherited);
+    // A link takes the pointing hand of its own, dimmed its parent's; a
+    // search field the I-beam.
+    let shape = own_shape(tree, id).unwrap_or(inherited);
     let visible = clip.map_or(pixels, |clip| intersection(clip, pixels));
     let covered = behind.is_some_and(|index| {
         let area = areas[index];
@@ -208,6 +218,28 @@ fn areas_of(
         });
         Some(areas.len() - 1)
     };
+    // A search field's glyphs of the arrow, over its I-beam, as its clear
+    // button takes a click.
+    if let (Some(parts), Some(laid)) = (
+        crate::field::search_parts(tree, layout, id),
+        layout.frame(tree, id),
+    ) {
+        // Of the layout's frames, moved where the scrolls put the field.
+        let moved = |part: Frame| Frame {
+            x: part.x - laid.x + frame.x,
+            y: part.y - laid.y + frame.y,
+            ..part
+        };
+        for part in [parts.0, parts.1] {
+            let part = intersection(visible, rect(moved(part)));
+            if !is_empty(part) {
+                areas.push(Area {
+                    rect: part,
+                    shape: PointerShape::Arrow,
+                });
+            }
+        }
+    }
     let inner = if clips(tree, id, style) {
         let inside = inside_border(pixels, style, layout.scale());
         Some(clip.map_or(inside, |clip| intersection(clip, inside)))

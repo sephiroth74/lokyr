@@ -202,18 +202,8 @@ const PART: char = '\u{1f}';
 /// The key of the sidebar's search field.
 const SEARCH: &str = "search";
 
-/// The key of the search field's button that empties it.
-const SEARCH_CLEAR: &str = "search-clear";
-
 /// The key of the Keys part's field that filters its bindings.
 const KEYS_FILTER: &str = "keys-filter";
-
-/// The key of the Keys part's filter's button that empties it.
-const KEYS_FILTER_CLEAR: &str = "keys-filter-clear";
-
-/// The side of the search field's magnifying glass and of its button, in
-/// points.
-const IN_SEARCH: f32 = 18.0;
 
 /// The platforms that Lokyr runs on, of which a key that applies on every
 /// one names none.
@@ -699,24 +689,12 @@ impl Plugin for SettingsPage {
                     text.clone_into(&mut self.keys_filter);
                     self.render_keys(cx)
                 }
-                (UiEventKind::Click, KEYS_FILTER_CLEAR) => {
-                    cx.set_text(keys_page(), KEYS_FILTER, "", u64::MAX)?;
-                    self.keys_filter.clear();
-                    self.render_keys(cx)
-                }
                 _ => self.binding_event(cx, event),
             };
         }
         // The search's words, which filter the parts and their keys.
-        match (&event.kind, key) {
-            (UiEventKind::InputChanged { text, .. }, SEARCH) => {
-                return self.search(cx, text);
-            }
-            (UiEventKind::Click, SEARCH_CLEAR) => {
-                cx.set_text(page(), SEARCH, "", u64::MAX)?;
-                return self.search(cx, "");
-            }
-            _ => {}
+        if let (UiEventKind::InputChanged { text, .. }, SEARCH) = (&event.kind, key) {
+            return self.search(cx, text);
         }
         if let (UiEventKind::Select { item } | UiEventKind::Activate { item }, SECTIONS) =
             (&event.kind, key)
@@ -2036,18 +2014,14 @@ fn tree(
         height: Length::Fraction(1.0),
         ..Layout::default()
     });
-    Node::container(vec![
-        sidebar(cx, settings, &shown, words),
-        Node::separator(),
-        part,
-    ])
-    .key("settings-page")
-    .layout(Layout {
-        direction: Direction::Row,
-        width: Length::Fraction(1.0),
-        height: Length::Fraction(1.0),
-        ..Layout::default()
-    })
+    Node::container(vec![sidebar(cx, settings, &shown), Node::separator(), part])
+        .key("settings-page")
+        .layout(Layout {
+            direction: Direction::Row,
+            width: Length::Fraction(1.0),
+            height: Length::Fraction(1.0),
+            ..Layout::default()
+        })
 }
 
 /// The error of a config file that does not read, which every page shows
@@ -2128,7 +2102,7 @@ fn keys_tree(
 /// title, of a menu's look, its first selected as it shows, of no ring of
 /// the keyboard's focus, as macOS's sidebars show none, and of its own
 /// width alone.
-fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[String]) -> Node {
+fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize]) -> Node {
     let row = Node::container(vec![
         Node::icon("").style(Style {
             color: Some(Token::from("accent")),
@@ -2174,17 +2148,7 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize], words: &[Strin
         list.menu = true;
     }
     // The search at the sidebar's top, as macOS's search field.
-    let search = search_box(
-        cx,
-        (SEARCH, SEARCH_CLEAR, "search-row"),
-        ("settings-search", "settings-search-clear"),
-        !words.is_empty(),
-    )
-    .layout(Layout {
-        direction: Direction::Row,
-        gap: 2.0,
-        padding: Edges::all(2.0),
-        align: Align::Center,
+    let search = search_field(cx, SEARCH, "settings-search").layout(Layout {
         width: Length::Fraction(1.0),
         ..Layout::default()
     });
@@ -3090,81 +3054,17 @@ fn menu_pop_up(cx: &mut Cx<'_>, section: &SettingsSection, key: &SettingKey) -> 
     pop_up
 }
 
-/// A search field as macOS's: a box of its magnifying glass, its text, of
-/// no box of its own, and, while it holds words, `filled`, a button at its
-/// end that empties it, the ring of its text's focus round the whole box;
-/// of the keys `field`, `clear` and `row`, and the messages of its
-/// placeholder and of its button, `placeholder` and `clear_label`.
-fn search_box(
-    cx: &mut Cx<'_>,
-    (field, clear, row): (&str, &str, &str),
-    (placeholder, clear_label): (&str, &str),
-    filled: bool,
-) -> Node {
-    let side = || Layout {
-        width: Length::Points(IN_SEARCH),
-        min_width: Length::Points(IN_SEARCH),
-        height: Length::Points(IN_SEARCH),
-        justify: Justify::Center,
-        align: Align::Center,
-        ..Layout::default()
-    };
-    let mut search = vec![
-        Node::icon("search").layout(side()).style(Style {
-            color: Some(Token::from("text.secondary")),
-            ..Style::default()
-        }),
-        Node::field(message(cx, placeholder, &[]))
-            .key(field)
-            .label(message(cx, placeholder, &[]))
-            .style(Style {
-                background: Some(Token::from("transparent")),
-                ..field_text()
-            })
-            .layout(Layout {
-                grow: 1.0,
-                width: Length::Points(0.0),
-                min_width: Length::Points(0.0),
-                ..Layout::default()
-            }),
-    ];
-    if filled {
-        let label = message(cx, clear_label, &[]);
-        search.push(
-            Node::icon_button("close")
-                .key(clear)
-                .label(label.as_str())
-                .tooltip(label)
-                .layout(side())
-                .style(Style {
-                    background: Some(Token::from("transparent")),
-                    color: Some(Token::from("text.secondary")),
-                    radius: 4.0,
-                    // The arrow, over the field's I-beam around it.
-                    pointer: Some(PointerShape::Arrow),
-                    hover: Some(Hover {
-                        background: Some(Token::from("button.hover.bg")),
-                        ..Hover::default()
-                    }),
-                    pressed: Some(Hover {
-                        background: Some(Token::from("button.pressed.bg")),
-                        ..Hover::default()
-                    }),
-                    ..Style::default()
-                }),
-        );
-    }
-    Node::container(search).key(row).style(Style {
-        background: Some(Token::from("field.bg")),
-        border: Some(Border {
-            color: Token::from("field.border"),
-            width: 1.0,
-        }),
-        radius: 6.0,
-        holds_ring: true,
-        pointer: Some(PointerShape::Text),
-        ..Style::default()
-    })
+/// A search field as macOS's, of the key `field` and the message of its
+/// placeholder, `placeholder`, of the small text of the page's fields: the
+/// host draws its magnifying glass and the button that empties it, which
+/// tells an empty text, as Escape does.
+fn search_field(cx: &mut Cx<'_>, field: &str, placeholder: &str) -> Node {
+    let text = message(cx, placeholder, &[]);
+    Node::field(text.clone())
+        .key(field)
+        .label(text)
+        .search()
+        .style(field_text())
 }
 
 /// The part of the bindings of keys: every one in force, the defaults and
@@ -3196,17 +3096,7 @@ fn keys_part(
             .layout(wrapped()),
         // The filter of the bindings, as the sidebar's search, beside Add.
         Node::container(vec![
-            search_box(
-                cx,
-                (KEYS_FILTER, KEYS_FILTER_CLEAR, "keys-filter-row"),
-                ("keys-filter", "keys-filter-clear"),
-                !filter.is_empty(),
-            )
-            .layout(Layout {
-                direction: Direction::Row,
-                gap: 2.0,
-                padding: Edges::all(2.0),
-                align: Align::Center,
+            search_field(cx, KEYS_FILTER, "keys-filter").layout(Layout {
                 width: Length::Points(280.0),
                 min_width: Length::Points(0.0),
                 ..Layout::default()

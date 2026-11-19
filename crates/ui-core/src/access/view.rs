@@ -247,6 +247,8 @@ impl WindowTree {
             // macOS's adapter gives a scroll view no role, which VoiceOver
             // does not enter: its children are its parent's.
             (Kind::Scroll, None) => Role::GenericContainer,
+            // macOS's adapter makes a search input a search field.
+            (Kind::Field(field), _) if field.search => Role::SearchInput,
             (Kind::Field(_), _) => Role::TextInput,
             (Kind::Button(_) | Kind::Toggle(_), _) => Role::Button,
             (Kind::Switch(_), _) => Role::Switch,
@@ -1266,6 +1268,18 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn a_search_field_is_a_search_input() {
+        let root = column(vec![
+            ViewNode::field("Search").key("search").search(),
+            ViewNode::field("Find").key("find"),
+        ]);
+        let surface = surface(&root);
+        let update = tree_of(&surface, None);
+        assert_eq!(keyed(&update, &surface, "search").role(), Role::SearchInput);
+        assert_eq!(keyed(&update, &surface, "find").role(), Role::TextInput);
     }
 
     #[test]

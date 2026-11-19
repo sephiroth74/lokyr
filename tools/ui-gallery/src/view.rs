@@ -883,6 +883,22 @@ impl View {
         every_control: bool,
     ) -> Keyed {
         self.focus.set_every_control(every_control);
+        // Escape empties a search field that holds text, which has the
+        // keyboard, before it leaves it, but in a panel that Escape closes.
+        if key.key == Key::Escape
+            && key.action == KeyAction::Press
+            && let Some((panel, node)) = self.focused()
+            && !self
+                .panels
+                .options(panel)
+                .is_some_and(|options| options.dismiss.escape)
+            && let Some(events) = self
+                .surface_mut(panel)
+                .and_then(|surface| surface.escape_search(node))
+        {
+            self.apply(events);
+            return Keyed::Taken;
+        }
         let before = self.focused();
         let (main, surfaces) = (&self.main, &self.surfaces);
         let routed = self.focus.key(

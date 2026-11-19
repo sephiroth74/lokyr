@@ -28,7 +28,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, UiEventKind};
+use lokyr_plugin_sdk::view::{Key as NodeKey, Kind, TextSize, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad, Mods};
 use lokyr_vt_core::unicode::Segmenter;
 
@@ -42,6 +42,71 @@ pub const PADDING: (f32, f32) = (4.0, 6.0);
 
 /// A field's natural width, in points, which its layout's width replaces.
 pub const WIDTH: f32 = 160.0;
+
+/// The size of a search field's glyphs, its magnifying glass and its clear
+/// button, in points, of the typeset of its text: 13 of the regular text,
+/// as macOS 27's, and as much smaller or larger as its text is.
+pub fn search_glyph(typeset: Typeset) -> f32 {
+    typeset.points.unwrap_or(match typeset.size {
+        TextSize::Regular => 13.0,
+        TextSize::Small => 11.0,
+        TextSize::Large => 18.0,
+        TextSize::Mini => 9.0,
+    })
+}
+
+/// The room of a search field's glyph of `glyph` points: from its edge to
+/// the glyph's box, the box's width, and the room after it, in points, as
+/// macOS 27's, 8, 16 and 2 of glyphs of 13.
+fn search_room(glyph: f32) -> (f32, f32, f32) {
+    (
+        (glyph * 8.0 / 13.0).round(),
+        (glyph * 16.0 / 13.0).round(),
+        2.0,
+    )
+}
+
+/// The room before and after the text of the field `node` of `tree`, in
+/// points: a search field's past its magnifying glass and its clear
+/// button's room, which it keeps whether the button shows or not, so that
+/// its text does not move; another field's of its padding.
+pub fn insets(tree: &Tree, node: NodeId) -> (f32, f32) {
+    match tree.kind(node) {
+        Some(Kind::Field(field)) if field.search => {
+            let (edge, side, gap) = search_room(search_glyph(tree.typeset(node)));
+            (edge + side + gap, edge + side + gap)
+        }
+        _ => (PADDING.1, PADDING.1),
+    }
+}
+
+/// The boxes of the search field `node` of `tree`'s glyphs, as `layout`
+/// lays it out: its magnifying glass's at its left and its clear button's
+/// at its right, each of its field's height, in pixels from the tree's
+/// corner; none of another node.
+pub fn search_parts(tree: &Tree, layout: &Layout, node: NodeId) -> Option<(Frame, Frame)> {
+    let Some(Kind::Field(field)) = tree.kind(node) else {
+        return None;
+    };
+    if !field.search {
+        return None;
+    }
+    let frame = layout.frame(tree, node)?;
+    let scale = layout.scale();
+    let (edge, side, _) = search_room(search_glyph(tree.typeset(node)));
+    let (edge, side) = (edge * scale, side * scale);
+    let glass = Frame {
+        x: frame.x + edge,
+        width: side,
+        ..frame
+    };
+    let clear = Frame {
+        x: frame.x + frame.width - edge - side,
+        width: side,
+        ..frame
+    };
+    Some((glass, clear))
+}
 
 /// The edits that a field can undo, at most.
 const UNDOS: usize = 100;
@@ -702,9 +767,10 @@ impl Fields {
             None => ("", 0..0),
         };
         let places = sized_carets(carets, tree, node, text);
+        let (left, _) = insets(tree, node);
         let x = |byte: usize| {
             let scroll = state.map_or(0.0, FieldState::scroll);
-            frame.x + (PADDING.1 + place(&places, byte) - scroll) * scale
+            frame.x + (left + place(&places, byte) - scroll) * scale
         };
         // Either end first, as a run from right to left starts at its right.
         let (from, to) = (x(span.start), x(span.end));
@@ -750,6 +816,45 @@ impl Fields {
             }
         }
         self.pressed = Some(key.clone());
+    }
+
+    /// Empties the search field `node` of `tree` that holds text, as its
+    /// clear button or Escape does, as an edit that an undo takes back: the
+    /// events of its text; `None` of one that holds none, or of another
+    /// node.
+    pub fn clear(&mut self, tree: &Tree, node: NodeId) -> Option<Vec<NodeEvent>> {
+        let key = field_key(tree, node)?;
+        if !matches!(tree.kind(node), Some(Kind::Field(field)) if field.search) {
+            return None;
+        }
+        let state = self.states.get_mut(key)?;
+        if state.text.is_empty() {
+            return None;
+        }
+        let whole = 0..state.text.len();
+        let changed = state.edit(whole, "", Joining::Nothing);
+        Some(changed_events(node, key, state, changed))
+    }
+
+    /// Whether `at`, in pixels from the tree's corner, is over the clear
+    /// button of the search field `node` of `tree`, which shows while the
+    /// field holds text.
+    pub fn clears_at(
+        &self,
+        (tree, layout): (&Tree, &Layout),
+        node: NodeId,
+        at: (f32, f32),
+    ) -> bool {
+        let holds = field_key(tree, node)
+            .and_then(|key| self.states.get(key))
+            .is_some_and(|state| !state.text.is_empty());
+        holds
+            && search_parts(tree, layout, node).is_some_and(|(_, clear)| {
+                at.0 >= clear.x
+                    && at.0 < clear.x + clear.width
+                    && at.1 >= clear.y
+                    && at.1 < clear.y + clear.height
+            })
     }
 
     /// The pointer moved to `at` with the primary button down since it went
@@ -820,7 +925,8 @@ impl Fields {
             let Some(frame) = layout.frame(tree, node) else {
                 continue;
             };
-            let room = (frame.width / scale - 2.0 * PADDING.1).max(0.0);
+            let (left, right) = insets(tree, node);
+            let room = (frame.width / scale - left - right).max(0.0);
             // The caret of the text that shows, or the end of a
             // composition that selects a part of itself.
             let showing = state.showing();
@@ -887,7 +993,7 @@ fn caret_at(
 ) -> Option<usize> {
     let frame = layout.frame(tree, node)?;
     let scale = layout.scale();
-    let points = (x - frame.x) / scale - PADDING.1 + state.scroll;
+    let points = (x - frame.x) / scale - insets(tree, node).0 + state.scroll;
     sized_carets(carets, tree, node, &state.text)
         .iter()
         .min_by(|(_, a), (_, b)| (a - points).abs().total_cmp(&(b - points).abs()))
@@ -2137,5 +2243,74 @@ mod tests {
             ..NONE
         };
         assert_eq!(typing.press(Key::Up, option, ""), Some(Vec::new()));
+    }
+
+    #[test]
+    fn a_search_field_keeps_room_for_its_glyphs_and_its_clear_button_empties_it() {
+        let mut tree = Tree::new();
+        let changes = tree
+            .update(&Node::container(vec![
+                Node::field("Search").key("search").search(),
+                Node::field("Find").key("find"),
+            ]))
+            .unwrap();
+        let mut layout = Layout::new(2.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, None, None, &mut Fixed);
+        let children = tree.children(tree.root().unwrap());
+        let (search, find) = (children[0], children[1]);
+        // 8, a glyph's box of 16 and 2, at each end, of glyphs of 13; a
+        // plain field's padding.
+        assert_eq!(insets(&tree, search), (26.0, 26.0));
+        assert_eq!(insets(&tree, find), (PADDING.1, PADDING.1));
+        let frame = layout.frame(&tree, search).unwrap();
+        let (glass, clear) = search_parts(&tree, &layout, search).unwrap();
+        assert_eq!((glass.x, glass.width), (frame.x + 16.0, 32.0));
+        assert_eq!((clear.x, clear.width), (frame.x + frame.width - 48.0, 32.0));
+        assert!(search_parts(&tree, &layout, find).is_none());
+        // Its text starts past its glass.
+        let mut fields = Fields::new();
+        fields.set_text(&"search".into(), "ab");
+        let caret = fields
+            .text_area(&tree, &layout, search, &mut Fixed)
+            .unwrap();
+        assert_eq!(caret.x, frame.x + (26.0 + 20.0) * 2.0);
+        // Its clear button, while it holds text, empties it, as an edit
+        // that an undo takes back; of none, nothing.
+        let middle = (clear.x + clear.width / 2.0, frame.y + frame.height / 2.0);
+        assert!(fields.clears_at((&tree, &layout), search, middle));
+        assert!(!fields.clears_at((&tree, &layout), search, (glass.x, middle.1)));
+        let told = fields.clear(&tree, search).unwrap();
+        assert_eq!(
+            told.into_iter().map(|event| event.kind).collect::<Vec<_>>(),
+            [UiEventKind::InputChanged {
+                text: String::new(),
+                revision: 1
+            }]
+        );
+        assert!(!fields.clears_at((&tree, &layout), search, middle));
+        assert!(fields.clear(&tree, search).is_none());
+        let state = fields.states.get_mut(&NodeKey::from("search")).unwrap();
+        assert!(state.undo());
+        assert_eq!(state.text, "ab");
+        // A plain field is not emptied so.
+        fields.set_text(&"find".into(), "x");
+        assert!(fields.clear(&tree, find).is_none());
+        // Of a small text, smaller glyphs and room.
+        let mut small = Tree::new();
+        small
+            .update(&Node::container(vec![
+                Node::field("Search")
+                    .key("search")
+                    .search()
+                    .style(lokyr_plugin_sdk::view::Style {
+                        text_size: Some(TextSize::Small),
+                        ..lokyr_plugin_sdk::view::Style::default()
+                    }),
+            ]))
+            .unwrap();
+        let node = small.children(small.root().unwrap())[0];
+        assert_eq!(search_glyph(small.typeset(node)), 11.0);
+        assert_eq!(insets(&small, node), (7.0 + 14.0 + 2.0, 23.0));
     }
 }

@@ -643,7 +643,7 @@ fn a_look_leaves_the_host_as_it_was() {
 fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
     let mut host = FakeHost::new("acme/probe");
     let mut probe = Probe::new(|_, _| Ok(()));
-    let mut field = Node::field("Find").key("query").focusable();
+    let mut field = Node::field("Find").key("query").focusable().search();
     field.tooltip = Some("What to find".to_owned());
     probe.tree = Some(Node::container(vec![
         Node::text("2 matches").role(NodeRole::Status),
@@ -732,7 +732,7 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         concat!(
             "container\n",
             "  text \"2 matches\" role=Status\n",
-            "  field \"Find\" key=query tooltip=\"What to find\" focusable\n",
+            "  field \"Find\" search key=query tooltip=\"What to find\" focusable\n",
             "  toggle \"\" icon=\"case\" on key=case\n",
             "  switch \"Wrap\" off key=wrap\n",
             "  checkbox \"Verify\" on key=verify\n",

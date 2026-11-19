@@ -355,7 +355,10 @@ type Node = {
         | "pop-up" | "separator" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview"
         | "terminal-specimen" | "themed",
     text: string?, -- for text nodes; a button's, a toggle's, a switch's and a checkbox's label
-    icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
+    -- For icon nodes, by its name, one of the host's: the codicons, as "search" or "close", and two that the host draws
+    -- as macOS 27's search field does, "magnifying-glass" and "clear-circle", its cross knocked out of a disc; a
+    -- button's and a toggle's icon, before its label.
+    icon: string?,
     on: boolean?, -- for toggle, switch and checkbox nodes, the plugin's state
     mixed: boolean?, -- for checkbox nodes: neither on nor off, a dash in place of its check, as a checkbox over
     -- others of which some are on; its click asks for on
@@ -385,6 +388,11 @@ type Node = {
     -- writes them, as ⇧⌘Y, and tells a "recorded" of them as a config writes keys; Delete takes them away, and Tab and
     -- Escape do as elsewhere. Lokyr's own plugins alone: an installed plugin's field that records is a plain field.
     records: boolean?,
+    -- For field nodes, `search`: a search field, as macOS's, a capsule where its style gives it no box of its own, a
+    -- magnifying glass inside at its left, and, while it holds text, a button inside at its right that empties it,
+    -- telling an "input-changed" of no text, as Escape does first while it has the keyboard, but in a panel that
+    -- Escape closes, as a find bar's; its glyphs as large as its text.
+    search: boolean?,
     link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
     -- For button nodes, what its press does: "plain", by default; "default", the view's main action, of the accent's
     -- fill, which Return presses wherever the view's focus is but in a field or a list; "destructive", an action that

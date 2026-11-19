@@ -1657,7 +1657,8 @@ impl Gallery {
                 }))
                 .key(wrap.as_str()),
                 Node::new(Kind::Field(view::Field {
-                    placeholder: "Find".to_owned(),
+                    placeholder: "Search".to_owned(),
+                    search: true,
                     size,
                     ..view::Field::default()
                 }))
@@ -1693,7 +1694,7 @@ impl Gallery {
     }
 
     fn fields(&self) -> Node {
-        let find = Node::field("Find").key("find").layout(Layout {
+        let find = Node::field("Find").key("find").search().layout(Layout {
             grow: 1.0,
             ..Layout::default()
         });

@@ -189,6 +189,38 @@ fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
     assert_eq!(count(&mut host, &mut plugin), "No results");
 }
 
+/// Whether the bar's tree holds a node of `key`.
+fn holds(host: &mut FakeHost, plugin: &mut Search, key: &str) -> bool {
+    let tree = host.render(plugin, &bar()).expect("the bar");
+    let mut left = vec![&tree];
+    while let Some(node) = left.pop() {
+        if node.key.as_ref().is_some_and(|own| own.0 == key) {
+            return true;
+        }
+        left.extend(&node.children);
+    }
+    false
+}
+
+#[test]
+fn the_bar_s_clear_button_shows_while_its_field_holds_text_and_empties_it() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    focused(&mut host, &mut plugin);
+    assert!(!holds(&mut host, &mut plugin, CLEAR));
+    typed(&mut host, &mut plugin, "needle");
+    assert!(holds(&mut host, &mut plugin, CLEAR));
+    // Its click empties the field, of its revision, and the search ends.
+    let asked = on_bar(&mut host, &mut plugin, CLEAR, UiEventKind::Click);
+    assert!(asked.iter().any(|request| matches!(
+        request,
+        Request::SetText { key, text, .. } if key.0 == FIELD && text.is_empty()
+    )));
+    assert_eq!(query(&plugin), None);
+    assert!(!holds(&mut host, &mut plugin, CLEAR));
+    assert_eq!(count(&mut host, &mut plugin), "No results");
+}
+
 #[test]
 fn return_and_the_commands_step_up_and_down_through_the_matches_around_their_ends() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);

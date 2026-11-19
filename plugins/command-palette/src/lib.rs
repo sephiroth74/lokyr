@@ -606,13 +606,15 @@ struct Texts {
     commands: String,
 }
 
-/// The palette's view of `open`: its field, large, of no box and no ring,
-/// a thin line, and the list of the commands that it ranks, each of its
-/// title and its keys at its end, of a menu's look, or a line of none.
+/// The palette's view of `open`: its field, a search field, large, of no
+/// box and no ring, a thin line, and the list of the commands that it
+/// ranks, each of its title and its keys at its end, of a menu's look, or a
+/// line of none.
 fn palette(open: &Open, texts: &Texts) -> Node {
     let field = Node::container(vec![
         Node::field(texts.placeholder.as_str())
             .key(FIELD)
+            .search()
             .layout(Layout {
                 width: Length::Fraction(1.0),
                 ..Layout::default()
