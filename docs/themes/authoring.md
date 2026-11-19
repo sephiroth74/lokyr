@@ -173,6 +173,10 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `button.bg` | A button at rest | light `text / 6%`, dark `text / 8%` |
 | `button.hover.bg` | A button under the pointer | light `text / 8%`, dark `text / 10%` |
 | `button.pressed.bg` | A button pressed | light `text / 16%`, dark `text / 18%` |
+| `button.default.bg` | A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · not released yet | light `accent`, dark `mix(accent, #000000, 30%)` |
+| `button.default.pressed.bg` | A default button pressed · not released yet | `mix(button.default.bg, #000000, 15%)` |
+| `button.default.fg` | A default button's label · not released yet | `contrasting(button.default.bg)` |
+| `button.destructive.fg` | A destructive button's label, as Remove's · not released yet | `readable(red, on: panel.bg)` |
 | `toggle.on.bg` | A toggle that is on | light `accent / 12%`, dark `accent / 20%` |
 | `toggle.on.fg` | The mark of a toggle that is on | `accent` |
 | `switch.off.bg` | A switch's track that is off · not released yet | `text / 10%` |

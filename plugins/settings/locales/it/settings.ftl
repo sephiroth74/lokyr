@@ -50,6 +50,7 @@ sample-tooltip = Esegui il backup ora
 sample-more = Altre informazioni
 sample-restore = Ripristina
 sample-cancel = Annulla
+sample-delete = Elimina
 sample-back-up = Esegui backup
 themes-description = Ogni tema, con un'anteprima dei suoi colori: un clic lo usa per il suo aspetto, nel [theme] della tua config. I tuoi temi sono quelli della cartella dei temi accanto alla config, che Vista › Apri la cartella dei temi apre, e in cui Importa… copia i temi .itermcolors e .toml.
 themes-light = Chiari

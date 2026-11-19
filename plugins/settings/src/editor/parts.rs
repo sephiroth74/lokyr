@@ -8,8 +8,8 @@
 //! marks in the list.
 
 use lokyr_plugin_sdk::view::{
-    Align, Border, Button, Direction, Edges, Kind, Layout, Length, Node, ProgressShape,
-    ProgressState, Role, Shadow, Style, Tab, TextSize, Toggle, Token,
+    Align, Border, Button, ButtonVariant, Direction, Edges, Kind, Layout, Length, Node,
+    ProgressShape, ProgressState, Role, Shadow, Style, Tab, TextSize, Toggle, Token,
 };
 
 /// A part's key, of its id.
@@ -153,6 +153,10 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
             "button.bg",
             "button.hover.bg",
             "button.pressed.bg",
+            "button.default.bg",
+            "button.default.pressed.bg",
+            "button.default.fg",
+            "button.destructive.fg",
             "accent",
         ],
     ),
@@ -371,9 +375,19 @@ fn button(id: &str, name: &str, label: String, (link, disabled): (bool, bool)) -
         icon: String::new(),
         disabled,
         link,
-        size: Default::default(),
+        ..Button::default()
     }))
     .key(sample(id, name).as_str())
+}
+
+/// [`button`] of `variant`, as a dialog's default button or its action that
+/// removes something.
+fn button_of(id: &str, name: &str, label: String, variant: ButtonVariant) -> Node {
+    let mut node = button(id, name, label, (false, false));
+    if let Kind::Button(own) = &mut node.kind {
+        own.variant = variant;
+    }
+    node
 }
 
 /// The tab bar of the window's preview: a track of an active tab, one
@@ -816,17 +830,23 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
                     built.word("sample-restore"),
                     (false, true),
                 ),
+                button_of(
+                    "buttons",
+                    "delete",
+                    built.word("sample-delete"),
+                    ButtonVariant::Destructive,
+                ),
                 button(
                     "buttons",
                     "cancel",
                     built.word("sample-cancel"),
                     (false, false),
                 ),
-                button(
+                button_of(
                     "buttons",
                     "back-up",
                     built.word("sample-back-up"),
-                    (false, false),
+                    ButtonVariant::Default,
                 ),
             ],
             6.0,

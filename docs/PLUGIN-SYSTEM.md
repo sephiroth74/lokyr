@@ -371,6 +371,10 @@ type Node = {
     -- Escape do as elsewhere. Lokyr's own plugins alone: an installed plugin's field that records is a plain field.
     records: boolean?,
     link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
+    -- For button nodes, what its press does: "plain", by default; "default", the view's main action, of the accent's
+    -- fill, which Return presses wherever the view's focus is but in a field or a list; "destructive", an action that
+    -- removes something, its label red.
+    variant: ("plain" | "default" | "destructive")?,
     progress: {
         state: ("normal" | "error" | "paused" | "indeterminate")?,
         value: number?, -- from 0 to 1

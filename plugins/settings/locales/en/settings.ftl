@@ -50,6 +50,7 @@ sample-tooltip = Back up now
 sample-more = More Info
 sample-restore = Restore
 sample-cancel = Cancel
+sample-delete = Delete
 sample-back-up = Back Up
 themes-description = Every theme, of a preview of its colors: a click uses it for its appearance, in your config's [theme]. Your own themes are those of the themes' folder beside your config, which View › Open Themes Folder opens, and into which Import… copies .itermcolors and .toml themes.
 themes-light = Light

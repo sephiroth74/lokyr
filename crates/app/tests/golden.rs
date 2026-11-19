@@ -643,6 +643,7 @@ fn widgets_tree() -> Node {
             disabled,
             link: false,
             size: Default::default(),
+            variant: Default::default(),
         }))
         .key(key)
     };
@@ -663,6 +664,14 @@ fn widgets_tree() -> Node {
             ..Box::default()
         })
     };
+    let variant = |key: &str, label: &str, variant: view::ButtonVariant| {
+        Node::new(Kind::Button(view::Button {
+            label: label.to_owned(),
+            variant,
+            ..view::Button::default()
+        }))
+        .key(key)
+    };
     let buttons = row(vec![
         button("replace", "Replace", "", false),
         button("pressed", "Replace", "", false),
@@ -670,6 +679,11 @@ fn widgets_tree() -> Node {
         Node::separator(),
         button("add", "", "add", false),
         button("settings", "Settings", "settings", false),
+    ]);
+    let actions = row(vec![
+        variant("remove", "Remove", view::ButtonVariant::Destructive),
+        variant("cancel", "Cancel", view::ButtonVariant::Plain),
+        variant("back-up", "Back Up", view::ButtonVariant::Default),
     ]);
     let toggles = row(vec![
         toggle("case", "", "case-sensitive", (false, false)),
@@ -696,7 +710,7 @@ fn widgets_tree() -> Node {
         switch("locked", "Locked", (true, true, ControlSize::Regular)),
         switch("held", "", (false, true, ControlSize::Small)),
     ]);
-    let panel = Node::container(vec![buttons, switches, toggles, Node::separator()])
+    let panel = Node::container(vec![buttons, actions, switches, toggles, Node::separator()])
         .layout(Box {
             direction: Direction::Column,
             gap: 10.0,
@@ -738,6 +752,7 @@ fn themed_tree() -> Node {
                 disabled: false,
                 link,
                 size: Default::default(),
+                variant: Default::default(),
             }))
             .key(key(name).as_str())
         };

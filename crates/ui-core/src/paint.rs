@@ -575,11 +575,23 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 label, icon, size, ..
             }) => {
                 let link = matches!(kind, Kind::Button(button) if button.link);
+                let own = own && !link;
                 let color = match kind {
                     Kind::Toggle(toggle) if toggle.on => {
                         self.tokens.get("toggle.on.fg").unwrap_or(color)
                     }
                     _ if link => self.tokens.get("accent").unwrap_or(color),
+                    // A default or a destructive button of no box of its
+                    // own, its label of its variant's color.
+                    Kind::Button(button) if own => match button.variant {
+                        view::ButtonVariant::Default => {
+                            self.tokens.get("button.default.fg").unwrap_or(color)
+                        }
+                        view::ButtonVariant::Destructive => {
+                            self.tokens.get("button.destructive.fg").unwrap_or(color)
+                        }
+                        view::ButtonVariant::Plain => color,
+                    },
                     _ => color,
                 };
                 self.widget((label, icon), (frame, *size), color, link);
@@ -1736,9 +1748,9 @@ fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
 /// own, of rounded corners, as its state has it, the pointer over it and
 /// its primary button down over it: a button's background, lighter or
 /// darker of the pointer, as a toggle's of a label when it is off; a
-/// toggle of an icon alone shows none without the pointer, as a find
-/// bar's; a toggle's tint when it is on; a widget disabled shows no
-/// pointer.
+/// default button's of the accent, darker as it is pressed; a toggle of an
+/// icon alone shows none without the pointer, as a find bar's; a toggle's
+/// tint when it is on; a widget disabled shows no pointer.
 fn widget_box(kind: &Kind, style: &Style, (hovered, pressed): (bool, bool)) -> Style {
     let disabled = kind.disabled();
     let on = matches!(kind, Kind::Toggle(toggle) if toggle.on);
@@ -1749,7 +1761,15 @@ fn widget_box(kind: &Kind, style: &Style, (hovered, pressed): (bool, bool)) -> S
             ..style.clone()
         };
     }
+    let default = matches!(
+        kind,
+        Kind::Button(button) if button.variant == view::ButtonVariant::Default
+    );
     let background = match kind {
+        // A default button of the accent's fill, darker as it is pressed,
+        // of no hover, as macOS's.
+        _ if default && pressed && !disabled => Some("button.default.pressed.bg"),
+        _ if default => Some("button.default.bg"),
         _ if pressed && !disabled => Some("button.pressed.bg"),
         _ if on => Some("toggle.on.bg"),
         _ if hovered && !disabled => Some("button.hover.bg"),

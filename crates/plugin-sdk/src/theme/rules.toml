@@ -63,6 +63,14 @@
 "button.hover.bg" = { light = "text / 8%", dark = "text / 10%" }
 # A button pressed.
 "button.pressed.bg" = { light = "text / 16%", dark = "text / 18%" }
+# A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · not released yet.
+"button.default.bg" = { light = "accent", dark = "mix(accent, #000000, 30%)" }
+# A default button pressed · not released yet.
+"button.default.pressed.bg" = "mix(button.default.bg, #000000, 15%)"
+# A default button's label · not released yet.
+"button.default.fg" = "contrasting(button.default.bg)"
+# A destructive button's label, as Remove's · not released yet.
+"button.destructive.fg" = "readable(red, on: panel.bg)"
 # A toggle that is on.
 "toggle.on.bg" = { light = "accent / 12%", dark = "accent / 20%" }
 # The mark of a toggle that is on.

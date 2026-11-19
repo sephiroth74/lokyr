@@ -68,7 +68,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "text" => &["text"],
         "icon" => &["icon"],
         "field" => &["placeholder", "text", "stepped", "records", "size"],
-        "button" => &["text", "icon", "disabled", "link", "size"],
+        "button" => &["text", "icon", "disabled", "link", "size", "variant"],
         "toggle" => &["text", "icon", "on", "disabled", "size"],
         "switch" => &["text", "on", "disabled", "size"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
@@ -288,6 +288,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             disabled: or_default(take("disabled"), "disabled", budget)?,
             link: or_default(take("link"), "link", budget)?,
             size: or_default(take("size"), "size", budget)?,
+            variant: or_default(take("variant"), "variant", budget)?,
         }),
         "toggle" => Kind::Toggle(Toggle {
             label: or_default(take("text"), "text", budget)?,
@@ -464,12 +465,14 @@ mod giving {
                     disabled,
                     link,
                     size,
+                    variant,
                 }) => {
                     table.raw_set("text", label.as_str())?;
                     table.raw_set("icon", icon.as_str())?;
                     table.raw_set("disabled", *disabled)?;
                     table.raw_set("link", *link)?;
                     set(lua, &table, "size", size)?;
+                    set(lua, &table, "variant", variant)?;
                 }
                 Kind::Toggle(Toggle {
                     label,

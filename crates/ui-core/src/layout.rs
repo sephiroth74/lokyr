@@ -1364,6 +1364,7 @@ mod tests {
                 disabled: false,
                 link: false,
                 size: Default::default(),
+                variant: Default::default(),
             }))
             .key("settings"),
             Node::separator(),

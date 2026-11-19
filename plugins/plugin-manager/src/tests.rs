@@ -236,6 +236,11 @@ fn the_page_lists_the_installed_plugins_then_the_built_in_ones_each_of_its_butto
         button(&tree, "remove:acme/notes").as_deref(),
         Some("plugin-remove")
     );
+    // Remove, of its destructive look.
+    assert!(matches!(
+        &find(&tree, "remove:acme/notes").unwrap().kind,
+        Kind::Button(button) if button.variant == lokyr_plugin_sdk::view::ButtonVariant::Destructive
+    ));
     assert!(button(&tree, "toggle:lokyr/tabs").is_some());
     assert!(button(&tree, "remove:lokyr/tabs").is_none());
     assert!(button(&tree, &format!("toggle:{NAME}")).is_none());

@@ -502,6 +502,32 @@ pub struct Button {
     /// Its size.
     #[serde(skip_serializing_if = "ControlSize::is_regular")]
     pub size: ControlSize,
+    /// What its press does, which its look tells.
+    #[serde(skip_serializing_if = "ButtonVariant::is_plain")]
+    pub variant: ButtonVariant,
+}
+
+/// What a button's press does, as macOS's buttons tell it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ButtonVariant {
+    /// A plain button.
+    #[default]
+    Plain,
+    /// The view's main action, as a dialog's OK, of the accent's fill,
+    /// which Return presses wherever the view's focus is, but in a field or
+    /// a list, which take Return themselves.
+    Default,
+    /// An action that removes or loses something, as Remove, its label
+    /// red.
+    Destructive,
+}
+
+impl ButtonVariant {
+    /// Whether it is a plain button's, which a node of it leaves out.
+    pub fn is_plain(&self) -> bool {
+        *self == Self::Plain
+    }
 }
 
 /// A toggle's own properties.

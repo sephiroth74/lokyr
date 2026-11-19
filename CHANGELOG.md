@@ -10,6 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- Default and destructive buttons: a dialog's main action, such as the Keys page's Add, is filled with the accent and Return presses it wherever the focus is, but in a field or a list; an action that removes something, such as the Plugins page's Remove, has a red label. Plugins draw them of a button's `variant`, and themes color them of `button.default.bg`, `button.default.pressed.bg`, `button.default.fg` and `button.destructive.fg`.
 - A plugin can stand in for another that shows in the same place, of its manifest's `replaces`, such as a tab bar of its own in place of Lokyr's: Lokyr turns the other off while it runs, and on again as it is turned off or removed, writing nothing to your config. A plugin that you install asks for it with its other capabilities, the Plugins page shows the other as Replaced by it, `sleip list` tells it, and `sleip add` refuses plugins that would replace each other. Nothing replaces the Plugins page itself.
 
 - The plugin API 0.1.6 draws a switch, a view node of `kind = "switch"`, as macOS's, of two sizes, which tells its plugin a `toggle` as a toggle does; a theme colors it of `switch.off.bg`, `switch.on.bg`, `switch.knob.bg` and `switch.knob.shadow`, which the Theme Editor lists under Toggles and shows in its panel's preview.

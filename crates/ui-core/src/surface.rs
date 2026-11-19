@@ -461,9 +461,10 @@ impl Surface {
     }
 
     /// What `key` does to `node`, which has the keyboard's focus: a
-    /// field's edit, a button's press or a toggle's switch, a view of
-    /// tabs' choice, a list's selection; `None` for a key that none takes,
-    /// which the app's bindings may take.
+    /// field's edit, the view's default button's press of Return, a
+    /// button's press or a toggle's switch, a view of tabs' choice, a
+    /// list's selection; `None` for a key that none takes, which the app's
+    /// bindings may take.
     pub fn key(
         &mut self,
         node: NodeId,
@@ -472,6 +473,7 @@ impl Surface {
     ) -> Option<Vec<NodeEvent>> {
         self.fields
             .key(&self.tree, node, key, clipboard)
+            .or_else(|| widget::default_key(&self.tree, node, key))
             .or_else(|| widget::key(&self.tree, node, key))
             .or_else(|| tabs::key(&self.tree, node, key))
             .or_else(|| self.lists.key(&self.tree, node, key))

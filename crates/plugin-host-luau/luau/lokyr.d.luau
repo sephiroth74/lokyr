@@ -254,6 +254,7 @@ export type Node = {
     size: ControlSize?,
     disabled: boolean?,
     link: boolean?,
+    variant: ButtonVariant?,
     on: boolean?,
     row: Node?,
     count: number?,
@@ -417,6 +418,11 @@ export type Border = {
     color: Token,
     width: number,
 }
+
+export type ButtonVariant =
+    | "plain"
+    | "default"
+    | "destructive"
 
 export type CapabilityDecision = {
     capability: string,

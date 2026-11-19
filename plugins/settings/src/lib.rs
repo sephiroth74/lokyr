@@ -30,9 +30,9 @@ use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::{TOKENS, ThemeVariant};
 use lokyr_plugin_sdk::ui::{Anchor, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
-    Align, Border, ControlSize, Direction, Edges, FontFamily, FontWeight, Hover, Justify, Kind,
-    Layout, Length, ListItem, Node, PointerShape, ProgressShape, ProgressState, Role, Style,
-    TextSize, Token, UiEventKind,
+    Align, Border, ButtonVariant, ControlSize, Direction, Edges, FontFamily, FontWeight, Hover,
+    Justify, Kind, Layout, Length, ListItem, Node, PointerShape, ProgressShape, ProgressState,
+    Role, Style, TextSize, Token, UiEventKind,
 };
 
 lokyr_plugin_sdk::export_plugin!(SettingsPage);
@@ -3638,9 +3638,11 @@ fn adding_tree(
         children.push(refusal(why, "refused:new"));
     }
     let ready = adding.keys.is_some() && adding.command.is_some() && !system && !already;
+    // The panel's default button, which Return presses.
     let mut add = Node::button(message(cx, "binding-confirm", &[])).key(CONFIRM);
     if let Kind::Button(button) = &mut add.kind {
         button.disabled = !ready;
+        button.variant = ButtonVariant::Default;
     }
     children.push(
         Node::container(vec![

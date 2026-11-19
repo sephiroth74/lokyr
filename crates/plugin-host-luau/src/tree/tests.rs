@@ -50,6 +50,7 @@ fn every() -> Node {
         disabled: true,
         link: true,
         size: Default::default(),
+        variant: Default::default(),
     }));
     button.key = Some(Key::from("go"));
     button.focusable = true;

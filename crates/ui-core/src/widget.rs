@@ -5,7 +5,7 @@
 //! switch. A toggle's and a switch's state is its plugin's, in its render:
 //! the switch tells the state asked, which the next render gives.
 
-use lokyr_plugin_sdk::view::{ControlSize, Kind, UiEventKind};
+use lokyr_plugin_sdk::view::{ButtonVariant, ControlSize, Kind, UiEventKind};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, Keypad};
 
 use crate::pointer::NodeEvent;
@@ -138,25 +138,63 @@ pub fn key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<NodeEven
     if !tree.kind(node)?.presses() {
         return None;
     }
-    let mods = key.mods;
-    let plain = !(mods.shift
-        || mods.control
-        || mods.left_alt
-        || mods.right_alt
-        || mods.super_key
-        || mods.hyper
-        || mods.meta);
     let presses = matches!(
         key.key,
         Key::Char(' ') | Key::Enter | Key::Keypad(Keypad::Enter)
     );
-    if !plain || !presses {
+    if !plain(key) || !presses {
         return None;
     }
     if key.action != KeyAction::Press {
         return Some(Vec::new());
     }
     Some(pressed(tree, node).into_iter().collect())
+}
+
+/// What Return does wherever the focus of `tree` is, at `node`, as macOS's
+/// default button takes it: it presses the tree's first default button
+/// that is not disabled, but from a list, which takes Return itself, as a
+/// field does before; `None` of another key, or of a tree of no default
+/// button. A release or a repeat of it takes nothing.
+pub fn default_key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<NodeEvent>> {
+    let returns = matches!(key.key, Key::Enter | Key::Keypad(Keypad::Enter)) && plain(key);
+    if !returns || matches!(tree.kind(node), Some(Kind::List(_) | Kind::Field(_))) {
+        return None;
+    }
+    let default = first(tree, tree.root()?, &|kind| {
+        matches!(
+            kind,
+            Kind::Button(button)
+                if button.variant == ButtonVariant::Default && !button.disabled
+        )
+    })?;
+    if key.action != KeyAction::Press {
+        return Some(Vec::new());
+    }
+    Some(pressed(tree, default).into_iter().collect())
+}
+
+/// The first node of `id`'s subtree in `tree`, in its order, of a kind that
+/// `wanted` takes.
+fn first(tree: &Tree, id: NodeId, wanted: &dyn Fn(&Kind) -> bool) -> Option<NodeId> {
+    if tree.kind(id).is_some_and(wanted) {
+        return Some(id);
+    }
+    tree.children(id)
+        .iter()
+        .find_map(|&child| first(tree, child, wanted))
+}
+
+/// Whether `key` is of no modifier.
+fn plain(key: &KeyEvent<'_>) -> bool {
+    let mods = key.mods;
+    !(mods.shift
+        || mods.control
+        || mods.left_alt
+        || mods.right_alt
+        || mods.super_key
+        || mods.hyper
+        || mods.meta)
 }
 
 /// The event of a press of the widget `node` of `tree`, as a click or a
@@ -370,5 +408,84 @@ mod tests {
         assert!(pressed(&tree, held).is_none());
         assert!(!tree.kind(held).unwrap().takes_focus());
         assert!(tree.kind(switch).unwrap().is_control());
+    }
+
+    #[test]
+    fn return_presses_the_view_s_default_button_wherever_its_focus_is_but_in_a_list() {
+        let button = |label: &str, variant: ButtonVariant, disabled: bool| {
+            Node::new(Kind::Button(view::Button {
+                label: label.to_owned(),
+                variant,
+                disabled,
+                ..view::Button::default()
+            }))
+        };
+        let tree_of = |default_disabled: bool| {
+            let mut tree = Tree::new();
+            tree.update(&Node::container(vec![
+                Node::toggle("regex", false).key("regex"),
+                button("Cancel", ButtonVariant::Plain, false).key("cancel"),
+                button("Remove", ButtonVariant::Destructive, false).key("remove"),
+                button("Back Up", ButtonVariant::Default, default_disabled).key("back-up"),
+                Node::list(Node::text(""), 3, (0, Vec::new())).key("rows"),
+            ]))
+            .unwrap();
+            tree
+        };
+        let tree = tree_of(false);
+        let node = |key: &str| tree.by_key(&key.into()).unwrap();
+        let typed = |tree: &Tree, at: NodeId, key: Key| {
+            let event = pressed_key(key, KeyAction::Press, Mods::NONE);
+            default_key(tree, at, &event)
+                .or_else(|| super::key(tree, at, &event))
+                .map(|events| {
+                    events
+                        .into_iter()
+                        .map(|event| (event.key.0, event.kind))
+                        .collect::<Vec<_>>()
+                })
+        };
+        let back_up = Some(vec![("back-up".to_owned(), UiEventKind::Click)]);
+        // From a toggle or another button, Return presses the default one;
+        // Space presses the one of the focus.
+        assert_eq!(typed(&tree, node("regex"), Key::Enter), back_up);
+        assert_eq!(typed(&tree, node("cancel"), Key::Enter), back_up);
+        assert_eq!(
+            typed(&tree, node("regex"), Key::Char(' ')),
+            Some(vec![("regex".to_owned(), UiEventKind::Toggle { on: true })])
+        );
+        // A list takes Return itself.
+        assert_eq!(
+            default_key(
+                &tree,
+                node("rows"),
+                &pressed_key(Key::Enter, KeyAction::Press, Mods::NONE)
+            ),
+            None
+        );
+        // A disabled default button is passed over, Return pressing the
+        // button of the focus, as of no default.
+        let held = tree_of(true);
+        let cancel = held.by_key(&"cancel".into()).unwrap();
+        assert_eq!(
+            typed(&held, cancel, Key::Enter),
+            Some(vec![("cancel".to_owned(), UiEventKind::Click)])
+        );
+        // A modifier, a release: nothing, and nothing told.
+        let shifted = pressed_key(
+            Key::Enter,
+            KeyAction::Press,
+            Mods {
+                shift: true,
+                ..Mods::NONE
+            },
+        );
+        assert_eq!(default_key(&tree, node("regex"), &shifted), None);
+        let released = pressed_key(Key::Enter, KeyAction::Release, Mods::NONE);
+        assert!(
+            default_key(&tree, node("regex"), &released)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

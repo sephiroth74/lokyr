@@ -23,7 +23,15 @@ const FAMILY: &str = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
 const ROWS: usize = 100_000;
 
 /// The keys of the gallery's buttons.
-const BUTTONS: [&str; 5] = ["replace", "replace-all", "settings", "add", "trash"];
+const BUTTONS: [&str; 7] = [
+    "replace",
+    "replace-all",
+    "settings",
+    "add",
+    "trash",
+    "remove",
+    "back-up",
+];
 
 /// Italy's flag, of two regional indicators.
 const ITALY: &str = "\u{1F1EE}\u{1F1F9}";
@@ -1399,6 +1407,7 @@ impl Gallery {
                 disabled,
                 link: false,
                 size: Default::default(),
+                variant: Default::default(),
             }))
             .key(key)
         };
@@ -1419,6 +1428,14 @@ impl Gallery {
                 ..Layout::default()
             })
         };
+        let variant = |key: &str, label: &str, variant: view::ButtonVariant| {
+            Node::new(Kind::Button(view::Button {
+                label: label.to_owned(),
+                variant,
+                ..view::Button::default()
+            }))
+            .key(key)
+        };
         let buttons = row(vec![
             button("replace", "Replace", "", false).tooltip("Replace the match"),
             button("replace-all", "Replace All", "", true).tooltip("No match to replace"),
@@ -1426,6 +1443,10 @@ impl Gallery {
             button("settings", "Settings", "settings", false),
             button("add", "", "add", false).tooltip("New Tab"),
             button("trash", "", "trash", true),
+            Node::separator(),
+            variant("remove", "Remove", view::ButtonVariant::Destructive),
+            variant("back-up", "Back Up", view::ButtonVariant::Default)
+                .tooltip("The default button: Return presses it"),
         ]);
         let toggles = row(vec![
             toggle("case-sensitive", "case-sensitive", "Match Case", false),
@@ -2054,6 +2075,8 @@ mod tests {
             "replace",
             "settings",
             "add",
+            "remove",
+            "back-up",
             "case-sensitive",
             "regex",
             "whole-word",

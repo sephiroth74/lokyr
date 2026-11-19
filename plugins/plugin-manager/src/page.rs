@@ -10,8 +10,8 @@ use lokyr_plugin_sdk::host::{Decision, PluginInfo, PluginState};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::plugin::Cx;
 use lokyr_plugin_sdk::view::{
-    Align, Border, Direction, Edges, FontWeight, Kind, Layout, Length, ListItem, Node,
-    ProgressShape, ProgressState, Role, Style, TextSize, Token,
+    Align, Border, ButtonVariant, Direction, Edges, FontWeight, Kind, Layout, Length, ListItem,
+    Node, ProgressShape, ProgressState, Role, Style, TextSize, Token,
 };
 
 use super::registry::{self, Found, Info};
@@ -471,10 +471,12 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
                 );
             }
             if !plugin.built_in {
-                actions.push(
-                    Node::button(message(cx, "plugin-remove", &[]))
-                        .key(format!("{REMOVE}{name}").as_str()),
-                );
+                let mut remove = Node::button(message(cx, "plugin-remove", &[]))
+                    .key(format!("{REMOVE}{name}").as_str());
+                if let Kind::Button(button) = &mut remove.kind {
+                    button.variant = ButtonVariant::Destructive;
+                }
+                actions.push(remove);
             }
             actions
         }

@@ -1341,10 +1341,11 @@ fn add_opens_a_panel_of_a_recorder_and_a_menu_of_the_commands_which_writes_the_b
     let panel = host.render(&mut plugin, &new_binding()).expect("the panel");
     let recorder = find_node(&panel, RECORDER).expect("its recorder");
     assert!(matches!(&recorder.kind, Kind::Field(field) if field.records));
-    // Add waits for the keys and a command.
+    // Add, the panel's default button, waits for the keys and a command.
     assert!(matches!(
         &find_node(&panel, CONFIRM).unwrap().kind,
-        Kind::Button(button) if button.disabled
+        Kind::Button(button)
+            if button.disabled && button.variant == lokyr_plugin_sdk::view::ButtonVariant::Default
     ));
     // Keys that a binding takes: told, of its command's title.
     host.ui_event(
