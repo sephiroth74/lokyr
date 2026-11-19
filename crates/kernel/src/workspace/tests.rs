@@ -2617,7 +2617,8 @@ fn a_closed_tab_kept_reads_its_output_and_comes_back_at_its_place_until_its_time
     // None kept to give back now; closed again, it goes for good once its
     // time is up, or all of them as the app quits.
     assert_eq!(workspace.reopen_tab(window), None);
-    let soon = Instant::now() + Duration::from_millis(10);
+    // Soon, of a margin that a loaded machine keeps before the next look.
+    let soon = Instant::now() + Duration::from_secs(2);
     workspace.close_tab_kept(second, soon);
     workspace.close_tab_kept(third, soon + Duration::from_secs(60));
     assert!(workspace.drop_closed_tabs(Instant::now(), false).is_empty());
