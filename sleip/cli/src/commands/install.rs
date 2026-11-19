@@ -673,6 +673,19 @@ fn install(
             api: api.clone(),
             packages,
         };
+        // Plugins that would replace each other, of which none would.
+        let replacing: Vec<(&str, &[lokyr_plugin_sdk::command::Capability])> = new
+            .packages
+            .iter()
+            .map(|(name, locked)| (name.as_str(), locked.capabilities.as_slice()))
+            .collect();
+        if let Some(cycle) = lokyr_pkg_model::manifest::replacement_cycle(&replacing) {
+            let names: Vec<String> = cycle.iter().map(|name| format!("`{name}`")).collect();
+            return Err(format!(
+                "the plugins {} would replace each other: install the others without one of them",
+                names.join(", ")
+            ));
+        }
         if options.locked && lock != Some(&new) {
             return Err("the plugins would change plugins.lock, which `--locked` keeps".to_owned());
         }

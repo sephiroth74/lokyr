@@ -26,10 +26,14 @@ const SIDEBAR: f32 = 170.0;
 /// The height of a row of the sidebar, in points, as macOS's sidebars'.
 const ROW: f32 = 28.0;
 
-/// Whether a plugin of `state` is active: running, or waiting for what
-/// starts it; not turned off nor stopped by a fault.
+/// Whether a plugin of `state` is enabled, which its button turns off:
+/// running, waiting for what starts it, or replaced by a plugin that runs,
+/// its section turning it on; not turned off nor stopped by a fault.
 pub fn is_active(state: PluginState) -> bool {
-    matches!(state, PluginState::Active | PluginState::Waiting)
+    matches!(
+        state,
+        PluginState::Active | PluginState::Waiting | PluginState::Replaced
+    )
 }
 
 /// The text of why a job failed, `error`, or of a failure that told none.
@@ -387,27 +391,23 @@ fn installed_row(manager: &Manager, cx: &mut Cx<'_>, plugin: &PluginInfo) -> Nod
                 .layout(wrapped()),
         );
     }
-    // Active, whether it runs or waits for what starts it, or disabled,
-    // turned off or stopped; a fault tells why on a line of its own.
+    // Active, whether it runs or waits for what starts it, replaced by a
+    // plugin that runs, or disabled, turned off or stopped; a fault tells
+    // why on a line of its own. A replaced one is enabled, of its Disable.
     let active = is_active(plugin.state);
-    let state = message(
-        cx,
-        if active {
-            "plugin-state-active"
-        } else {
-            "plugin-state-disabled"
-        },
-        &[],
-    );
+    let (state, color) = match (plugin.state, &plugin.replaced_by) {
+        (PluginState::Replaced, Some(by)) => (
+            message(cx, "plugin-state-replaced", &[("plugin", by.clone())]),
+            "text.secondary",
+        ),
+        _ if active => (message(cx, "plugin-state-active", &[]), "text.success"),
+        _ => (message(cx, "plugin-state-disabled", &[]), "text.warning"),
+    };
     about.push(
         Node::text(state)
             .key(format!("state:{name}").as_str())
             .style(Style {
-                color: Some(Token::from(if active {
-                    "text.success"
-                } else {
-                    "text.warning"
-                })),
+                color: Some(Token::from(color)),
                 text_size: Some(TextSize::Small),
                 ..Style::default()
             }),

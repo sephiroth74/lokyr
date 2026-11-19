@@ -1248,6 +1248,51 @@ fn a_plugin_of_a_folder_moved_away_stays_as_another_installs_and_updates() {
 }
 
 #[test]
+fn add_refuses_plugins_that_would_replace_each_other_and_list_tells_a_replaced_one() {
+    let sandbox = Sandbox::new("replaces");
+    let one = made(&sandbox, "one");
+    let two = made(&sandbox, "two");
+    let replacing = |folder: &Path, other: &str| {
+        edit(folder, "plugin.toml", |text| {
+            text.replacen(
+                "license = ",
+                &format!("replaces = [\"acme/{other}\"]\nlicense = "),
+                1,
+            )
+        });
+    };
+    // `two` replaces `one`: both install, `one` listed as replaced.
+    replacing(&two, "one");
+    for folder in [&one, &two] {
+        let output = sandbox.sleip(&["add", "--path", &folder.display().to_string()]);
+        assert!(output.status.success(), "{output:?}");
+    }
+    let listed = stdout(&sandbox.sleip(&["list"]));
+    assert!(
+        listed.contains("acme/one 0.1.0 (path, replaced by acme/two)"),
+        "{listed}"
+    );
+    assert!(
+        listed.contains("acme/two 0.1.0 (path): replaces:acme/one"),
+        "{listed}"
+    );
+    let json = events(&sandbox.sleip(&["list", "--json"]));
+    assert_eq!(json[0]["replaced_by"], "acme/two");
+    assert_eq!(json[1]["replaced_by"], Value::Null);
+    // `one` replacing `two` too: refused, the lockfile as it was.
+    let held = sandbox.locked();
+    replacing(&one, "two");
+    let refused = sandbox.sleip(&["update", "acme/one"]);
+    assert_eq!(refused.status.code(), Some(1), "{refused:?}");
+    assert!(
+        String::from_utf8_lossy(&refused.stderr)
+            .contains("the plugins `acme/one`, `acme/two` would replace each other"),
+        "{refused:?}"
+    );
+    assert_eq!(sandbox.locked(), held);
+}
+
+#[test]
 fn check_refuses_a_package_of_a_plugin_built_into_the_app() {
     let sandbox = Sandbox::new("check-builtin");
     let folder = made(&sandbox, "builtin");

@@ -60,10 +60,10 @@ pub fn capability_of(text: &str) -> Option<lokyr_plugin_sdk::command::Capability
 pub use lokyr_plugin_sdk::text::is_hidden;
 
 /// Why `parameter` is not one of the capability `kind`, `fs-read`,
-/// `fs-write`, `env-read` or `net`, as the consent's question shows it as
-/// it is: a path absolute or from `~`, of no `..`; a variable's name of
-/// letters, digits, `_` and `*`; a host's name of letters, digits, `.`,
-/// `-` and `*`; each of no control nor hidden character and bounded; none
+/// `fs-write`, `env-read`, `net` or `replaces`, as the consent's question
+/// shows it as it is: a path absolute or from `~`, of no `..`; a
+/// variable's name of letters, digits, `_` and `*`; a host's name of
+/// letters, digits, `.`, `-` and `*`; a plugin's name, `owner/name`; each of no control nor hidden character and bounded; none
 /// of a parameter that fits.
 pub fn parameter_problem(kind: &str, parameter: &str) -> Option<String> {
     let count = parameter.chars().count();
@@ -90,6 +90,9 @@ pub fn parameter_problem(kind: &str, parameter: &str) -> Option<String> {
         )),
         "net" if !host => Some(format!(
             "`{kind}` lists hosts' names, of letters, digits, `.`, `-` and `*`, of 253 characters at most"
+        )),
+        "replaces" if !manifest::is_name(parameter) => Some(format!(
+            "`{kind}` lists plugins' names, `owner/name`, of lowercase letters, digits and `-`"
         )),
         _ => None,
     }

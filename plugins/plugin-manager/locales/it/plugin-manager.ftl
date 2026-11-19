@@ -12,6 +12,7 @@ plugins-built-in = Integrati
 plugins-none-installed = Ancora nessun plugin installato: il Registro elenca i plugin di pkg.lokyr.dev.
 plugin-state-active = Attivo
 plugin-state-disabled = Disattivato
+plugin-state-replaced = Sostituito da { $plugin }
 plugin-fault = Fermato da un errore: { $fault }
 plugin-capabilities = Capability: { $capabilities }
 plugin-decision-granted = { $capability }, concessa

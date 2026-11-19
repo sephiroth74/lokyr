@@ -21,6 +21,7 @@ fn plugin(name: &str, built_in: bool) -> PluginInfo {
         built_in,
         state: PluginState::Active,
         fault: None,
+        replaced_by: None,
         capabilities: Vec::new(),
     }
 }
@@ -338,7 +339,8 @@ fn its_command_opens_the_settings_window_at_its_page() {
 }
 
 #[test]
-fn a_plugin_is_active_in_green_whether_it_runs_or_waits_or_disabled_and_a_fault_tells_why() {
+fn a_plugin_is_active_in_green_whether_it_runs_or_waits_replaced_or_disabled_and_a_fault_tells_why()
+{
     let (mut host, mut manager) = host();
     host.set_plugins(vec![
         PluginInfo {
@@ -353,6 +355,11 @@ fn a_plugin_is_active_in_green_whether_it_runs_or_waits_or_disabled_and_a_fault_
         PluginInfo {
             state: PluginState::Off,
             ..plugin("lokyr/tabs", true)
+        },
+        PluginInfo {
+            state: PluginState::Replaced,
+            replaced_by: Some("lokyr/blocks".to_owned()),
+            ..plugin("lokyr/command-header", true)
         },
     ]);
     let tree = rendered(&mut host, &mut manager);
@@ -382,6 +389,18 @@ fn a_plugin_is_active_in_green_whether_it_runs_or_waits_or_disabled_and_a_fault_
     assert_eq!(
         button(&tree, "toggle:lokyr/tabs").as_deref(),
         Some("plugin-enable")
+    );
+    // A replaced one tells its replacer, and is enabled, of its Disable.
+    assert_eq!(
+        state("lokyr/command-header"),
+        (
+            "plugin-state-replaced".to_owned(),
+            "text.secondary".to_owned()
+        )
+    );
+    assert_eq!(
+        button(&tree, "toggle:lokyr/command-header").as_deref(),
+        Some("plugin-disable")
     );
 }
 

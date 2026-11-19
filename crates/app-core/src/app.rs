@@ -4121,7 +4121,12 @@ impl<B: Backend> App<B> {
         }
         // The plugins that faulted start again after a while, which the
         // notice tells, or are turned off, after three faults in a minute.
-        self.plugins.schedule_restarts(Instant::now());
+        // A plugin that replaced another, turned off so, gives it back.
+        if self.plugins.schedule_restarts(Instant::now()) {
+            for error in self.with_plugins(platform, Plugins::activate) {
+                eprintln!("lokyr: {error}");
+            }
+        }
         match self.plugins.next_restart() {
             Some(at) if self.restart_timer.is_none_or(|(_, armed)| armed != at) => {
                 if let Some((timer, _)) = self.restart_timer.take() {

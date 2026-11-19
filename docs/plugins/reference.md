@@ -7,6 +7,7 @@ What a plugin's author looks up while writing one: the capabilities and their ri
 `plugin.toml` holds the plugin's name, `owner/name`, its version, its license, its description, the plugin API that it takes, `api = "^0.1"`, its entry, its activation, the capabilities that it asks for, the commands of others that it runs, `[uses] commands`, and what it contributes: its slots, its config's schema and its catalogs. Every field is in [`plugin.toml`'s reference](../PACKAGE-MANAGER.md#plugintoml); `sleip check` checks the manifest as the registry does.
 
 - **Activation**: a plugin starts as one of its triggers comes, `command:<name>` of its own commands, `event:<name>` or `slot:<name>`, rather than as Lokyr starts; one of no trigger starts with the app.
+- **Replaces**: `[plugin] replaces = ["lokyr/tabs"]` names the plugins that it stands in for in the same place, as a tab bar of its own in place of Lokyr's: Lokyr turns them off while it runs, once the user grants it, and on again as it goes · not released yet.
 - **Its namespace** is its name after the owner, as `hello` of `acme/hello`: its commands are `hello.<action>`, its events `hello.<name>`, its config the section `[plugins.hello]`, and no other plugin has it.
 
 ## Capabilities
@@ -39,6 +40,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `packages` | The plugins themselves, through Sleip: the installed ones, the registry's search, installs, updates and removals; every plugin's state and the decisions of its capabilities, and a plugin turned on or off in the config; Lokyr's own plugins' alone | Very high: a plugin that installs another runs code of its choice |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry of commands | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
+| `replaces:<plugin>` | Turning the plugin of that name off while this one runs, as both show in the same place, of the manifest's `[plugin] replaces` rather than of `[capabilities]`; never `lokyr/plugin-manager` · not released yet | High: what the other plugin did goes while this one runs |
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
 

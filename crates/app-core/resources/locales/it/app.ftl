@@ -83,6 +83,7 @@ consent-capability-pointer-read = vedere dove si trova il puntatore sui pannelli
 consent-capability-keep-awake = tenere svegli il Mac e lo schermo, il che impedisce il blocco dello schermo e consuma la batteria
 consent-capability-appearance-write = mostrare in anteprima temi e famiglie di font, e indicare quelli scelti nel file di configurazione
 consent-capability-packages = installare, aggiornare e rimuovere plugin, che eseguono codice proprio
+consent-capability-replaces = spegnere il plugin { $parameter } mentre è attivo, perché entrambi si mostrano nello stesso punto
 permissions-unread = Le decisioni sulle capability dei plugin non si leggono, e nessuna si applica: { $error }
 
 # The credits of the About panel, under the version and the copyright: the

@@ -68,6 +68,7 @@ pub fn plugins() -> Vec<PluginInfo> {
         built_in: false,
         state: PluginState::Active,
         fault: None,
+        replaced_by: None,
         capabilities: vec![
             CapabilityDecision {
                 capability: "clipboard-read".to_owned(),

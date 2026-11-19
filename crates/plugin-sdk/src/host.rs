@@ -1579,6 +1579,9 @@ pub struct PluginInfo {
     /// What stopped it, as it faulted.
     #[serde(default)]
     pub fault: Option<String>,
+    /// The plugin that replaces it, by its name, while it is replaced.
+    #[serde(default)]
+    pub replaced_by: Option<String>,
     /// The capabilities that its manifest asks for, each of the user's
     /// decision, as its manifest writes them.
     #[serde(default)]
@@ -1796,6 +1799,9 @@ pub enum PluginState {
     /// Stopped by a fault of its own, or as the user revoked a capability
     /// that it held.
     Faulted,
+    /// Off while a plugin that replaces it runs, its `replaced_by`, as
+    /// both show in the same place: on again as that one goes.
+    Replaced,
 }
 
 /// A capability of a plugin's manifest, and the user's decision of it.

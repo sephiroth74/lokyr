@@ -160,8 +160,58 @@ pub const LONGEST_KEYWORD: usize = 50;
 /// The most characters of a plugin's author.
 pub const LONGEST_AUTHOR: usize = 200;
 
-/// The most keywords, and the most authors, of a plugin.
+/// The most keywords, and the most authors, of a plugin, and the most
+/// plugins that it replaces.
 pub const MOST_LISTED: usize = 20;
+
+/// The plugin that no plugin replaces: the Plugins page, the way back to
+/// the plugins turned off.
+pub const NEVER_REPLACED: &str = "lokyr/plugin-manager";
+
+/// A cycle of `plugins`, each by its name and its capabilities, of which
+/// each replaces the next and the last the first, in their order from the
+/// first plugin of the cycle that `plugins` holds; `None` of no cycle.
+pub fn replacement_cycle<'a>(plugins: &[(&'a str, &'a [Capability])]) -> Option<Vec<&'a str>> {
+    let replaced = |at: usize| -> Vec<usize> {
+        plugins[at]
+            .1
+            .iter()
+            .filter_map(|capability| match capability {
+                Capability::Replaces(name) => plugins.iter().position(|(own, _)| own == name),
+                _ => None,
+            })
+            .collect()
+    };
+    // A walk from each plugin, of the path that it took; a plugin seen on
+    // it again closes a cycle.
+    fn walk(
+        at: usize,
+        replaced: &dyn Fn(usize) -> Vec<usize>,
+        path: &mut Vec<usize>,
+        done: &mut [bool],
+    ) -> Option<Vec<usize>> {
+        if let Some(from) = path.iter().position(|&on| on == at) {
+            return Some(path[from..].to_vec());
+        }
+        if done[at] {
+            return None;
+        }
+        path.push(at);
+        for next in replaced(at) {
+            if let Some(cycle) = walk(next, replaced, path, done) {
+                return Some(cycle);
+            }
+        }
+        path.pop();
+        done[at] = true;
+        None
+    }
+    let mut done = vec![false; plugins.len()];
+    (0..plugins.len()).find_map(|at| {
+        walk(at, &replaced, &mut Vec::new(), &mut done)
+            .map(|cycle| cycle.into_iter().map(|at| plugins[at].0).collect())
+    })
+}
 
 /// Why `text`, of a line, is not a plugin's plain text of `most` characters
 /// at most: a control character, C0 or C1, a line's end among them, or a
@@ -206,6 +256,8 @@ struct Plugin {
     authors: Vec<toml::Spanned<String>>,
     #[serde(default)]
     platforms: Vec<String>,
+    #[serde(default)]
+    replaces: Vec<toml::Spanned<String>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -365,7 +417,11 @@ impl Manifest {
                 return Err(fail(text.span(), format!("its {what} {problem}")));
             }
         }
-        for (list, what) in [(&plugin.keywords, "keywords"), (&plugin.authors, "authors")] {
+        for (list, what) in [
+            (&plugin.keywords, "keywords"),
+            (&plugin.authors, "authors"),
+            (&plugin.replaces, "plugins that it replaces"),
+        ] {
             if list.len() > MOST_LISTED {
                 return Err(fail(
                     list[MOST_LISTED].span(),
@@ -389,6 +445,29 @@ impl Manifest {
         for (key, value) in &file.capabilities {
             capabilities
                 .extend(capability(key, value).map_err(|message| fail(value.span(), message))?);
+        }
+        // The plugins that it replaces, which it turns off as it runs, each
+        // a capability that the user grants: never itself, nor the plugins'
+        // page, the way back.
+        for replaced in &plugin.replaces {
+            let other = replaced.get_ref();
+            let problem = if !is_name(other) {
+                Some(format!("`{other}` is not a plugin's name, `owner/name`"))
+            } else if other == name {
+                Some(format!("`{name}` does not replace itself"))
+            } else if other == NEVER_REPLACED {
+                Some(format!(
+                    "no plugin replaces `{NEVER_REPLACED}`, which turns the others on again"
+                ))
+            } else if capabilities.contains(&Capability::Replaces(other.clone())) {
+                Some(format!("`{other}` is named twice"))
+            } else {
+                None
+            };
+            if let Some(problem) = problem {
+                return Err(fail(replaced.span(), problem));
+            }
+            capabilities.push(Capability::Replaces(other.clone()));
         }
         for pattern in &file.uses.commands {
             if !is_pattern(pattern.get_ref()) {
@@ -528,6 +607,10 @@ fn capability(key: &str, value: &toml::Spanned<toml::Value>) -> Result<Vec<Capab
         "fs-read" => listed(Capability::FsRead),
         "fs-write" => listed(Capability::FsWrite),
         "env-read" => listed(Capability::EnvRead),
+        "replaces" => Err(
+            "`replaces` is no capability of this table: a plugin names those that it replaces in `[plugin] replaces`"
+                .to_owned(),
+        ),
         _ => {
             let Some(plain) = Capability::of_name(key) else {
                 return Err(format!("`{key}` is no capability"));
@@ -1200,5 +1283,84 @@ config-schema = "schema.json"
         // A built-in plugin contributes the app's commands.
         let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
         assert!(Manifest::parse(builtin).is_ok());
+    }
+
+    #[test]
+    fn a_plugin_replaces_others_of_their_names_each_a_capability_never_itself_nor_the_plugins_page()
+    {
+        let wrong = |text: &str| Manifest::parse(text).unwrap_err().to_string();
+        let plugin = |replaces: &str| {
+            format!(
+                "[plugin]\nname = \"acme/tabs-plus\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\nreplaces = {replaces}\n[capabilities]\nworkspace-write = true\n"
+            )
+        };
+        // Each a capability after the table's, which the user grants.
+        let manifest = Manifest::parse(&plugin(r#"["lokyr/tabs", "acme/bar"]"#)).unwrap();
+        assert_eq!(
+            manifest.capabilities,
+            [
+                Capability::WorkspaceWrite,
+                Capability::Replaces("lokyr/tabs".to_owned()),
+                Capability::Replaces("acme/bar".to_owned()),
+            ]
+        );
+        assert_eq!(
+            crate::capability_of("replaces:lokyr/tabs"),
+            Some(Capability::Replaces("lokyr/tabs".to_owned()))
+        );
+        assert_eq!(crate::capability_of("replaces:Tabs"), None);
+        // A name that is none, itself, the plugins' page, one twice.
+        assert_eq!(
+            wrong(&plugin(r#"["tabs"]"#)),
+            "7:13: `tabs` is not a plugin's name, `owner/name`"
+        );
+        assert_eq!(
+            wrong(&plugin(r#"["acme/tabs-plus"]"#)),
+            "7:13: `acme/tabs-plus` does not replace itself"
+        );
+        assert_eq!(
+            wrong(&plugin(r#"["lokyr/plugin-manager"]"#)),
+            "7:13: no plugin replaces `lokyr/plugin-manager`, which turns the others on again"
+        );
+        assert_eq!(
+            wrong(&plugin(r#"["lokyr/tabs", "lokyr/tabs"]"#)),
+            "7:27: `lokyr/tabs` is named twice"
+        );
+        // Of the plugin's table alone, not of the capabilities'.
+        assert!(
+            wrong(&plugin("[]").replace("workspace-write = true", "replaces = [\"lokyr/tabs\"]"))
+                .contains("a plugin names those that it replaces in `[plugin] replaces`")
+        );
+        // A built-in plugin replaces another of Lokyr's own.
+        let builtin = "[plugin]\nname = \"lokyr/blocks\"\nkind = \"builtin\"\nlicense = \"MIT\"\nreplaces = [\"lokyr/command-header\"]\n";
+        assert_eq!(
+            Manifest::parse(builtin).unwrap().capabilities,
+            [Capability::Replaces("lokyr/command-header".to_owned())]
+        );
+    }
+
+    #[test]
+    fn a_cycle_of_replacements_is_found_of_its_plugins_in_their_order_and_a_chain_is_none() {
+        let replaces = |name: &str| vec![Capability::Replaces(name.to_owned())];
+        let (a, b, c) = (replaces("acme/b"), replaces("acme/c"), replaces("acme/a"));
+        let open = vec![Capability::Open];
+        // A chain, `a` replacing `b` replacing `c`: no cycle.
+        let chain = [
+            ("acme/a", a.as_slice()),
+            ("acme/b", b.as_slice()),
+            ("acme/c", open.as_slice()),
+        ];
+        assert_eq!(replacement_cycle(&chain), None);
+        // `c` replacing `a` closes it, of a plugin outside it first.
+        let cycle = [
+            ("acme/x", open.as_slice()),
+            ("acme/a", a.as_slice()),
+            ("acme/b", b.as_slice()),
+            ("acme/c", c.as_slice()),
+        ];
+        assert_eq!(
+            replacement_cycle(&cycle),
+            Some(vec!["acme/a", "acme/b", "acme/c"])
+        );
     }
 }

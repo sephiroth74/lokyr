@@ -12,6 +12,7 @@ plugins-built-in = Built In
 plugins-none-installed = No plugin is installed yet: the Registry lists the plugins of pkg.lokyr.dev.
 plugin-state-active = Active
 plugin-state-disabled = Disabled
+plugin-state-replaced = Replaced by { $plugin }
 plugin-fault = Stopped by a fault: { $fault }
 plugin-capabilities = Capabilities: { $capabilities }
 plugin-decision-granted = { $capability }, allowed

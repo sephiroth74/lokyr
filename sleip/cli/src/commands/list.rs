@@ -1,5 +1,6 @@
 //! `sleip list`: the plugins of the lockfile, each one's version, kind,
-//! source and capabilities.
+//! source and capabilities, and the installed plugin that replaces it, if
+//! one does, which Lokyr turns it off for while that one runs.
 
 use lokyr_pkg_model::lock::{Lock, Source};
 use lokyr_pkg_model::manifest::Kind;
@@ -16,6 +17,16 @@ pub fn list(paths: &Paths, out: Out) -> Result<(), String> {
         crate::output::print("No plugin is installed.");
     }
     for (name, locked) in &packages {
+        let replaced_by = packages
+            .iter()
+            .find(|(_, other)| {
+                other
+                    .capabilities
+                    .contains(&lokyr_plugin_sdk::command::Capability::Replaces(
+                        name.clone(),
+                    ))
+            })
+            .map(|(other, _)| other.clone());
         let capabilities: Vec<String> = locked
             .capabilities
             .iter()
@@ -36,6 +47,10 @@ pub fn list(paths: &Paths, out: Out) -> Result<(), String> {
         } else {
             format!(": {}", capabilities.join(", "))
         };
+        let replaced = replaced_by
+            .as_ref()
+            .map(|other| format!(", replaced by {other}"))
+            .unwrap_or_default();
         out.tell(
             "plugin",
             json!({
@@ -44,8 +59,9 @@ pub fn list(paths: &Paths, out: Out) -> Result<(), String> {
                 "kind": kind,
                 "source": locked.source.to_string(),
                 "capabilities": capabilities,
+                "replaced_by": replaced_by,
             }),
-            &format!("{name} {} ({source}){asks}", locked.version),
+            &format!("{name} {} ({source}{replaced}){asks}", locked.version),
         );
     }
     Ok(())

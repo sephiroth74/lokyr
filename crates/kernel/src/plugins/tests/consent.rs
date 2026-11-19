@@ -222,7 +222,7 @@ fn a_capability_revoked_stops_its_plugin_and_one_decided_is_not_asked() {
     assert!(!plugins.waiting());
     // Not a fault of its own: it does not start again after a while, but
     // as it is turned off and on again.
-    plugins.schedule_restarts(Instant::now());
+    let _ = plugins.schedule_restarts(Instant::now());
     assert_eq!(plugins.next_restart(), None);
 }
 

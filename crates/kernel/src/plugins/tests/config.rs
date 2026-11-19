@@ -749,7 +749,7 @@ fn a_plugin_that_faults_starts_again_after_a_while_until_three_faults_in_a_minut
         assert_eq!(error.code, Code::Fault);
         assert_eq!(plugins.status("acme/faulty"), Some(Status::Disabled));
         assert!(app.registry.get("faulty.go").is_none());
-        plugins.schedule_restarts(start + at);
+        let _ = plugins.schedule_restarts(start + at);
         let told = plugins.take_disabled();
         assert_eq!(told.len(), 1, "{told:?}");
         told[0].1.clone()

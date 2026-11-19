@@ -29,7 +29,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use lokyr_pkg_model::manifest::{Kind as PackageKind, Manifest, ManifestError, Thread};
+use lokyr_pkg_model::manifest::{
+    Kind as PackageKind, Manifest, ManifestError, NEVER_REPLACED, Thread,
+};
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::API_VERSION;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -669,6 +671,9 @@ struct State {
     stored: Stored,
     /// Whether its section of the config turns it on, as by default.
     wanted: bool,
+    /// The plugin that replaces it, by its name, while one that runs does,
+    /// as [`Plugins::configure`] and [`Plugins::activate`] find it.
+    replaced_by: Option<String>,
     /// Whether it was activated, as a plugin turned on again is made anew.
     ran: bool,
     /// How many times it started, each of a plugin made anew or the same
@@ -917,7 +922,44 @@ impl State {
     /// Whether it waits for a trigger to activate, as it is: added, or
     /// turned on again, and lazy.
     fn waits(&self) -> bool {
-        self.status == Status::Inactive && self.wanted && self.lazy()
+        self.status == Status::Inactive && self.runs() && self.lazy()
+    }
+
+    /// Whether it is to run: its section turns it on, and no plugin that
+    /// runs replaces it.
+    fn runs(&self) -> bool {
+        self.wanted && self.replaced_by.is_none()
+    }
+
+    /// The plugins that it replaces as it runs, by their names: those of
+    /// its manifest's `replaces` that it holds, every one of a plugin of
+    /// Lokyr's own and those that the user granted of an installed one.
+    fn replacing(&self) -> impl Iterator<Item = &str> {
+        self.manifest
+            .iter()
+            .flat_map(|manifest| &manifest.capabilities)
+            .filter_map(|capability| match capability {
+                Capability::Replaces(name)
+                    if self
+                        .granted
+                        .as_ref()
+                        .is_none_or(|granted| granted.contains(capability)) =>
+                {
+                    Some(name.as_str())
+                }
+                _ => None,
+            })
+    }
+
+    /// Whether it replaces the plugins that it names as it runs: its section
+    /// turns it on, and its faults have not turned it off until the app's
+    /// next start, as a plugin that no registration makes anew, or that
+    /// faulted too often, is; one that waits to start again after a fault
+    /// still does, so that the other does not show for a moment.
+    fn stands_in(&self, restarts: bool) -> bool {
+        let off_for_good = self.status == Status::Disabled
+            && (!restarts || (self.restarts.counted && self.restarts.at.is_none()));
+        self.wanted && !off_for_good
     }
 
     /// Whether it reads the processes, whose folders and programs a tab's
@@ -1462,9 +1504,13 @@ impl Plugins {
         let held = entry.state.granted.clone().unwrap_or_default();
         decide(&mut entry.state, granted, refused);
         let now = entry.state.granted.clone().unwrap_or_default();
+        // A replacement revoked leaves the plugin running, the other
+        // turned on again as the plugins activate again.
         let lost: Vec<String> = held
             .iter()
-            .filter(|capability| !now.contains(capability))
+            .filter(|capability| {
+                !now.contains(capability) && !matches!(capability, Capability::Replaces(_))
+            })
             .map(ToString::to_string)
             .collect();
         if lost.is_empty() || entry.state.status != Status::Active {
@@ -1500,7 +1546,28 @@ impl Plugins {
     /// for others than the question's, as a new version of it, is asked
     /// again of them. The errors of its activation and its commands, as
     /// they fail at once.
+    ///
+    /// A replacement of the answer's, granted, turns the other plugin off,
+    /// and one refused leaves it on, as the plugins activate again.
     pub fn consent(
+        &mut self,
+        name: &str,
+        answered: &[Capability],
+        allowed: bool,
+        context: &mut Context<'_>,
+    ) -> Vec<Error> {
+        let replaces = answered
+            .iter()
+            .any(|capability| matches!(capability, Capability::Replaces(_)));
+        let mut errors = self.consented(name, answered, allowed, context);
+        if replaces {
+            errors.extend(self.activate(context));
+        }
+        errors
+    }
+
+    /// [`Plugins::consent`], but the plugins activated again.
+    fn consented(
         &mut self,
         name: &str,
         answered: &[Capability],
@@ -1528,7 +1595,7 @@ impl Plugins {
             }
         }
         state.undecided = left;
-        if state.status != Status::Inactive || !state.wanted {
+        if state.status != Status::Inactive || !state.runs() {
             state.deferred = Deferred::default();
             return Vec::new();
         }
@@ -1686,6 +1753,7 @@ impl Plugins {
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
                 wanted: true,
+                replaced_by: None,
                 ran: false,
                 starts: 0,
                 bar_place: host::BarPlace::default(),
@@ -1858,6 +1926,45 @@ impl Plugins {
                 }),
             }
         }
+        // Who replaces whom, of the sections' `enabled`: a cycle replaces
+        // nothing, and a replaced plugin's keys apply once the other goes.
+        for cycle in self.replace() {
+            let names = cycle
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let namespace = cycle
+                .first()
+                .map(|name| name.rsplit('/').next().unwrap_or(name).to_owned())
+                .unwrap_or_default();
+            notices.push(ConfigNotice {
+                text: format!(
+                    "the plugins {names} replace each other, and none of them replaces another"
+                ),
+                namespace,
+                refused: false,
+            });
+        }
+        for entry in &self.entries {
+            let state = &entry.state;
+            let keys = matches!(&state.written, Data::Map(map) if !map.is_empty());
+            if let (Some(by), true) = (&state.replaced_by, keys) {
+                let namespace = &state.namespace;
+                notices.push(ConfigNotice {
+                    text: format!(
+                        "{}the keys of `[plugins.{namespace}]` apply while `{by}`, which replaces `{}`, is off",
+                        config
+                            .get(namespace)
+                            .map(|section| section.at(&[]) + ": ")
+                            .unwrap_or_default(),
+                        state.name
+                    ),
+                    namespace: namespace.clone(),
+                    refused: false,
+                });
+            }
+        }
         for (namespace, section) in config.sections() {
             if !self
                 .entries
@@ -1900,10 +2007,12 @@ impl Plugins {
     /// of its registration if it ran.
     pub fn activate(&mut self, context: &mut Context<'_>) -> Vec<Error> {
         let mut errors = Vec::new();
+        let _cycles = self.replace();
         for entry in &mut self.entries {
-            // A plugin that its section turns off stops; one that it turns
-            // on again starts, a new one of it if it ran.
-            if !entry.state.wanted && entry.state.status != Status::Off {
+            // A plugin that its section turns off, or that a plugin that
+            // runs replaces, stops; one that it turns on again, or that the
+            // other no longer replaces, starts, a new one of it if it ran.
+            if !entry.state.runs() && entry.state.status != Status::Off {
                 if matches!(entry.state.status, Status::Active | Status::Disabled) {
                     stop(
                         entry,
@@ -1916,7 +2025,7 @@ impl Plugins {
                 self.out.written = true;
                 continue;
             }
-            if entry.state.wanted && entry.state.status == Status::Off {
+            if entry.state.runs() && entry.state.status == Status::Off {
                 if entry.state.ran {
                     let Some((make, worker)) = &entry.make else {
                         errors.push(Error::new(
@@ -1955,6 +2064,94 @@ impl Plugins {
             }
         }
         errors
+    }
+
+    /// Finds which plugin replaces which, as their manifests' `replaces`
+    /// and the user's grants of them say: a plugin that stands in, as its
+    /// section turns it on and its faults have not turned it off for good,
+    /// replaces those that it names, but `lokyr/plugin-manager`, unless a
+    /// plugin that runs replaces it first, as a chain goes; the plugins of
+    /// a cycle, each replacing the next, replace none of each other, which
+    /// it returns, each cycle's names in the plugins' order. A replaced
+    /// plugin's state is off while it is, of its replacer's name.
+    fn replace(&mut self) -> Vec<Vec<String>> {
+        let count = self.entries.len();
+        let names: Vec<&str> = self
+            .entries
+            .iter()
+            .map(|entry| entry.state.name.as_str())
+            .collect();
+        let mut replaces = vec![vec![false; count]; count];
+        for (at, entry) in self.entries.iter().enumerate() {
+            if !entry.state.stands_in(entry.make.is_some()) {
+                continue;
+            }
+            for name in entry.state.replacing() {
+                if name == NEVER_REPLACED {
+                    continue;
+                }
+                if let Some(other) = names.iter().position(|&own| own == name)
+                    && other != at
+                {
+                    replaces[at][other] = true;
+                }
+            }
+        }
+        // What each reaches through its replacements, whose cycles replace
+        // nothing within them.
+        let mut reaches = replaces.clone();
+        for through in 0..count {
+            let onward = reaches[through].clone();
+            for from in &mut reaches {
+                if from[through] {
+                    for (to, &reached) in from.iter_mut().zip(&onward) {
+                        *to |= reached;
+                    }
+                }
+            }
+        }
+        let mut cycles: Vec<Vec<String>> = Vec::new();
+        for at in (0..count).filter(|&at| reaches[at][at]) {
+            let cycle: Vec<String> = (0..count)
+                .filter(|&other| reaches[at][other] && reaches[other][at])
+                .map(|other| names[other].to_owned())
+                .collect();
+            if !cycles.contains(&cycle) {
+                cycles.push(cycle);
+            }
+        }
+        for from in 0..count {
+            for to in 0..count {
+                if reaches[to][from] {
+                    replaces[from][to] = false;
+                }
+            }
+        }
+        // Each runs unless one that runs replaces it, of no cycle left.
+        fn runs(at: usize, replaces: &[Vec<bool>], known: &mut [Option<bool>]) -> bool {
+            if let Some(runs) = known[at] {
+                return runs;
+            }
+            let replaced = (0..replaces.len())
+                .any(|other| replaces[other][at] && runs(other, replaces, known));
+            known[at] = Some(!replaced);
+            !replaced
+        }
+        let mut known = vec![None; count];
+        let replacers: Vec<Option<String>> = (0..count)
+            .map(|at| {
+                (0..count)
+                    .find(|&other| replaces[other][at] && runs(other, &replaces, &mut known))
+                    .map(|other| names[other].to_owned())
+            })
+            .collect();
+        for (entry, replacer) in self.entries.iter_mut().zip(replacers) {
+            if entry.state.replaced_by != replacer {
+                entry.state.replaced_by = replacer;
+                self.out.written = true;
+            }
+        }
+        cycles
     }
 
     /// Whether an active plugin registered `command`, or a plugin that
@@ -2469,6 +2666,7 @@ impl Plugins {
                 &state.fault,
                 &state.granted,
                 &state.undecided,
+                &state.replaced_by,
             )
                 .hash(&mut hasher);
         }
@@ -2922,8 +3120,12 @@ impl Plugins {
     /// registration's or an installed plugin's: each starts again after a while, [`RESTART_AFTER`],
     /// twice as long at each fault, and three faults within a minute turn
     /// it off, past restarting; its fault tells which, as the app's notice
-    /// of the plugins that stopped shows it.
-    pub fn schedule_restarts(&mut self, now: Instant) {
+    /// of the plugins that stopped shows it. Whether one that replaces
+    /// another was turned off so, which the plugins' activation turns on
+    /// again.
+    #[must_use = "a replaced plugin starts again as the plugins activate"]
+    pub fn schedule_restarts(&mut self, now: Instant) -> bool {
+        let mut freed = false;
         for entry in &mut self.entries {
             let state = &mut entry.state;
             if entry.make.is_none() || state.status != Status::Disabled || state.restarts.counted {
@@ -2944,12 +3146,14 @@ impl Plugins {
                 fault.push_str(&format!(
                     "; it is turned off, after {count} faults within a minute, until the app's next start"
                 ));
+                freed |= state.replacing().next().is_some();
             } else {
                 let wait = RESTART_AFTER * 2_u32.pow(u32::try_from(count - 1).unwrap_or(0));
                 restarts.at = Some(now + wait);
                 fault.push_str(&format!("; it starts again in {} s", wait.as_secs()));
             }
         }
+        freed
     }
 
     /// When the next plugin that faulted starts again, if one does.
@@ -4142,9 +4346,13 @@ fn info(state: &State) -> host::PluginInfo {
             Status::Inactive => host::PluginState::Waiting,
             Status::Active => host::PluginState::Active,
             Status::Disabled => host::PluginState::Faulted,
+            Status::Off if state.wanted && state.replaced_by.is_some() => {
+                host::PluginState::Replaced
+            }
             Status::Off => host::PluginState::Off,
         },
         fault: state.fault.clone(),
+        replaced_by: state.replaced_by.clone(),
         capabilities: manifest
             .map(|manifest| {
                 manifest

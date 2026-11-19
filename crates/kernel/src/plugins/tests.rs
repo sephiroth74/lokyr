@@ -29,6 +29,7 @@ mod images;
 mod lazy;
 mod pages;
 mod questions;
+mod replaces;
 mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
@@ -2149,6 +2150,7 @@ fn a_call_is_its_own_plugin_s() {
             written: Data::Map(BTreeMap::new()),
             stored: Stored::default(),
             wanted: true,
+            replaced_by: None,
             ran: true,
             starts: 1,
             bar_place: host::BarPlace::default(),

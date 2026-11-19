@@ -561,7 +561,7 @@ fn an_installed_plugin_that_faults_starts_again_anew_and_turned_on_again_is_made
         served_until(plugins, app, |plugins| {
             plugins.status(HOSTILE) == Some(Status::Disabled)
         });
-        plugins.schedule_restarts(start + at);
+        let _ = plugins.schedule_restarts(start + at);
         let told = plugins.take_disabled();
         assert_eq!(told.len(), 1, "{told:?}");
         assert!(told[0].1.contains("past its deadline"), "{told:?}");

@@ -741,6 +741,7 @@ export type PluginInfo = {
     built_in: boolean,
     state: PluginState,
     fault: string?,
+    replaced_by: string?,
     capabilities: { CapabilityDecision }?,
 }
 
@@ -749,6 +750,7 @@ export type PluginState =
     | "active"
     | "off"
     | "faulted"
+    | "replaced"
 
 export type PointerShape =
     | "arrow"

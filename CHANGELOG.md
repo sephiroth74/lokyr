@@ -10,6 +10,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Added
 
+- A plugin can stand in for another that shows in the same place, of its manifest's `replaces`, such as a tab bar of its own in place of Lokyr's: Lokyr turns the other off while it runs, and on again as it is turned off or removed, writing nothing to your config. A plugin that you install asks for it with its other capabilities, the Plugins page shows the other as Replaced by it, `sleip list` tells it, and `sleip add` refuses plugins that would replace each other. Nothing replaces the Plugins page itself.
+
 - The plugin API 0.1.6 draws a switch, a view node of `kind = "switch"`, as macOS's, of two sizes, which tells its plugin a `toggle` as a toggle does; a theme colors it of `switch.off.bg`, `switch.on.bg`, `switch.knob.bg` and `switch.knob.shadow`, which the Theme Editor lists under Toggles and shows in its panel's preview.
 
 ### Changed

@@ -38,7 +38,8 @@ fn risk(capability: &Capability) -> &'static str {
         | Capability::EnvRead(_)
         | Capability::HistoryRead
         | Capability::WorkspaceWrite
-        | Capability::KeepAwake => "consent-risk-high",
+        | Capability::KeepAwake
+        | Capability::Replaces(_) => "consent-risk-high",
         Capability::ClipboardWrite
         | Capability::Open
         | Capability::GlobalHotkey

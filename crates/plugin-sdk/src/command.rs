@@ -193,6 +193,10 @@ pub enum Capability {
     /// their schemas, read, and its keys written; Lokyr's own plugins'
     /// alone.
     Config,
+    /// Turning off the plugin of a name while this one runs, as both show
+    /// in the same place, of the manifest's `[plugin] replaces`; the
+    /// plugin is turned on again as this one goes.
+    Replaces(String),
 }
 
 impl Capability {
@@ -227,13 +231,15 @@ impl Capability {
 
     /// The capability of the manifest's name `name`, which takes a
     /// parameter, of `parameter`: a host of `net`, a path of `fs-read` and
-    /// `fs-write`, a variable of `env-read`; `None` of another name.
+    /// `fs-write`, a variable of `env-read`, a plugin's name of
+    /// `replaces`; `None` of another name.
     pub fn of_parameter(name: &str, parameter: String) -> Option<Self> {
         Some(match name {
             "net" => Self::Net(parameter),
             "fs-read" => Self::FsRead(parameter),
             "fs-write" => Self::FsWrite(parameter),
             "env-read" => Self::EnvRead(parameter),
+            "replaces" => Self::Replaces(parameter),
             _ => return None,
         })
     }
@@ -338,6 +344,7 @@ impl fmt::Display for Capability {
             Self::AppearanceWrite => f.write_str("appearance-write"),
             Self::Packages => f.write_str("packages"),
             Self::Config => f.write_str("config"),
+            Self::Replaces(plugin) => write!(f, "replaces:{plugin}"),
         }
     }
 }
@@ -686,6 +693,7 @@ mod tests {
             Capability::FsRead(_) => "fs-read:<path>".to_owned(),
             Capability::FsWrite(_) => "fs-write:<path>".to_owned(),
             Capability::EnvRead(_) => "env-read:<name>".to_owned(),
+            Capability::Replaces(_) => "replaces:<plugin>".to_owned(),
             Capability::TerminalRead
             | Capability::PtyWrite
             | Capability::ClipboardRead
@@ -732,6 +740,7 @@ mod tests {
             Capability::AppearanceWrite,
             Capability::Packages,
             Capability::Config,
+            Capability::Replaces(String::new()),
         ];
         for capability in &every {
             let shown = format!("`{}`", name(capability));

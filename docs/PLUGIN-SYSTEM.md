@@ -1097,8 +1097,8 @@ type Cx = {
     -- Ends a job that runs, of no success.
     cancel_packages: (job: number) -> (boolean, Error?),
     -- Requires `packages`: the plugins, built in and installed, in the order of their activation, each of its name,
-    -- its namespace, its version, its manifest's description, whether it is built in, its state, "waiting", "active", "off" or "faulted", its
-    -- fault, and its manifest's capabilities, each of the decision on it, "granted", "refused" or "undecided".
+    -- its namespace, its version, its manifest's description, whether it is built in, its state, "waiting", "active", "off", "faulted" or
+    -- "replaced", its fault, the plugin that replaces it, `replaced_by`, while one does, and its manifest's capabilities, each of the decision on it, "granted", "refused" or "undecided".
     plugins: () -> ({ PluginInfo }?, Error?),
     -- Requires `packages`: turns a plugin, by its name, on or off, as its section of the config,
     -- `[plugins.<namespace>] enabled`, which the host writes as the call returns, keeping the rest of the file; the
@@ -1336,4 +1336,5 @@ plugin-manager  = { path = "../plugins/plugin-manager" }   # from F3b
 - **The keys**: the system's keymap plugin, `keymap-macos` on the Mac, binds the default keys of every command, the app's and the other first-party plugins', which bind none of their own; it comes first, so that a plugin's binding after it wins, and the config's `[keys]` after all of them. A binding of a command that no plugin registers, as one of a plugin turned off, takes no key; with the keymap off, the menus keep the system's own keys alone, ⌘H, ⌥⌘H, ⌘M and ⌃⌘Space.
 - **At runtime**:
   - `[plugins.<namespace>] enabled = false` turns off a first-party plugin, at once as the config is saved, and `true` turns it on again, a new one of it: its commands, its keys, its views, its panels and its decorations go as it stops.
+  - A plugin that another's manifest names in `[plugin] replaces` is off while that one stands in, as its section turns it on and its faults have not turned it off until the app's next start, of no key written: it starts again, a new one of it, as that one is turned off, removed or turned off by its faults. A replacement is a capability, `replaces:<plugin>`, which a third-party plugin asks for with the others, the replaced plugin running until the answer, and Lokyr's own plugins hold. A plugin that is itself replaced replaces nothing, so that a chain goes as far as the first that runs; the plugins of a cycle replace none of each other, of a notice; no plugin replaces `lokyr/plugin-manager`. A replaced plugin's section that holds keys tells, of a notice, that they apply once the other goes · not released yet.
   - For single-provider slots (`tab-bar`, `pane-header`), the config's [`[slots]`](CONFIGURATION.md#slots) picks the provider, the first that fills it by default, so a third-party plugin can replace our tab bar.

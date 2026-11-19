@@ -282,8 +282,8 @@ impl Manager {
     /// A click on the button of `key`: whether it did something.
     fn clicked(&mut self, cx: &mut Cx<'_>, key: &str) -> Result<bool, Error> {
         if let Some(name) = key.strip_prefix(TOGGLE) {
-            // Active, or waiting for what starts it, turns off; turned off,
-            // or stopped by a fault, turns on, and starts again.
+            // Active, waiting for what starts it, or replaced, turns off;
+            // turned off, or stopped by a fault, turns on, and starts again.
             let on = cx
                 .plugins()?
                 .iter()
