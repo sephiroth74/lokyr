@@ -21,7 +21,8 @@ use lokyr_font_coretext::CoreText;
 use lokyr_plugin_sdk::host::{Color, GroupId, GroupInfo, PaneId, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::Data;
 use lokyr_plugin_sdk::view::{
-    self, Align, Border, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow, Style,
+    self, Align, Border, ControlSize, Direction, Edges, Kind, Layout as Box, Length, Node, Shadow,
+    Style,
 };
 use lokyr_render_core::{CellBatch, CursorShape, DisplayList, Item, Rect, Renderer};
 use lokyr_render_metal::{Gpu, MetalRenderer};
@@ -676,7 +677,24 @@ fn widgets_tree() -> Node {
         toggle("pin", "", "pin", (true, true)),
         toggle("wrap", "Wrap Around", "", (false, false)),
     ]);
-    let panel = Node::container(vec![buttons, toggles, Node::separator()])
+    let switch = |key: &str, label: &str, (on, disabled, size): (bool, bool, ControlSize)| {
+        Node::new(Kind::Switch(view::Switch {
+            label: label.to_owned(),
+            on,
+            disabled,
+            size,
+        }))
+        .key(key)
+    };
+    let switches = row(vec![
+        switch("notify", "Notify", (true, false, ControlSize::Regular)),
+        switch("sound", "Sound", (false, false, ControlSize::Regular)),
+        switch("compact", "", (true, false, ControlSize::Small)),
+        Node::separator(),
+        switch("locked", "Locked", (true, true, ControlSize::Regular)),
+        switch("held", "", (false, true, ControlSize::Small)),
+    ]);
+    let panel = Node::container(vec![buttons, switches, toggles, Node::separator()])
         .layout(Box {
             direction: Direction::Column,
             gap: 10.0,
@@ -894,8 +912,9 @@ fn check_view(dark: bool, scale: u32) {
 
 /// Draws the widgets' tree at `scale`, in the dark variant or the light
 /// one, of the focus on the button of an icon, the pointer over the
-/// toggle off and pressing a button, and the toggle's tooltip, and
-/// compares the image with its golden one.
+/// toggle off and pressing a button, and the toggle's tooltip, and of
+/// switches on and off, small and disabled, and compares the image with
+/// its golden one.
 fn check_widgets(dark: bool, scale: u32) {
     check_tree("widgets", &widgets_tree(), (dark, scale), |tree| {
         (
@@ -1532,7 +1551,7 @@ fn a_view_tree_draws_as_its_golden_images_light_and_dark() {
 }
 
 #[test]
-fn buttons_toggles_separators_and_a_tooltip_draw_as_their_golden_images() {
+fn buttons_toggles_switches_separators_and_a_tooltip_draw_as_their_golden_images() {
     for dark in [false, true] {
         for scale in [1, 2] {
             check_widgets(dark, scale);

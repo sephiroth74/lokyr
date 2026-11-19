@@ -6,9 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Border, Direction, Easing, Edges, Hover, Justify, Kind, Layout, Length, ListItem,
-    Node, PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style, Token, Transition,
-    UiEventKind,
+    self, Align, Border, ControlSize, Direction, Easing, Edges, Hover, Justify, Kind, Layout,
+    Length, ListItem, Node, PointerShape, Progress, ProgressShape, ProgressState, Shadow, Style,
+    Token, Transition, UiEventKind,
 };
 use lokyr_ui_core::chrome::TabBarPlace;
 use lokyr_ui_core::interface;
@@ -770,7 +770,7 @@ impl Gallery {
                 section("Columns", columns()),
                 section("Boxes and clips", boxes()),
                 section("Drags and scrolls", self.drags()),
-                section("Buttons, toggles and separators", self.buttons()),
+                section("Buttons, toggles, switches and separators", self.buttons()),
                 section("Progress", self.progress()),
                 section("A view of tabs", self.views()),
             ],
@@ -1438,6 +1438,27 @@ impl Gallery {
             }))
             .key("wrap"),
         ]);
+        let switch = |key: &str, label: &str, size: ControlSize| {
+            Node::new(Kind::Switch(view::Switch {
+                label: label.to_owned(),
+                on: self.toggles.get(key).copied().unwrap_or(false),
+                disabled: false,
+                size,
+            }))
+            .key(key)
+        };
+        let switches = row(vec![
+            switch("notify", "Notify When Done", ControlSize::Regular),
+            switch("compact", "Compact", ControlSize::Small),
+            Node::separator(),
+            Node::new(Kind::Switch(view::Switch {
+                label: "Locked, and disabled".to_owned(),
+                on: true,
+                disabled: true,
+                ..view::Switch::default()
+            }))
+            .key("locked"),
+        ]);
         let on: Vec<&str> = self
             .toggles
             .iter()
@@ -1449,6 +1470,7 @@ impl Gallery {
             vec![
                 buttons,
                 toggles,
+                switches,
                 Node::separator(),
                 secondary(&format!("last: {}", self.pressed)),
                 secondary(&format!("on: {}", on.join(", "))),
@@ -1933,8 +1955,8 @@ mod tests {
             [&order[at..], &order[..at]].concat()
         };
         // Without the system's keyboard navigation, the buttons, the
-        // toggles and the view of tabs are left out, the disabled ones
-        // always.
+        // toggles, the switches and the view of tabs are left out, the
+        // disabled ones always.
         assert_eq!(order(false), from_field(rest.to_vec()));
         let controls = [
             "replace",
@@ -1944,6 +1966,8 @@ mod tests {
             "regex",
             "whole-word",
             "wrap",
+            "notify",
+            "compact",
             "less",
             "more",
             "spin",

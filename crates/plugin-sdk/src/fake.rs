@@ -5404,6 +5404,16 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
                 out.push_str(" disabled");
             }
         }
+        Kind::Switch(switch) => {
+            let _ = write!(out, "switch {}", quoted(&switch.label));
+            out.push_str(if switch.on { " on" } else { " off" });
+            if switch.size == crate::view::ControlSize::Small {
+                out.push_str(" small");
+            }
+            if switch.disabled {
+                out.push_str(" disabled");
+            }
+        }
         Kind::Separator => out.push_str("separator"),
         Kind::List(list) => {
             let _ = write!(

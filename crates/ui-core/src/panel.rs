@@ -378,8 +378,8 @@ pub enum MenuEntry {
 }
 
 /// The entries of the native menu of a menu's panel of `tree`, if its
-/// root's children are menu items alone: buttons and toggles of labels and
-/// keys, separators, and submenus, containers of a text, their title, then
+/// root's children are menu items alone: buttons, toggles and switches of
+/// labels and keys, a toggle or a switch that is on ticked, separators, and submenus, containers of a text, their title, then
 /// their items; `None` of any other node, as the panel then draws in the
 /// window.
 pub fn native_menu(tree: &Tree) -> Option<Vec<MenuEntry>> {
@@ -414,6 +414,11 @@ fn entry(tree: &Tree, id: NodeId) -> Option<MenuEntry> {
             &toggle.label,
             toggle.on,
             (!toggle.disabled).then_some(UiEventKind::Toggle { on: !toggle.on }),
+        ),
+        Kind::Switch(switch) => item(
+            &switch.label,
+            switch.on,
+            (!switch.disabled).then_some(UiEventKind::Toggle { on: !switch.on }),
         ),
         Kind::Separator => Some(MenuEntry::Separator),
         Kind::Container => {

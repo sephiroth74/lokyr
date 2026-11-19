@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use lokyr_plugin_sdk::view::{
-    self, Align, Direction, Distribution, Justify, Kind, Length, ProgressShape,
+    self, Align, ControlSize, Direction, Distribution, Justify, Kind, Length, ProgressShape,
 };
 use taffy::Overflow;
 use taffy::prelude::{
@@ -89,6 +89,17 @@ pub trait Measure {
         widget::size(label, icon, (text, glyph))
     }
 
+    /// The size of a switch of `label`, which may be empty, and of `size`,
+    /// in points: its track, and its label after it.
+    fn switch(&mut self, label: &str, size: ControlSize) -> (f32, f32) {
+        let text = if label.is_empty() {
+            (0.0, 0.0)
+        } else {
+            self.text(label)
+        };
+        widget::switch_size(label, size, text)
+    }
+
     /// The size of a separator, in points, a point thick: its parent
     /// stretches it across.
     fn separator(&mut self) -> (f32, f32) {
@@ -141,6 +152,10 @@ enum Content {
     Button {
         label: String,
         icon: String,
+    },
+    Switch {
+        label: String,
+        size: ControlSize,
     },
     Separator,
     Progress(ProgressShape),
@@ -788,6 +803,10 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
             label: toggle.label.clone(),
             icon: toggle.icon.clone(),
         },
+        Kind::Switch(switch) => Content::Switch {
+            label: switch.label.clone(),
+            size: switch.size,
+        },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
         Kind::TerminalSpecimen => Content::Specimen,
@@ -849,6 +868,7 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
         Content::Icon(name) => measure.icon(name),
         Content::Field => measure.field(),
         Content::Button { label, icon } => measure.button(label, icon),
+        Content::Switch { label, size } => measure.switch(label, *size),
         Content::Separator => measure.separator(),
         Content::Progress(shape) => progress::natural(*shape),
         Content::Specimen => crate::specimen::natural(measure.cell_size()),

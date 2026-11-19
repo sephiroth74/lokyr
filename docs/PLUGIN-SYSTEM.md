@@ -351,12 +351,13 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 -- by its key alone; a list's rows are told apart by their item's index.
 type Node = {
     key: string?,
-    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "separator" | "list" | "scroll"
-        | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
-    text: string?, -- for text nodes; a button's and a toggle's label
+    kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "switch" | "separator" | "list"
+        | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
+    text: string?, -- for text nodes; a button's, a toggle's and a switch's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
-    on: boolean?, -- for toggle nodes, the plugin's state
-    disabled: boolean?, -- for button and toggle nodes: dimmed, and takes neither a click nor the focus
+    on: boolean?, -- for toggle and switch nodes, the plugin's state
+    disabled: boolean?, -- for button, toggle and switch nodes: dimmed, and takes neither a click nor the focus
+    size: ("regular" | "small")?, -- for switch nodes: regular beside a button, by default, or small in a dense list
     placeholder: string?, -- for field nodes, shown while the field is empty
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.
@@ -646,7 +647,7 @@ type UiEvent = {
     window: number?, -- a "drop-on-bar"'s, the window whose bar took the tab
     pane: PaneId?, edge: ("left" | "right" | "top" | "bottom")?, -- a "drop-on-pane"'s, the pane and its edge nearest the pointer
     value: string?, -- set by accessibility, as VoiceOver's; its press comes as a click, its focus as a focus
-    on: boolean?, -- a toggle's state asked, the other than its render's, which the next render gives
+    on: boolean?, -- a toggle's or a switch's state asked, the other than its render's, which the next render gives
     cut: boolean?, -- a text of lines', whether it is cut, of more lines than its layout's or of a word wider than it, as a tip's More button shows
 }
 

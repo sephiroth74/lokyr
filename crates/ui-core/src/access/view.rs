@@ -233,6 +233,7 @@ impl WindowTree {
             (Kind::Scroll, None) => Role::GenericContainer,
             (Kind::Field(_), _) => Role::TextInput,
             (Kind::Button(_) | Kind::Toggle(_), _) => Role::Button,
+            (Kind::Switch(_), _) => Role::Switch,
             (Kind::List(_), _) => Role::ListBox,
             (Kind::Progress(_), _) => Role::ProgressIndicator,
             (Kind::Tabs(_), _) => Role::TabList,
@@ -280,6 +281,14 @@ impl WindowTree {
                     Toggled::False
                 });
                 pressable(&mut node, toggle.disabled);
+            }
+            Kind::Switch(switch) => {
+                node.set_toggled(if switch.on {
+                    Toggled::True
+                } else {
+                    Toggled::False
+                });
+                pressable(&mut node, switch.disabled);
             }
             Kind::Progress(progress) if progress.state != ProgressState::Indeterminate => {
                 node.set_numeric_value(f64::from(progress.value.clamp(0.0, 1.0)) * 100.0);
@@ -355,7 +364,8 @@ impl WindowTree {
 }
 
 /// What a client calls the node `id` of `tree`, of `kind`: its node's own
-/// label, its text, a button's or a toggle's label, or its tooltip.
+/// label, its text, a button's, a toggle's or a switch's label, or its
+/// tooltip.
 fn label(tree: &Tree, id: tree::NodeId, kind: &Kind) -> Option<String> {
     tree.label(id)
         .map(str::to_owned)
@@ -363,6 +373,7 @@ fn label(tree: &Tree, id: tree::NodeId, kind: &Kind) -> Option<String> {
             Kind::Text(text) => Some(text.clone()),
             Kind::Button(button) if !button.label.is_empty() => Some(button.label.clone()),
             Kind::Toggle(toggle) if !toggle.label.is_empty() => Some(toggle.label.clone()),
+            Kind::Switch(switch) if !switch.label.is_empty() => Some(switch.label.clone()),
             _ => None,
         })
         .or_else(|| tree.tooltip(id).map(str::to_owned))
@@ -1074,6 +1085,47 @@ mod tests {
         assert_eq!(
             tree.finish("", Some(node_id(4, view))).focus,
             super::super::WINDOW
+        );
+    }
+
+    #[test]
+    fn a_switch_is_a_switch_of_its_state_and_its_label_that_a_client_presses() {
+        let root = column(vec![
+            ViewNode::switch("Notify", true).key("notify"),
+            ViewNode::switch("", false)
+                .key("bare")
+                .label("opaque-titlebar"),
+            ViewNode::new(Kind::Switch(view::Switch {
+                label: "Held".to_owned(),
+                disabled: true,
+                ..view::Switch::default()
+            }))
+            .key("held"),
+        ]);
+        let mut surface = surface(&root);
+        let update = tree_of(&surface, None);
+        // A switch, as macOS's, of its label or its node's, and its state.
+        let notify = keyed(&update, &surface, "notify");
+        assert_eq!(notify.role(), Role::Switch);
+        assert_eq!(notify.label(), Some("Notify"));
+        assert_eq!(notify.toggled(), Some(Toggled::True));
+        assert!(notify.supports_action(AxAction::Click));
+        let bare = keyed(&update, &surface, "bare");
+        assert_eq!(bare.label(), Some("opaque-titlebar"));
+        assert_eq!(bare.toggled(), Some(Toggled::False));
+        let held = keyed(&update, &surface, "held");
+        assert!(held.is_disabled() && !held.supports_action(AxAction::Click));
+        // A client's press asks for the other state.
+        let mut focus: Focus<u8> = Focus::new();
+        let id = node_id(3, surface.tree.by_key(&"notify".into()).unwrap());
+        let events = perform(
+            &request(AxAction::Click, id, None),
+            (3, &mut surface),
+            &mut focus,
+        );
+        assert_eq!(
+            told(events),
+            [("notify".to_owned(), UiEventKind::Toggle { on: false })]
         );
     }
 }

@@ -99,7 +99,18 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 13] = [
             "focus.ring",
         ],
     ),
-    ("toggles", "part-toggles", &["toggle.on.bg", "toggle.on.fg"]),
+    (
+        "toggles",
+        "part-toggles",
+        &[
+            "toggle.on.bg",
+            "toggle.on.fg",
+            "switch.off.bg",
+            "switch.on.bg",
+            "switch.knob.bg",
+            "switch.knob.shadow",
+        ],
+    ),
     (
         "segments",
         "part-segments",
@@ -188,14 +199,14 @@ pub(super) const WORDS: [&str; 32] = [
 /// and the segment chosen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Samples {
-    pub(super) toggles: [bool; 2],
+    pub(super) toggles: [bool; 3],
     pub(super) segment: usize,
 }
 
 impl Default for Samples {
     fn default() -> Self {
         Self {
-            toggles: [true, false],
+            toggles: [true, false, true],
             segment: 0,
         }
     }
@@ -207,6 +218,7 @@ impl Samples {
         match name {
             "compress" => self.toggles[0] = on,
             "encrypt" => self.toggles[1] = on,
+            "notify" => self.toggles[2] = on,
             _ => {}
         }
     }
@@ -651,8 +663,8 @@ fn log() -> Node {
 
 /// The panel's preview, in a part of the theme `theme`, over the
 /// terminal's background, as a plugin's panel shows over a pane: a title
-/// and what it tells, a segmented control over a list, fields, toggles,
-/// progresses of their states, texts of theirs, a log that scrolls, a
+/// and what it tells, a segmented control over a list, fields, toggles and
+/// a switch, progresses of their states, texts of theirs, a log that scrolls, a
 /// tooltip and buttons, as `samples` has its controls.
 fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
     let toggle = |name: &str, label: &str, on: bool| {
@@ -737,9 +749,19 @@ fn panel(theme: &str, built: &Built<'_>, samples: Samples) -> Node {
             vec![
                 toggle("compress", "sample-compress", samples.toggles[0]),
                 toggle("encrypt", "sample-encrypt", samples.toggles[1]),
+                room(),
+                Node::switch(built.word("sample-notify"), samples.toggles[2])
+                    .key(sample("toggles", "notify").as_str()),
             ],
             6.0,
-        ),
+        )
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 6.0,
+            align: Align::Center,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }),
     );
     let segments = built.part(
         "segments",

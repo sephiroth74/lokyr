@@ -175,6 +175,10 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `button.pressed.bg` | A button pressed | light `text / 16%`, dark `text / 18%` |
 | `toggle.on.bg` | A toggle that is on | light `accent / 12%`, dark `accent / 20%` |
 | `toggle.on.fg` | The mark of a toggle that is on | `accent` |
+| `switch.off.bg` | A switch's track that is off · not released yet | `text / 10%` |
+| `switch.on.bg` | A switch's track that is on · not released yet | `accent` |
+| `switch.knob.bg` | A switch's knob · not released yet | `#ffffff` |
+| `switch.knob.shadow` | The shadow under a switch's knob · not released yet | light `#0000001f`, dark `transparent` |
 | `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
 | `tooltip.fg` | The tooltips' text | `text` |
 | `tooltip.border` | The tooltips' border | `text / 15%` |

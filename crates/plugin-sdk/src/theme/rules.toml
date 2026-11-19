@@ -67,6 +67,14 @@
 "toggle.on.bg" = { light = "accent / 12%", dark = "accent / 20%" }
 # The mark of a toggle that is on.
 "toggle.on.fg" = "accent"
+# A switch's track that is off · not released yet.
+"switch.off.bg" = "text / 10%"
+# A switch's track that is on · not released yet.
+"switch.on.bg" = "accent"
+# A switch's knob · not released yet.
+"switch.knob.bg" = "#ffffff"
+# The shadow under a switch's knob · not released yet.
+"switch.knob.shadow" = { light = "#0000001f", dark = "transparent" }
 # The tooltips' background.
 "tooltip.bg" = { light = "mix(background, foreground, 3%)", dark = "mix(background, foreground, 10%)" }
 # The tooltips' text.

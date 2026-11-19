@@ -340,14 +340,13 @@ impl Pointer {
                 kind: UiEventKind::ContextMenu,
             }),
             // A field selects of its own drags, which its plugin learns
-            // nothing of, as a list does of its clicks; a button and a
-            // toggle take no drag, and click as the button goes up over
-            // them.
+            // nothing of, as a list does of its clicks; a button, a toggle
+            // and a switch take no drag, and click as the button goes up
+            // over them.
             (Button::Primary, Some((node, _)))
-                if matches!(
-                    tree.kind(node),
-                    Some(Kind::Field(_) | Kind::Button(_) | Kind::Toggle(_) | Kind::List(_))
-                ) => {}
+                if tree.kind(node).is_some_and(|kind| {
+                    kind.presses() || matches!(kind, Kind::Field(_) | Kind::List(_))
+                }) => {}
             (Button::Primary, Some((node, key))) => {
                 self.drag = Some(Drag {
                     node,
@@ -396,11 +395,9 @@ impl Pointer {
         else {
             return events;
         };
-        // A button clicks, and a toggle switches, at each click of a row;
-        // a view of tabs chooses the tab under the release.
-        if button == Button::Primary
-            && matches!(tree.kind(node), Some(Kind::Button(_) | Kind::Toggle(_)))
-        {
+        // A button clicks, and a toggle or a switch switches, at each click
+        // of a row; a view of tabs chooses the tab under the release.
+        if button == Button::Primary && tree.kind(node).is_some_and(Kind::presses) {
             events.extend(widget::pressed(tree, node));
             return events;
         }

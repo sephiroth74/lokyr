@@ -344,10 +344,9 @@ pub(crate) fn takes_press(tree: &Tree, id: NodeId) -> bool {
     if tree.key(id).is_none() {
         return false;
     }
-    let kind = matches!(
-        tree.kind(id),
-        Some(Kind::Button(_) | Kind::Toggle(_) | Kind::Field(_) | Kind::List(_) | Kind::Tabs(_))
-    );
+    let kind = tree.kind(id).is_some_and(|kind| {
+        kind.presses() || matches!(kind, Kind::Field(_) | Kind::List(_) | Kind::Tabs(_))
+    });
     kind || tree.style(id).is_some_and(|style| {
         style.pointer.is_some() || style.hover.is_some() || style.pressed.is_some()
     })

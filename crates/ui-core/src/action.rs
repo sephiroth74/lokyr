@@ -46,7 +46,7 @@ pub fn perform<P: Copy + Eq>(
     let keyed = nearest(&|id| tree.key(id).is_some());
     if kind == UiEventKind::Click
         && let Some(id) = keyed
-        && matches!(tree.kind(id), Some(Kind::Button(_) | Kind::Toggle(_)))
+        && tree.kind(id).is_some_and(Kind::presses)
     {
         return widget::pressed(tree, id).into_iter().collect();
     }

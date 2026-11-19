@@ -9,7 +9,9 @@ use crate::host::QuickPlace;
 use crate::host::Scroll;
 use crate::host::SearchQuery;
 use crate::ui::{Anchor, Role, Slot};
-use crate::view::{ListItem, ProgressShape, ProgressState, Role as NodeRole, Tab};
+use crate::view::{
+    ControlSize, ListItem, ProgressShape, ProgressState, Role as NodeRole, Switch, Tab,
+};
 
 type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
 
@@ -646,6 +648,14 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
         Node::text("2 matches").role(NodeRole::Status),
         field,
         Node::toggle("case", true).key("case"),
+        Node::switch("Wrap", false).key("wrap"),
+        Node::new(Kind::Switch(Switch {
+            label: "Live".to_owned(),
+            on: true,
+            disabled: true,
+            size: ControlSize::Small,
+        }))
+        .key("live"),
         Node::button("Next").key("next").label("Next match"),
         Node::icon_button("gear").key("settings"),
         Node::spacer(),
@@ -697,6 +707,8 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  text \"2 matches\" role=Status\n",
             "  field \"Find\" key=query tooltip=\"What to find\" focusable\n",
             "  toggle \"\" icon=\"case\" on key=case\n",
+            "  switch \"Wrap\" off key=wrap\n",
+            "  switch \"Live\" on small disabled key=live\n",
             "  button \"Next\" key=next label=\"Next match\"\n",
             "  button \"\" icon=\"gear\" key=settings\n",
             "  spacer\n",

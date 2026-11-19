@@ -2984,25 +2984,17 @@ fn map_editor(
         })
 }
 
-/// The control of `key`'s value: a toggle of a boolean, the button of a
-/// menu of its values, a field of a number or of a text; another value's
-/// text, as the config writes it; none of a list, whose values show under
-/// what it does.
+/// The control of `key`'s value: a switch of a boolean, of the key's name
+/// to accessibility, the button of a menu of its values, a field of a
+/// number or of a text; another value's text, as the config writes it;
+/// none of a list, whose values show under what it does.
 fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Node> {
     let name = &key.name;
     let terminal = code();
     Some(match &key.kind {
-        SettingKind::Boolean => {
-            let on = key.value == Some(Data::Boolean(true));
-            let label = message(cx, if on { "setting-on" } else { "setting-off" }, &[]);
-            let mut toggle = Node::toggle("", on)
-                .key(format!("{SET}{name}").as_str())
-                .label(name.clone());
-            if let Kind::Toggle(own) = &mut toggle.kind {
-                own.label = label;
-            }
-            toggle
-        }
+        SettingKind::Boolean => Node::switch("", key.value == Some(Data::Boolean(true)))
+            .key(format!("{SET}{name}").as_str())
+            .label(name.clone()),
         SettingKind::Choice { .. } => menu_button(cx, key),
         SettingKind::Text { .. } if menu_control(key) => {
             let button = menu_button(cx, key);

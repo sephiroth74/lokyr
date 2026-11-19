@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use lokyr_plugin_sdk::view::{Button, Field, Kind, List, Node, Tabs, Toggle};
+use lokyr_plugin_sdk::view::{Button, Field, Kind, List, Node, Switch, Tabs, Toggle};
 use mlua::Value;
 use serde::de::DeserializeOwned;
 
@@ -40,7 +40,7 @@ pub(crate) const NODE: [&str; 11] = [
 ];
 
 /// The kinds of node, by their names in Luau.
-pub(crate) const KINDS: [&str; 16] = [
+pub(crate) const KINDS: [&str; 17] = [
     "container",
     "text",
     "icon",
@@ -48,6 +48,7 @@ pub(crate) const KINDS: [&str; 16] = [
     "field",
     "button",
     "toggle",
+    "switch",
     "separator",
     "list",
     "scroll",
@@ -69,6 +70,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
         "field" => &["placeholder", "text", "stepped", "records"],
         "button" => &["text", "icon", "disabled", "link"],
         "toggle" => &["text", "icon", "on", "disabled"],
+        "switch" => &["text", "on", "disabled", "size"],
         "list" => &["row", "count", "first", "items", "row_height", "menu"],
         "progress" => &["progress"],
         "tabs" => &["tabs", "chosen", "distribution"],
@@ -291,6 +293,12 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             on: or_default(take("on"), "on", budget)?,
             disabled: or_default(take("disabled"), "disabled", budget)?,
         }),
+        "switch" => Kind::Switch(Switch {
+            label: or_default(take("text"), "text", budget)?,
+            on: or_default(take("on"), "on", budget)?,
+            disabled: or_default(take("disabled"), "disabled", budget)?,
+            size: or_default(take("size"), "size", budget)?,
+        }),
         "separator" => Kind::Separator,
         "list" => {
             let given = take("row");
@@ -361,7 +369,9 @@ pub(crate) use giving::to_lua;
 /// A tree as Luau's tables, which the host gives the tests.
 #[cfg(any(test, feature = "testing", feature = "test-host"))]
 mod giving {
-    use lokyr_plugin_sdk::view::{Button, Field, Kind, Layout, List, Node, Style, Tabs, Toggle};
+    use lokyr_plugin_sdk::view::{
+        Button, Field, Kind, Layout, List, Node, Style, Switch, Tabs, Toggle,
+    };
     use mlua::{Lua, Table};
     use serde::Serialize;
 
@@ -376,6 +386,7 @@ mod giving {
             Kind::Field(_) => "field",
             Kind::Button(_) => "button",
             Kind::Toggle(_) => "toggle",
+            Kind::Switch(_) => "switch",
             Kind::Separator => "separator",
             Kind::List(_) => "list",
             Kind::Scroll => "scroll",
@@ -462,6 +473,17 @@ mod giving {
                     table.raw_set("icon", icon.as_str())?;
                     table.raw_set("on", *on)?;
                     table.raw_set("disabled", *disabled)?;
+                }
+                Kind::Switch(Switch {
+                    label,
+                    on,
+                    disabled,
+                    size,
+                }) => {
+                    table.raw_set("text", label.as_str())?;
+                    table.raw_set("on", *on)?;
+                    table.raw_set("disabled", *disabled)?;
+                    set(lua, &table, "size", size)?;
                 }
                 Kind::List(List {
                     row,

@@ -32,6 +32,13 @@ const MENU_RADIUS: f32 = 6.0;
 
 const RING: f32 = 3.0;
 
+/// The opacity of a disabled switch, as macOS dims one.
+const DISABLED_SWITCH: f32 = 0.5;
+
+/// The shadow of a switch's knob, in points: how far down, and how far its
+/// edge blurs.
+const KNOB_SHADOW: (f32, f32) = (1.0, 2.0);
+
 /// The top and the height of a clip across alone, a text's: down the whole
 /// of any drawable, which the clips around it cut.
 const ACROSS: (i32, u32) = (-(1 << 28), 1 << 29);
@@ -510,17 +517,25 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         };
         if self.focused == Some(id) && !style.hides_ring {
             // A view of tabs' ring goes round its control, of a button's
-            // corners.
+            // corners, and a switch's round its track, of its own.
             let control = match kind {
-                Kind::Tabs(_) => self.layout.control(tree, id).map(|control| Frame {
-                    x: control.x + self.origin.0,
-                    y: control.y + self.origin.1,
-                    ..control
-                }),
+                Kind::Tabs(_) => self
+                    .layout
+                    .control(tree, id)
+                    .map(|control| Frame {
+                        x: control.x + self.origin.0,
+                        y: control.y + self.origin.1,
+                        ..control
+                    })
+                    .map(|control| (control, widget::RADIUS)),
+                Kind::Switch(switch) => Some((
+                    self.switch_track(frame, switch.size),
+                    widget::track(switch.size).1 / 2.0,
+                )),
                 _ => None,
             };
-            let rounded = Style {
-                radius: widget::RADIUS,
+            let rounded = |radius| Style {
+                radius,
                 ..style.clone()
             };
             // A node around it that holds its ring takes it, round its own
@@ -529,7 +544,9 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 (Some((around, held, clip)), _) => {
                     self.ring(*around, held).map(|ring| (ring, *clip))
                 }
-                (None, Some(control)) => self.ring(control, &rounded).map(|ring| (ring, self.clip)),
+                (None, Some((control, radius))) => self
+                    .ring(control, &rounded(radius))
+                    .map(|ring| (ring, self.clip)),
                 (None, None) => self.ring(frame, style).map(|ring| (ring, self.clip)),
             };
         }
@@ -559,6 +576,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 };
                 self.widget((label, icon), frame, color, link);
             }
+            Kind::Switch(switch) => self.switch(id, switch, frame, color),
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
@@ -1544,6 +1562,100 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 });
                 self.push_shape(Shape::filled(under, color));
             }
+        }
+    }
+
+    /// The track of a switch of `size` within its node's `frame`, in
+    /// pixels: at its left, in the middle of its height, on whole pixels.
+    fn switch_track(&self, frame: Frame, size: view::ControlSize) -> Frame {
+        let scale = self.layout.scale();
+        let (width, height) = widget::track(size);
+        let (width, height) = ((width * scale).round(), (height * scale).round());
+        Frame {
+            x: frame.x.round(),
+            y: (frame.y + (frame.height - height) / 2.0).round(),
+            width,
+            height,
+        }
+    }
+
+    /// The switch `id`, of `switch`, at `frame`: its track, of the off
+    /// state's color crossfaded to the on state's as far as its knob went,
+    /// its knob, of its shadow, as far across as its slide went, from off
+    /// at the left to on at the right, and its label after it in `color`;
+    /// a disabled one dimmed, its label of the dimmed text's color.
+    fn switch(&mut self, id: NodeId, switch: &view::Switch, frame: Frame, color: Color) {
+        let scale = self.layout.scale();
+        let target = if switch.on { 1.0 } else { 0.0 };
+        let amount = match (self.motion, self.tree.key(id)) {
+            (Some((animations, now)), Some(key)) => animations.switched(key, switch.on, now),
+            _ => target,
+        };
+        let dim = |mut color: Color| {
+            if switch.disabled {
+                color.alpha *= DISABLED_SWITCH;
+            }
+            color
+        };
+        let track = self.switch_track(frame, switch.size);
+        let fill = match (
+            self.tokens.get("switch.off.bg"),
+            self.tokens.get("switch.on.bg"),
+        ) {
+            (Some(off), Some(on)) => Some(mixed(off, on, amount)),
+            (off, on) => off.or(on),
+        };
+        if let Some(fill) = fill {
+            self.push_shape(Shape {
+                radius: track.height / 2.0,
+                ..Shape::filled(rect(track), dim(fill))
+            });
+        }
+        let (x, y, width, height) = widget::knob(
+            (track.x, track.y, track.width, track.height),
+            switch.size,
+            scale,
+            amount,
+        );
+        if let Some(knob) = self.tokens.get("switch.knob.bg") {
+            let shadow = self
+                .tokens
+                .get("switch.knob.shadow")
+                .filter(|shadow| shadow.alpha > 0.0)
+                .map(|shadow| Shadow {
+                    x: 0.0,
+                    y: KNOB_SHADOW.0 * scale,
+                    blur: KNOB_SHADOW.1 * scale,
+                    color: dim(shadow),
+                });
+            self.push_shape(Shape {
+                radius: height / 2.0,
+                shadow,
+                ..Shape::filled(
+                    rect(Frame {
+                        x,
+                        y,
+                        width,
+                        height,
+                    }),
+                    dim(knob),
+                )
+            });
+        }
+        if !switch.label.is_empty() {
+            let natural = Measure::text(&mut *self.font, &switch.label).0;
+            let left = track.x + track.width + widget::SWITCH_GAP * scale;
+            let at = Frame {
+                x: left,
+                width: (frame.x + frame.width - left).max(0.0),
+                ..frame
+            };
+            let color = if switch.disabled {
+                self.tokens.get("text.disabled").unwrap_or(color)
+            } else {
+                color
+            };
+            self.text(&switch.label, at, Some(natural), color);
         }
     }
 
@@ -3499,6 +3611,135 @@ mod tests {
             item,
             Item::Shapes(shapes) if shapes.iter().any(|shape| shape.fill == token("accent") && shape.radius == 0.0)
         )));
+    }
+
+    #[test]
+    fn a_switch_paints_its_track_of_its_state_its_knob_across_and_its_label_after_it() {
+        use lokyr_plugin_sdk::view::{ControlSize, Kind};
+        let held = Node::new(Kind::Switch(view::Switch {
+            on: true,
+            disabled: true,
+            size: ControlSize::Small,
+            ..view::Switch::default()
+        }))
+        .key("held");
+        let root = Node::container(vec![
+            Node::switch("Notify", true).key("on"),
+            Node::switch("", false).key("off"),
+            held,
+        ])
+        .layout(view::Layout {
+            gap: 4.0,
+            padding: Edges::all(4.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(400.0), None, &mut font);
+        let node = |index: usize| tree.children(tree.root().unwrap())[index];
+        let [on, off, small] = [0, 1, 2].map(node);
+        // Its track and its label after it, of its track's height.
+        let frame = layout.frame(&tree, on).unwrap();
+        assert_eq!((frame.x, frame.y, frame.height), (4.0, 4.0, 20.0));
+        assert!(frame.width > 44.0 + widget::SWITCH_GAP);
+        assert_eq!(layout.frame(&tree, off).unwrap().width, 44.0);
+        assert_eq!(layout.frame(&tree, small).unwrap().width, 36.0);
+        let mut painted = |tokens: &Tokens| {
+            let fields = Fields::new();
+            paint(
+                &tree,
+                &layout,
+                &mut font,
+                tokens,
+                (0.0, 0.0),
+                Shown {
+                    dark: true,
+                    focused: Some(off),
+                    fields: &fields,
+                    hovered: None,
+                    pressed: None,
+                    lists: &Lists::new(),
+                    motion: None,
+                    fills: Fills::All,
+                    pictures: &crate::paint::NO_PICTURES,
+                    previews: &crate::paint::NO_PREVIEWS,
+                },
+            )
+        };
+        let items = painted(&Theme::builtin().dark.tokens);
+        let shapes: Vec<&Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let at = |x, y, width, height| Rect {
+            x,
+            y,
+            width,
+            height,
+        };
+        let shape = |rect: Rect| {
+            shapes
+                .iter()
+                .copied()
+                .find(|shape| shape.rect == rect && shape.border == 0.0)
+                .unwrap_or_else(|| panic!("{rect:?} in {shapes:#?}"))
+        };
+        // On: the accent's track, its knob at its right, a capsule 1.6
+        // times as wide as tall, inset 2 points, of no shadow in the dark.
+        let track = shape(at(4, 4, 44, 20));
+        assert_eq!((track.fill, track.radius), (token("switch.on.bg"), 10.0));
+        let knob = shape(at(20, 6, 26, 16));
+        assert_eq!((knob.fill, knob.radius), (token("switch.knob.bg"), 8.0));
+        assert_eq!(knob.shadow, None);
+        // Off: the off track's color, its knob at its left, and the ring
+        // of the focus round its track alone, of its corners.
+        let x = rect(layout.frame(&tree, off).unwrap()).x;
+        assert_eq!(shape(at(x, 4, 44, 20)).fill, token("switch.off.bg"));
+        assert_eq!(shape(at(x + 2, 6, 26, 16)).fill, token("switch.knob.bg"));
+        let ring = shapes
+            .iter()
+            .find(|shape| shape.border_color == token("focus.ring"))
+            .expect("the ring");
+        assert_eq!(ring.rect, at(x - 3, 1, 50, 26));
+        assert_eq!(ring.radius, 13.0);
+        // Small and disabled: a track of 36 by 16, half as opaque.
+        let x = rect(layout.frame(&tree, small).unwrap()).x;
+        let mut dimmed = token("switch.on.bg");
+        dimmed.alpha *= 0.5;
+        assert_eq!(shape(at(x, 6, 36, 16)).fill, dimmed);
+        // Its label after its track, of the text's color.
+        let glyphs: Vec<&PlacedGlyph> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(glyphs) => Some(glyphs.iter()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert_eq!(glyphs.len(), "Notify".len());
+        assert!(glyphs.iter().all(|glyph| glyph.x >= 4 + 44 + 6));
+        assert!(glyphs.iter().all(|glyph| glyph.color == token("text")));
+        // In the light, the knob casts its shadow, a point down.
+        let light = Theme::builtin().light.tokens;
+        let items = painted(&light);
+        let shadow = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter()),
+                _ => None,
+            })
+            .flatten()
+            .find_map(|shape| shape.shadow)
+            .expect("the knob's shadow");
+        assert_eq!((shadow.x, shadow.y, shadow.blur), (0.0, 1.0, 2.0));
+        assert_eq!(shadow.color, light.get("switch.knob.shadow").unwrap());
     }
 
     /// `root` laid out at a scale of 1 in 400 points, and painted of the

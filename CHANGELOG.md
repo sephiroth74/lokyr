@@ -8,6 +8,14 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Added
+
+- The plugin API 0.1.6 draws a switch, a view node of `kind = "switch"`, as macOS's, of two sizes, which tells its plugin a `toggle` as a toggle does; a theme colors it of `switch.off.bg`, `switch.on.bg`, `switch.knob.bg` and `switch.knob.shadow`, which the Theme Editor lists under Toggles and shows in its panel's preview.
+
+### Changed
+
+- The Settings page shows each on-or-off key as a switch, as macOS's, in place of an On or Off button: its knob slides across as you click it, at once where Reduce motion is on, and VoiceOver reads it as a switch of the key's name.
+
 ## [1.3.0] - 2026-11-18
 
 ### Added

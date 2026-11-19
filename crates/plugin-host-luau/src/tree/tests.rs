@@ -1,7 +1,7 @@
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{
-    Direction, Distribution, Key, Layout, Length, ListItem, Progress, ProgressShape, ProgressState,
-    Role, Style, Tab,
+    ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, Progress, ProgressShape,
+    ProgressState, Role, Style, Switch, Tab,
 };
 use mlua::Lua;
 
@@ -122,6 +122,13 @@ fn every() -> Node {
             "Lokyr Light",
             vec![Node::text("part"), Node::terminal_specimen()],
         ),
+        Node::new(Kind::Switch(Switch {
+            label: "Notify".to_owned(),
+            on: true,
+            disabled: true,
+            size: ControlSize::Small,
+        }))
+        .key("notify"),
     ];
     root
 }
@@ -154,6 +161,7 @@ const EVERY: &str = r#"{
         { kind = "theme-preview", theme = "Lokyr Dark" },
         { kind = "themed", theme = "Lokyr Light",
           children = { { kind = "text", text = "part" }, { kind = "terminal-specimen" } } },
+        { kind = "switch", key = "notify", text = "Notify", on = true, disabled = true, size = "small" },
     },
 }"#;
 
@@ -180,6 +188,9 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         local part = view.children[15]
         assert(part.kind == "themed" and part.theme == "Lokyr Light")
         assert(part.children[2].kind == "terminal-specimen")
+        local switch = view.children[16]
+        assert(switch.kind == "switch" and switch.text == "Notify" and switch.size == "small")
+        assert(switch.on == true and switch.disabled == true)
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

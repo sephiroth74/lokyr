@@ -70,6 +70,12 @@ pressed.bg = "#ffffff2e"
 on.bg = "accent / 20%"
 on.fg = "#7ab6ff"
 
+[switch]                            # the switches
+off.bg = "text / 10%"
+on.bg = "accent"
+knob.bg = "#ffffff"
+knob.shadow = "transparent"
+
 [tooltip]                           # the tooltips
 bg = "#323235"
 fg = "text"

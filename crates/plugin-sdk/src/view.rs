@@ -221,6 +221,13 @@ pub enum Kind {
     /// option, which a click, Space or Return switches: its plugin learns
     /// of the state asked as a `toggle`, and gives it in its next render.
     Toggle(Toggle),
+    /// A switch of a state that is on or off, as macOS's: a track of the
+    /// accent when it is on, whose knob slides across as its state changes,
+    /// its label after it, which a click on either, Space or Return
+    /// switches: its plugin learns of the state asked as a `toggle`, as a
+    /// toggle's, and gives it in its next render, from which the host
+    /// slides the knob.
+    Switch(Switch),
     /// A line across its container, a point thick: upright in a row, flat
     /// in a column.
     Separator,
@@ -503,6 +510,39 @@ pub struct Toggle {
     pub disabled: bool,
 }
 
+/// A switch's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct Switch {
+    /// Its label, after it, if it has one.
+    pub label: String,
+    /// Whether it is on.
+    pub on: bool,
+    /// Whether it is dimmed, and takes neither a click nor the focus.
+    pub disabled: bool,
+    /// Its size.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
+}
+
+/// The size of a control, as macOS's controls have their sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ControlSize {
+    /// Of the interface's text, beside a button.
+    #[default]
+    Regular,
+    /// Smaller, for a dense list.
+    Small,
+}
+
+impl ControlSize {
+    /// Whether it is the regular size, which a node of it leaves out.
+    pub fn is_regular(&self) -> bool {
+        *self == Self::Regular
+    }
+}
+
 impl Kind {
     /// Whether a node of the kind holds state that the host keeps, which
     /// needs the node's key.
@@ -521,6 +561,7 @@ impl Kind {
             Self::Field(_)
             | Self::Button(_)
             | Self::Toggle(_)
+            | Self::Switch(_)
             | Self::List(_)
             | Self::Scroll
             | Self::Tabs(_) => true,
@@ -528,25 +569,36 @@ impl Kind {
     }
 
     /// Whether a node of the kind takes the keyboard's focus of its own, as
-    /// a field, a list, a button, a toggle and a view of tabs do, unless
-    /// they are disabled, a view of tabs of every tab, whatever its node
-    /// says.
+    /// a field, a list, a button, a toggle, a switch and a view of tabs do,
+    /// unless they are disabled, a view of tabs of every tab, whatever its
+    /// node says.
     pub fn takes_focus(&self) -> bool {
         match self {
             Self::Field(_) | Self::List(_) => true,
             Self::Button(button) => !button.disabled,
             Self::Toggle(toggle) => !toggle.disabled,
+            Self::Switch(switch) => !switch.disabled,
             Self::Tabs(tabs) => tabs.tabs.iter().any(|tab| !tab.disabled),
             _ => false,
         }
     }
 
     /// Whether a node of the kind is a control, as macOS has them, a button,
-    /// a toggle or a view of tabs: a click gives it no focus, which stays
-    /// where it was, and Tab reaches it only as the system's keyboard
-    /// navigation reaches every control.
+    /// a toggle, a switch or a view of tabs: a click gives it no focus,
+    /// which stays where it was, and Tab reaches it only as the system's
+    /// keyboard navigation reaches every control.
     pub fn is_control(&self) -> bool {
-        matches!(self, Self::Button(_) | Self::Toggle(_) | Self::Tabs(_))
+        matches!(
+            self,
+            Self::Button(_) | Self::Toggle(_) | Self::Switch(_) | Self::Tabs(_)
+        )
+    }
+
+    /// Whether a node of the kind is a widget that a click, Space or Return
+    /// presses: a button, which clicks, and a toggle or a switch, which
+    /// switches.
+    pub fn presses(&self) -> bool {
+        matches!(self, Self::Button(_) | Self::Toggle(_) | Self::Switch(_))
     }
 
     /// Whether a node of the kind is a widget that is disabled, which takes
@@ -555,6 +607,7 @@ impl Kind {
         match self {
             Self::Button(button) => button.disabled,
             Self::Toggle(toggle) => toggle.disabled,
+            Self::Switch(switch) => switch.disabled,
             _ => false,
         }
     }
@@ -947,8 +1000,8 @@ pub enum UiEventKind {
         #[serde(default)]
         shift: bool,
     },
-    /// A toggle clicked, or pressed by Space or Return: the state asked of
-    /// it, the other than its render's.
+    /// A toggle or a switch clicked, or pressed by Space or Return: the
+    /// state asked of it, the other than its render's.
     Toggle {
         /// Whether it is to be on.
         on: bool,
@@ -1311,6 +1364,16 @@ impl Node {
         }))
     }
 
+    /// A switch of `label`, which may be empty, on or off; its key, which
+    /// it needs, follows.
+    pub fn switch(label: impl Into<String>, on: bool) -> Self {
+        Self::new(Kind::Switch(Switch {
+            label: label.into(),
+            on,
+            ..Switch::default()
+        }))
+    }
+
     /// A view of `tabs`, of the tab `chosen`, whose page is `page`; its key,
     /// which it needs, follows.
     pub fn tabs(tabs: Vec<Tab>, chosen: usize, page: Node) -> Self {
@@ -1628,6 +1691,30 @@ mod tests {
             serde_json::from_str(r#"{"key":"regex","kind":{"toggle":{"icon":"regex","on":true}}}"#)
                 .unwrap();
         assert_eq!(toggle, Node::toggle("regex", true).key("regex"));
+        // A switch of its label and state, of the regular size left out;
+        // a small one, of its size; it presses, and takes the focus and a
+        // control's click unless it is disabled.
+        let switch: Node =
+            serde_json::from_str(r#"{"key":"wrap","kind":{"switch":{"label":"Wrap","on":true}}}"#)
+                .unwrap();
+        assert_eq!(switch, Node::switch("Wrap", true).key("wrap"));
+        assert_eq!(
+            serde_json::to_string(&switch.kind).unwrap(),
+            r#"{"switch":{"label":"Wrap","on":true,"disabled":false}}"#
+        );
+        let small: Kind =
+            serde_json::from_str(r#"{"switch":{"size":"small","disabled":true}}"#).unwrap();
+        assert_eq!(
+            small,
+            Kind::Switch(Switch {
+                disabled: true,
+                size: ControlSize::Small,
+                ..Switch::default()
+            })
+        );
+        assert!(switch.kind.presses() && switch.kind.takes_focus() && switch.kind.is_control());
+        assert!(switch.kind.holds_state() && !switch.kind.disabled());
+        assert!(small.disabled() && !small.takes_focus());
         let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
         assert_eq!(separator, Node::separator());
         // A list, of its window of items and its row's template; a scroll

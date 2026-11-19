@@ -341,6 +341,16 @@ fn labelled(tree: &Node, key: &str) -> Option<(String, bool)> {
     }
 }
 
+/// Whether the switch of `key` in `tree` is on, and what accessibility
+/// calls it; none of another node.
+fn switched(tree: &Node, key: &str) -> Option<(bool, Option<String>)> {
+    let node = find_node(tree, key)?;
+    match &node.kind {
+        Kind::Switch(switch) => Some((switch.on, node.label.clone())),
+        _ => None,
+    }
+}
+
 /// The sidebar's choice of the section `item`.
 fn choose(item: usize) -> UiEvent {
     UiEvent {
@@ -478,7 +488,7 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
     assert_eq!(row.role, Some(Role::Group));
     assert_eq!(row.label.as_deref(), Some("size"));
     // The next section: a choice's menu button of its value, a boolean's
-    // toggle, both at their defaults.
+    // switch of its name, both at their defaults.
     host.ui_event(&mut plugin, &choose(1)).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(
@@ -489,8 +499,8 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
     assert!(find_node(&tree, "default:scrollbar").is_none());
     assert_eq!(reset_of(&tree, "scrollbar"), Some(true));
     assert_eq!(
-        labelled(&tree, "set:opaque-titlebar"),
-        Some(("setting-off".to_owned(), false))
+        switched(&tree, "set:opaque-titlebar"),
+        Some((false, Some("opaque-titlebar".to_owned())))
     );
     // A plugin's section, of its plugin's name.
     host.ui_event(&mut plugin, &choose(TABS)).unwrap();
@@ -618,7 +628,7 @@ fn a_value_that_the_key_does_not_take_tells_why_under_it_until_it_is_written() {
 }
 
 #[test]
-fn a_boolean_is_written_of_its_toggle_and_a_choice_of_its_menu() {
+fn a_boolean_is_written_of_its_switch_and_a_choice_of_its_menu() {
     let (mut host, mut plugin) = host();
     host.ui_event(&mut plugin, &choose(1)).unwrap();
     let _ = written(&mut host);
@@ -638,8 +648,8 @@ fn a_boolean_is_written_of_its_toggle_and_a_choice_of_its_menu() {
     host.deliver(&mut plugin).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(
-        labelled(&tree, "set:opaque-titlebar"),
-        Some(("setting-on".to_owned(), true))
+        switched(&tree, "set:opaque-titlebar"),
+        Some((true, Some("opaque-titlebar".to_owned())))
     );
     // The choice's button opens its menu, of its values, the one in force
     // ticked, under it.

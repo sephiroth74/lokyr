@@ -8,14 +8,16 @@
 //! around it that gains or loses a transition changes no place that shows,
 //! and slides it not; and a
 //! layout of no new render, as a resize's or another display's scale,
-//! moves nodes without a slide. The host
+//! moves nodes without a slide. A switch whose state a render changes
+//! slides its knob across, and crossfades its track, from where they
+//! showed. The host
 //! draws a frame at each refresh of the display while one runs, and none
 //! once they all end; where the system reduces motion, they end at once.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use lokyr_plugin_sdk::view::{Easing, Key, Transition};
+use lokyr_plugin_sdk::view::{Easing, Key, Kind, Transition};
 
 use crate::layout::Layout;
 use crate::reorder::Reorder;
@@ -39,6 +41,9 @@ pub struct Animations {
     pressable: HashMap<Key, Option<Transition>>,
     /// Their presses, as the primary button goes down over them and up.
     presses: HashMap<Key, Hovering>,
+    /// The switches of a key, each of its state as its last render gave it
+    /// and its knob's slide there, from where it showed.
+    switches: HashMap<Key, Hovering>,
     /// Whether the system reduces motion, as the last layout found it.
     reduced: bool,
     /// The drag of a reorderable node, and its slides.
@@ -56,6 +61,11 @@ pub struct Animations {
 const INDICATOR_SHOWS: Duration = Duration::from_millis(1000);
 const INDICATOR_FADES: Duration = Duration::from_millis(300);
 
+/// How long a switch's knob takes across, and along which curve, as
+/// macOS's.
+const SWITCH_SLIDES: Duration = Duration::from_millis(200);
+const SWITCH_EASING: Easing = Easing::EaseOut;
+
 impl Default for Animations {
     fn default() -> Self {
         Self {
@@ -66,6 +76,7 @@ impl Default for Animations {
             hovers: HashMap::new(),
             pressable: HashMap::new(),
             presses: HashMap::new(),
+            switches: HashMap::new(),
             reduced: false,
             reorder: Reorder::new(),
             scrolls: HashMap::new(),
@@ -189,6 +200,11 @@ impl Animations {
             let (hoverable, pressable) = (&self.hoverable, &self.pressable);
             self.hovers.retain(|key, _| hoverable.contains_key(key));
             self.presses.retain(|key, _| pressable.contains_key(key));
+            let mut switches = Vec::new();
+            if let Some(root) = tree.root() {
+                switched(tree, root, &mut switches);
+            }
+            self.switches = slid(std::mem::take(&mut self.switches), switches, (now, reduced));
         }
         let scale = layout.scale();
         self.scale = scale;
@@ -273,6 +289,7 @@ impl Animations {
             .hovers
             .values()
             .chain(self.presses.values())
+            .chain(self.switches.values())
             .any(|hovering| hovering.fading.is_some_and(|run| !run.ended(now)))
             || self.reorder.running(now)
             || self.indicators_fade(now)
@@ -384,6 +401,22 @@ impl Animations {
         self.hovers
             .get(key)
             .map_or(0.0, |hovering| hovering.amount(now))
+    }
+
+    /// How far the knob of the switch of `key`, of the state `on` that its
+    /// render gives, shows at `now`, from 0, off, to 1, on, as it slides
+    /// there; at its state's end, of a switch that no layout found yet.
+    pub fn switched(&self, key: &Key, on: bool, now: Instant) -> f32 {
+        match self.switches.get(key) {
+            Some(switch) if switch.on == on => switch.amount(now),
+            _ => {
+                if on {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
     }
 
     /// How far the node of `key` shows from its place at `now`, in pixels
@@ -520,6 +553,48 @@ fn hoverable(
 
 /// The nodes of `id`'s subtree of a key and a transition, with it and the
 /// nearest node around each of them, from `around`.
+/// Takes into `found` the switches of a key of `id`'s subtree, each of its
+/// state.
+fn switched(tree: &Tree, id: NodeId, found: &mut Vec<(Key, bool)>) {
+    if let (Some(key), Some(Kind::Switch(switch))) = (tree.key(id), tree.kind(id)) {
+        found.push((key.clone(), switch.on));
+    }
+    for &child in tree.children(id) {
+        switched(tree, child, found);
+    }
+}
+
+/// The switches of `switches`, of a key and of their states as a render
+/// gives them, after `shown`, as they showed at `now`: each whose state
+/// changed slides there from where its knob showed, unless the system
+/// reduces motion, `reduced`, which moves it at once; a new one shows at
+/// its state; those gone are forgotten.
+fn slid(
+    mut shown: HashMap<Key, Hovering>,
+    switches: Vec<(Key, bool)>,
+    (now, reduced): (Instant, bool),
+) -> HashMap<Key, Hovering> {
+    switches
+        .into_iter()
+        .map(|(key, on)| {
+            let switch = match shown.remove(&key) {
+                Some(switch) if switch.on != on => Hovering {
+                    on,
+                    fading: (!reduced).then(|| Run {
+                        value: switch.amount(now),
+                        start: now,
+                        duration: SWITCH_SLIDES,
+                        easing: SWITCH_EASING,
+                    }),
+                },
+                Some(switch) => switch,
+                None => Hovering { on, fading: None },
+            };
+            (key, switch)
+        })
+        .collect()
+}
+
 fn walk(
     tree: &Tree,
     id: NodeId,
@@ -872,5 +947,49 @@ mod tests {
         assert_eq!(ease(Easing::EaseOut, 0.5), 0.75);
         assert_eq!(ease(Easing::EaseInOut, 0.25), 0.125);
         assert_eq!(ease(Easing::EaseInOut, 0.75), 0.875);
+    }
+
+    #[test]
+    fn a_switch_whose_render_changes_its_state_slides_its_knob_from_where_it_showed() {
+        let (mut tree, mut layout) = (Tree::new(), Layout::new(1.0));
+        let mut animations = Animations::new();
+        let (start, key) = (Instant::now(), Key::from("notify"));
+        let at = |millis: u64| start + Duration::from_millis(millis);
+        let switch = |on: bool| Node::container(vec![Node::switch("Notify", on).key("notify")]);
+        // A new switch shows at its state, of no frame; one that no layout
+        // found yet at its render's.
+        assert_eq!(animations.switched(&key, true, start), 1.0);
+        laid(&mut tree, &mut layout, &switch(false));
+        animations.laid_out(&tree, &layout, start, false);
+        assert_eq!(animations.switched(&key, false, start), 0.0);
+        assert!(!animations.running(start));
+        // On, of a render: its knob slides across in a fifth of a second,
+        // of a frame at each refresh, slow at its end.
+        laid(&mut tree, &mut layout, &switch(true));
+        animations.laid_out(&tree, &layout, start, false);
+        let halfway = animations.switched(&key, true, at(100));
+        assert!((halfway - 0.75).abs() < 0.01, "{halfway}");
+        assert!(animations.running(at(100)));
+        assert_eq!(animations.switched(&key, true, at(200)), 1.0);
+        assert!(!animations.running(at(200)));
+        // A layout of the same render slides nothing.
+        animations.laid_out(&tree, &layout, at(300), false);
+        assert!(!animations.running(at(300)));
+        // Off halfway through, from where it showed, back to the left.
+        laid(&mut tree, &mut layout, &switch(false));
+        animations.laid_out(&tree, &layout, at(400), false);
+        laid(&mut tree, &mut layout, &switch(true));
+        animations.laid_out(&tree, &layout, at(500), false);
+        let from = animations.switched(&key, true, at(500));
+        assert!((from - 0.25).abs() < 0.01, "{from}");
+        // Reduced motion: at its state at once.
+        laid(&mut tree, &mut layout, &switch(false));
+        animations.laid_out(&tree, &layout, at(600), true);
+        assert_eq!(animations.switched(&key, false, at(600)), 0.0);
+        assert!(!animations.running(at(600)));
+        // Gone, it is forgotten.
+        laid(&mut tree, &mut layout, &Node::container(vec![]));
+        animations.laid_out(&tree, &layout, at(700), false);
+        assert!(animations.switches.is_empty());
     }
 }
