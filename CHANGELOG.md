@@ -62,6 +62,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- The command's header across a pane's top stays within the pane: a long command is cut at its end of an ellipsis, past `[plugins.command-header] max-length`'s characters, 80 by default, and wherever the pane is narrower, its tooltip and what VoiceOver reads keeping it whole.
 - The text fields, such as the settings window's, its search and the find bar's, take their editing keys before Lokyr's shortcuts: Shift-Command-← selects to the field's start rather than move the tab, and Command-↑ moves the caret rather than jump to the previous prompt.
 - A command's mark in the gutter shows on its prompt's first line of text, not on the empty line that some prompt themes print before the prompt.
 - A tab's context menu no longer runs the item that the pointer moves over, such as Rename Tab…: it waits for you to click an item.

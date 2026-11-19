@@ -196,15 +196,66 @@ fn a_command_that_did_not_run_or_whose_line_left_shows_no_header() {
 }
 
 #[test]
-fn the_line_is_the_host_s_read_of_it_cut_where_the_pane_ends() {
+fn the_line_is_the_host_s_read_of_it_cut_of_an_ellipsis_past_its_most_characters() {
     let (mut host, mut plugin) = host();
     // A line that the host reads as none shows no header; a long one, its
-    // first 500 characters.
+    // first 80 characters and an ellipsis, by default.
     host.pane(PANE).command_lines.remove(&1);
     assert_eq!(scrolled(&mut host, &mut plugin, 10), None);
     host.pane(PANE).command_lines.insert(2, "x".repeat(800));
     let shown = scrolled(&mut host, &mut plugin, 40).expect("the header");
-    assert_eq!(shown, "x".repeat(500));
+    assert_eq!(shown, format!("{}…", "x".repeat(80)));
+    // Its tooltip and its label of the whole line the host read, its first
+    // 500 characters; the pill and its text of no least width, which the
+    // layout shrinks within a narrow pane, as the host cuts its text.
+    let whole = "x".repeat(500);
+    let line = [("line", Data::Text(whole.clone()))];
+    host.set_message("header-tooltip", &line, Some(&format!("Scroll to {whole}")));
+    host.set_message("header-label", &line, Some(&format!("Command: {whole}")));
+    let tree = host
+        .render(&mut plugin, &ViewId::Panel(panel(PANE)))
+        .expect("a header");
+    let pill = &tree.children[1];
+    assert_eq!(pill.tooltip, Some(format!("Scroll to {whole}")));
+    assert_eq!(pill.label, Some(format!("Command: {whole}")));
+    assert_eq!(pill.layout.min_width, Length::Points(0.0));
+    assert_eq!(pill.children[0].layout.min_width, Length::Points(0.0));
+    // `max-length`, of the config; a line of spaces before the cut ends of
+    // its ellipsis alone.
+    host.set_config(config(&[("max-length", Data::Integer(12))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        shown_now(&mut host, &mut plugin),
+        format!("{}…", "x".repeat(12))
+    );
+    let (mut host, mut plugin) = self::host();
+    host.pane(PANE)
+        .command_lines
+        .insert(2, "git commit -m \"a message\"".to_owned());
+    host.set_config(config(&[("max-length", Data::Integer(11))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        scrolled(&mut host, &mut plugin, 40).as_deref(),
+        Some("git commit…")
+    );
+    // A line within it whole.
+    host.set_config(config(&[("max-length", Data::Integer(100))]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        shown_now(&mut host, &mut plugin),
+        "git commit -m \"a message\""
+    );
+}
+
+/// The pill's text of the header that shows now, of its pane's line.
+fn shown_now(host: &mut FakeHost, plugin: &mut Header) -> String {
+    let tree = host
+        .render(plugin, &ViewId::Panel(panel(PANE)))
+        .expect("a header");
+    match &tree.children[1].children[0].kind {
+        Kind::Text(text) => text.clone(),
+        other => panic!("{other:?}"),
+    }
 }
 
 #[test]
@@ -400,7 +451,8 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "font-weight",
             "padding-x",
             "padding-y",
-            "align"
+            "align",
+            "max-length"
         ]
     );
     let example = guide

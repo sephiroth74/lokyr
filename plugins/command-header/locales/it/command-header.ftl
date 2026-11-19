@@ -1,2 +1,2 @@
-header-label = Comando
-header-tooltip = Scorri fino al comando
+header-label = Comando: { $line }
+header-tooltip = Scorri fino a { $line }

@@ -230,6 +230,7 @@ font-weight = "regular"              # light | regular | medium | semibold | bol
 padding-x = 8                        # points, 0 to 40, left and right of the text
 padding-y = 1                        # points, 0 to 20, above and below it
 align = "left"                       # left | center | right: where its pill sits along the line
+max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
@@ -2162,6 +2163,20 @@ Where the header's pill sits along the line across the pane.
 | `left`, `center`, `right` | `left` |
 
 - `left` and `right` keep it a little in from the pane's edge; `center` in the pane's middle.
+- It applies at once, as you save the file, to a header that shows too.
+
+### `max-length`
+
+<sub>Platforms: macOS</sub>
+
+The most characters of the command's line that the header shows.
+
+| Values | Default |
+|---|---|
+| characters, from `1` to `1000` | `80` |
+
+- A longer line is cut at its end of an ellipsis, `…`; its tooltip, and what VoiceOver reads, keep it whole.
+- Whatever its length, the pill stays within the pane, its line cut of an ellipsis where the pane is narrower.
 - It applies at once, as you save the file, to a header that shows too.
 
 ## `[plugins.quick-tips]`

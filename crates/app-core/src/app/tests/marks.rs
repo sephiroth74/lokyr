@@ -383,6 +383,40 @@ fn header_text(app: &App, window: WindowId) -> Option<(String, Frame)> {
 }
 
 #[test]
+fn a_long_command_s_header_keeps_within_its_pane_as_the_window_narrows() {
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf '$ '; m B; echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; m C; ",
+        "seq 1 200; m 'D;0'; m A; printf '$ '; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| {
+        header_text(app, window).is_some_and(|(line, _)| line.starts_with("xxxx"))
+    });
+    let (frame, pill) = header(&app, window).unwrap();
+    let within = |frame: Frame, pill: Frame| pill.x + pill.width <= frame.x + frame.width;
+    assert!(within(frame, pill), "{pill:?} in {frame:?}");
+    let (_, wide) = header_text(&app, window).unwrap();
+    // A narrow window: the pill within its pane still, its text narrower,
+    // which the host cuts of its ellipsis.
+    fake.send(&mut app, window, WindowEvent::Resized(points(260.0, 400.0)));
+    run_until(&mut fake, &mut app, |_, app| {
+        header(app, window).is_some_and(|(frame, _)| frame.width < 600.0)
+    });
+    let (frame, pill) = header(&app, window).unwrap();
+    assert!(within(frame, pill), "{pill:?} in {frame:?}");
+    let (line, narrow) = header_text(&app, window).unwrap();
+    assert!(line.starts_with("xxxx"), "{line}");
+    assert!(narrow.width < wide.width, "{narrow:?} of {wide:?}");
+}
+
+#[test]
 fn the_command_s_header_takes_the_text_s_new_size() {
     let program = shell(concat!(
         "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",

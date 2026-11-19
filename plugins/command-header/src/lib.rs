@@ -97,6 +97,8 @@ struct Settings {
     /// The pill's padding, across and down, in points.
     padding: (f32, f32),
     place: Place,
+    /// The most characters of the line shown.
+    max_length: usize,
 }
 
 impl Default for Settings {
@@ -111,6 +113,7 @@ impl Default for Settings {
             font_weight: FontWeight::Regular,
             padding: (8.0, 1.0),
             place: Place::Left,
+            max_length: 80,
         }
     }
 }
@@ -161,6 +164,10 @@ impl Settings {
         }
         if let Some(down) = number("padding-y") {
             settings.padding.1 = down;
+        }
+        // Within the schema's bounds, of 1 at least.
+        if let Some(most) = number("max-length") {
+            settings.max_length = (most.max(1.0)) as usize;
         }
         if let Some(align) = text("align") {
             settings.place = match align.as_str() {
@@ -281,9 +288,12 @@ impl Plugin for Header {
             return None;
         };
         let shown = self.panes.get(&pane_of(id)?)?.shown.as_ref()?;
-        let label = cx.message("header-label", &[]).unwrap_or_default();
-        let tooltip = cx.message("header-tooltip", &[]).unwrap_or_default();
-        Some(header(&shown.line, (&label, &tooltip), &self.settings))
+        // Its whole line to accessibility and in its tooltip.
+        let whole = [("line", Data::Text(shown.line.clone()))];
+        let label = cx.message("header-label", &whole).unwrap_or_default();
+        let tooltip = cx.message("header-tooltip", &whole).unwrap_or_default();
+        let line = cut(&shown.line, self.settings.max_length);
+        Some(header(&line, (&label, &tooltip), &self.settings))
     }
 
     /// A click on the pill scrolls the view to the command's prompt, at
@@ -410,10 +420,22 @@ fn pane_of(panel: &PanelId) -> Option<PaneId> {
     panel.0.strip_prefix(PANEL)?.parse().ok().map(PaneId)
 }
 
+/// `line`, of `most` characters at most: its first ones and `…` past them,
+/// the spaces before the ellipsis left out.
+fn cut(line: &str, most: usize) -> String {
+    if line.chars().count() <= most {
+        return line.to_owned();
+    }
+    let kept: String = line.chars().take(most).collect();
+    format!("{}…", kept.trim_end())
+}
+
 /// A header of `line`, of `label` to accessibility and of `tooltip`: a pill
 /// of the line, in the terminal's font, on a hairline across the pane, of
 /// the theme's tokens that `settings` name, its text of their size and
-/// weight, its padding theirs, and its place along the line theirs.
+/// weight, its padding theirs, and its place along the line theirs; the
+/// pill within the pane, its line cut of an ellipsis where the pane is
+/// narrower, as the layout shrinks it.
 fn header(line: &str, (label, tooltip): (&str, &str), settings: &Settings) -> Node {
     let hairline = |width: Length, grow: f32| {
         Node::container(Vec::new())
@@ -429,7 +451,13 @@ fn header(line: &str, (label, tooltip): (&str, &str), settings: &Settings) -> No
             })
     };
     let (across, down) = settings.padding;
-    let pill = Node::container(vec![Node::text(line)])
+    // Of no least width but their padding's, so that the layout shrinks
+    // them within the pane, which the host's ellipsis cuts.
+    let text = Node::text(line).layout(Layout {
+        min_width: Length::Points(0.0),
+        ..Layout::default()
+    });
+    let pill = Node::container(vec![text])
         .key(PILL)
         .label(label)
         .tooltip(tooltip)
@@ -441,6 +469,7 @@ fn header(line: &str, (label, tooltip): (&str, &str), settings: &Settings) -> No
                 left: across,
             },
             align: Align::Center,
+            min_width: Length::Points(0.0),
             ..Layout::default()
         })
         .style(Style {
