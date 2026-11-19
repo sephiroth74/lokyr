@@ -233,9 +233,10 @@ export type UiEvent =
     | { view: ViewId, key: string, kind: "cut", cut: boolean }
     | { view: ViewId, key: string, kind: "step", up: boolean }
     | { view: ViewId, key: string, kind: "recorded", keys: any? }
+    | { view: ViewId, key: string, kind: "highlight", item: any? }
 
 export type Node = {
-    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
+    kind: "container" | "text" | "icon" | "spacer" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios" | "pop-up" | "separator" | "list" | "scroll" | "progress" | "tabs" | "image" | "theme-preview" | "terminal-specimen" | "themed",
     key: Key?,
     layout: NodeLayout?,
     style: Style?,
@@ -260,6 +261,7 @@ export type Node = {
     options: { RadioOption }?,
     chosen: number?,
     across: boolean?,
+    choices: { string }?,
     row: Node?,
     count: number?,
     first: number?,

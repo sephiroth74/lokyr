@@ -942,7 +942,8 @@ fn page_field(app: &App, window: WindowId, key: &str) -> String {
         .map_or_else(|| panic!("no field {key}"), |state| state.text().to_owned())
 }
 
-/// The label of the button `key` of the page's view in `window`.
+/// The label of the button `key` of the page's view in `window`, or the
+/// text that the pop-up button `key` shows.
 fn page_button(app: &App, window: WindowId, key: &str) -> String {
     let tree = &page_view(app, window)
         .expect("its page's view")
@@ -950,6 +951,19 @@ fn page_button(app: &App, window: WindowId, key: &str) -> String {
         .tree;
     match tree.by_key(&key.into()).and_then(|node| tree.kind(node)) {
         Some(lokyr_kernel::plugins::view::Kind::Button(button)) => button.label.clone(),
+        Some(lokyr_kernel::plugins::view::Kind::PopUp(pop_up)) => pop_up.shown().to_owned(),
+        other => panic!("{key}: {other:?}"),
+    }
+}
+
+/// The choices of the pop-up button `key` of the page's view in `window`.
+fn page_choices(app: &App, window: WindowId, key: &str) -> Vec<String> {
+    let tree = &page_view(app, window)
+        .expect("its page's view")
+        .surface
+        .tree;
+    match tree.by_key(&key.into()).and_then(|node| tree.kind(node)) {
+        Some(lokyr_kernel::plugins::view::Kind::PopUp(pop_up)) => pop_up.choices.clone(),
         other => panic!("{key}: {other:?}"),
     }
 }
@@ -1063,9 +1077,9 @@ fn each_kind_of_key_is_written_from_the_settings_page_into_the_file_its_comments
         &mut fake,
         &mut app,
         own,
-        Some("choices:scrollbar"),
-        "choice:1",
-        UiEventKind::Toggle { on: true },
+        None,
+        "choose:scrollbar",
+        UiEventKind::Select { item: 1 },
     );
     assert_eq!(
         read(),
@@ -1305,7 +1319,7 @@ fn a_page_s_plugin_started_again_after_a_fault_hears_its_page_shown() {
 
 #[test]
 fn a_style_is_picked_from_the_family_s_and_a_file_of_an_error_is_written_over_by_nothing() {
-    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
+    use lokyr_kernel::plugins::view::UiEventKind;
     let directory = super::installed::shelf("settings-pickers");
     let path = directory.join("config.toml");
     std::fs::write(&path, "# mine\n[font]\nsize = 14\n").unwrap();
@@ -1322,40 +1336,15 @@ fn a_style_is_picked_from_the_family_s_and_a_file_of_an_error_is_written_over_by
     app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
     // The style's menu, of the styles of the family in force.
+    let styles = page_choices(&app, own, "choose:style");
+    let at = styles.len() - 1;
     settings_event(
         &mut fake,
         &mut app,
         own,
         None,
         "choose:style",
-        UiEventKind::Click,
-    );
-    let menu = app
-        .plugins
-        .tree(
-            "lokyr/settings",
-            &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(
-                "choices:style".to_owned(),
-            )),
-        )
-        .cloned()
-        .expect("the styles' menu");
-    let styles: Vec<String> = menu
-        .children
-        .iter()
-        .filter_map(|item| match &item.kind {
-            Kind::Toggle(toggle) => Some(toggle.label.clone()),
-            _ => None,
-        })
-        .collect();
-    let at = styles.len() - 1;
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        Some("choices:style"),
-        &format!("choice:{at}"),
-        UiEventKind::Toggle { on: true },
+        UiEventKind::Select { item: at },
     );
     let read = || std::fs::read_to_string(&path).unwrap();
     assert_eq!(
@@ -2069,46 +2058,24 @@ fn the_settings_window_shows_no_notice_which_the_terminals_windows_do() {
 
 #[test]
 fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
-    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
     let (mut fake, mut app, _) = two_tabs();
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
-    let items = |app: &App, name: &str| -> Vec<String> {
-        let menu = app
-            .plugins
-            .tree(
-                "lokyr/settings",
-                &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(format!(
-                    "choices:{name}"
-                ))),
-            )
-            .cloned()
-            .expect("the menu");
-        menu.children
-            .iter()
-            .filter_map(|item| match &item.kind {
-                Kind::Toggle(toggle) => Some(toggle.label.clone()),
-                _ => None,
-            })
-            .collect()
-    };
-    // The families' menu, the platform's own: its item highlighted shows
-    // in the panes, and goes as the menu closes of no choice.
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        "choose:family",
-        UiEventKind::Click,
-    );
-    frames(&mut fake, &mut app, own);
-    assert!(!fake.context_menus().is_empty(), "the platform's menu");
-    let families = items(&app, "family");
+    // The families' pop-up button, whose menu is the platform's own: its
+    // item highlighted shows in the panes, and goes as the menu closes of
+    // no choice.
+    click_page_node(&mut fake, &mut app, own, "choose:family");
+    let (_, _, menu) = fake
+        .context_menus()
+        .last()
+        .cloned()
+        .expect("the platform's menu");
+    assert!(menu.pop_up.is_some(), "a pop-up button's");
+    let families = page_choices(&app, own, "choose:family");
     let at = families.len() - 1;
     fake.send(
         &mut app,
         own,
-        WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
+        WindowEvent::ContextHighlighted(Some(format!("pop-up:{at}"))),
     );
     frames(&mut fake, &mut app, own);
     assert_eq!(app.font_preview, None, "not before the item rests");
@@ -2121,21 +2088,13 @@ fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
     frames(&mut fake, &mut app, own);
     assert_eq!(app.font_preview, None, "the font in force back");
     // A style of the family in force, of the regular face.
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        None,
-        "choose:style",
-        UiEventKind::Click,
-    );
-    frames(&mut fake, &mut app, own);
-    let styles = items(&app, "style");
+    click_page_node(&mut fake, &mut app, own, "choose:style");
+    let styles = page_choices(&app, own, "choose:style");
     let at = styles.len() - 1;
     fake.send(
         &mut app,
         own,
-        WindowEvent::ContextHighlighted(Some(format!("choice:{at}"))),
+        WindowEvent::ContextHighlighted(Some(format!("pop-up:{at}"))),
     );
     fake.fire_timers(&mut app, rested());
     frames(&mut fake, &mut app, own);
@@ -2153,7 +2112,7 @@ fn a_menu_s_highlighted_family_or_style_shows_in_the_panes_until_it_closes() {
 
 #[test]
 fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_shows() {
-    use lokyr_kernel::plugins::view::{Kind, UiEventKind};
+    use lokyr_kernel::plugins::view::UiEventKind;
     // Menlo, of a bold face, and the tests' Mono, of a regular one alone.
     let directory = super::installed::shelf("settings-family-styles");
     let path = directory.join("config.toml");
@@ -2174,38 +2133,19 @@ fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_sho
     let first = fake.windows().next().unwrap();
     app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
     let own = open(&mut fake, &mut app, SETTINGS_TAB);
+    let at = page_choices(&app, own, "choose:family")
+        .iter()
+        .position(|family| family == "Mono")
+        .expect("the tests' Mono");
+    // Chosen: its styles that Mono lacks commented out, the font in force
+    // Mono's, the page's pop-up button too.
     settings_event(
         &mut fake,
         &mut app,
         own,
         None,
         "choose:family",
-        UiEventKind::Click,
-    );
-    let menu = app
-        .plugins
-        .tree(
-            "lokyr/settings",
-            &ViewId::Panel(lokyr_kernel::plugins::ui::PanelId(
-                "choices:family".to_owned(),
-            )),
-        )
-        .cloned()
-        .expect("the families' menu");
-    let at = menu
-        .children
-        .iter()
-        .position(|item| matches!(&item.kind, Kind::Toggle(toggle) if toggle.label == "Mono"))
-        .expect("the tests' Mono");
-    // Chosen: its styles that Mono lacks commented out, the font in force
-    // Mono's, the page's button too.
-    settings_event(
-        &mut fake,
-        &mut app,
-        own,
-        Some("choices:family"),
-        &format!("choice:{at}"),
-        UiEventKind::Toggle { on: true },
+        UiEventKind::Select { item: at },
     );
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(written.contains("family = \"Mono\""), "{written}");
@@ -2219,7 +2159,6 @@ fn a_family_chosen_in_the_settings_comments_out_the_styles_that_it_lacks_and_sho
             .as_deref(),
         Some("Mono")
     );
-    fake.send(&mut app, own, WindowEvent::ContextMenuClosed);
     frames(&mut fake, &mut app, own);
     assert_eq!(page_button(&app, own, "choose:family"), "Mono");
     let _ = std::fs::remove_dir_all(&directory);

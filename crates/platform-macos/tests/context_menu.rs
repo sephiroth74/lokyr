@@ -92,6 +92,7 @@ mod probe {
             items: vec![item("test.first"), MenuItem::Separator, item("test.dimmed")],
             dimmed: vec!["test.dimmed".to_owned()],
             ticked: vec!["test.first".to_owned()],
+            pop_up: None,
         }
     }
 

@@ -633,8 +633,9 @@ fn view_tree() -> Node {
 /// states: a button at rest, one pressed, one disabled, one of an icon
 /// alone, which has the focus, one of an icon and a label; a toggle of an
 /// icon off, one on, one off under the pointer, a disabled one on, one of
-/// a label off; upright separators between the groups, and a flat one
-/// under them; room below for the tooltip of the toggle under the pointer.
+/// a label off; pop-up buttons of a choice, small, of none and disabled;
+/// upright separators between the groups, and a flat one under them; room
+/// below for the tooltip of the toggle under the pointer.
 fn widgets_tree() -> Node {
     let button = |key: &str, label: &str, icon: &str, disabled: bool| {
         Node::new(Kind::Button(view::Button {
@@ -745,12 +746,38 @@ fn widgets_tree() -> Node {
         .key("both"),
         checkbox("verify", "", (true, true)),
     ]);
+    let pop_up = |key: &str, choices: &[&str], chosen: Option<usize>, size: ControlSize| {
+        Node::new(Kind::PopUp(view::PopUp {
+            choices: choices.iter().map(|&choice| choice.to_owned()).collect(),
+            chosen,
+            placeholder: "Not set".to_owned(),
+            size,
+            ..view::PopUp::default()
+        }))
+        .key(key)
+    };
+    let mut held = pop_up("never", &["Never"], Some(0), ControlSize::Regular);
+    if let Kind::PopUp(own) = &mut held.kind {
+        own.disabled = true;
+    }
+    let pop_ups = row(vec![
+        pop_up(
+            "cadence",
+            &["Day", "Week", "Month"],
+            Some(1),
+            ControlSize::Regular,
+        ),
+        pop_up("font", &["SF Mono", "Menlo"], Some(0), ControlSize::Small),
+        pop_up("unset", &["Menlo"], None, ControlSize::Small),
+        held,
+    ]);
     let panel = Node::container(vec![
         buttons,
         actions,
         switches,
         checks,
         row(vec![every]),
+        pop_ups,
         toggles,
         Node::separator(),
     ])

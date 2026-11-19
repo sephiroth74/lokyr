@@ -344,6 +344,8 @@ impl<B: Backend> App<B> {
         if let Some((view, key)) = field_menu {
             self.show_field_menu(platform, window, (view, &key), position);
         }
+        // A pop-up button's menu, which opens at the press.
+        self.show_pop_up(platform, window);
         true
     }
 
@@ -558,6 +560,8 @@ impl<B: Backend> App<B> {
                         self.views_changed(window);
                         platform.request_frame(window);
                     }
+                    // A pop-up button's menu that the key opens.
+                    self.show_pop_up(platform, window);
                 }
                 // The release of a key that moved the focus, as Tab's after a
                 // key typed before it went up, does nothing.

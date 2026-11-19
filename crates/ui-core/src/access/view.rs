@@ -125,8 +125,8 @@ fn found(tree: &Tree, index: u32, takes: impl Fn(tree::NodeId) -> bool) -> Optio
 
 /// Does a client's `request` to `surface`, which `panel` is to the focus,
 /// whose node, row or tab it names: a press, a focus or a value set, as
-/// [`action::perform`] does them, a row's press its selection, and a tab's
-/// its choice. The events of its nodes; a focus moves `focus`, whose own
+/// [`action::perform`] does them, a pop-up button's press the opening of
+/// its menu, a row's press its selection, and a tab's its choice. The events of its nodes; a focus moves `focus`, whose own
 /// events tell it.
 pub fn perform<P: Copy + Eq>(
     request: &ActionRequest,
@@ -150,6 +150,16 @@ pub fn perform<P: Copy + Eq>(
             }) else {
                 return Vec::new();
             };
+            // A pop-up button's press opens its menu, as the host shows it,
+            // but a disabled one's.
+            if matches!(asked, Action::Press)
+                && let Some(Kind::PopUp(pop_up)) = tree.kind(node)
+            {
+                if !pop_up.disabled {
+                    surface.pop_up(node);
+                }
+                return Vec::new();
+            }
             action::perform(asked, (panel, tree, node), focus)
         }
         Part::Row { list, item } => {
@@ -241,6 +251,8 @@ impl WindowTree {
             (Kind::Button(_) | Kind::Toggle(_), _) => Role::Button,
             (Kind::Switch(_), _) => Role::Switch,
             (Kind::Checkbox(_), _) => Role::CheckBox,
+            // macOS's adapter makes a combo box a pop-up button.
+            (Kind::PopUp(_), _) => Role::ComboBox,
             (Kind::Radios(_), _) => Role::RadioGroup,
             (Kind::List(_), _) => Role::ListBox,
             (Kind::Progress(_), _) => Role::ProgressIndicator,
@@ -307,6 +319,12 @@ impl WindowTree {
                     Toggled::False
                 });
                 pressable(&mut node, checkbox.disabled);
+            }
+            // Its value the text that it shows, which a client presses to
+            // open its menu.
+            Kind::PopUp(pop_up) => {
+                node.set_value(pop_up.shown());
+                pressable(&mut node, pop_up.disabled);
             }
             // Each option a radio button, of its label and whether it is
             // chosen, which a client presses to choose it.
@@ -1248,5 +1266,44 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn a_pop_up_button_is_a_pop_up_button_of_its_value_which_a_client_opens() {
+        let fonts = vec!["SF Mono".to_owned(), "Menlo".to_owned()];
+        let root = column(vec![
+            ViewNode::pop_up(fonts.clone(), Some(1))
+                .key("family")
+                .label("Font"),
+            ViewNode::new(view::Kind::PopUp(view::PopUp {
+                choices: fonts,
+                placeholder: "Unset".to_owned(),
+                disabled: true,
+                ..view::PopUp::default()
+            }))
+            .key("style"),
+        ]);
+        let mut surface = surface(&root);
+        let update = tree_of(&surface, None);
+        let family = keyed(&update, &surface, "family");
+        assert_eq!(family.role(), Role::ComboBox);
+        assert_eq!(
+            (family.label(), family.value()),
+            (Some("Font"), Some("Menlo"))
+        );
+        assert!(family.supports_action(AxAction::Click));
+        let style = keyed(&update, &surface, "style");
+        assert_eq!(style.value(), Some("Unset"));
+        assert!(style.is_disabled() && !style.supports_action(AxAction::Click));
+        // A client's press opens its menu, which the host shows; of the
+        // disabled one, nothing.
+        let mut focus: Focus<u8> = Focus::new();
+        let node_of = |key: &str| surface.tree.by_key(&key.into()).unwrap();
+        let (family, style) = (node_of("family"), node_of("style"));
+        let press = |node| request(AxAction::Click, node_id(3, node), None);
+        assert!(perform(&press(family), (3, &mut surface), &mut focus).is_empty());
+        assert_eq!(surface.take_pop_up(), Some(family));
+        assert!(perform(&press(style), (3, &mut surface), &mut focus).is_empty());
+        assert_eq!(surface.take_pop_up(), None);
     }
 }

@@ -99,6 +99,8 @@ pub struct Gallery {
     slow: bool,
     /// The option chosen of the group of radio buttons.
     radio: Option<usize>,
+    /// The choices made of the pop-up buttons, by their keys.
+    pop_ups: BTreeMap<String, usize>,
     /// The tab bar's tabs, the one chosen, and whether the bar goes in
     /// the titlebar, or below a titlebar of the window's title.
     tabs: usize,
@@ -168,6 +170,7 @@ impl Gallery {
             boxed: true,
             slow: false,
             radio: Some(0),
+            pop_ups: BTreeMap::new(),
             tabs: 3,
             chosen: 0,
             in_titlebar: true,
@@ -414,6 +417,16 @@ impl Gallery {
             UiEventKind::Select { item } if key == "every" => {
                 self.radio = Some(item);
                 self.pressed = format!("`every` chose {item}");
+            }
+            UiEventKind::Select { item } if key.contains("pop-up") => {
+                self.pop_ups.insert(key.to_owned(), item);
+                self.pressed = format!("`{key}` chose {item}");
+            }
+            UiEventKind::Highlight { item } => {
+                self.pressed = match item {
+                    Some(item) => format!("`{key}` highlights {item}"),
+                    None => format!("`{key}` highlights none"),
+                };
             }
             UiEventKind::Toggle { .. } if DISTRIBUTIONS.iter().any(|(named, ..)| *named == key) => {
                 if let Some(&(_, _, distribution)) =
@@ -794,7 +807,7 @@ impl Gallery {
                 section("Boxes and clips", boxes()),
                 section("Drags and scrolls", self.drags()),
                 section(
-                    "Buttons, toggles, switches, checkboxes and radio buttons",
+                    "Buttons, toggles, switches, checkboxes, radio buttons and pop-up buttons",
                     self.buttons(),
                 ),
                 section("Progress", self.progress()),
@@ -1546,6 +1559,39 @@ impl Gallery {
             .key("check-held"),
         ]);
         let radios = row(vec![secondary("Back up"), every]);
+        let pop_up = |key: &str, choices: &[&str], size: ControlSize, disabled: bool| {
+            Node::new(Kind::PopUp(view::PopUp {
+                choices: choices.iter().map(|&choice| choice.to_owned()).collect(),
+                chosen: Some(self.pop_ups.get(key).copied().unwrap_or(1)),
+                disabled,
+                size,
+                ..view::PopUp::default()
+            }))
+            .key(key)
+        };
+        let pop_ups = row(vec![
+            secondary("Every"),
+            pop_up(
+                "pop-up",
+                &["Hour", "Day", "Week", "Month"],
+                ControlSize::Regular,
+                false,
+            )
+            .label("Every"),
+            pop_up(
+                "pop-up-small",
+                &["SF Mono", "Menlo", "Monaco"],
+                ControlSize::Small,
+                false,
+            )
+            .label("Font"),
+            pop_up(
+                "pop-up-held",
+                &["Never", "Always, and disabled"],
+                ControlSize::Regular,
+                true,
+            ),
+        ]);
         let on: Vec<&str> = self
             .toggles
             .iter()
@@ -1560,6 +1606,7 @@ impl Gallery {
                 switches,
                 checks,
                 radios,
+                pop_ups,
                 Node::separator(),
                 secondary(&format!("last: {}", self.pressed)),
                 secondary(&format!("on: {}", on.join(", "))),
@@ -1626,6 +1673,14 @@ impl Gallery {
                 }))
                 .key(switch.as_str())
                 .label(format!("A {name} switch").as_str()),
+                Node::new(Kind::PopUp(view::PopUp {
+                    choices: vec!["Daily".to_owned(), "Weekly".to_owned()],
+                    chosen: Some(self.pop_ups.get(&key("pop-up")).copied().unwrap_or(0)),
+                    size,
+                    ..view::PopUp::default()
+                }))
+                .key(key("pop-up").as_str())
+                .label(format!("A {name} pop-up button").as_str()),
             ])
             .layout(Layout {
                 gap: 8.0,
@@ -2120,7 +2175,7 @@ mod tests {
                 .iter()
                 .flat_map(|name| {
                     let parts: &[&str] = if every {
-                        &["replace", "add", "wrap", "find", "switch"]
+                        &["replace", "add", "wrap", "find", "switch", "pop-up"]
                     } else {
                         &["find"]
                     };
@@ -2153,6 +2208,8 @@ mod tests {
             "check-small",
             "check-both",
             "every",
+            "pop-up",
+            "pop-up-small",
             "less",
             "more",
             "spin",

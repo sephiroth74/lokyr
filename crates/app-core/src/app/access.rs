@@ -143,6 +143,8 @@ impl<B: Backend> App<B> {
             self.focus_moved(platform, window, before);
             self.views_changed(window);
             platform.request_frame(window);
+            // A pop-up button's menu that the client's press opens.
+            self.show_pop_up(platform, window);
             return;
         }
         if request.action != Action::Focus {

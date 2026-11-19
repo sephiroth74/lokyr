@@ -38,7 +38,8 @@ struct Heard {
 /// `paneler.commands`, a menu of two buttons alone keyed `window.new` and
 /// `third`, which `paneler.close-commands` closes; `paneler.both` opens
 /// `native` and `commands` in one call; `paneler.overlay`, an overlay
-/// across the pane's top, of a field.
+/// across the pane's top, of a field; `paneler.choice`, a dialog below the
+/// button of a pop-up button `choice` of three items, the second chosen.
 struct Paneler {
     heard: Rc<RefCell<Heard>>,
 }
@@ -48,7 +49,7 @@ const MANIFEST: &str = concat!(
     "[contributes]\nslots = [\"tab-bar\"]\n",
 );
 
-const COMMANDS: [&str; 13] = [
+const COMMANDS: [&str; 14] = [
     "paneler.dialog",
     "paneler.menu",
     "paneler.native",
@@ -62,6 +63,7 @@ const COMMANDS: [&str; 13] = [
     "paneler.both",
     "paneler.overlay",
     "paneler.card",
+    "paneler.choice",
 ];
 
 fn sized(node: Node, width: f32, height: f32) -> Node {
@@ -107,6 +109,17 @@ impl plugins::Plugin for Paneler {
         let pane = cx.focused_pane().unwrap();
         let bar = ViewId::TabBar(window);
         let (id, options) = match name {
+            "paneler.choice" => (
+                "choice",
+                options(
+                    Anchor::Node {
+                        view: bar,
+                        key: "open".into(),
+                    },
+                    Role::Dialog,
+                    (false, true),
+                ),
+            ),
             "paneler.dialog" => (
                 "dialog",
                 options(
@@ -248,6 +261,17 @@ impl plugins::Plugin for Paneler {
             ]),
             "tip" => sized(Node::text("a tip"), 80.0, 20.0),
             "card" => sized(Node::button("Dismiss").key("dismiss"), 80.0, 20.0),
+            "choice" => Node::container(vec![
+                Node::pop_up(
+                    vec![
+                        "Daily".to_owned(),
+                        "Weekly".to_owned(),
+                        "Monthly".to_owned(),
+                    ],
+                    Some(1),
+                )
+                .key("choice"),
+            ]),
             _ => Node::container(vec![sized(Node::field("Find"), 120.0, 20.0).key("find")]),
         })
     }
@@ -529,6 +553,74 @@ fn a_menu_of_menu_items_alone_is_the_platform_s_own_whose_choice_and_closing_its
     frames(&mut fake, &mut app, window);
     assert_eq!(heard.borrow().closed, ["native", "native"]);
     assert!(app.windows[&window].native.is_empty());
+}
+
+#[test]
+fn a_pop_up_button_s_press_shows_its_menu_over_it_whose_highlights_and_choice_its_plugin_hears() {
+    let (mut fake, mut app, window, heard) = paneler(reader(""));
+    let scale = fake.window(window).unwrap().size.scale;
+    command(&mut fake, &mut app, window, "paneler.choice");
+    let frame = node_frame(&app, window, "choice");
+    let over = middle(frame, scale);
+    fake.send(&mut app, window, click(true, over, Modifiers::NONE, 1));
+    frames(&mut fake, &mut app, window);
+    // The platform's menu over the button, from its top left corner, of
+    // its items, the second ticked and chosen, of the button's size.
+    let (shown, at, menu) = fake.context_menus().last().cloned().expect("a menu");
+    assert_eq!(shown, window);
+    let points = |pixels: f32| f64::from(pixels) / scale;
+    assert_eq!((at.x, at.y), (points(frame.x), points(frame.y)));
+    assert_eq!(last_menu(&fake), ["pop-up:0", "pop-up:1", "pop-up:2"]);
+    assert_eq!(menu.ticked, ["pop-up:1"]);
+    let button = menu.pop_up.expect("its button");
+    assert_eq!(
+        (button.width, button.height, button.chosen.as_deref()),
+        (points(frame.width), points(frame.height), Some("pop-up:1"))
+    );
+    assert_eq!(button.text_size, 13.0);
+    assert!(matches!(
+        app.windows[&window].native.front(),
+        Some(NativeMenu::PopUp(..))
+    ));
+    // The menu takes the release: no click.
+    fake.send(&mut app, window, click(false, over, Modifiers::NONE, 1));
+    // Its highlights, each once, and its choice, then its closing, which
+    // tells no item highlighted.
+    for highlighted in ["pop-up:2", "pop-up:2", "pop-up:0"] {
+        fake.send(
+            &mut app,
+            window,
+            WindowEvent::ContextHighlighted(Some(highlighted.to_owned())),
+        );
+    }
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::ContextCommand("pop-up:0".to_owned()),
+    );
+    fake.send(&mut app, window, WindowEvent::ContextMenuClosed);
+    frames(&mut fake, &mut app, window);
+    let told: Vec<UiEventKind> = heard
+        .borrow()
+        .events
+        .iter()
+        .filter(|event| event.key.0 == "choice")
+        .map(|event| event.kind.clone())
+        .filter(|kind| !matches!(kind, UiEventKind::HoverEnter | UiEventKind::HoverLeave))
+        .collect();
+    assert_eq!(
+        told,
+        [
+            UiEventKind::Highlight { item: Some(2) },
+            UiEventKind::Highlight { item: Some(0) },
+            UiEventKind::Select { item: 0 },
+            UiEventKind::Highlight { item: None },
+        ]
+    );
+    let state = &app.windows[&window];
+    assert!(state.native.is_empty() && state.native_item.is_none());
+    // Its panel stays, a dialog.
+    assert!(panel_frame(&app, window, "choice").is_some());
 }
 
 /// The commands of the items of the platform's last menu.

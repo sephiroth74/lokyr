@@ -47,7 +47,7 @@ pub use input::{
 };
 pub use menu::{
     AboutLine, AboutPanel, Alert, AlertId, AlertStyle, ContextMenu, MainMenu, Menu, MenuItem,
-    MenuRole, SavePanelId, Shortcut, ShortcutKey, StandardAction,
+    MenuRole, PopUpButton, SavePanelId, Shortcut, ShortcutKey, StandardAction,
 };
 pub use quick::{GlobalKey, Length, QuickEdge, QuickPlace, QuickScreen};
 
@@ -709,7 +709,8 @@ pub trait Platform {
 
     /// Opens `menu` at `position` of `window`'s content, once the call in
     /// progress has returned, so that the windows go on drawing while it is
-    /// open: its chosen item comes as [`WindowEvent::ContextCommand`]. A
+    /// open, or over its pop-up button, whose top left corner `position`
+    /// is: its chosen item comes as [`WindowEvent::ContextCommand`]. A
     /// menu that is open, or that waits to open, closes first: each menu
     /// that the app asks for gets its [`WindowEvent::ContextMenuClosed`],
     /// in their order.

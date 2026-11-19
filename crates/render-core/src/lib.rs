@@ -338,8 +338,9 @@ pub struct PlacedGlyph {
 
 /// A shape of the interface: a rectangle of rounded corners, filled to its
 /// edges under its border, over its shadow, as a panel or a button; or an
-/// arc of the ring inscribed in its rectangle, as a progress's; or a check
-/// mark within its rectangle, as a checkbox's; none of no width or height.
+/// arc of the ring inscribed in its rectangle, as a progress's; or a mark
+/// drawn within its rectangle, as a checkbox's check or a pop-up button's
+/// chevrons; none of no width or height.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Shape {
     /// Its rectangle, the border's outer edges.
@@ -358,17 +359,28 @@ pub struct Shape {
     /// The arc of the ring inscribed in its rectangle that it draws, of its
     /// fill, in place of the rectangle, its border and its shadow.
     pub arc: Option<Arc>,
-    /// A check mark that it draws within its rectangle, as macOS 27's
-    /// checkbox draws its check, of its line's thickness in pixels and of
-    /// round ends, of its fill, in place of the rectangle, its border and
-    /// its shadow.
-    pub check: Option<f32>,
+    /// A mark of lines of round ends that it draws within its rectangle,
+    /// of its fill, in place of the rectangle, its border and its shadow.
+    pub mark: Option<Mark>,
     /// Whether its fill takes the place of what is under it, by the part of
     /// each pixel that it covers, rather than going over it: a background
     /// that shows a translucent window's opacity over what the window
     /// draws of it, rather than its own over that. Its border and its
     /// shadow go over, and an arc's fill too.
     pub knockout: bool,
+}
+
+/// A mark of lines of round ends within a shape's rectangle.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Mark {
+    /// A check, as macOS 27's checkbox draws it, at shares of the
+    /// rectangle's size, of its line's thickness in pixels: down from the
+    /// left to its bottom, and up to the right.
+    Check(f32),
+    /// A pair of chevrons, one up over one down, as macOS 27's pop-up
+    /// button draws them, in the middle of the rectangle, of the size of
+    /// the text that they go with, in pixels, about as tall.
+    Chevrons(f32),
 }
 
 /// An arc of a ring: a line along the circle inscribed in a shape's
@@ -397,7 +409,7 @@ impl Shape {
             border_color: Color::CLEAR,
             shadow: None,
             arc: None,
-            check: None,
+            mark: None,
             knockout: false,
         }
     }

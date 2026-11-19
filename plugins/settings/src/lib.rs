@@ -112,14 +112,8 @@ const ROW: f32 = 28.0;
 /// The prefix of the key of a boolean's toggle.
 const SET: &str = "set:";
 
-/// The prefix of the key of the button of a key's menu of values.
+/// The prefix of the key of the pop-up button of a key's menu of values.
 const CHOOSE: &str = "choose:";
-
-/// The prefix of the panel of a key's menu of values.
-const CHOICES: &str = "choices:";
-
-/// The prefix of the key of a value's item of a key's menu.
-const CHOICE: &str = "choice:";
 
 /// The prefix of the key of a number's or a text's field.
 const FIELD: &str = "field:";
@@ -543,11 +537,6 @@ impl Plugin for SettingsPage {
                 Event::PanelClosed(PanelId(panel)) if panel == THEME_MENU => {
                     self.theme_menu = None;
                 }
-                // A menu of values closed: the font that it showed goes,
-                // the one in force back, or the one chosen.
-                Event::PanelClosed(PanelId(panel)) if panel.starts_with(CHOICES) => {
-                    self.end_preview(cx)?;
-                }
                 // A highlighted item rested: its font shows.
                 Event::Timer { id } if self.preview_timer == Some(*id) => {
                     self.preview_timer = None;
@@ -752,41 +741,7 @@ impl Plugin for SettingsPage {
         let Some(part) = parts(&settings).into_iter().nth(self.chosen) else {
             return Ok(());
         };
-        // An item of a key's menu of values, its panel of its key's name.
-        if let ViewId::Panel(PanelId(panel)) = &event.view {
-            let (Some(name), Some(at)) = (panel.strip_prefix(CHOICES), key.strip_prefix(CHOICE))
-            else {
-                return Ok(());
-            };
-            let (Some((section, setting)), Ok(at)) = (part.find(name), at.parse::<usize>()) else {
-                return Ok(());
-            };
-            let Some(values) = menu_values(cx, section, setting) else {
-                return Ok(());
-            };
-            if matches!(event.kind, UiEventKind::Click | UiEventKind::Toggle { .. })
-                && let Some(value) = values.get(at)
-            {
-                // The choice shows as the config takes it: no preview comes
-                // after it.
-                self.pending_preview = None;
-                if let Some(timer) = self.preview_timer.take() {
-                    cx.cancel_timer(timer)?;
-                }
-                return self.write(cx, section, setting, Some(value.clone()));
-            }
-            // A font's family or a face's style shown in the panes once its
-            // highlighted item rests.
-            if event.kind == UiEventKind::HoverEnter
-                && let Some(Data::Text(value)) = values.get(at)
-                && let Some(preview) = font_preview(section, setting)
-            {
-                self.pending_preview = Some((preview, value.clone()));
-                if let Some(timer) = self.preview_timer.take() {
-                    cx.cancel_timer(timer)?;
-                }
-                self.preview_timer = Some(cx.start_timer(PREVIEW_PAUSE, false)?);
-            }
+        if matches!(event.view, ViewId::Panel(_)) {
             return Ok(());
         }
         // A map's entry taken away, changed, renamed or added.
@@ -851,20 +806,39 @@ impl Plugin for SettingsPage {
             (UiEventKind::Toggle { on }, SET) => {
                 self.write(cx, section, setting, Some(Data::Boolean(*on)))
             }
-            (UiEventKind::Click, CHOOSE) => cx.open_panel(
-                format!("{CHOICES}{name}").as_str(),
-                PanelOptions {
-                    anchor: Anchor::Node {
-                        view: page(),
-                        key: key.into(),
-                    },
-                    role: PanelRole::Menu,
-                    close_outside: true,
-                    close_escape: true,
-                    takes_keys: false,
-                    close_typing: false,
-                },
-            ),
+            // A value chosen in a key's menu, which shows as the config
+            // takes it: no preview comes after it.
+            (UiEventKind::Select { item }, CHOOSE) => {
+                let Some(value) =
+                    menu_values(cx, section, setting).and_then(|values| values.get(*item).cloned())
+                else {
+                    return Ok(());
+                };
+                self.pending_preview = None;
+                if let Some(timer) = self.preview_timer.take() {
+                    cx.cancel_timer(timer)?;
+                }
+                self.write(cx, section, setting, Some(value))
+            }
+            // A font's family or a face's style shown in the panes once the
+            // item that the menu highlights rests; of none, as the menu
+            // closes, the font that it showed goes, the one in force back,
+            // or the one chosen.
+            (UiEventKind::Highlight { item: None }, CHOOSE) => self.end_preview(cx),
+            (UiEventKind::Highlight { item: Some(item) }, CHOOSE) => {
+                let value =
+                    menu_values(cx, section, setting).and_then(|values| values.get(*item).cloned());
+                if let (Some(Data::Text(value)), Some(preview)) =
+                    (value, font_preview(section, setting))
+                {
+                    self.pending_preview = Some((preview, value));
+                    if let Some(timer) = self.preview_timer.take() {
+                        cx.cancel_timer(timer)?;
+                    }
+                    self.preview_timer = Some(cx.start_timer(PREVIEW_PAUSE, false)?);
+                }
+                Ok(())
+            }
             // Typed: written as typing pauses, as Return is pressed, or as
             // the field is left.
             (UiEventKind::InputChanged { text, .. }, FIELD) => {
@@ -968,25 +942,6 @@ impl Plugin for SettingsPage {
                 return Some(commands_menu(cx));
             }
             _ => {}
-        }
-        // A key's menu of values, each an item ticked where it is in force.
-        if let ViewId::Panel(PanelId(panel)) = view {
-            let name = panel.strip_prefix(CHOICES)?;
-            let (section, setting) = parts(&settings).get(self.chosen)?.find(name)?;
-            let choices = menu_values(cx, section, setting)?;
-            let items = choices
-                .iter()
-                .enumerate()
-                .map(|(at, choice)| {
-                    let mut item = Node::toggle("", setting.value.as_ref() == Some(choice))
-                        .key(format!("{CHOICE}{at}").as_str());
-                    if let Kind::Toggle(toggle) = &mut item.kind {
-                        toggle.label = plain(choice);
-                    }
-                    item
-                })
-                .collect();
-            return Some(Node::container(items));
         }
         if *view != page() {
             return None;
@@ -2364,7 +2319,13 @@ fn section_part(
         .collect();
     let rows: Vec<Node> = keys
         .into_iter()
-        .map(|key| key_row(cx, key, (refused.get(&key.name), typed, new_entries)))
+        .map(|key| {
+            key_row(
+                cx,
+                (section, key),
+                (refused.get(&key.name), typed, new_entries),
+            )
+        })
         .collect();
     // Of none that the search shows, no group, as the joined sections'
     // keys may be the part's alone that it shows.
@@ -2424,14 +2385,20 @@ fn section_part(
         }
         let rows = keys
             .into_iter()
-            .map(|key| key_row(cx, key, (refused.get(&key.name), typed, new_entries)))
+            .map(|key| {
+                key_row(
+                    cx,
+                    (joined, key),
+                    (refused.get(&key.name), typed, new_entries),
+                )
+            })
             .collect();
         part.push(group(rows, &at("keys")));
     }
     part
 }
 
-/// The row of `key`: its name, its platforms and what it does, why its last
+/// The row of `key` of `section`: its name, its platforms and what it does, why its last
 /// write was refused, `refused`, and at its right the control of its value
 /// in force, or of the text typed into its field and not written yet, of
 /// the texts typed, `typed`, marked as its default where it is, or that it
@@ -2439,7 +2406,7 @@ fn section_part(
 /// is another.
 fn key_row(
     cx: &mut Cx<'_>,
-    key: &SettingKey,
+    (section, key): (&SettingsSection, &SettingKey),
     (refused, typed, new_entries): (Option<&String>, &BTreeMap<String, Typed>, &NewEntries),
 ) -> Node {
     let name = &key.name;
@@ -2525,7 +2492,7 @@ fn key_row(
         min_width: Length::Points(0.0),
         ..Layout::default()
     });
-    let mut value: Vec<Node> = control(cx, key, typed).into_iter().collect();
+    let mut value: Vec<Node> = control(cx, (section, key), typed).into_iter().collect();
     // At the bottom right: the link back to the default, dimmed where the
     // key is there already.
     let mut marks = Vec::new();
@@ -2984,11 +2951,15 @@ fn map_editor(
         })
 }
 
-/// The control of `key`'s value: a switch of a boolean, of the key's name
-/// to accessibility, the button of a menu of its values, a field of a
-/// number or of a text; another value's text, as the config writes it;
-/// none of a list, whose values show under what it does.
-fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Node> {
+/// The control of `key`'s value, of `section`: a switch of a boolean, of
+/// the key's name to accessibility, the pop-up button of a menu of its
+/// values, a field of a number or of a text; another value's text, as the
+/// config writes it; none of a list, whose values show under what it does.
+fn control(
+    cx: &mut Cx<'_>,
+    (section, key): (&SettingsSection, &SettingKey),
+    typed: Option<&str>,
+) -> Option<Node> {
     let name = &key.name;
     let terminal = code();
     Some(match &key.kind {
@@ -3001,9 +2972,9 @@ fn control(cx: &mut Cx<'_>, key: &SettingKey, typed: Option<&str>) -> Option<Nod
             }
             switch
         }
-        SettingKind::Choice { .. } => menu_button(cx, key),
+        SettingKind::Choice { .. } => menu_pop_up(cx, section, key),
         SettingKind::Text { .. } if menu_control(key) => {
-            let button = menu_button(cx, key);
+            let button = menu_pop_up(cx, section, key);
             // A theme's color, of a swatch of it beside its name.
             match (key.control.as_deref(), &key.value) {
                 (Some("token"), Some(Data::Text(token))) => row_of(
@@ -3088,19 +3059,35 @@ fn menu_control(key: &SettingKey) -> bool {
     )
 }
 
-/// The button of `key`'s menu of values, of its value in force.
-fn menu_button(cx: &mut Cx<'_>, key: &SettingKey) -> Node {
-    let shown = key
+/// The pop-up button of the menu of values of `key` of `section`, small as
+/// the page's controls, its value in force chosen; of the value itself
+/// where none of the menu's is it, or of no value; of a field's width where
+/// its control lists values of their own, as fonts or themes, so that the
+/// longest of them does not widen it.
+fn menu_pop_up(cx: &mut Cx<'_>, section: &SettingsSection, key: &SettingKey) -> Node {
+    let values = menu_values(cx, section, key).unwrap_or_default();
+    let chosen = key
+        .value
+        .as_ref()
+        .and_then(|value| values.iter().position(|item| item == value));
+    let placeholder = key
         .value
         .as_ref()
         .map_or_else(|| message(cx, "setting-unset", &[]), plain);
-    let mut button = Node::button(shown)
+    let mut pop_up = Node::pop_up(values.iter().map(plain).collect(), chosen)
         .key(format!("{CHOOSE}{}", key.name).as_str())
         .label(key.name.clone());
-    if let Kind::Button(own) = &mut button.kind {
-        "chevron-down".clone_into(&mut own.icon);
+    if let Kind::PopUp(own) = &mut pop_up.kind {
+        own.placeholder = placeholder;
+        own.size = ControlSize::Small;
     }
-    button
+    if menu_control(key) {
+        pop_up = pop_up.layout(Layout {
+            width: Length::Points(180.0),
+            ..Layout::default()
+        });
+    }
+    pop_up
 }
 
 /// A search field as macOS's: a box of its magnifying glass, its text, of

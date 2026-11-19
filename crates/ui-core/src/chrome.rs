@@ -348,7 +348,7 @@ pub(crate) fn takes_press(tree: &Tree, id: NodeId) -> bool {
         kind.presses()
             || matches!(
                 kind,
-                Kind::Field(_) | Kind::List(_) | Kind::Tabs(_) | Kind::Radios(_)
+                Kind::Field(_) | Kind::List(_) | Kind::Tabs(_) | Kind::Radios(_) | Kind::PopUp(_)
             )
     });
     kind || tree.style(id).is_some_and(|style| {

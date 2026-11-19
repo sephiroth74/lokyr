@@ -13,9 +13,11 @@ use lokyr_kernel::plugins::ui::{
     Anchor as PanelAnchor, Corner as PanelCorner, PanelId, PanelOptions, Role as PanelRole,
     UiEvent, ViewId,
 };
-use lokyr_kernel::plugins::view::{Key as NodeKey, UiEventKind};
+use lokyr_kernel::plugins::view::{ControlSize, Key as NodeKey, Kind, UiEventKind};
 use lokyr_kernel::workspace::{self, PaneId, Workspace};
-use lokyr_platform_core::{ContextMenu, Menu, MenuItem, Platform, Point, WindowId, WindowSize};
+use lokyr_platform_core::{
+    ContextMenu, Menu, MenuItem, Platform, Point, PopUpButton, WindowId, WindowSize,
+};
 use lokyr_ui_core::layout::Frame;
 use lokyr_ui_core::panel::{self, Anchor, Corner, Dismiss, MenuEntry, Options, Role};
 
@@ -395,10 +397,77 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Shows the menu of the pop-up button of `window`'s views that a
+    /// press, a key or accessibility's press asked for, as the platform's
+    /// own over the button, of its items, its item chosen ticked over the
+    /// button's text: the pointer goes to the menu, which takes the
+    /// button's release.
+    pub(super) fn show_pop_up(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let asked = self.windows.get_mut(&window).and_then(|state| {
+            state
+                .chrome
+                .iter_mut()
+                .find_map(|view| Some((view.id, view.surface.take_pop_up()?)))
+        });
+        let Some((id, node)) = asked else {
+            return;
+        };
+        self.release_capture(platform, window);
+        let scale = platform
+            .window_size(window)
+            .map_or(1.0, |size| size.scale as f32);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(view) = state.chrome.iter_mut().find(|view| view.id == id) else {
+            return;
+        };
+        let surface = &view.surface;
+        let (Some(Kind::PopUp(pop_up)), Some(key), Some(at), Some(frame)) = (
+            surface.tree.kind(node),
+            surface.tree.key(node),
+            surface.layout.frame(&surface.tree, node),
+            view.frame,
+        ) else {
+            view.surface.pop_up_closed();
+            return;
+        };
+        let command = |at: usize| format!("{POP_UP}{at}");
+        let menu = ContextMenu {
+            items: pop_up
+                .choices
+                .iter()
+                .enumerate()
+                .map(|(at, title)| MenuItem::Command {
+                    title: title.clone(),
+                    command: command(at),
+                    shortcut: None,
+                })
+                .collect(),
+            dimmed: Vec::new(),
+            ticked: pop_up.chosen.map(command).into_iter().collect(),
+            pop_up: Some(PopUpButton {
+                width: f64::from(at.width / scale),
+                height: f64::from(at.height / scale),
+                chosen: pop_up.chosen.map(command),
+                text_size: menu_text(pop_up.size),
+            }),
+        };
+        let position = Point {
+            x: f64::from((at.x + frame.x) / scale),
+            y: f64::from((at.y + frame.y) / scale),
+        };
+        state.native.push_back(NativeMenu::PopUp(id, key.clone()));
+        platform.show_context_menu(window, position, &menu);
+        platform.request_frame(window);
+    }
+
     /// The platform's menu of `window` that is open gave `command`: of a
     /// menu's panel, its item's node's event to the panel's plugin, as its
-    /// press would tell, or nothing once the panel closed. Whether the menu
-    /// was a panel's, whose items are no commands of the app's.
+    /// press would tell, or nothing once the panel closed; of a pop-up
+    /// button, its item's choice to its plugin. Whether the menu was a
+    /// panel's or a pop-up button's, whose items are no commands of the
+    /// app's.
     pub(super) fn native_chosen(
         &mut self,
         platform: &mut dyn Platform,
@@ -431,6 +500,21 @@ impl<B: Backend> App<B> {
                 self.field_menu_chosen(platform, window, (view, &key), command);
                 true
             }
+            Some(NativeMenu::PopUp(id, key)) => {
+                let view = state.chrome.iter().find(|shown| shown.id == *id);
+                let item = command
+                    .strip_prefix(POP_UP)
+                    .and_then(|item| item.parse().ok());
+                if let (Some(view), Some(item)) = (view, item) {
+                    let event = UiEvent {
+                        view: view.view.clone(),
+                        key: key.clone(),
+                        kind: UiEventKind::Select { item },
+                    };
+                    self.ui_events.push((view.plugin.clone(), event));
+                }
+                true
+            }
             Some(NativeMenu::Closed) => true,
             Some(NativeMenu::Window) | None => false,
         }
@@ -439,11 +523,30 @@ impl<B: Backend> App<B> {
     /// The item of `window`'s open menu, of `command`, that the arrows or
     /// the pointer highlight, or none: of a menu's panel, its plugin hears
     /// the node of the item highlighted before hovered no longer, and the
-    /// new one hovered, as a pointer's moves over a view's nodes.
+    /// new one hovered, as a pointer's moves over a view's nodes; of a
+    /// pop-up button, its plugin hears the item, or none, as it changes.
     pub(super) fn native_highlighted(&mut self, window: WindowId, command: Option<&str>) {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        if let Some(NativeMenu::PopUp(id, key)) = state.native.front() {
+            let item = command
+                .and_then(|command| command.strip_prefix(POP_UP))
+                .and_then(|item| item.parse().ok());
+            let view = state.chrome.iter().find(|shown| shown.id == *id);
+            if item != state.native_item
+                && let Some(view) = view
+            {
+                let event = UiEvent {
+                    view: view.view.clone(),
+                    key: key.clone(),
+                    kind: UiEventKind::Highlight { item },
+                };
+                self.ui_events.push((view.plugin.clone(), event));
+            }
+            state.native_item = item;
+            return;
+        }
         let Some(NativeMenu::Panel(id, choices)) = state.native.front() else {
             return;
         };
@@ -479,16 +582,26 @@ impl<B: Backend> App<B> {
 
     /// The platform's menu of `window` that was open closed: a menu's panel
     /// that it showed closes, as its plugin hears, after its choice where
-    /// one was made, and its item highlighted last hovered no longer.
+    /// one was made, and its item highlighted last hovered no longer; a
+    /// pop-up button shows as it rests, its plugin told of no item
+    /// highlighted.
     pub(super) fn native_closed(&mut self, platform: &mut dyn Platform, window: WindowId) {
         self.native_highlighted(window, None);
         self.release_capture(platform, window);
-        let shown = self
-            .windows
-            .get_mut(&window)
-            .and_then(|state| state.native.pop_front());
-        if let Some(NativeMenu::Panel(view, _)) = shown {
-            self.close_panel(platform, window, view, true);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        match state.native.pop_front() {
+            Some(NativeMenu::Panel(view, _)) => self.close_panel(platform, window, view, true),
+            Some(NativeMenu::PopUp(id, _)) => {
+                state.native_item = None;
+                if let Some(view) = state.chrome.iter_mut().find(|view| view.id == id)
+                    && view.surface.pop_up_closed()
+                {
+                    platform.request_frame(window);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -689,6 +802,20 @@ fn menu_items(
             }),
         })
         .collect()
+}
+
+/// The prefix of a pop-up button's menu's items' commands, before each
+/// item's index.
+const POP_UP: &str = "pop-up:";
+
+/// The size of the text of a pop-up button's menu of `size`, in points, as
+/// the system's controls of that size have it.
+fn menu_text(size: ControlSize) -> f64 {
+    match size {
+        ControlSize::Large | ControlSize::Regular => 13.0,
+        ControlSize::Small => 11.0,
+        ControlSize::Mini => 9.0,
+    }
 }
 
 /// `ui-core`'s role of a panel's `role`.

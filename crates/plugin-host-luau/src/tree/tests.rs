@@ -1,6 +1,6 @@
 use lokyr_plugin_sdk::host::TabId;
 use lokyr_plugin_sdk::view::{
-    Checkbox, ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, Progress,
+    Checkbox, ControlSize, Direction, Distribution, Key, Layout, Length, ListItem, PopUp, Progress,
     ProgressShape, ProgressState, RadioOption, Radios, Role, Style, Switch, Tab,
 };
 use mlua::Lua;
@@ -154,6 +154,14 @@ fn every() -> Node {
             size: ControlSize::Mini,
         }))
         .key("every"),
+        Node::new(Kind::PopUp(PopUp {
+            choices: vec!["SF Mono".to_owned(), "Menlo".to_owned()],
+            chosen: Some(1),
+            placeholder: "Not set".to_owned(),
+            disabled: false,
+            size: ControlSize::Small,
+        }))
+        .key("family"),
     ];
     root
 }
@@ -190,6 +198,8 @@ const EVERY: &str = r#"{
         { kind = "checkbox", key = "verify", text = "Verify", mixed = true },
         { kind = "radios", key = "every", options = { { label = "Daily" }, { label = "Monthly", disabled = true } },
           chosen = 0, across = true, size = "mini" },
+        { kind = "pop-up", key = "family", choices = { "SF Mono", "Menlo" }, chosen = 1,
+          placeholder = "Not set", size = "small" },
     },
 }"#;
 
@@ -223,6 +233,9 @@ fn a_view_s_nodes_are_flat_tables_of_their_kinds_fields_both_ways() {
         assert(verify.kind == "checkbox" and verify.on == false and verify.mixed == true)
         local every = view.children[18]
         assert(every.kind == "radios" and every.chosen == 0 and every.options[2].disabled == true)
+        local family = view.children[19]
+        assert(family.kind == "pop-up" and family.choices[2] == "Menlo" and family.chosen == 1)
+        assert(family.placeholder == "Not set" and family.size == "small")
         -- A field of its default left out.
         assert(view.children[3].layout == nil and view.children[3].focusable == nil)
         "#,

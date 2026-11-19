@@ -239,7 +239,7 @@ fragment float4 line_fragment(LineFragment in [[stage_in]]) {
 // shape itself; what fills it, or its shadow; its border's color; and the
 // arc of its inscribed ring that it draws instead, its start and its span in
 // turns clockwise from the top, its thickness, and 1; or a check mark's
-// thickness and 2; or 0 for neither.
+// thickness and 2; or a pair of chevrons' size and 3; or 0 for none.
 struct Shape {
     float2 position;
     float2 size;
@@ -340,6 +340,20 @@ static float check_coverage(float2 p, float2 extent, float thickness) {
     return clamp(thickness / 2.0 + 0.5 - distance, 0.0, 1.0);
 }
 
+// The part of a pixel at `p`, from a shape's centre, that a pair of
+// chevrons covers, one up over one down, as macOS 27's pop-up button draws
+// them, SF Symbols' bold chevron.up.chevron.down: lines of round ends, at
+// shares of `size`, the size of the text that they go with, symmetric
+// about the centre.
+static float chevrons_coverage(float2 p, float size) {
+    float2 folded = abs(p);
+    float2 apex = float2(0.0, 0.4444) * size;
+    float2 end = float2(0.2901, 0.1718) * size;
+    float thickness = 0.1567 * size;
+    float distance = segment_distance(folded, apex, end);
+    return clamp(thickness / 2.0 + 0.5 - distance, 0.0, 1.0);
+}
+
 // A shadow covers a pixel as a Gaussian blur of the outline's edge, the
 // error function across its distance; a shape, the part of the pixel within
 // its outline, filled to it, and its border over the fill, between its
@@ -347,6 +361,9 @@ static float check_coverage(float2 p, float2 extent, float thickness) {
 // fill under it, as CSS's `border-box` has it.
 fragment float4 shape_fragment(ShapeFragment in [[stage_in]]) {
     float2 p = in.position.xy - in.center;
+    if (in.arc.w > 2.5) {
+        return in.fill * chevrons_coverage(p, in.arc.z);
+    }
     if (in.arc.w > 1.5) {
         return in.fill * check_coverage(p, in.extent, in.arc.z);
     }

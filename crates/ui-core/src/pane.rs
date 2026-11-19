@@ -1555,7 +1555,7 @@ pub fn gutter_marks<'a>(
             shadow: None,
             arc: None,
             knockout: false,
-            check: None,
+            mark: None,
         })
     })
 }

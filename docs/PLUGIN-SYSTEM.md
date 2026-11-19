@@ -352,25 +352,31 @@ type Hover = { background: Color?, color: Color?, border: { color: Color, width:
 type Node = {
     key: string?,
     kind: "container" | "text" | "icon" | "field" | "button" | "toggle" | "switch" | "checkbox" | "radios"
-        | "separator" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview"
+        | "pop-up" | "separator" | "list" | "scroll" | "progress" | "spacer" | "tabs" | "image" | "theme-preview"
         | "terminal-specimen" | "themed",
     text: string?, -- for text nodes; a button's, a toggle's, a switch's and a checkbox's label
     icon: string?, -- for icon nodes, by its name; a button's and a toggle's icon, before its label
     on: boolean?, -- for toggle, switch and checkbox nodes, the plugin's state
     mixed: boolean?, -- for checkbox nodes: neither on nor off, a dash in place of its check, as a checkbox over
     -- others of which some are on; its click asks for on
-    disabled: boolean?, -- for button, toggle, switch, checkbox and radios nodes: dimmed, and takes neither a click nor the focus
+    disabled: boolean?, -- for button, toggle, switch, checkbox, radios and pop-up nodes: dimmed, and takes neither a click nor the focus
     -- For radios nodes, a group of radio buttons of one choice: its options, each of its label and whether it is
     -- disabled; the option chosen, from 0, nil of none; whether they go across a row rather than down a column.
     -- A click on an option, or an arrow while the group has the focus, tells a "select" of its index.
     options: { { label: string, disabled: boolean? } }?,
     chosen: number?,
     across: boolean?,
-    -- For button, toggle, switch, checkbox, radios, field and tabs nodes, the control's size, as macOS 27's: "large", 28 points high,
+    -- For pop-up nodes, a pop-up button, as macOS's: the text of its choice chosen, from 0, and a pair of chevrons,
+    -- as wide as its widest choice unless its layout says otherwise; nil of none, which shows its `placeholder`. A
+    -- click, or Space, Return, ↑ or ↓ while it has the focus, opens the system's menu of its choices over it, the one
+    -- chosen ticked; the menu tells a "highlight" of the choice under the pointer or the arrows, nil as it closes, and
+    -- a "select" of the choice made, which the next render gives.
+    choices: { string }?,
+    -- For button, toggle, switch, checkbox, radios, pop-up, field and tabs nodes, the control's size, as macOS 27's: "large", 28 points high,
     -- "regular", 24, by default, "small", 20, of the small text, or "mini", 16, of the mini text; a switch 64 by 28,
     -- 54 by 24, 44 by 20 or 36 by 16; a checkbox's box and a radio button's circle 18, 16, 14 or 12.
     size: ("large" | "regular" | "small" | "mini")?,
-    placeholder: string?, -- for field nodes, shown while the field is empty
+    placeholder: string?, -- for field nodes, shown while the field is empty; for pop-up nodes, while no choice is chosen
     -- For field nodes, `text` is the text that it holds, which the host takes as the field first shows and as a
     -- render gives another, over what was typed; nil keeps what the host holds.
     stepped: boolean?, -- for field nodes: ↑ and ↓ tell a "step" rather than move the caret, as a number's field
@@ -649,14 +655,14 @@ type UiEvent = {
     kind: "click" | "double-click" | "middle-click" | "hover-enter" | "hover-leave" | "context-menu"
         | "input-changed" | "submit" | "focus" | "blur" | "scroll"
         | "drag-start" | "drag-move" | "drag-end" | "drag-cancel" | "reorder" | "drop-on-bar"
-        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "activate" | "list-range" | "cut"
-        | "step" | "recorded",
+        | "drop-on-pane" | "drop-outside" | "set-value" | "toggle" | "select" | "highlight" | "activate"
+        | "list-range" | "cut" | "step" | "recorded",
     text: string?, -- a field's text, as the host holds it: at each change, "input-changed", and as Return goes to it, "submit"
     revision: number?, -- an "input-changed" text's, one more at each edit, which `set_text` gives back
     shift: boolean?, -- a "submit"'s, whether Shift was held, as Shift-Return goes the other way
     up: boolean?, -- a "step"'s, of a field of steps' arrow key: ↑ a step up, ↓ a step down
     keys: string?, -- a "recorded"'s, the keys that a field that records a shortcut took, as `cmd+shift+y`; nil as Delete took them away
-    item: number?, -- a list's item, selected or activated
+    item: number?, -- a list's item, selected or activated; a pop-up button's choice made, or highlighted, nil of none
     first: number?, count: number?, -- the items of a list that the host asks for, which the next render gives
     x: number?, y: number?, -- a drag's, from its start, or a scroll's, in points; a "drop-outside"'s, where the tab's new window puts its content's corner on the screens
     index: number?, -- a "reorder"'s, the node's new index among its reorderable siblings, before its "drag-end"; a "drop-on-bar"'s, the tab's index among the window's

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use lokyr_plugin_sdk::view::{self, Hover, Kind, Style};
-use lokyr_render_core::{Arc, Color, Item, PictureId, PlacedGlyph, Rect, Shadow, Shape};
+use lokyr_render_core::{Arc, Color, Item, Mark, PictureId, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::FontBackend;
 
 use crate::animation::Animations;
@@ -346,7 +346,7 @@ pub fn tooltip<B: FontBackend>(
         }),
         arc: None,
         knockout: false,
-        check: None,
+        mark: None,
     };
     let baseline = y + (down * scale).round() + (ascent * scale).round();
     let (glyphs, _) = font.interface_text(
@@ -507,7 +507,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 boxed = field_box(style);
                 &boxed
             }
-            Kind::Button(_) | Kind::Toggle(_) if own => {
+            Kind::Button(_) | Kind::Toggle(_) | Kind::PopUp(_) if own => {
                 let state = (self.hovered == Some(id), self.pressed == Some(id));
                 boxed = widget_box(kind, style, state);
                 &boxed
@@ -623,6 +623,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             Kind::Switch(switch) => self.switch(id, switch, frame, color),
             Kind::Checkbox(checkbox) => self.checkbox(id, checkbox, frame, color),
             Kind::Radios(radios) => self.radios(id, radios, color),
+            Kind::PopUp(pop_up) => self.pop_up(pop_up, frame, color),
             Kind::List(list) => self.list(id, list, (frame, style), color),
             Kind::Progress(progress) => self.progress(id, progress, frame, given),
             Kind::Tabs(view) => self.tabs(id, view, frame, color),
@@ -1116,7 +1117,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
             shadow: None,
             arc: None,
             knockout: false,
-            check: None,
+            mark: None,
         })
     }
 
@@ -1158,7 +1159,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 .background
                 .as_ref()
                 .is_some_and(|token| self.tokens.knocks_out(&token.0)),
-            check: None,
+            mark: None,
         })
     }
 
@@ -1223,7 +1224,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 shadow: None,
                 arc: None,
                 knockout: false,
-                check: None,
+                mark: None,
             });
             // Over the box's own colors, as its theme's veils are.
             if let Some(fill) = fill {
@@ -1614,6 +1615,37 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         }
     }
 
+    /// The pop-up button `pop_up` at `frame`, over its box: the text that
+    /// it shows from its room before it, cut of an ellipsis where it finds
+    /// no room, and its chevrons in the middle of the square of its height
+    /// at its right, in `color`.
+    fn pop_up(&mut self, pop_up: &view::PopUp, frame: Frame, color: Color) {
+        let scale = self.layout.scale();
+        let square = frame.height;
+        let shown = pop_up.shown();
+        if !shown.is_empty() {
+            let left = (frame.x + widget::pop_up_inset(pop_up.size) * scale).round();
+            let right = frame.x + frame.width - square - widget::POP_UP_GAP * scale;
+            let natural = Measure::text(&mut *self.font, shown).0;
+            let at = Frame {
+                x: left,
+                width: (right - left).max(0.0),
+                ..frame
+            };
+            self.text(shown, at, Some(natural), color);
+        }
+        let chevrons = Frame {
+            x: (frame.x + frame.width - square).round(),
+            y: frame.y.round(),
+            width: square.round(),
+            height: square.round(),
+        };
+        self.push_shape(Shape {
+            mark: Some(Mark::Chevrons(widget::chevrons(pop_up.size) * scale)),
+            ..Shape::filled(rect(chevrons), color)
+        });
+    }
+
     /// The track of a switch of `size` within its node's `frame`, in
     /// pixels: at its left, in the middle of its height, on whole pixels.
     fn switch_track(&self, frame: Frame, size: view::ControlSize) -> Frame {
@@ -1763,7 +1795,7 @@ impl<'a, B: FontBackend> Painter<'a, B> {
                 });
             } else {
                 self.push_shape(Shape {
-                    check: Some(side.width * widget::CHECK_THICKNESS),
+                    mark: Some(Mark::Check(side.width * widget::CHECK_THICKNESS)),
                     ..Shape::filled(rect(side), mark)
                 });
             }
@@ -1902,9 +1934,10 @@ fn moved_shape(shape: &mut Shape, (dx, dy): (i32, i32), opacity: f32) {
     }
 }
 
-/// `style` of the box of a button or a toggle, `kind`, of no box of its
-/// own, of rounded corners, as its state has it, the pointer over it and
-/// its primary button down over it: a button's background, lighter or
+/// `style` of the box of a button, a toggle or a pop-up button, `kind`, of
+/// no box of its own, of rounded corners, as its state has it, the pointer
+/// over it and its primary button down over it, or its menu open: a
+/// button's background, lighter or
 /// darker of the pointer, as a toggle's of a label when it is off; a
 /// default button's of the accent, darker as it is pressed; a toggle of an
 /// icon alone shows none without the pointer, as a find bar's; a toggle's
@@ -1931,7 +1964,7 @@ fn widget_box(kind: &Kind, style: &Style, (hovered, pressed): (bool, bool)) -> S
         _ if pressed && !disabled => Some("button.pressed.bg"),
         _ if on => Some("toggle.on.bg"),
         _ if hovered && !disabled => Some("button.hover.bg"),
-        Kind::Button(_) => Some("button.bg"),
+        Kind::Button(_) | Kind::PopUp(_) => Some("button.bg"),
         Kind::Toggle(toggle) if !toggle.label.is_empty() => Some("button.bg"),
         _ => None,
     };
@@ -3222,7 +3255,7 @@ mod tests {
                     shadow: None,
                     arc: None,
                     knockout: false,
-                    check: None,
+                    mark: None,
                 }]
             );
             // Without the focus, or of a node that the tree lacks, no ring.
@@ -4008,11 +4041,14 @@ mod tests {
         // over its box.
         let check = shapes
             .iter()
-            .find(|shape| shape.check.is_some())
+            .find(|shape| matches!(shape.mark, Some(Mark::Check(_))))
             .expect("the check");
         assert_eq!(check.rect, at(4, 4, 16));
         assert_eq!(check.fill, token("check.mark"));
-        assert_eq!(check.check, Some(16.0 * widget::CHECK_THICKNESS));
+        assert_eq!(
+            check.mark,
+            Some(Mark::Check(16.0 * widget::CHECK_THICKNESS))
+        );
         assert_eq!(shape(at(24, 4, 16)).fill, token("check.off.bg"));
         // The group: the chosen option's circle of the on state's fill and
         // its dot of 6 in its middle; the disabled one's of the off state's
@@ -4074,11 +4110,11 @@ mod tests {
             .expect("the dash");
         let dash_at = (dash.rect.x, dash.rect.y, dash.rect.width);
         assert_eq!((dash_at, dash.radius), ((5, 7, 7), 1.0));
-        assert_eq!((dash.fill, dash.check), (token("check.mark"), None));
+        assert_eq!((dash.fill, dash.mark), (token("check.mark"), None));
         // Only the other, on and not pressed, has a check.
         let checks: Vec<i32> = shapes
             .iter()
-            .filter(|shape| shape.check.is_some())
+            .filter(|shape| shape.mark.is_some())
             .map(|shape| shape.rect.x)
             .collect();
         assert_eq!(checks, [16]);
@@ -4091,6 +4127,67 @@ mod tests {
         let mut dimmed = token("check.off.bg");
         dimmed.alpha *= 0.5;
         assert_eq!(box_at(&shapes, 0), Some(dimmed));
+    }
+
+    #[test]
+    fn a_pop_up_button_paints_its_box_its_text_and_its_chevrons_at_its_right() {
+        use lokyr_plugin_sdk::view::Kind;
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let fonts = vec!["Menlo".to_owned(), "SF Mono".to_owned()];
+        let mut unset = Node::pop_up(fonts.clone(), None).key("style");
+        if let Kind::PopUp(pop_up) = &mut unset.kind {
+            pop_up.placeholder = "Unset".to_owned();
+            pop_up.size = view::ControlSize::Small;
+        }
+        let root = Node::container(vec![Node::pop_up(fonts, Some(0)).key("family"), unset]);
+        let (tree, layout, items) = painted_tree(&root, &mut font);
+        let shapes: Vec<Shape> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.clone()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        let children = tree.children(tree.root().unwrap());
+        let frame = |node| rect(layout.frame(&tree, node).unwrap());
+        let (first, second) = (frame(children[0]), frame(children[1]));
+        let token = |name: &str| Theme::builtin().dark.tokens.get(name).unwrap();
+        // The first, pressed, of the pressed button's box of rounded
+        // corners; the other of a button's.
+        let box_of = |at: Rect| {
+            shapes
+                .iter()
+                .find(|shape| shape.rect == at && shape.mark.is_none())
+                .map(|shape| (shape.fill, shape.radius))
+        };
+        assert_eq!(box_of(first), Some((token("button.pressed.bg"), 6.0)));
+        assert_eq!(box_of(second), Some((token("button.bg"), 6.0)));
+        // Their chevrons, in the squares of their heights at their rights,
+        // of their sizes' texts.
+        let chevrons: Vec<(Rect, Option<Mark>)> = shapes
+            .iter()
+            .filter(|shape| matches!(shape.mark, Some(Mark::Chevrons(_))))
+            .map(|shape| (shape.rect, shape.mark))
+            .collect();
+        let square = |at: Rect| Rect {
+            x: at.x + at.width as i32 - at.height as i32,
+            width: at.height,
+            ..at
+        };
+        assert_eq!(
+            chevrons,
+            [
+                (square(first), Some(Mark::Chevrons(11.0))),
+                (square(second), Some(Mark::Chevrons(11.0)))
+            ]
+        );
+        // Each of its text: the item chosen's, and the placeholder of none.
+        let texts = items
+            .iter()
+            .filter(|item| matches!(item, Item::Glyphs(_)))
+            .count();
+        assert_eq!(texts, 2);
     }
 
     /// `root` laid out at a scale of 1 in 400 points, and painted of the

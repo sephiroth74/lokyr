@@ -10,7 +10,8 @@ use crate::host::Scroll;
 use crate::host::SearchQuery;
 use crate::ui::{Anchor, Role, Slot};
 use crate::view::{
-    Checkbox, ControlSize, ListItem, ProgressShape, ProgressState, Role as NodeRole, Switch, Tab,
+    Checkbox, ControlSize, ListItem, PopUp, ProgressShape, ProgressState, Role as NodeRole, Switch,
+    Tab,
 };
 
 type Callback = Box<dyn FnMut(&mut Cx<'_>, &str) -> Result<(), Error>>;
@@ -667,6 +668,14 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             Some(0),
         )
         .key("every"),
+        Node::pop_up(vec!["SF Mono".to_owned(), "Menlo".to_owned()], Some(1)).key("family"),
+        Node::new(Kind::PopUp(PopUp {
+            choices: vec!["Bold".to_owned()],
+            placeholder: "Unset".to_owned(),
+            disabled: true,
+            ..PopUp::default()
+        }))
+        .key("style"),
         Node::new(Kind::Switch(Switch {
             label: "Live".to_owned(),
             on: true,
@@ -729,6 +738,8 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
             "  checkbox \"Verify\" on key=verify\n",
             "  checkbox \"Some\" mixed key=some\n",
             "  radios \"Daily\" | \"Monthly\" disabled chosen 0 key=every\n",
+            "  pop-up \"SF Mono\" | \"Menlo\" chosen 1 key=family\n",
+            "  pop-up \"Bold\" placeholder=\"Unset\" disabled key=style\n",
             "  switch \"Live\" on small disabled key=live\n",
             "  button \"Next\" key=next label=\"Next match\"\n",
             "  button \"\" icon=\"gear\" key=settings\n",

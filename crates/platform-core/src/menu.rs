@@ -22,8 +22,9 @@ pub struct Menu {
 }
 
 /// A menu that opens over a window, at the pointer as a right click opens
-/// it, or at a menu panel's anchor.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// it, or at a menu panel's anchor, or from a pop-up button that the app
+/// draws.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ContextMenu {
     /// Its items, from the top: a command's comes as
     /// [`WindowEvent::ContextCommand`](crate::WindowEvent::ContextCommand)
@@ -34,6 +35,26 @@ pub struct ContextMenu {
     pub dimmed: Vec<String>,
     /// The commands whose items are ticked, as a toggle's that is on.
     pub ticked: Vec<String>,
+    /// The pop-up button that it opens from, if it does, whose top left
+    /// corner is its position.
+    pub pop_up: Option<PopUpButton>,
+}
+
+/// A pop-up button that the app draws, from which a menu opens as the
+/// system's pop-up buttons open theirs: over it, its item chosen over the
+/// button's text, of the button's width at least.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PopUpButton {
+    /// Its width, in points.
+    pub width: f64,
+    /// Its height, in points, of which the system's size of controls
+    /// nearest it gives the menu's look.
+    pub height: f64,
+    /// The command of its item chosen, if one is, which the menu shows
+    /// over it.
+    pub chosen: Option<String>,
+    /// The size of the menu's text, in points, as the button's.
+    pub text_size: f64,
 }
 
 /// The part that a menu plays for the system.

@@ -8,19 +8,19 @@ use std::time::{Duration, Instant, SystemTime};
 
 use lokyr_platform_core::{
     AboutPanel, Alert, AlertId, AppEvent, Appearance, Awake, Backdrop, ContentRect, ContextMenu,
-    DoubleTaps, Error, Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuRole, Modifier, Platform,
-    Point, PointerArea, PointerShape, QuickPlace, SavePanelId, ScreenPoint, ScreenRect, Scrollers,
-    Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker, WindowAttributes, WindowEvent,
-    WindowHandle, WindowId, WindowSize,
+    DoubleTaps, Error, Fill, GlobalKey, Layer, LayerPlace, MainMenu, MenuItem, MenuRole, Modifier,
+    Platform, Point, PointerArea, PointerShape, PopUpButton, QuickPlace, SavePanelId, ScreenPoint,
+    ScreenRect, Scrollers, Shortcut, Size, Sweep, Target, TimerId, Titlebar, Usage, Waker,
+    WindowAttributes, WindowEvent, WindowHandle, WindowId, WindowSize,
 };
 use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker};
 use objc2_app_kit::{
     NSAlert, NSAppearanceCustomization, NSApplication, NSBeep, NSEvent, NSEventModifierFlags,
     NSEventType, NSImage, NSMenu, NSPasteboard, NSPasteboardTypePNG, NSPasteboardTypeString,
-    NSRequestUserAttentionType, NSSavePanel, NSScreen, NSView, NSWindow,
+    NSPopUpButtonCell, NSRequestUserAttentionType, NSSavePanel, NSScreen, NSView, NSWindow,
 };
-use objc2_foundation::{NSData, NSLocale, NSPoint, NSString, NSTimer};
+use objc2_foundation::{NSData, NSLocale, NSPoint, NSRect, NSSize, NSString, NSTimer};
 use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::awake::KeptAwake;
@@ -51,6 +51,17 @@ struct OpenMenu {
     _target: Retained<MenuTarget>,
     /// Whether it is open, rather than waiting.
     open: bool,
+    /// The pop-up button that it opens from, if it does, and the index of
+    /// its item chosen, if one is.
+    pop_up: Option<(PopUpButton, Option<isize>)>,
+}
+
+/// Where a context menu opens over its window's view.
+pub(crate) enum MenuPlace {
+    /// At the point, its top left corner there.
+    At(NSPoint),
+    /// Over the pop-up button of the rectangle, as its cell opens it.
+    PopUp(Retained<NSPopUpButtonCell>, NSRect),
 }
 
 /// The platform of a running application.
@@ -222,7 +233,7 @@ impl Backend {
     /// when its window closed meanwhile.
     pub(crate) fn open_context_menu(
         &mut self,
-    ) -> Option<(Retained<NSMenu>, Retained<NSView>, NSPoint, WindowId)> {
+    ) -> Option<(Retained<NSMenu>, Retained<NSView>, MenuPlace, WindowId)> {
         let waiting = self.context_menu.as_mut().filter(|waiting| !waiting.open)?;
         let Some(window) = self.windows.get(&waiting.window) else {
             self.context_menu = None;
@@ -231,11 +242,24 @@ impl Backend {
         waiting.open = true;
         let view = window.view();
         // The view's origin is its bottom left corner.
-        let location = NSPoint::new(
-            waiting.position.x,
-            view.bounds().size.height - waiting.position.y,
-        );
-        Some((waiting.menu.clone(), view, location, waiting.window))
+        let height = view.bounds().size.height;
+        let place = match &waiting.pop_up {
+            None => MenuPlace::At(NSPoint::new(
+                waiting.position.x,
+                height - waiting.position.y,
+            )),
+            Some((button, chosen)) => MenuPlace::PopUp(
+                menu::pop_up_cell(self.mtm, &waiting.menu, (button, *chosen)),
+                NSRect::new(
+                    NSPoint::new(
+                        waiting.position.x,
+                        height - waiting.position.y - button.height,
+                    ),
+                    NSSize::new(button.width, button.height),
+                ),
+            ),
+        };
+        Some((waiting.menu.clone(), view, place, waiting.window))
     }
 
     /// Forgets the context menu that was open, which closed; one that the
@@ -766,6 +790,15 @@ impl Platform for Backend {
         }
         self.drop_waiting_context_menu();
         self.cancel_context_menu();
+        // A pop-up button's item chosen, by its index among the menu's.
+        let pop_up = menu.pop_up.clone().map(|button| {
+            let chosen = button.chosen.as_ref().and_then(|chosen| {
+                menu.items.iter().position(
+                    |item| matches!(item, MenuItem::Command { command, .. } if command == chosen),
+                )
+            });
+            (button, chosen.and_then(|at| isize::try_from(at).ok()))
+        });
         let (menu, target) = menu::context(self.mtm, self.shared.clone(), window, menu);
         self.context_menu = Some(OpenMenu {
             window,
@@ -773,6 +806,7 @@ impl Platform for Backend {
             menu,
             _target: target,
             open: false,
+            pop_up,
         });
         // The menu runs its own loop, once the call in progress has
         // returned.

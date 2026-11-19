@@ -240,6 +240,13 @@ pub enum Kind {
     /// are disabled, which its plugin learns of by `select`, and gives in
     /// its next render.
     Radios(Radios),
+    /// A pop-up button, as macOS's: the text of its choice chosen and a
+    /// pair of chevrons, up and down, from which a click, Space or an arrow
+    /// while it has the focus opens the system's menu of its choices, the
+    /// one chosen ticked over the button: its plugin learns of the choice
+    /// that the menu highlights by `highlight`, of none as it closes, and
+    /// of the choice made by `select`, which it gives in its next render.
+    PopUp(PopUp),
     /// A line across its container, a point thick: upright in a row, flat
     /// in a column.
     Separator,
@@ -615,6 +622,35 @@ pub struct Radios {
     pub size: ControlSize,
 }
 
+/// A pop-up button's own properties.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "kebab-case")]
+pub struct PopUp {
+    /// Its choices' texts, in their order, its menu's items.
+    pub choices: Vec<String>,
+    /// The choice chosen, by its index, whose text it shows, if one is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chosen: Option<usize>,
+    /// What it shows while no choice is chosen, as of a value that none of
+    /// its choices is.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub placeholder: String,
+    /// Whether it is dimmed, and takes neither a click nor the focus.
+    pub disabled: bool,
+    /// Its size, which its menu's text follows.
+    #[serde(skip_serializing_if = "ControlSize::is_regular")]
+    pub size: ControlSize,
+}
+
+impl PopUp {
+    /// What it shows: its choice chosen's text, or its placeholder.
+    pub fn shown(&self) -> &str {
+        self.chosen
+            .and_then(|chosen| self.choices.get(chosen))
+            .map_or(self.placeholder.as_str(), String::as_str)
+    }
+}
+
 /// An option of a group of radio buttons.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "kebab-case")]
@@ -682,6 +718,7 @@ impl Kind {
             | Self::Switch(_)
             | Self::Checkbox(_)
             | Self::Radios(_)
+            | Self::PopUp(_)
             | Self::List(_)
             | Self::Scroll
             | Self::Tabs(_) => true,
@@ -699,6 +736,7 @@ impl Kind {
             Self::Toggle(toggle) => !toggle.disabled,
             Self::Switch(switch) => !switch.disabled,
             Self::Checkbox(checkbox) => !checkbox.disabled,
+            Self::PopUp(pop_up) => !pop_up.disabled,
             Self::Radios(radios) => {
                 !radios.disabled && radios.options.iter().any(|option| !option.disabled)
             }
@@ -719,6 +757,7 @@ impl Kind {
                 | Self::Switch(_)
                 | Self::Checkbox(_)
                 | Self::Radios(_)
+                | Self::PopUp(_)
                 | Self::Tabs(_)
         )
     }
@@ -742,6 +781,7 @@ impl Kind {
             Self::Switch(switch) => Some(switch.size),
             Self::Checkbox(checkbox) => Some(checkbox.size),
             Self::Radios(radios) => Some(radios.size),
+            Self::PopUp(pop_up) => Some(pop_up.size),
             Self::Field(field) => Some(field.size),
             Self::Tabs(tabs) => Some(tabs.size),
             _ => None,
@@ -757,6 +797,7 @@ impl Kind {
             Self::Switch(switch) => switch.disabled,
             Self::Checkbox(checkbox) => checkbox.disabled,
             Self::Radios(radios) => radios.disabled,
+            Self::PopUp(pop_up) => pop_up.disabled,
             _ => false,
         }
     }
@@ -1170,12 +1211,21 @@ pub enum UiEventKind {
         #[serde(default)]
         keys: Option<String>,
     },
-    /// A list's selection moved to an item, by a click or the keys; or a
-    /// view of tabs' tab chosen, by a click or the arrows, which its next
-    /// render gives.
+    /// A list's selection moved to an item, by a click or the keys; a view
+    /// of tabs' tab chosen, by a click or the arrows; or a pop-up button's
+    /// item chosen in its menu, which its next render gives.
     Select {
         /// The item's index.
         item: usize,
+    },
+    /// A pop-up button's menu highlighted one of its items, by the pointer
+    /// or the arrows, or none, as the pointer left its items or the menu
+    /// closed: so that its plugin may show what the item would do, as a
+    /// font's preview, until the next.
+    Highlight {
+        /// The item's index, or none.
+        #[serde(default)]
+        item: Option<usize>,
     },
     /// A list's item chosen, by a double click or Return.
     Activate {
@@ -1544,6 +1594,16 @@ impl Node {
             options,
             chosen,
             ..Radios::default()
+        }))
+    }
+
+    /// A pop-up button of `choices`, of the choice `chosen` if one is; its
+    /// key, which it needs, follows.
+    pub fn pop_up(choices: Vec<String>, chosen: Option<usize>) -> Self {
+        Self::new(Kind::PopUp(PopUp {
+            choices,
+            chosen,
+            ..PopUp::default()
         }))
     }
 
@@ -1923,6 +1983,29 @@ mod tests {
         )
         .kind;
         assert!(!none.takes_focus());
+        // A pop-up button, of its choices and its choice, which a click opens
+        // and does not press; its placeholder of no choice.
+        let pop_up = Node::pop_up(vec!["SF Mono".to_owned(), "Menlo".to_owned()], Some(1)).kind;
+        assert_eq!(
+            serde_json::to_string(&pop_up).unwrap(),
+            r#"{"pop-up":{"choices":["SF Mono","Menlo"],"chosen":1,"disabled":false}}"#
+        );
+        assert!(pop_up.takes_focus() && pop_up.is_control() && !pop_up.presses());
+        assert!(pop_up.holds_state());
+        let Kind::PopUp(fonts) = &pop_up else {
+            panic!("{pop_up:?}");
+        };
+        assert_eq!(fonts.shown(), "Menlo");
+        let unset: Kind = serde_json::from_str(
+            r#"{"pop-up":{"choices":["SF Mono"],"placeholder":"Unset","size":"small","disabled":true}}"#,
+        )
+        .unwrap();
+        let Kind::PopUp(unset_pop_up) = &unset else {
+            panic!("{unset:?}");
+        };
+        assert_eq!(unset_pop_up.shown(), "Unset");
+        assert_eq!(unset.control_size(), Some(ControlSize::Small));
+        assert!(unset.disabled() && !unset.takes_focus());
         let separator: Node = serde_json::from_str(r#"{"key":null,"kind":"separator"}"#).unwrap();
         assert_eq!(separator, Node::separator());
         // A list, of its window of items and its row's template; a scroll
@@ -2046,6 +2129,8 @@ mod tests {
             },
             UiEventKind::Toggle { on: true },
             UiEventKind::Select { item: 3 },
+            UiEventKind::Highlight { item: Some(2) },
+            UiEventKind::Highlight { item: None },
             UiEventKind::Activate { item: 3 },
             UiEventKind::ListRange {
                 first: 10,
@@ -2064,7 +2149,8 @@ mod tests {
                 r#"{"kind":"drop-outside","x":640.0,"y":-20.5},"#,
                 r#"{"kind":"set-value","value":"main"},{"kind":"input-changed","text":"ma","revision":2},"#,
                 r#"{"kind":"submit","text":"main","shift":true},{"kind":"toggle","on":true},"#,
-                r#"{"kind":"select","item":3},{"kind":"activate","item":3},"#,
+                r#"{"kind":"select","item":3},{"kind":"highlight","item":2},"#,
+                r#"{"kind":"highlight","item":null},{"kind":"activate","item":3},"#,
                 r#"{"kind":"list-range","first":10,"count":105},{"kind":"cut","cut":true}]"#
             )
         );

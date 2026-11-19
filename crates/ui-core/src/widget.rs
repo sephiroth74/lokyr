@@ -152,6 +152,42 @@ pub fn check_size(label: &str, size: ControlSize, text: (f32, f32)) -> (f32, f32
     (side + CHECK_GAP + text.0, side.max(text.1))
 }
 
+/// The room inside a pop-up button's left edge, before its text, of
+/// `size`, in points, as macOS 27's.
+pub fn pop_up_inset(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Large => 14.0,
+        ControlSize::Regular => 12.0,
+        ControlSize::Small => 10.0,
+        ControlSize::Mini => 7.0,
+    }
+}
+
+/// The room between a pop-up button's text and the square of its
+/// chevrons, in points, as macOS 27's.
+pub const POP_UP_GAP: f32 = 8.0;
+
+/// The size of the text of a pop-up button's chevrons of `size`, in
+/// points, as macOS 27's draws them of SF Symbols, about as tall.
+pub fn chevrons(size: ControlSize) -> f32 {
+    match size {
+        ControlSize::Large => 13.0,
+        ControlSize::Regular | ControlSize::Small => 11.0,
+        ControlSize::Mini => 10.0,
+    }
+}
+
+/// The size of a pop-up button of `size`, in points, of the size of its
+/// widest text, `text`, an item's or its placeholder's, so that a choice
+/// does not change its width: its room before its text, its text, the
+/// room after it, and a square of its height at its right, its chevrons in
+/// its middle; of its control's height, or of its text's and the least
+/// room above and below where that is taller.
+pub fn pop_up_size(size: ControlSize, text: (f32, f32)) -> (f32, f32) {
+    let tall = height(size).max(text.1 + 2.0 * LEAST_DOWN);
+    (pop_up_inset(size) + text.0 + POP_UP_GAP + tall, tall)
+}
+
 /// The size of a button of `label` and `icon`, either empty, and of
 /// `size`, in points, of their sizes: its control's height, or its
 /// content's and the least room above and below where that is taller, and
@@ -200,6 +236,25 @@ pub fn key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<NodeEven
         return Some(Vec::new());
     }
     Some(pressed(tree, node).into_iter().collect())
+}
+
+/// Whether `key` opens the menu of the pop-up button `node` of `tree`,
+/// which has the keyboard's focus, as macOS's open theirs: Space, Return,
+/// ↑ or ↓ pressed, of no modifier; `Some(false)` of a release or a repeat
+/// of them, which takes nothing; `None` of another key, of another node, or
+/// of a pop-up button disabled.
+pub fn pops_up(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<bool> {
+    let Some(Kind::PopUp(pop_up)) = tree.kind(node) else {
+        return None;
+    };
+    let opens = matches!(
+        key.key,
+        Key::Char(' ') | Key::Enter | Key::Keypad(Keypad::Enter) | Key::Up | Key::Down
+    );
+    if pop_up.disabled || !opens || !plain(key) {
+        return None;
+    }
+    Some(key.action == KeyAction::Press)
 }
 
 /// What Return does wherever the focus of `tree` is, at `node`, as macOS's
@@ -585,5 +640,46 @@ mod tests {
             check_size("Notify", ControlSize::Mini, (36.0, 11.0)),
             (51.0, 12.0)
         );
+    }
+
+    #[test]
+    fn a_pop_up_button_takes_its_widest_text_and_opens_of_space_return_and_the_arrows() {
+        // Its room before its text, its text, 8, and its chevrons' square.
+        assert_eq!(
+            pop_up_size(ControlSize::Regular, (60.0, 16.0)),
+            (104.0, 24.0)
+        );
+        assert_eq!(pop_up_size(ControlSize::Large, (60.0, 16.0)), (110.0, 28.0));
+        assert_eq!(pop_up_size(ControlSize::Small, (60.0, 13.0)), (98.0, 20.0));
+        assert_eq!(pop_up_size(ControlSize::Mini, (60.0, 11.0)), (91.0, 16.0));
+        let mut tree = Tree::new();
+        tree.update(&Node::container(vec![
+            Node::pop_up(vec!["SF Mono".to_owned()], Some(0)).key("family"),
+            Node::new(Kind::PopUp(view::PopUp {
+                disabled: true,
+                ..view::PopUp::default()
+            }))
+            .key("style"),
+        ]))
+        .unwrap();
+        let children = tree.children(tree.root().unwrap());
+        let (family, style) = (children[0], children[1]);
+        let opens = |node, key, action, mods| pops_up(&tree, node, &pressed_key(key, action, mods));
+        for key in [Key::Char(' '), Key::Enter, Key::Up, Key::Down] {
+            assert_eq!(opens(family, key, KeyAction::Press, Mods::NONE), Some(true));
+            assert_eq!(
+                opens(family, key, KeyAction::Repeat, Mods::NONE),
+                Some(false)
+            );
+            assert_eq!(opens(style, key, KeyAction::Press, Mods::NONE), None);
+        }
+        let shift = Mods {
+            shift: true,
+            ..Mods::NONE
+        };
+        assert_eq!(opens(family, Key::Down, KeyAction::Press, shift), None);
+        assert_eq!(opens(family, Key::Left, KeyAction::Press, Mods::NONE), None);
+        // A press of no click, as its menu takes it.
+        assert!(pressed(&tree, family).is_none());
     }
 }

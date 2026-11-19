@@ -331,12 +331,13 @@ fn held(tree: &Node, key: &str) -> Option<(Option<String>, String)> {
     }
 }
 
-/// The label of the button or the toggle of `key` in `tree`, and whether
-/// a toggle is on.
+/// The label of the button or the toggle of `key` in `tree`, or the text
+/// that a pop-up button shows, and whether a toggle is on.
 fn labelled(tree: &Node, key: &str) -> Option<(String, bool)> {
     match &find_node(tree, key)?.kind {
         Kind::Button(button) => Some((button.label.clone(), false)),
         Kind::Toggle(toggle) => Some((toggle.label.clone(), toggle.on)),
+        Kind::PopUp(pop_up) => Some((pop_up.shown().to_owned(), false)),
         _ => None,
     }
 }
@@ -651,45 +652,23 @@ fn a_boolean_is_written_of_its_switch_and_a_choice_of_its_menu() {
         switched(&tree, "set:opaque-titlebar"),
         Some((true, Some("opaque-titlebar".to_owned())))
     );
-    // The choice's button opens its menu, of its values, the one in force
-    // ticked, under it.
-    host.ui_event(&mut plugin, &on("choose:scrollbar", UiEventKind::Click))
-        .unwrap();
-    let panel = PanelId("choices:scrollbar".to_owned());
-    let options = host.panels().get(&panel).cloned().expect("the menu");
-    assert_eq!(options.role, PanelRole::Menu);
-    assert!(matches!(
-        &options.anchor,
-        Anchor::Node { key, .. } if key.0 == "choose:scrollbar"
-    ));
-    let menu = host
-        .render(&mut plugin, &ViewId::Panel(panel.clone()))
-        .expect("the menu's tree");
-    let items: Vec<(String, bool)> = menu
-        .children
-        .iter()
-        .map(|item| match &item.kind {
-            Kind::Toggle(toggle) => (toggle.label.clone(), toggle.on),
-            other => panic!("{other:?}"),
-        })
-        .collect();
+    // The choice's pop-up button, small, of its values, the one in force
+    // chosen, of its natural width.
+    let pop_up = find_node(&tree, "choose:scrollbar").expect("the pop-up button");
+    let Kind::PopUp(own) = &pop_up.kind else {
+        panic!("{:?}", pop_up.kind);
+    };
+    assert_eq!(own.choices, ["system", "always", "never"]);
     assert_eq!(
-        items,
-        [
-            ("system".to_owned(), true),
-            ("always".to_owned(), false),
-            ("never".to_owned(), false)
-        ]
+        (own.chosen, own.size, pop_up.label.as_deref()),
+        (Some(0), ControlSize::Small, Some("scrollbar"))
     );
-    host.ui_event(
-        &mut plugin,
-        &UiEvent {
-            view: ViewId::Panel(panel),
-            key: "choice:2".into(),
-            kind: UiEventKind::Toggle { on: true },
-        },
-    )
-    .unwrap();
+    assert_eq!(pop_up.layout.width, Length::Auto);
+    assert_eq!(
+        menu_of(&mut host, &mut plugin, "scrollbar")[0],
+        ("system".to_owned(), true)
+    );
+    pick(&mut host, &mut plugin, "scrollbar", 2);
     assert_eq!(
         written(&mut host),
         [app_key(
@@ -768,37 +747,26 @@ fn the_keys_page_shows_the_bindings_alone_and_renders_while_it_shows() {
 }
 
 /// The items of the menu of the key `name` of the part shown, each its
-/// label and whether it is ticked, as its button opens it.
+/// text and whether it is chosen, ticked as its pop-up button opens it.
 fn menu_of(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str) -> Vec<(String, bool)> {
-    // The page as it shows, of the menu's button.
-    rendered(host, plugin);
-    host.ui_event(plugin, &on(&format!("choose:{name}"), UiEventKind::Click))
-        .unwrap();
-    let panel = PanelId(format!("choices:{name}"));
-    assert!(host.panels().contains_key(&panel), "{name}'s menu");
-    let menu = host
-        .render(plugin, &ViewId::Panel(panel))
-        .expect("the menu's tree");
-    menu.children
+    let tree = rendered(host, plugin);
+    let key = format!("choose:{name}");
+    let node = find_node(&tree, &key).unwrap_or_else(|| panic!("{name}'s pop-up button"));
+    let Kind::PopUp(pop_up) = &node.kind else {
+        panic!("{:?}", node.kind);
+    };
+    pop_up
+        .choices
         .iter()
-        .map(|item| match &item.kind {
-            Kind::Toggle(toggle) => (toggle.label.clone(), toggle.on),
-            other => panic!("{other:?}"),
-        })
+        .enumerate()
+        .map(|(at, item)| (item.clone(), pop_up.chosen == Some(at)))
         .collect()
 }
 
 /// The choice of the item `at` of the menu of the key `name`.
 fn pick(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str, at: usize) {
-    host.ui_event(
-        plugin,
-        &UiEvent {
-            view: ViewId::Panel(PanelId(format!("choices:{name}"))),
-            key: format!("choice:{at}").as_str().into(),
-            kind: UiEventKind::Toggle { on: true },
-        },
-    )
-    .unwrap();
+    let event = on(&format!("choose:{name}"), UiEventKind::Select { item: at });
+    host.ui_event(plugin, &event).unwrap();
 }
 
 /// The labels of `items`.
@@ -815,6 +783,9 @@ fn a_family_and_a_style_are_picked_from_the_system_s_fonts() {
         labelled(&tree, "choose:non-ascii-family"),
         Some(("setting-unset".to_owned(), false))
     );
+    // Of a field's width, whatever its families' names.
+    let pop_up = find_node(&tree, "choose:non-ascii-family").unwrap();
+    assert_eq!(pop_up.layout.width, Length::Points(180.0));
     // Every family, monospaced or not, of the text past ASCII.
     let families = menu_of(&mut host, &mut plugin, "non-ascii-family");
     assert_eq!(
@@ -2265,17 +2236,13 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
 }
 
 /// Highlights the item `at` of the menu of `name`, as the arrows or the
-/// pointer go over it.
-fn highlight(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str, at: usize) {
-    host.ui_event(
-        plugin,
-        &UiEvent {
-            view: ViewId::Panel(PanelId(format!("choices:{name}"))),
-            key: format!("choice:{at}").as_str().into(),
-            kind: UiEventKind::HoverEnter,
-        },
-    )
-    .unwrap();
+/// pointer go over it, or none, as the menu closes.
+fn highlight(host: &mut FakeHost, plugin: &mut SettingsPage, name: &str, at: Option<usize>) {
+    let event = on(
+        &format!("choose:{name}"),
+        UiEventKind::Highlight { item: at },
+    );
+    host.ui_event(plugin, &event).unwrap();
 }
 
 /// The font's previews that the calls asked since the last look.
@@ -2304,10 +2271,10 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
     assert_eq!(labels(&families), ["Menlo", "Monaco", "SF Mono"]);
     let _ = host.take_done();
     // Items gone through, none shown, the last once it rests.
-    highlight(&mut host, &mut plugin, "family", 0);
+    highlight(&mut host, &mut plugin, "family", Some(0));
     host.advance(std::time::Duration::from_millis(100));
     host.deliver(&mut plugin).unwrap();
-    highlight(&mut host, &mut plugin, "family", 1);
+    highlight(&mut host, &mut plugin, "family", Some(1));
     host.advance(std::time::Duration::from_millis(149));
     host.deliver(&mut plugin).unwrap();
     assert!(previews(&mut host).is_empty(), "none while the items pass");
@@ -2318,13 +2285,13 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
         [Request::PreviewFont(Some("Monaco".to_owned()))]
     );
     // Closed of no choice: the font in force back, nothing written.
-    host.close_panel(&PanelId::from("choices:family"));
+    highlight(&mut host, &mut plugin, "family", None);
     host.deliver(&mut plugin).unwrap();
     assert_eq!(previews(&mut host), [Request::PreviewFont(None)]);
     // A face's style, of the regular face; a menu of no preview, none.
     menu_of(&mut host, &mut plugin, "style");
     let _ = host.take_done();
-    highlight(&mut host, &mut plugin, "style", 2);
+    highlight(&mut host, &mut plugin, "style", Some(2));
     host.advance(std::time::Duration::from_millis(150));
     host.deliver(&mut plugin).unwrap();
     assert_eq!(
@@ -2335,7 +2302,7 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
         }]
     );
     // An item chosen before it rests shows no preview after the choice.
-    highlight(&mut host, &mut plugin, "style", 1);
+    highlight(&mut host, &mut plugin, "style", Some(1));
     pick(&mut host, &mut plugin, "style", 2);
     host.advance(std::time::Duration::from_millis(150));
     host.deliver(&mut plugin).unwrap();
@@ -2343,13 +2310,13 @@ fn a_font_s_family_and_a_face_s_style_show_as_their_items_are_highlighted() {
         previews(&mut host).is_empty(),
         "no preview after the choice"
     );
-    host.close_panel(&PanelId::from("choices:style"));
+    highlight(&mut host, &mut plugin, "style", None);
     host.deliver(&mut plugin).unwrap();
     let done = host.take_done();
     assert!(done.contains(&Request::PreviewFont(None)), "{done:?}");
     menu_of(&mut host, &mut plugin, "non-ascii-family");
     let _ = host.take_done();
-    highlight(&mut host, &mut plugin, "non-ascii-family", 1);
+    highlight(&mut host, &mut plugin, "non-ascii-family", Some(1));
     host.advance(std::time::Duration::from_millis(150));
     host.deliver(&mut plugin).unwrap();
     assert!(previews(&mut host).is_empty());

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::time::Instant;
 
 use accesskit::{ActionRequest, TreeUpdate};
-use lokyr_plugin_sdk::view::{Key as NodeKey, UiEventKind};
+use lokyr_plugin_sdk::view::{ControlSize, Key as NodeKey, Kind, UiEventKind};
 use lokyr_render_core::Item;
 use lokyr_text_core::FontBackend;
 use lokyr_ui_core::access::WindowTree;
@@ -93,7 +93,22 @@ pub struct View {
     /// content, and the events of its items' choices, by their keys.
     native: Option<(Vec<MenuEntry>, (f32, f32))>,
     choices: BTreeMap<String, (NodeKey, UiEventKind)>,
+    /// The pop-up button whose menu shows, of its surface and its key.
+    pop_up: Option<(u8, NodeKey)>,
 }
+
+/// A pop-up button's menu to show over it: its choices, its choice
+/// chosen, its frame in pixels of the content, and its size.
+pub struct PopUpMenu {
+    pub choices: Vec<String>,
+    pub chosen: Option<usize>,
+    pub frame: Frame,
+    pub size: ControlSize,
+}
+
+/// The prefix of a pop-up button's menu's items' commands, before each
+/// choice's index.
+pub const POP_UP: &str = "pop-up:";
 
 /// What a key did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,6 +139,7 @@ impl View {
             native_menus: false,
             native: None,
             choices: BTreeMap::new(),
+            pop_up: None,
         };
         view.render();
         view
@@ -136,13 +152,94 @@ impl View {
     }
 
     /// The item `command` of the native menu shown last was chosen: its
-    /// node's event, as its press would tell.
+    /// node's event, as its press would tell, or a pop-up button's choice.
     pub fn chosen(&mut self, command: &str) {
+        if let (Some((_, key)), Some(item)) = (
+            &self.pop_up,
+            command
+                .strip_prefix(POP_UP)
+                .and_then(|item| item.parse().ok()),
+        ) {
+            let key = key.0.clone();
+            self.gallery.event(&key, UiEventKind::Select { item });
+            self.render();
+            return;
+        }
         let Some((key, kind)) = self.choices.get(command).cloned() else {
             return;
         };
         self.gallery.event(&key.0, kind);
         self.render();
+    }
+
+    /// The menu of the pop-up button that a press, a key or accessibility
+    /// asked for, to show over it, which takes the pointer: its choice
+    /// comes back by [`View::chosen`], what it highlights by
+    /// [`View::highlighted`], its closing by [`View::pop_up_closed`].
+    pub fn take_pop_up(&mut self) -> Option<PopUpMenu> {
+        let panels: Vec<u8> = std::iter::once(MAIN)
+            .chain(self.panels.order())
+            .chain(self.slots.keys().copied())
+            .collect();
+        for panel in panels {
+            let corner = self.corner(panel);
+            let Some(surface) = self.surface_mut(panel) else {
+                continue;
+            };
+            let Some(node) = surface.take_pop_up() else {
+                continue;
+            };
+            let tree = &surface.tree;
+            let (Some(Kind::PopUp(pop_up)), Some(key), Some(frame)) = (
+                tree.kind(node),
+                tree.key(node),
+                surface.layout.frame(tree, node),
+            ) else {
+                surface.pop_up_closed();
+                continue;
+            };
+            let menu = PopUpMenu {
+                choices: pop_up.choices.clone(),
+                chosen: pop_up.chosen,
+                frame: Frame {
+                    x: frame.x + corner.0,
+                    y: frame.y + corner.1,
+                    ..frame
+                },
+                size: pop_up.size,
+            };
+            let key = key.clone();
+            let events = surface.cancel(Instant::now());
+            self.pop_up = Some((panel, key));
+            self.captured = None;
+            self.apply(events);
+            return Some(menu);
+        }
+        None
+    }
+
+    /// The item `command` of the pop-up button's menu that shows is
+    /// highlighted, or none.
+    pub fn highlighted(&mut self, command: Option<&str>) {
+        let Some((_, key)) = &self.pop_up else {
+            return;
+        };
+        let item = command
+            .and_then(|command| command.strip_prefix(POP_UP))
+            .and_then(|item| item.parse().ok());
+        let key = key.0.clone();
+        self.gallery.event(&key, UiEventKind::Highlight { item });
+        self.render();
+    }
+
+    /// The pop-up button's menu that showed closed: the button shows as it
+    /// rests.
+    pub fn pop_up_closed(&mut self) {
+        if let Some((panel, _)) = self.pop_up.take()
+            && let Some(surface) = self.surface_mut(panel)
+        {
+            surface.pop_up_closed();
+        }
     }
 
     /// The surface of `panel`, the content's of `MAIN`, or of a slot's.

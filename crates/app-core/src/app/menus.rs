@@ -218,6 +218,7 @@ impl<B: Backend> App<B> {
             items,
             dimmed,
             ticked: Vec::new(),
+            pop_up: None,
         };
         platform.show_context_menu(window, position, &menu);
         if let Some(state) = self.windows.get_mut(&window) {

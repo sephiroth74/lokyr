@@ -20,7 +20,7 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::NSModalResponse;
 
 use crate::alert;
-use crate::backend::Backend;
+use crate::backend::{Backend, MenuPlace};
 use crate::wake;
 
 /// What makes the application's handler, as it starts.
@@ -356,13 +356,22 @@ impl Shared {
             return;
         }
         loop {
-            let Some((menu, view, location, window)) =
-                self.backend.borrow_mut().open_context_menu()
+            let Some((menu, view, place, window)) = self.backend.borrow_mut().open_context_menu()
             else {
                 break;
             };
             self.dispatching.set(false);
-            menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(&view));
+            match place {
+                MenuPlace::At(location) => {
+                    menu.popUpMenuPositioningItem_atLocation_inView(None, location, Some(&view));
+                }
+                // A pop-up button's, of a cell of its own, which places the
+                // menu as the system's pop-up buttons do.
+                MenuPlace::PopUp(cell, frame) => {
+                    cell.attachPopUpWithFrame_inView(frame, &view);
+                    cell.performClickWithFrame_inView(frame, &view);
+                }
+            }
             self.dispatching.set(true);
             self.backend.borrow_mut().context_menu_closed();
             // Its closing, after its choice, which came as it was made.

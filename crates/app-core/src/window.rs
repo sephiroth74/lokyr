@@ -56,6 +56,9 @@ pub(crate) enum NativeMenu {
     /// A field's own menu, of its view's id and its node's key, whose
     /// choice cuts, copies, pastes or selects all of it.
     Field(u32, lokyr_kernel::plugins::view::Key),
+    /// A pop-up button's menu, of its view's id and its node's key, whose
+    /// items' highlights and choice its plugin hears.
+    PopUp(u32, lokyr_kernel::plugins::view::Key),
 }
 
 /// A drag of the edge of a window's tab bar's column: the bar's plugin,
@@ -331,6 +334,9 @@ pub(crate) struct Window<B: Backend> {
     /// The node of the item that the open menu's panel's highlights, as
     /// the platform tells it, which its plugin hears hovered.
     pub(crate) native_hovered: Option<NodeKey>,
+    /// The item that the open pop-up button's menu highlights, as the
+    /// platform tells it, which its plugin hears.
+    pub(crate) native_item: Option<usize>,
     /// The window's room below its titlebar and its tab bar, in pixels, as
     /// its last layout placed it, whose corners panels anchor in.
     pub(crate) overlay: Frame,
@@ -481,6 +487,7 @@ impl<B: Backend> Window<B> {
             native: std::collections::VecDeque::new(),
             native_due: Vec::new(),
             native_hovered: None,
+            native_item: None,
             overlay: Frame::default(),
         }
     }

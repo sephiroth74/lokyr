@@ -58,6 +58,11 @@ pub struct Surface {
     /// Whether each text of lines was cut at the last layout, by its node,
     /// as its plugin was told.
     cuts: BTreeMap<NodeId, bool>,
+    /// The pop-up button whose menu a press, a key or accessibility asked
+    /// for, which the host has not opened yet.
+    pop_up_asked: Option<NodeId>,
+    /// The pop-up button whose menu the host shows, which shows pressed.
+    pop_up_open: Option<NodeId>,
 }
 
 /// What a press of the pointer did to a surface.
@@ -88,7 +93,30 @@ impl Surface {
             covered: BTreeSet::new(),
             repaint: false,
             cuts: BTreeMap::new(),
+            pop_up_asked: None,
+            pop_up_open: None,
         }
+    }
+
+    /// Asks for the menu of the pop-up button `node`, which the host opens
+    /// once the call in progress has returned.
+    pub(crate) fn pop_up(&mut self, node: NodeId) {
+        self.pop_up_asked = Some(node);
+    }
+
+    /// The pop-up button whose menu a press, a key or accessibility asked
+    /// for since the last time, which the host opens over it: it shows
+    /// pressed until [`Surface::pop_up_closed`].
+    pub fn take_pop_up(&mut self) -> Option<NodeId> {
+        let node = self.pop_up_asked.take()?;
+        self.pop_up_open = Some(node);
+        Some(node)
+    }
+
+    /// The menu of the pop-up button that the host showed closed: the
+    /// button shows as it rests. Whether one showed.
+    pub fn pop_up_closed(&mut self) -> bool {
+        self.pop_up_open.take().is_some()
     }
 
     /// Whether the pointer changed what shows without an event since the
@@ -334,7 +362,8 @@ impl Surface {
 
     /// `button` went down at `at`, in pixels from the tree's corner, of
     /// `clicks` in a row, Shift held or not: a field's composition kept as
-    /// it stands; a field's caret placed, or a list's row selected, under
+    /// it stands; a field's caret placed, a list's row selected, or a
+    /// pop-up button's menu asked for, as macOS's opens at the press, under
     /// the primary button; the pointer's events; the tooltip hidden.
     pub fn pressed(
         &mut self,
@@ -366,6 +395,7 @@ impl Surface {
                     node,
                     (at, clicks),
                 )),
+                Some(Kind::PopUp(pop_up)) if !pop_up.disabled => self.pop_up_asked = Some(node),
                 _ => {}
             }
         }
@@ -462,19 +492,29 @@ impl Surface {
 
     /// What `key` does to `node`, which has the keyboard's focus: a
     /// field's edit, the view's default button's press of Return, a
-    /// button's press or a toggle's switch, a view of tabs' choice, a
-    /// list's selection; `None` for a key that none takes, which the app's
-    /// bindings may take.
+    /// pop-up button's menu asked for, a button's press or a toggle's
+    /// switch, a view of tabs' choice, a list's selection; `None` for a key
+    /// that none takes, which the app's bindings may take.
     pub fn key(
         &mut self,
         node: NodeId,
         key: &KeyEvent<'_>,
         clipboard: &mut dyn Clipboard,
     ) -> Option<Vec<NodeEvent>> {
-        self.fields
+        if let Some(events) = self
+            .fields
             .key(&self.tree, node, key, clipboard)
             .or_else(|| widget::default_key(&self.tree, node, key))
-            .or_else(|| widget::key(&self.tree, node, key))
+        {
+            return Some(events);
+        }
+        if let Some(opens) = widget::pops_up(&self.tree, node, key) {
+            if opens {
+                self.pop_up_asked = Some(node);
+            }
+            return Some(Vec::new());
+        }
+        widget::key(&self.tree, node, key)
             .or_else(|| tabs::key(&self.tree, node, key))
             .or_else(|| crate::radios::key(&self.tree, node, key))
             .or_else(|| self.lists.key(&self.tree, node, key))
@@ -536,7 +576,11 @@ impl Surface {
                     .hovered()
                     .next_back()
                     .filter(|_| self.lifted().is_none()),
-                pressed: self.pointer.pressing().filter(|_| self.lifted().is_none()),
+                pressed: self
+                    .pointer
+                    .pressing()
+                    .filter(|_| self.lifted().is_none())
+                    .or(self.pop_up_open),
                 lists: &self.lists,
                 motion: Some((&self.animations, now)),
                 fills: if self.fills_apart {
@@ -761,6 +805,68 @@ mod tests {
             cut(&mut short),
             [("tip".to_owned(), UiEventKind::Cut { cut: true })]
         );
+    }
+
+    #[test]
+    fn a_pop_up_button_asks_for_its_menu_at_a_press_or_a_key_and_shows_pressed_while_it_is_open() {
+        let fonts = vec!["SF Mono".to_owned(), "Menlo".to_owned()];
+        let mut surface = Surface::new(1.0);
+        surface
+            .update(&Node::container(vec![
+                Node::pop_up(fonts.clone(), Some(1)).key("family"),
+                Node::new(Kind::PopUp(view::PopUp {
+                    choices: fonts.clone(),
+                    disabled: true,
+                    ..view::PopUp::default()
+                }))
+                .key("style"),
+            ]))
+            .unwrap();
+        surface.lay_out((Some(400.0), None), &mut Fixed);
+        let family = surface.tree.by_key(&"family".into()).unwrap();
+        // Of its widest item, "SF Mono": 12, 70, 8 and 24.
+        let frame = surface.layout.frame(&surface.tree, family).unwrap();
+        assert_eq!((frame.width, frame.height), (114.0, 24.0));
+        // A press asks for its menu, which the host takes once; its
+        // release clicks nothing.
+        let at = middle(&surface, "family");
+        let pressed = surface.pressed(at, (Button::Primary, 1, false), &mut Fixed);
+        assert!(kinds(&pressed.events).is_empty());
+        assert_eq!(surface.take_pop_up(), Some(family));
+        assert_eq!(surface.take_pop_up(), None);
+        assert!(kinds(&surface.released(at, (Button::Primary, 1), Instant::now())).is_empty());
+        assert!(surface.pop_up_closed());
+        assert!(!surface.pop_up_closed());
+        // A disabled one asks for nothing.
+        surface.pressed(
+            middle(&surface, "style"),
+            (Button::Primary, 1, false),
+            &mut Fixed,
+        );
+        assert_eq!(surface.take_pop_up(), None);
+        // Space or an arrow, while it has the focus, asks for it too, a
+        // release taking nothing.
+        let key = |key, action| KeyEvent {
+            key,
+            action,
+            mods: Mods::NONE,
+            text: "",
+            unmodified: "",
+            base_layout: None,
+        };
+        assert_eq!(
+            surface.key(family, &key(Key::Down, KeyAction::Press), &mut Board),
+            Some(Vec::new())
+        );
+        assert_eq!(surface.take_pop_up(), Some(family));
+        assert_eq!(
+            surface.key(family, &key(Key::Char(' '), KeyAction::Release), &mut Board),
+            Some(Vec::new())
+        );
+        assert_eq!(surface.take_pop_up(), None);
+        // A choice past its items is refused.
+        let past = Node::container(vec![Node::pop_up(fonts, Some(2)).key("family")]);
+        assert!(surface.update(&past).is_err());
     }
 
     #[test]

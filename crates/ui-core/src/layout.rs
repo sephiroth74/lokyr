@@ -116,6 +116,19 @@ pub trait Measure {
         widget::check_size(label, size, text)
     }
 
+    /// The size of a pop-up button of `texts`, its items' and its
+    /// placeholder's, and of `size`, in points: of its widest text, so that
+    /// a choice does not change its width, its room around it and its
+    /// chevrons' square.
+    fn pop_up(&mut self, texts: &[String], size: ControlSize) -> (f32, f32) {
+        let (_, line) = self.text("");
+        let widest = texts.iter().fold((0.0_f32, line), |(wide, tall), text| {
+            let (width, height) = self.text(text);
+            (wide.max(width), tall.max(height))
+        });
+        widget::pop_up_size(size, widest)
+    }
+
     /// The size of a separator, in points, a point thick: its parent
     /// stretches it across.
     fn separator(&mut self) -> (f32, f32) {
@@ -176,6 +189,12 @@ enum Content {
     },
     Checkbox {
         label: String,
+        size: ControlSize,
+    },
+    /// A pop-up button, of its items' texts and its placeholder, and of its
+    /// size.
+    PopUp {
+        texts: Vec<String>,
         size: ControlSize,
     },
     /// A group of radio buttons, of each option's label, of its size, and
@@ -898,6 +917,16 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
             size: radios.size,
             across: radios.across,
         },
+        Kind::PopUp(pop_up) => Content::PopUp {
+            texts: pop_up
+                .choices
+                .iter()
+                .chain(std::iter::once(&pop_up.placeholder))
+                .filter(|text| !text.is_empty())
+                .cloned()
+                .collect(),
+            size: pop_up.size,
+        },
         Kind::Separator => Content::Separator,
         Kind::Progress(progress) => Content::Progress(progress.shape),
         Kind::TerminalSpecimen => Content::Specimen,
@@ -961,6 +990,7 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
         Content::Button { label, icon, size } => measure.button(label, icon, *size),
         Content::Switch { label, size } => measure.switch(label, *size),
         Content::Checkbox { label, size } => measure.checkbox(label, *size),
+        Content::PopUp { texts, size } => measure.pop_up(texts, *size),
         Content::Radios {
             options,
             size,

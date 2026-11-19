@@ -11,8 +11,9 @@ use lokyr_font_coretext::CoreText;
 use lokyr_platform_core::{
     AppEvent, Appearance, ContentRect, ContextMenu, Fill, FillShape, Handler, Ime, KeyCode,
     KeyEvent, KeyState, MainMenu, Menu, MenuItem, Modifiers, MouseButton, Platform, Point,
-    PointerArea, PointerShape, ScrollDelta, Shortcut, ShortcutKey, Size, StandardAction, Sweep,
-    SweepShape, TimerId, Titlebar, WindowAttributes, WindowEvent, WindowId, WindowSize,
+    PointerArea, PointerShape, PopUpButton, ScrollDelta, Shortcut, ShortcutKey, Size,
+    StandardAction, Sweep, SweepShape, TimerId, Titlebar, WindowAttributes, WindowEvent, WindowId,
+    WindowSize,
 };
 use lokyr_plugin_sdk::view::{self, UiEventKind};
 use lokyr_render_core::{Color, DisplayList, Renderer, Surface as _};
@@ -29,7 +30,7 @@ use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::input::{self as vt, KeyAction, Keypad, Mods};
 
 use crate::gallery::Gallery;
-use crate::view::{Keyed, MAIN, View};
+use crate::view::{Keyed, MAIN, POP_UP, View};
 
 /// The command of the menu's Quit.
 const QUIT: &str = "gallery.quit";
@@ -184,7 +185,54 @@ impl App {
             platform.request_frame(*window);
         }
         self.show_native(platform);
+        self.show_pop_up(platform);
         self.keep_advancing(platform);
+    }
+
+    /// Shows the menu of the pop-up button that a press, a key or
+    /// accessibility asked for, as the platform's own over the button: its
+    /// choice comes back as the window's context command.
+    fn show_pop_up(&mut self, platform: &mut dyn Platform) {
+        let (Some(view), Some((window, _)), Some(size)) = (&mut self.view, &self.window, self.size)
+        else {
+            return;
+        };
+        let Some(pop_up) = view.take_pop_up() else {
+            return;
+        };
+        let command = |at: usize| format!("{POP_UP}{at}");
+        let scale = size.scale;
+        let points = |pixels: f32| f64::from(pixels) / scale;
+        let menu = ContextMenu {
+            items: pop_up
+                .choices
+                .iter()
+                .enumerate()
+                .map(|(at, title)| MenuItem::Command {
+                    title: title.clone(),
+                    command: command(at),
+                    shortcut: None,
+                })
+                .collect(),
+            dimmed: Vec::new(),
+            ticked: pop_up.chosen.map(command).into_iter().collect(),
+            pop_up: Some(PopUpButton {
+                width: points(pop_up.frame.width),
+                height: points(pop_up.frame.height),
+                chosen: pop_up.chosen.map(command),
+                text_size: match pop_up.size {
+                    view::ControlSize::Small => 11.0,
+                    view::ControlSize::Mini => 9.0,
+                    _ => 13.0,
+                },
+            }),
+        };
+        let position = Point {
+            x: points(pop_up.frame.x),
+            y: points(pop_up.frame.y),
+        };
+        platform.show_context_menu(*window, position, &menu);
+        platform.request_frame(*window);
     }
 
     /// Steps the progresses ten times a second while their toggle asks so,
@@ -740,6 +788,18 @@ impl Handler for App {
             WindowEvent::ContextCommand(command) => {
                 if let Some(view) = &mut self.view {
                     view.chosen(&command);
+                }
+                self.request_frame(platform);
+            }
+            WindowEvent::ContextHighlighted(command) => {
+                if let Some(view) = &mut self.view {
+                    view.highlighted(command.as_deref());
+                }
+                self.request_frame(platform);
+            }
+            WindowEvent::ContextMenuClosed => {
+                if let Some(view) = &mut self.view {
+                    view.pop_up_closed();
                 }
                 self.request_frame(platform);
             }

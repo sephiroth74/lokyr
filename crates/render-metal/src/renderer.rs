@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 
 use dispatch2::DispatchData;
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, PictureId,
-    Rect, Renderer, Shape, Texture, TextureUpdate,
+    AtlasRegion, CellBatch, Color, CursorShape, DisplayList, GpuTimes, Item, LineStyle, Mark,
+    PictureId, Rect, Renderer, Shape, Texture, TextureUpdate,
 };
 use objc2::rc::Retained;
 use objc2::runtime::ProtocolObject;
@@ -89,7 +89,8 @@ struct ShapeInstance {
     fill: [f32; 4],
     border_color: [f32; 4],
     /// An arc's start and span, in turns, its thickness, and 1; or a check
-    /// mark's thickness and 2; or 0 for a shape of neither.
+    /// mark's thickness and 2; or a pair of chevrons' size and 3; or 0 for
+    /// a shape of none.
     arc: [f32; 4],
 }
 
@@ -1258,19 +1259,20 @@ fn shape_instances(shape: &Shape) -> impl Iterator<Item = (Blend, ShapeInstance)
         _padding: 0.0,
         fill: rgba(shape.fill),
         border_color: rgba(shape.border_color),
-        arc: match (shape.arc, shape.check) {
+        arc: match (shape.arc, shape.mark) {
             (Some(arc), _) => [
                 arc.start.rem_euclid(1.0),
                 arc.span.clamp(0.0, 1.0),
                 arc.thickness.max(0.0),
                 1.0,
             ],
-            (None, Some(thickness)) => [0.0, 0.0, thickness.max(0.0), 2.0],
+            (None, Some(Mark::Check(thickness))) => [0.0, 0.0, thickness.max(0.0), 2.0],
+            (None, Some(Mark::Chevrons(size))) => [0.0, 0.0, size.max(0.0), 3.0],
             (None, None) => [0.0; 4],
         },
     };
-    // An arc and a check cast no shadow.
-    let line = shape.arc.is_some() || shape.check.is_some();
+    // An arc and a mark cast no shadow.
+    let line = shape.arc.is_some() || shape.mark.is_some();
     let shadow = shadow.filter(|_| !line);
     let knockout = shape.knockout && !line;
     let own: Vec<(Blend, ShapeInstance)> = if knockout {

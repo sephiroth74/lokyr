@@ -229,7 +229,8 @@ impl<B: Backend> App<B> {
                     NativeMenu::Window
                     | NativeMenu::Closed
                     | NativeMenu::Overflow(_)
-                    | NativeMenu::Field(..) => None,
+                    | NativeMenu::Field(..)
+                    | NativeMenu::PopUp(..) => None,
                 })
                 .chain(state.native_due.iter().copied())
                 .filter_map(panel)

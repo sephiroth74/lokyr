@@ -558,6 +558,13 @@ fn valid_at<'a>(node: &'a Node, depth: usize, seen: &mut HashSet<&'a Key>) -> Re
     {
         return Err(Invalid::Number("chosen"));
     }
+    if let Kind::PopUp(pop_up) = &node.kind
+        && pop_up
+            .chosen
+            .is_some_and(|chosen| chosen >= pop_up.choices.len())
+    {
+        return Err(Invalid::Number("chosen"));
+    }
     if let Kind::Progress(progress) = &node.kind {
         let positive = |value: f32| value.is_finite() && value > 0.0;
         let checks = [

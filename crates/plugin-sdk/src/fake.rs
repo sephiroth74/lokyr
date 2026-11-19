@@ -5436,6 +5436,19 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
                 out.push_str(" disabled");
             }
         }
+        Kind::PopUp(pop_up) => {
+            let choices: Vec<String> = pop_up.choices.iter().map(|text| quoted(text)).collect();
+            let _ = write!(out, "pop-up {}", choices.join(" | "));
+            if let Some(chosen) = pop_up.chosen {
+                let _ = write!(out, " chosen {chosen}");
+            }
+            if !pop_up.placeholder.is_empty() {
+                let _ = write!(out, " placeholder={}", quoted(&pop_up.placeholder));
+            }
+            if pop_up.disabled {
+                out.push_str(" disabled");
+            }
+        }
         Kind::Switch(switch) => {
             let _ = write!(out, "switch {}", quoted(&switch.label));
             out.push_str(if switch.on { " on" } else { " off" });

@@ -7,15 +7,15 @@ use std::collections::BTreeSet;
 use std::rc::{Rc, Weak};
 
 use lokyr_platform_core::{
-    AppEvent, ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, Shortcut, ShortcutKey,
-    StandardAction, WindowEvent, WindowId,
+    AppEvent, ContextMenu, KeyCode, MainMenu, Menu, MenuItem, MenuRole, PopUpButton, Shortcut,
+    ShortcutKey, StandardAction, WindowEvent, WindowId,
 };
 use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, define_class, msg_send, sel};
 use objc2_app_kit::{
-    NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags, NSMenu, NSMenuDelegate,
-    NSMenuItem,
+    NSControlSize, NSControlStateValueOff, NSControlStateValueOn, NSEventModifierFlags, NSFont,
+    NSMenu, NSMenuDelegate, NSMenuItem, NSPopUpButtonCell,
 };
 use objc2_foundation::{NSObject, NSObjectProtocol, NSString};
 
@@ -173,6 +173,42 @@ pub(crate) fn context(
     let ns_menu = submenu(mtm, &menu, &target, &mut 0);
     delegate(&ns_menu, &target);
     (ns_menu, target)
+}
+
+/// A pop-up button's cell of `menu`, as `button` has it, of its item
+/// chosen by its index, `chosen`, if one is: it opens the menu over the
+/// button as the system's pop-up buttons open theirs, the item chosen
+/// ticked over the button's text, of the system's size of controls nearest
+/// the button's height and of its text's size.
+pub(crate) fn pop_up_cell(
+    mtm: MainThreadMarker,
+    menu: &NSMenu,
+    (button, chosen): (&PopUpButton, Option<isize>),
+) -> Retained<NSPopUpButtonCell> {
+    let cell = NSPopUpButtonCell::initTextCell_pullsDown(
+        NSPopUpButtonCell::alloc(mtm),
+        &NSString::new(),
+        false,
+    );
+    cell.setMenu(Some(menu));
+    cell.selectItemAtIndex(chosen.unwrap_or(-1));
+    cell.setControlSize(control_size(button.height));
+    let font = NSFont::systemFontOfSize(button.text_size);
+    cell.setFont(Some(&font));
+    // SAFETY: the font is the system's, which the menu keeps.
+    unsafe { menu.setFont(Some(&font)) };
+    cell
+}
+
+/// The system's size of controls nearest a control's `height`, in points:
+/// mini 16, small 20, regular 24 and large 28.
+fn control_size(height: f64) -> NSControlSize {
+    match height {
+        ..18.0 => NSControlSize::Mini,
+        ..22.0 => NSControlSize::Small,
+        ..26.0 => NSControlSize::Regular,
+        _ => NSControlSize::Large,
+    }
 }
 
 /// Makes `target` the delegate of `menu` and of its submenus, which tells
