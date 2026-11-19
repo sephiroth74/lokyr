@@ -1,7 +1,8 @@
 //! A plugin that replaces another: the other off while the one stands in,
 //! of no key written, and on again as it goes; chains and cycles; the
-//! replaced plugin's keys told; a replacer turned off by its faults; and a
-//! third-party replacement, which the user grants.
+//! replaced plugin's section, which the settings tell of its replacer; a
+//! replacer turned off by its faults; and a third-party replacement, which
+//! the user grants.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -115,8 +116,8 @@ fn a_plugin_that_an_enabled_one_replaces_is_off_and_on_again_as_that_one_goes() 
     assert_eq!(plugins.status("lokyr/header"), Some(Status::Active));
     assert_eq!(HEADERS.load(Ordering::Relaxed), made + 1);
     // A replaced plugin turned off by its own section is off, not
-    // replaced; its keys, while it is replaced, are told to apply once
-    // the replacer goes.
+    // replaced; its keys, while it is replaced, tell nothing of it, as the
+    // settings show its section's replacer.
     let both = "[plugins.header]\nenabled = false\n";
     assert!(applied(&mut plugins, &mut app, both).is_empty());
     assert_eq!(
@@ -125,9 +126,7 @@ fn a_plugin_that_an_enabled_one_replaces_is_off_and_on_again_as_that_one_goes() 
     );
     let keyed = applied(&mut plugins, &mut app, "[plugins.header]\nsize = 2\n");
     assert!(
-        keyed.iter().any(|notice| notice.ends_with(
-            "the keys of `[plugins.header]` apply while `lokyr/blocks`, which replaces `lokyr/header`, is off"
-        )),
+        keyed.iter().all(|notice| !notice.contains("lokyr/blocks")),
         "{keyed:?}"
     );
     // The replacer removed: the other starts.

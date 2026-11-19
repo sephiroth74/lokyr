@@ -175,7 +175,7 @@ fn a_refused_section_s_notice_follows_its_line_and_a_whole_number_is_an_integer(
 }
 
 #[test]
-fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_keys_told() {
+fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_keys_tell_nothing() {
     let directory =
         std::env::temp_dir().join(format!("lokyr-app-header-config-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);
@@ -205,22 +205,11 @@ fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_key
     .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.diagnostics.shown_diagnostic(), None);
-    // The plain header's keys, which apply once the blocks are off, are
-    // told while they run.
+    // The plain header's keys, which apply once the blocks are off, tell
+    // nothing while they run.
     std::fs::write(&path, "[plugins.command-header]\nborder = \"accent\"\n").unwrap();
     change(&mut fake, &mut app);
-    let shown = app
-        .diagnostics
-        .shown_diagnostic()
-        .cloned()
-        .expect("a notice");
-    assert!(
-        shown.text.ends_with(
-            "the keys of `[plugins.command-header]` apply while `lokyr/blocks`, which replaces `lokyr/command-header`, is off"
-        ),
-        "{}",
-        shown.text
-    );
+    assert_eq!(app.diagnostics.shown_diagnostic(), None);
     let _ = std::fs::remove_dir_all(&directory);
 }
 

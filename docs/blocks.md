@@ -36,6 +36,9 @@ max-length = 60        # characters of the command line before the ellipsis
 
 The changes apply as you save the file, to a header that shows too.
 
+> [!TIP]
+> If you changed the command header's look before Blocks came, move its keys from `[plugins.command-header]` to `[plugins.blocks]`: the command header's keys apply only while Blocks is off.
+
 ## Turn blocks off
 
 ```toml
@@ -59,7 +62,7 @@ Your shell marks each command with OSC 133, the shell integration's sequences: w
 
 The header lies over the pane's first row, and takes none of the grid's rows, so the program's grid keeps its size as the header comes and goes. A scroll over the header scrolls the pane, and the header takes no keys.
 
-Blocks replaces the command header: while Blocks runs, the command header is off, and it comes back when you turn Blocks off. Keys that you left in `[plugins.command-header]` apply only then. While Blocks runs, a notice reports them, and the settings window shows the same note above them.
+Blocks replaces the command header: while Blocks runs, the command header is off, and it comes back when you turn Blocks off. Keys that you left in `[plugins.command-header]` apply only then. While Blocks runs, the settings window shows a note above them, naming Blocks.
 
 ## Limits
 

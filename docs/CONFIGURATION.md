@@ -2200,7 +2200,7 @@ The most characters of the command's line that the header shows.
 
 The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.
 
-`lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and a notice tells them while `lokyr/blocks` runs.
+`lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 
 ### `background`, `text`, `border`, `line`, `hover`
 

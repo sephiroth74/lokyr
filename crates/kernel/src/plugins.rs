@@ -1927,7 +1927,8 @@ impl Plugins {
             }
         }
         // Who replaces whom, of the sections' `enabled`: a cycle replaces
-        // nothing, and a replaced plugin's keys apply once the other goes.
+        // nothing. A replaced plugin's keys, which apply once the other
+        // goes, tell nothing: the settings show its section's replacer.
         for cycle in self.replace() {
             let names = cycle
                 .iter()
@@ -1945,25 +1946,6 @@ impl Plugins {
                 namespace,
                 refused: false,
             });
-        }
-        for entry in &self.entries {
-            let state = &entry.state;
-            let keys = matches!(&state.written, Data::Map(map) if !map.is_empty());
-            if let (Some(by), true) = (&state.replaced_by, keys) {
-                let namespace = &state.namespace;
-                notices.push(ConfigNotice {
-                    text: format!(
-                        "{}the keys of `[plugins.{namespace}]` apply while `{by}`, which replaces `{}`, is off",
-                        config
-                            .get(namespace)
-                            .map(|section| section.at(&[]) + ": ")
-                            .unwrap_or_default(),
-                        state.name
-                    ),
-                    namespace: namespace.clone(),
-                    refused: false,
-                });
-            }
         }
         for (namespace, section) in config.sections() {
             if !self
