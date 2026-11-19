@@ -269,6 +269,22 @@ impl Terminal {
         })
     }
 
+    /// The command whose block holds the primary screen's row numbered
+    /// `row`, as [`Terminal::commands`] gives it: its block runs from its
+    /// first row, as [`Terminal::commands_meeting`] tells it, to its end's
+    /// row, which is its own where the end is past its first column, and
+    /// the next prompt's otherwise, or, of a command that has not ended, to
+    /// the next command's first row; `None` of a row above every command's,
+    /// or past an end before the next command.
+    pub fn command_at(&self, row: i64) -> Option<CommandMarks> {
+        let command = self.commands_meeting(row, row.saturating_add(1)).pop()?;
+        let within = match command.end {
+            Some((column, end)) => row < end || (row == end && column > 0),
+            None => true,
+        };
+        within.then_some(command)
+    }
+
     /// Gives the last command, whose output's mark came and whose end did
     /// not, the line that the shell told of it, of `bytes`, percent-encoded,
     /// as OSC 133 `C`'s `cmdline_url` tells it: decoded, of UTF-8, 2048

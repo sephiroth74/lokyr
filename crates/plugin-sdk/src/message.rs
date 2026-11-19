@@ -516,6 +516,26 @@ pub enum Request {
         /// The command's id.
         command: u64,
     },
+    /// A pane's command, by its id, as a read of the commands gives it, if
+    /// the pane keeps it.
+    ShellCommand {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+    },
+    /// The command of a pane whose block holds a row: from its first row,
+    /// its prompt's or, of a prompt that left the scrollback, the pane's
+    /// oldest, to its end's row, which is its own where the end is past its
+    /// first column and the next prompt's otherwise, or, of a command that
+    /// has not ended, to the next command's first row; none of a row above
+    /// every command's, or past an end before the next command.
+    CommandAt {
+        /// The pane.
+        pane: PaneId,
+        /// The row's number.
+        row: i64,
+    },
     /// A pane's view, as its last frame showed it, or as its terminal is
     /// before its first frame.
     Viewport(PaneId),
@@ -1198,7 +1218,10 @@ impl Request {
             | Self::ScreenCells(_) => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
-            Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
+            Self::ShellCommands { .. }
+            | Self::CommandLine { .. }
+            | Self::ShellCommand { .. }
+            | Self::CommandAt { .. } => Some(Capability::HistoryRead),
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
@@ -1340,6 +1363,8 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::ShellCommands { .. }
             | Self::CommandLine { .. }
+            | Self::ShellCommand { .. }
+            | Self::CommandAt { .. }
             | Self::Viewport(_)
             | Self::CursorCell(_)
             | Self::Styles { .. }
@@ -1527,6 +1552,9 @@ pub enum Response {
     TabBarPlace(BarPlace),
     /// A pane's commands, as a read of them gives them.
     ShellCommands(Vec<ShellCommand>),
+    /// A pane's command, or none, boxed, as it is larger than the other
+    /// answers.
+    ShellCommand(Option<Box<ShellCommand>>),
     /// A pane's view.
     Viewport(Viewport),
     /// A cell, by its column and its row's number, or none.
@@ -2065,6 +2093,7 @@ impl Request {
             Self::SearchMatches { .. } => "matches",
             Self::CurrentMatch { .. } => "current",
             Self::ShellCommands { .. } => "shell-commands",
+            Self::ShellCommand { .. } | Self::CommandAt { .. } => "shell-command",
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
             Self::RenderImage { .. } => "image",

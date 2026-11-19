@@ -8,3 +8,9 @@ header-tooltip = Scroll to { $line }
 # The header's button to the block's end: its tooltip, and what an
 # accessibility client calls it.
 header-end = Scroll to the end of { $line }
+
+# The titles of the plugin's commands: `command-` and the command's name,
+# with `-` for its `.`.
+command-blocks-copy-command = Copy Command
+command-blocks-copy-block = Copy Command and Output
+command-blocks-select-block = Select Block

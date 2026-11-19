@@ -78,6 +78,8 @@ export type Cx = {
     current_match: (search: number) -> (Current?, string?, number?),
     shell_commands: (pane: PaneId, top: number, bottom: number) -> ({ ShellCommand }?, string?, number?),
     command_line: (pane: PaneId, command: number) -> (string?, string?, number?),
+    shell_command: (pane: PaneId, command: number) -> (ShellCommand?, string?, number?),
+    command_at: (pane: PaneId, row: number) -> (ShellCommand?, string?, number?),
     viewport: (pane: PaneId) -> (Viewport?, string?, number?),
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, string?, number?),
     selection_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),

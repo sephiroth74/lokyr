@@ -21,6 +21,19 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **The block's end**: while the end of the output is below the view, an arrow beside the pill scrolls to it, with the output's last row at the bottom of the pane. For a command that is still running, the arrow takes you to the bottom of the screen, which the view then follows as the output grows.
 - **The command as you typed it**: zsh, and fish 4 or later, report the command line itself, so a right prompt on its row, such as zsh's `RPROMPT`, stays out of the pill.
 - **Long lines stay short**: a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
+- **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
+
+## Copy a command or its output
+
+Right-click anywhere in a block, on its prompt, its command line or its output, and choose:
+
+- **Copy Command** to copy the command line, as you typed it.
+- **Copy Command and Output** to copy the command line, then its output on the next lines, without the prompt.
+- **Select Block** to select the whole block, from its prompt to the end of its output, as a drag would.
+
+The same commands are in the Edit menu and the command palette, where they act on the last command: Copy Command takes the last command that started, even one that still runs, and the other two the last command that ended. A command that still runs has no output to copy yet, so Copy Command and Output and Select Block are dimmed in its block.
+
+A block whose prompt has left the scrollback still copies and selects the rows that the pane holds.
 
 ## Change the header's look
 
@@ -55,6 +68,20 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 - [`padding-x` and `padding-y`](CONFIGURATION.md#padding-x-padding-y-2): the room around the text in the pill.
 - [`align`](CONFIGURATION.md#align-1): where the pill sits along the line.
 - [`max-length`](CONFIGURATION.md#max-length-1): the most characters of the command line that the pill shows.
+
+## Commands and keys
+
+<!-- commands: lokyr/blocks -->
+
+| Command | Menu | Default keys | What it does |
+|---|---|---|---|
+| `blocks.copy-command` | Edit › Copy Command | | Copies the command line of the block under the pointer, from the pane's context menu, or of the last command that started |
+| `blocks.copy-block` | Edit › Copy Command and Output | | Copies the command line and the output of the block under the pointer, or of the last command that ended, its wrapped rows joined, 100 000 rows at most |
+| `blocks.select-block` | Edit › Select Block | | Selects that block, from its prompt to the end of its output |
+
+<!-- commands end -->
+
+None of them has default keys: bind them in [`[keys]`](CONFIGURATION.md#keys), such as `"cmd+alt+shift+b" = "blocks.copy-block"`.
 
 ## How it works
 

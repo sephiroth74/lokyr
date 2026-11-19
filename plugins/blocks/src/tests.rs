@@ -4,6 +4,7 @@
 //! the button to a block's end, and the plugin's replacing of the plain
 //! header, of the same keys.
 
+use lokyr_plugin_sdk::command::{Args, Category, Value};
 use lokyr_plugin_sdk::fake::FakeHost;
 use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand, TabId, Viewport};
 use lokyr_plugin_sdk::message::{Data, Request};
@@ -304,5 +305,217 @@ fn the_texts_are_in_both_languages() {
         for id in ["header-label", "header-tooltip", "header-end"] {
             assert!(catalog.contains(&format!("\n{id} = ")), "{id}");
         }
+    }
+}
+
+/// A host of a focused pane 1 of 20 columns and 12 rows, whose shell ran
+/// `ls`, of two rows of output, `true`, of none, and `sleep 60`, which
+/// runs: their prompts on the rows 0, 4 and 6, their lines as the host
+/// reads them, `$ ` and the line on each prompt's row.
+fn commands_host() -> (FakeHost, Blocks) {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.tab = TabId(1);
+    pane.held = 0..12;
+    pane.grid = (20, 12);
+    for (row, text) in [
+        (0, "$ ls"),
+        (1, "a.txt"),
+        (2, "b.txt"),
+        (3, ""),
+        (4, "$ true"),
+        (5, "$ sleep 60"),
+        (6, ""),
+    ] {
+        pane.rows.insert(row, (text.to_owned(), false));
+    }
+    let command = |id: u64, row: i64, output: i64, end: Option<i64>| ShellCommand {
+        id,
+        prompt: Some((0, row)),
+        input: Some((2, row)),
+        output: Some((0, output)),
+        end: end.map(|end| (0, end)),
+        status: end.map(|_| 0),
+    };
+    // `ls`' output ends of a blank row; `true`'s end is the next prompt's
+    // row, which its output's mark shares.
+    pane.commands = vec![
+        command(1, 0, 1, Some(4)),
+        command(2, 4, 5, Some(5)),
+        command(3, 5, 6, None),
+    ];
+    for (id, line) in [(1, "ls"), (2, "true"), (3, "sleep 60")] {
+        pane.command_lines.insert(id, line.to_owned());
+    }
+    let mut plugin = Blocks::default();
+    host.activate(&mut plugin).unwrap();
+    (host, plugin)
+}
+
+/// The arguments of the cell of `column` and `row`.
+fn cell(column: i64, row: i64) -> Args {
+    Args::from([
+        ("column".to_owned(), Value::Integer(column)),
+        ("row".to_owned(), Value::Integer(row)),
+    ])
+}
+
+/// Runs `name` of `args`, its events delivered, and returns its requests.
+fn run(host: &mut FakeHost, plugin: &mut Blocks, name: &str, args: Args) -> Vec<Request> {
+    host.take_done();
+    host.set_clipboard(None);
+    host.command(plugin, name, args).unwrap();
+    host.deliver(plugin).unwrap();
+    host.take_done()
+}
+
+/// The cells that a run of `select-block` of `args` selects.
+fn selected_cells(host: &mut FakeHost, plugin: &mut Blocks, args: Args) -> Vec<Request> {
+    run(host, plugin, SELECT_BLOCK, args)
+        .into_iter()
+        .filter(|request| matches!(request, Request::SelectCells { .. }))
+        .collect()
+}
+
+fn selection(first: (u16, i64), last: (u16, i64)) -> Request {
+    Request::SelectCells {
+        pane: PANE,
+        first,
+        last,
+        kind: lokyr_plugin_sdk::host::SelectionKind::Cells,
+    }
+}
+
+#[test]
+fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories() {
+    let (host, _) = commands_host();
+    let registered: Vec<(&str, Category, Vec<String>)> = host
+        .commands()
+        .iter()
+        .map(|command| {
+            let params: Vec<&str> = command
+                .params
+                .iter()
+                .map(|param| param.name.as_str())
+                .collect();
+            assert_eq!(params, ["column", "row"], "{}", command.name);
+            assert_eq!(command.when.as_deref(), Some(super::PANE));
+            let capabilities = command.capabilities.iter().map(ToString::to_string);
+            (
+                command.name.as_str(),
+                command.category,
+                capabilities.collect(),
+            )
+        })
+        .collect();
+    let strings = |names: &[&str]| names.iter().map(|name| (*name).to_owned()).collect();
+    assert_eq!(
+        registered,
+        [
+            (
+                COPY_COMMAND,
+                Category::Clipboard,
+                strings(&["history-read", "clipboard-write"])
+            ),
+            (
+                COPY_BLOCK,
+                Category::Clipboard,
+                strings(&["history-read", "terminal-read", "clipboard-write"])
+            ),
+            (
+                SELECT_BLOCK,
+                Category::Edit,
+                strings(&["history-read", "terminal-read"])
+            ),
+        ]
+    );
+}
+
+#[test]
+fn each_part_of_a_cell_s_block_is_copied_and_the_block_selected() {
+    let (mut host, mut plugin) = commands_host();
+    // A cell of `ls`' prompt, of its line or of its output: `ls`' block.
+    for row in [0, 1, 3] {
+        run(&mut host, &mut plugin, COPY_COMMAND, cell(3, row));
+        assert_eq!(host.clipboard(), Some("ls"), "{row}");
+        run(&mut host, &mut plugin, COPY_BLOCK, cell(3, row));
+        assert_eq!(host.clipboard(), Some("ls\na.txt\nb.txt"), "{row}");
+        assert_eq!(
+            selected_cells(&mut host, &mut plugin, cell(3, row)),
+            [selection((0, 0), (19, 3))],
+            "{row}"
+        );
+    }
+    // `true`'s, of no output: its line alone, and its prompt's row.
+    run(&mut host, &mut plugin, COPY_BLOCK, cell(1, 4));
+    assert_eq!(host.clipboard(), Some("true"));
+    assert_eq!(
+        selected_cells(&mut host, &mut plugin, cell(1, 4)),
+        [selection((0, 4), (19, 4))]
+    );
+}
+
+#[test]
+fn a_running_command_s_line_is_copied_and_its_block_waits_for_its_end() {
+    let (mut host, mut plugin) = commands_host();
+    assert!(host.applies(&mut plugin, COPY_COMMAND, &cell(0, 6)));
+    run(&mut host, &mut plugin, COPY_COMMAND, cell(0, 6));
+    assert_eq!(host.clipboard(), Some("sleep 60"));
+    for name in [COPY_BLOCK, SELECT_BLOCK] {
+        assert!(!host.applies(&mut plugin, name, &cell(0, 6)), "{name}");
+        assert!(run(&mut host, &mut plugin, name, cell(0, 6)).is_empty());
+    }
+    // Of no cell: the last command, the running one's line, and the last
+    // block that ended, `true`'s.
+    run(&mut host, &mut plugin, COPY_COMMAND, Args::new());
+    assert_eq!(host.clipboard(), Some("sleep 60"));
+    run(&mut host, &mut plugin, COPY_BLOCK, Args::new());
+    assert_eq!(host.clipboard(), Some("true"));
+}
+
+#[test]
+fn a_block_whose_prompt_left_the_scrollback_is_its_rows_that_the_pane_holds() {
+    let (mut host, mut plugin) = commands_host();
+    // `ls`' prompt and line gone, its first output row too.
+    let pane = host.pane(PANE);
+    pane.held = 2..12;
+    pane.command_lines.remove(&1);
+    pane.viewport = Some(Viewport {
+        top: 2,
+        rows: 10,
+        screen: 2,
+        oldest: 2,
+        epoch: 1,
+        alternate: false,
+    });
+    assert!(!host.applies(&mut plugin, COPY_COMMAND, &cell(0, 2)));
+    run(&mut host, &mut plugin, COPY_BLOCK, cell(0, 2));
+    assert_eq!(host.clipboard(), Some("b.txt"));
+    assert_eq!(
+        selected_cells(&mut host, &mut plugin, cell(0, 2)),
+        [selection((0, 2), (19, 3))]
+    );
+}
+
+#[test]
+fn nothing_applies_on_the_alternate_screen_nor_of_a_pane_of_no_marks() {
+    let (mut host, mut plugin) = commands_host();
+    host.pane(PANE).viewport = Some(Viewport {
+        top: 0,
+        rows: 12,
+        screen: 0,
+        oldest: 0,
+        epoch: 1,
+        alternate: true,
+    });
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK] {
+        assert!(!host.applies(&mut plugin, name, &cell(0, 1)), "{name}");
+    }
+    let (mut host, mut plugin) = commands_host();
+    host.pane(PANE).commands.clear();
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK] {
+        assert!(!host.applies(&mut plugin, name, &Args::new()), "{name}");
+        assert!(run(&mut host, &mut plugin, name, Args::new()).is_empty());
     }
 }

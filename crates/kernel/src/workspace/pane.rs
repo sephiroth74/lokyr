@@ -946,15 +946,27 @@ impl Pane {
             .lock()
             .commands_meeting(top, bottom)
             .into_iter()
-            .map(|marks| ShellCommand {
-                id: marks.id,
-                prompt: marks.prompt,
-                input: marks.input,
-                output: marks.output,
-                end: marks.end,
-                status: marks.status,
-            })
+            .map(shell_command)
             .collect()
+    }
+
+    /// The command of the id `command`, as [`Terminal::command`] gives it.
+    pub fn shell_command(&self, command: u64) -> Option<ShellCommand> {
+        self.session
+            .as_ref()?
+            .lock()
+            .command(command)
+            .map(shell_command)
+    }
+
+    /// The command whose block holds the row numbered `row`, as
+    /// [`Terminal::command_at`] gives it.
+    pub fn command_at(&self, row: i64) -> Option<ShellCommand> {
+        self.session
+            .as_ref()?
+            .lock()
+            .command_at(row)
+            .map(shell_command)
     }
 
     /// The command line of the command of the id `command`, as
@@ -1547,6 +1559,18 @@ pub fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path
         || "/".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     )
+}
+
+/// A command's marks, as the plugins read them.
+fn shell_command(marks: lokyr_vt_core::terminal::CommandMarks) -> ShellCommand {
+    ShellCommand {
+        id: marks.id,
+        prompt: marks.prompt,
+        input: marks.input,
+        output: marks.output,
+        end: marks.end,
+        status: marks.status,
+    }
 }
 
 #[cfg(test)]

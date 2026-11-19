@@ -249,7 +249,7 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 |---|---|
 | Declarations | `register_command`, `bind`, `subscribe`, `add_menu_item`, `emit` |
 | The commands | `run_command`, `commands` |
-| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `working_directory`, `shell_commands`, `command_line`, `viewport` |
+| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `working_directory`, `shell_commands`, `command_line`, `shell_command`, `command_at`, `viewport` |
 | Search | `search`, `end_search`, `search_matches`, `current_match`, `show_matches` |
 | Writing to a pane | `paste`, `send_text`, `clear`, `clear_scrollback`, `scroll`, `select_all`, `select_cells`, `deselect`, `show_cursor`, `cursor_cell` |
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |

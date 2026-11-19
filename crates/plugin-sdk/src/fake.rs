@@ -203,6 +203,34 @@ impl FakePane {
             .collect()
     }
 
+    /// Its command of the id `id`, as a read of the commands gives it, its
+    /// marks of rows above those held read as none.
+    fn command(&self, id: u64) -> Option<host::ShellCommand> {
+        let start = self.held.start;
+        let held = |mark: Option<(u16, i64)>| mark.filter(|&(_, row)| row >= start);
+        let command = self.commands.iter().find(|command| command.id == id)?;
+        Some(host::ShellCommand {
+            prompt: held(command.prompt),
+            input: held(command.input),
+            output: held(command.output),
+            end: held(command.end),
+            ..*command
+        })
+    }
+
+    /// Its command whose block holds the row numbered `row`, as the app's
+    /// host gives it: the last whose first row is at `row` or above it,
+    /// unless it ended before `row`, its end's row its own where the end is
+    /// past its first column.
+    fn command_at(&self, row: i64) -> Option<host::ShellCommand> {
+        let command = self.commands_meeting(row, row.saturating_add(1)).pop()?;
+        let within = match command.end {
+            Some((column, end)) => row < end || (row == end && column > 0),
+            None => true,
+        };
+        within.then_some(command)
+    }
+
     /// Its view, as a read of it gives it.
     fn viewport(&self) -> host::Viewport {
         self.viewport.unwrap_or_else(|| {
@@ -4336,6 +4364,12 @@ impl Calling<'_> {
             }
             Request::ShellCommands { pane, top, bottom } => {
                 Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
+            }
+            Request::ShellCommand { pane, command } => {
+                Response::ShellCommand(host.held(*pane)?.command(*command).map(Box::new))
+            }
+            Request::CommandAt { pane, row } => {
+                Response::ShellCommand(host.held(*pane)?.command_at(*row).map(Box::new))
             }
             Request::Viewport(pane) => Response::Viewport(host.held(*pane)?.viewport()),
             Request::CursorCell(pane) => Response::Cell(Some(host.held(*pane)?.cursor)),

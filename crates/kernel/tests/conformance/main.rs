@@ -1156,11 +1156,13 @@ fn kind(request: &Request) -> usize {
         Request::Ungroup(_) => 137,
         Request::Groups(_) => 138,
         Request::WatchDoubleTap(_) => 139,
+        Request::ShellCommand { .. } => 140,
+        Request::CommandAt { .. } => 141,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 140;
+const KINDS: usize = 142;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

@@ -480,8 +480,16 @@ fn the_block_s_button_scrolls_to_its_end_and_the_plain_header_comes_back_as_bloc
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
     fake.send(&mut app, window, WindowEvent::Focused(true));
     let end = |app: &App| header_part(app, window, "block-header-", "end");
-    run_until(&mut fake, &mut app, |_, app| header(app, window).is_some());
-    assert!(end(&app).is_none());
+    // Once the last prompt came, the header of the third, whose end the
+    // view shows: an earlier one's may show while the output still comes.
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 4)
+            && header_text(app, window).is_some_and(|(line, _)| line == "three")
+            && end(app).is_none()
+    });
     // Up into the third's output: its end below the view, the button
     // beside the pill.
     let scale = fake.window(window).unwrap().size.scale;
@@ -528,4 +536,78 @@ fn the_block_s_button_scrolls_to_its_end_and_the_plain_header_comes_back_as_bloc
             && header_part(app, window, "command-header-", "command").is_some()
     });
     assert!(header_part(&app, window, "command-header-", "end").is_none());
+}
+
+#[test]
+fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_marks() {
+    // `ls` of two rows, then the prompt where you type, of each shell's
+    // marks: zsh's line told at its output's mark, bash's read of its
+    // row, fish 4's own prompt's mark before the integration's.
+    let shells = [
+        (
+            "zsh",
+            "\\033]133;A;cl=line\\007%% \\033]133;B\\007",
+            "\\033]133;C;cmdline_url=ls\\007",
+            "% ",
+        ),
+        (
+            "bash",
+            "\\033]133;A;cl=line\\007$ \\033]133;B\\007",
+            "\\033]133;C\\007",
+            "$ ",
+        ),
+        (
+            "fish",
+            "\\033]133;A;click_events=1\\007\\033]133;A;cl=line\\007> \\033]133;B\\007",
+            "\\033]133;C;cmdline_url=ls\\007",
+            "> ",
+        ),
+    ];
+    for (name, prompt, output, shown) in shells {
+        let script = format!(
+            "printf '{prompt}ls\\r\\n{output}a.txt\\r\\nb.txt\\r\\n\\033]133;D;0\\007{prompt}'; sleep 30"
+        );
+        let mut fake = Fake::default();
+        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let pane = app.windows[&window].views[0].pane;
+        run_until(&mut fake, &mut app, |_, app| {
+            app.workspace
+                .pane(pane)
+                .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 2)
+        });
+        let cell = |column: i64, row: i64| {
+            Args::from([
+                (
+                    "column".to_owned(),
+                    lokyr_kernel::commands::Value::Integer(column),
+                ),
+                (
+                    "row".to_owned(),
+                    lokyr_kernel::commands::Value::Integer(row),
+                ),
+            ])
+        };
+        // A cell of its output: the line, the line and the output, and
+        // the block from its prompt.
+        app.run(&mut fake, "blocks.copy-command", cell(1, 1));
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.clipboard_text().as_deref() == Some("ls")
+        });
+        app.run(&mut fake, "blocks.copy-block", cell(1, 2));
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.clipboard_text().as_deref() == Some("ls\na.txt\nb.txt")
+        });
+        app.run(&mut fake, "blocks.select-block", cell(0, 0));
+        run_until(&mut fake, &mut app, |_, app| {
+            selected_text(app, window).is_some()
+        });
+        assert_eq!(
+            selected_text(&app, window).map(|text| text.trim_end().to_owned()),
+            Some(format!("{shown}ls\na.txt\nb.txt")),
+            "{name}"
+        );
+    }
 }

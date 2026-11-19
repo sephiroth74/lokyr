@@ -2215,6 +2215,20 @@ fn capabilities(world: &World) -> Scenario {
                 lacks("history-read"),
             ),
             (
+                Request::ShellCommand {
+                    pane: world.pane,
+                    command: 1,
+                },
+                lacks("history-read"),
+            ),
+            (
+                Request::CommandAt {
+                    pane: world.pane,
+                    row: 0,
+                },
+                lacks("history-read"),
+            ),
+            (
                 Request::Subscribe(vec![
                     "viewport-changed".to_owned(),
                     "command-ended".to_owned(),
@@ -2380,6 +2394,47 @@ fn commands_and_viewport(world: &World) -> Scenario {
                         command: 999_999,
                     },
                     Response::Text(None),
+                ),
+                // Each by its id, and the block that holds a row: the
+                // line's row is above both, each prompt's row its own.
+                (
+                    Request::ShellCommand {
+                        pane: world.pane,
+                        command: second,
+                    },
+                    Response::ShellCommand(Some(Box::new(world.commands[1]))),
+                ),
+                (
+                    Request::ShellCommand {
+                        pane: world.pane,
+                        command: 999_999,
+                    },
+                    Response::ShellCommand(None),
+                ),
+                (
+                    Request::CommandAt {
+                        pane: world.pane,
+                        row,
+                    },
+                    Response::ShellCommand(None),
+                ),
+                (
+                    Request::CommandAt {
+                        pane: world.pane,
+                        row: row + 1,
+                    },
+                    Response::ShellCommand(Some(Box::new(world.commands[0]))),
+                ),
+                (
+                    Request::CommandAt {
+                        pane: world.pane,
+                        row: row + 2,
+                    },
+                    Response::ShellCommand(Some(Box::new(world.commands[1]))),
+                ),
+                (
+                    Request::CommandAt { pane: NO_PANE, row },
+                    failed(Code::NotFound, "there is no pane 999999"),
                 ),
                 (
                     Request::CommandLine {

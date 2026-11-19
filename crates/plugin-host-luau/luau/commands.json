@@ -168,6 +168,88 @@
     "when": null
   },
   {
+    "capabilities": [
+      "history-read",
+      "terminal-read",
+      "clipboard-write"
+    ],
+    "category": "clipboard",
+    "name": "blocks.copy-block",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/blocks",
+    "title": "Copy Command and Output",
+    "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "history-read",
+      "clipboard-write"
+    ],
+    "category": "clipboard",
+    "name": "blocks.copy-command",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/blocks",
+    "title": "Copy Command",
+    "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "history-read",
+      "terminal-read"
+    ],
+    "category": "edit",
+    "name": "blocks.select-block",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/blocks",
+    "title": "Select Block",
+    "when": "pane.focused"
+  },
+  {
     "capabilities": [],
     "category": "windows",
     "name": "command-palette.agents",

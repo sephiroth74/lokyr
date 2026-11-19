@@ -6078,6 +6078,12 @@ impl Host<'_, '_> {
             Asked::ShellCommands { pane, top, bottom } => {
                 Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
             }
+            Asked::ShellCommand { pane, command } => {
+                Response::ShellCommand(self.pane(pane)?.shell_command(command).map(Box::new))
+            }
+            Asked::CommandAt { pane, row } => {
+                Response::ShellCommand(self.pane(pane)?.command_at(row).map(Box::new))
+            }
             Asked::CursorCell(pane) => Response::Cell(self.pane(pane)?.cursor_cell()),
             Asked::Viewport(pane) => {
                 Response::Viewport(self.pane(pane)?.viewport().ok_or_else(|| {

@@ -1059,6 +1059,7 @@ name = "lokyr-blocks"
 version = "1.3.0"
 dependencies = [
  "lokyr-plugin-sdk",
+ "unicode-width",
 ]
 
 [[package]]

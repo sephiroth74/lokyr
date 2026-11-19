@@ -33,6 +33,7 @@ tip-prompt-click = Fai clic nella riga di comando per spostarci il cursore, in z
 tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senza il prompt; il menu contestuale copia quello di qualsiasi comando.
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
 tip-block-header = Sei risalito in un output lungo? Fai clic sull'intestazione del comando in cima al pannello per andare al suo prompt, o sulla sua freccia per andare alla fine dell'output.
+tip-block-copy = Fai clic destro sull'output di un comando per copiare il comando, o il comando e il suo output, o per selezionare tutto il blocco.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
 tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.

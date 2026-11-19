@@ -104,9 +104,14 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
             "-",
+            "Copy Command",
+            "Copy Command and Output",
+            "-",
             "Select All cmd+a",
             "Clear cmd+k",
             "Select Command Output shift+cmd+a",
+            "-",
+            "Select Block",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -238,9 +243,14 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
             "-",
+            "Copy Command",
+            "Copy Command and Output",
+            "-",
             "Select All cmd+a",
             "Clear cmd+k",
             "Select Command Output shift+cmd+a",
+            "-",
+            "Select Block",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -498,9 +508,14 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Incolla cmd+v",
             "Copia output del comando alt+shift+cmd+c",
             "-",
+            "Copia comando",
+            "Copia comando e output",
+            "-",
             "Seleziona tutto cmd+a",
             "Cancella cmd+k",
             "Seleziona output del comando shift+cmd+a",
+            "-",
+            "Seleziona blocco",
             "-",
             "Modalità copia shift+cmd+c",
             "-",
@@ -570,10 +585,13 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "Copy",
             "Paste",
             "Copy Command Output",
+            "Copy Command",
+            "Copy Command and Output",
             "-",
             "Select All",
             "Clear",
             "Select Command Output",
+            "Select Block",
             "Copy Mode",
             "-",
             "Rename Tab…",
@@ -599,8 +617,15 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         "links.new-window",
         "links.new-tab",
     ];
-    // A pane whose shell marked no command has no command's output.
-    let outputs = ["pane.copy-output", "pane.select-output"];
+    // A pane whose shell marked no command has no command's output, nor
+    // block.
+    let outputs = [
+        "pane.copy-output",
+        "blocks.copy-command",
+        "blocks.copy-block",
+        "pane.select-output",
+        "blocks.select-block",
+    ];
     assert_eq!(dimmed[..], [&links[..], &outputs, &alone].concat());
     // Within the selection, which stays.
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
@@ -1569,6 +1594,9 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
             "Copy cmd+c",
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
+            "-",
+            "Copy Command",
+            "Copy Command and Output",
             "-"
         ],
         "{edit:?}"

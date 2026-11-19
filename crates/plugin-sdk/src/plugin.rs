@@ -897,6 +897,32 @@ impl<'a> Cx<'a> {
         self.text(Request::CommandLine { pane, command })
     }
 
+    /// `pane`'s command of the id `command`, as
+    /// [`shell_commands`](Self::shell_commands) gives it; `None` for a
+    /// command not kept. Requires `history-read`.
+    pub fn shell_command(
+        &mut self,
+        pane: PaneId,
+        command: u64,
+    ) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::ShellCommand { pane, command }) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// `pane`'s command whose block holds the row numbered `row`: from its
+    /// prompt, or the pane's oldest row of a prompt that left the
+    /// scrollback, to its end, or to the next command of one that has not
+    /// ended; `None` of a row above every command's, or past an end before
+    /// the next command. Requires `history-read`.
+    pub fn command_at(&mut self, pane: PaneId, row: i64) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::CommandAt { pane, row }) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The view of `pane`, the rows that it shows by their numbers, as its
     /// last frame showed it, which `viewport-changed` tells the changes
     /// of.

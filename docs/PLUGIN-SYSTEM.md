@@ -1059,6 +1059,12 @@ type Cx = {
     -- `cmdline_url`, which a right prompt on its row leaves out, or else the text from its input's mark to its
     -- output's; as the long command's notification takes it.
     command_line: (pane: PaneId, command: number) -> (string?, Error?),
+    -- Requires `history-read`: a command by its id, as `shell_commands` gives it; nil of one not kept · not released yet.
+    shell_command: (pane: PaneId, command: number) -> (ShellCommand?, Error?),
+    -- Requires `history-read`: the command whose block holds a row, from its first row to its end's, which is its own
+    -- where the end is past its first column and the next prompt's otherwise, or to the next command's first row of
+    -- one that has not ended; nil above every command, or past an end before the next command · not released yet.
+    command_at: (pane: PaneId, row: number) -> (ShellCommand?, Error?),
     -- The view, as its last frame showed it, which "viewport-changed" tells the changes of; no capability, as it tells
     -- no text.
     viewport: (pane: PaneId) -> (Viewport?, Error?),
@@ -1250,7 +1256,7 @@ type Plugin = {
 | `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, a modifier's double tap from any app, `watch_double_tap`, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
-| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
+| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `shell_command`, `command_at`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories, and what their programs tell of their state, as an agent's and a session's status | Medium: command lines can hold passwords |
 | `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |

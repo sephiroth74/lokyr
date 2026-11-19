@@ -6935,6 +6935,91 @@ fn the_commands_that_meet_rows_are_the_one_over_the_first_and_those_below() {
 }
 
 #[test]
+fn the_block_under_a_row_is_its_command_s_of_zsh_s_bash_s_and_fish_s_marks() {
+    // Each shell's marks, as Lokyr's integrations and fish 4 print them:
+    // zsh's prompt, then its output's mark of the line; bash's end before
+    // its prompt; fish 4's own prompt's mark, then the integration's.
+    let shells: [(&str, &str, &str); 3] = [
+        (
+            "zsh",
+            "\x1b]133;A;cl=line\x07% \x1b]133;B\x07",
+            "\x1b]133;C;cmdline_url=ls\x07",
+        ),
+        (
+            "bash",
+            "\x1b]133;A;cl=line\x07$ \x1b]133;B\x07",
+            "\x1b]133;C\x07",
+        ),
+        (
+            "fish",
+            "\x1b]133;A;click_events=1\x07\x1b]133;A;cl=line\x07> \x1b]133;B\x07",
+            "\x1b]133;C;cmdline_url=ls\x07",
+        ),
+    ];
+    for (shell, prompt, output) in shells {
+        let mut term = Term::new(30, 10);
+        // `ls` of two rows, then `printf foo`, whose output ends of no new
+        // line, its end within its row, then the prompt where you type.
+        term.feed(format!("{prompt}ls\r\n{output}a\r\nb\r\n\x1b]133;D;0\x07"));
+        term.feed(format!(
+            "{prompt}printf foo\r\n{output}foo\x1b]133;D;0\x07\r\n"
+        ));
+        term.feed(prompt);
+        let at = |row: i64| term.terminal.command_at(row).map(|command| command.id);
+        let ids: Vec<u64> = term.terminal.commands().iter().map(|c| c.id).collect();
+        let [ls, printf, typing] = ids[..] else {
+            panic!("{shell}: {:?}", term.terminal.commands());
+        };
+        // `ls`'s prompt, its line and its output; its end's row is the next
+        // prompt's, which starts the next block.
+        assert_eq!([at(0), at(1), at(2)], [Some(ls); 3], "{shell}");
+        assert_eq!(at(3), Some(printf), "{shell}");
+        // `printf`'s output, the row of its end within it.
+        assert_eq!(at(4), Some(printf), "{shell}");
+        assert_eq!(
+            term.terminal.command_at(4).unwrap().end,
+            Some((3, 4)),
+            "{shell}"
+        );
+        // The prompt where you type, of no output yet, and none above.
+        assert_eq!(at(5), Some(typing), "{shell}");
+        assert_eq!(at(9), Some(typing), "{shell}");
+        assert_eq!(at(-1), None, "{shell}");
+    }
+    // A row past an end before the next command's prompt holds none.
+    let mut term = Term::new(30, 10);
+    term.feed(marked_command("ls", &["a"], 0));
+    term.feed("after\r\n");
+    assert_eq!(
+        term.terminal.command_at(1).map(|command| command.id),
+        Some(1)
+    );
+    assert_eq!(term.terminal.command_at(2), None);
+    // A block whose prompt left the scrollback holds its rows from the
+    // oldest that the pane holds.
+    let mut short = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    short.feed(marked_command("seq", &[], 0));
+    short.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        short.feed(format!("{at}\r\n"));
+    }
+    let oldest = short.terminal.row_number(0);
+    let running = short.terminal.command_at(oldest).expect("the block");
+    assert_eq!((running.id, running.prompt), (2, None));
+    assert_eq!(short.terminal.command_at(oldest - 1), None);
+}
+
+#[test]
 fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
     let mut term = Term::with(
         20,
