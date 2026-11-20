@@ -214,9 +214,14 @@ impl Terminal {
     /// that started and that the list lets go of before its end ends of no
     /// status. A command keeps the system's time as it starts, and the
     /// working directory told last, and the time as it ends.
-    pub(super) fn mark_command(&mut self, mark: Mark) {
+    ///
+    /// A command's input's and output's marks given again once it started
+    /// change nothing, as they come of its program then, not of the shell,
+    /// which marks them before the command runs. Whether the mark started
+    /// a command.
+    pub(super) fn mark_command(&mut self, mark: Mark) -> bool {
         if self.alternate_active {
-            return;
+            return false;
         }
         let spaced = mark == Mark::Prompt && self.spaces_prompt();
         if spaced {
@@ -283,8 +288,19 @@ impl Terminal {
             });
         }
         let Some(last) = commands.list.back_mut() else {
-            return;
+            if let Some(pin) = pin {
+                rows.unpin(pin);
+            }
+            return false;
         };
+        // A program of the command that prints the input's or the output's
+        // mark moves none of the shell's.
+        if matches!(mark, Mark::Input | Mark::Output) && last.output.is_some() {
+            if let Some(pin) = pin {
+                rows.unpin(pin);
+            }
+            return false;
+        }
         let told = match mark {
             Mark::Output if last.output.is_none() && last.end.is_none() => {
                 last.started = Some(SystemTime::now());
@@ -313,9 +329,11 @@ impl Terminal {
         if let Some(old) = std::mem::replace(place, pin) {
             rows.unpin(old);
         }
+        let started = matches!(told, Some(Event::CommandStarted(_)));
         if let Some(event) = told {
             self.events.push(event);
         }
+        started
     }
 
     /// The commands that the shell marked, as the terminal keeps them,
@@ -401,7 +419,8 @@ impl Terminal {
     }
 
     /// Gives the last command, whose output's mark came and whose end did
-    /// not, the line that the shell told of it, of `bytes`, percent-encoded,
+    /// not, as that mark started it, the line that the shell told of it,
+    /// of `bytes`, percent-encoded,
     /// as OSC 133 `C`'s `cmdline_url` tells it: decoded, of UTF-8, 2048
     /// bytes of it at most, its control characters as spaces but its line
     /// feeds, which part a command of several lines, and without

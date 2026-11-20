@@ -282,10 +282,10 @@ impl Terminal {
             b"D" => Some(Mark::End(status)),
             _ => None,
         };
-        if let Some(mark) = mark {
-            self.mark_command(mark);
-        }
-        if let Some(line) = line {
+        let started = mark.is_some_and(|mark| self.mark_command(mark));
+        // The line that the mark that starts the command tells alone, as a
+        // program that the command runs may print the mark too.
+        if started && let Some(line) = line {
             self.tell_command_line(line);
         }
         // A new prompt drops the statuses of programs that worked or
