@@ -1783,13 +1783,13 @@ Whether the plugin runs: `false` turns it off, any plugin, the built-in ones too
 
 | Value | Meaning |
 |---|---|
-| `true` | The plugin runs, as by default |
+| `true` | The plugin runs, as by default, but of a plugin that starts off, as Blocks |
 | `false` | The plugin is off: its commands, its keys, its bars and its panels go, and the program's text loses its marks |
 
-Default: `true`.
+Default: `true`; `false` of a built-in plugin that starts off, `[plugins.blocks]` of Blocks.
 
 - It applies as you save the file: a plugin turned off stops at once, and one turned on again starts anew.
-- Lokyr › Plugins… writes it too: Disable writes `enabled = false`, keeping the rest of the file and its comments; Enable takes the key away, as `true` is its default, and the section with it if nothing else is left of it; a plugin removed there takes its key away the same way, once Lokyr no longer runs it.
+- Lokyr › Plugins… writes it too: Disable writes `enabled = false`, keeping the rest of the file and its comments; Enable takes the key away, as `true` is its default, and the section with it if nothing else is left of it; a plugin removed there takes its key away the same way, once Lokyr no longer runs it. Of a plugin that starts off, as Blocks, Enable writes `enabled = true` and Disable takes the key away.
 - The plugin's other keys are not checked while it is off.
 - `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
 - `[plugins.keymap-macos] enabled = false` takes away the default shortcuts, as [`[keys]`](#keys) says, the menus keeping the system's own keys alone.
@@ -2208,7 +2208,7 @@ The most characters of the command's line that the header shows.
 
 <sub>Platforms: macOS</sub>
 
-The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. As soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, which a click scrolls to the command's prompt, or, of `header = "pill"`, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted. A blank row before each prompt can make room between the blocks.
+The commands' blocks of the built-in plugin `lokyr/blocks`, off by default: `enabled = true`, or Enable on the Plugins page, turns it on. Each command that the shell marks, its prompt, its line and its output, is a block. As soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, which a click scrolls to the command's prompt, or, of `header = "pill"`, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted. A blank row before each prompt can make room between the blocks.
 
 `lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 

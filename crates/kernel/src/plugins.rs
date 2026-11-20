@@ -1727,6 +1727,7 @@ impl Plugins {
             .as_ref()
             .map(|directory| state_file(directory, &namespace));
         let (granted, uses) = declared.unzip();
+        let wanted = enabled_by_default(manifest.as_ref());
         self.entries.push(Entry {
             runner,
             make: None,
@@ -1759,7 +1760,7 @@ impl Plugins {
                 config: data(&Value::Object(config)),
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
-                wanted: true,
+                wanted,
                 replaced_by: None,
                 ran: false,
                 starts: 0,
@@ -1847,7 +1848,7 @@ impl Plugins {
             written.remove(ENABLED);
             state.written = data(&Value::Object(written));
             match values.remove(ENABLED) {
-                None => state.wanted = true,
+                None => state.wanted = enabled_by_default(state.manifest.as_ref()),
                 Some(Value::Bool(enabled)) => state.wanted = enabled,
                 Some(other) => {
                     notices.push(ConfigNotice {
@@ -2424,6 +2425,15 @@ impl Plugins {
             }));
         }
         commands
+    }
+
+    /// Whether the plugin of `namespace` runs where the config says nothing
+    /// of it, as its manifest says; on, of a plugin not there.
+    pub fn enabled_by_default(&self, namespace: &str) -> bool {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.namespace == namespace)
+            .is_none_or(|entry| enabled_by_default(entry.state.manifest.as_ref()))
     }
 
     /// The menus' items of the active plugins, in their order, each titled
@@ -4361,6 +4371,12 @@ fn start(
 
 /// Whether the plugin of `state` is one of Lokyr's own, compiled into the
 /// app, of its manifest, or of none and no grants.
+/// Whether the plugin of `manifest` runs where the config says nothing of
+/// it, as its manifest's `enabled-by-default` says: on, of none.
+fn enabled_by_default(manifest: Option<&Manifest>) -> bool {
+    manifest.is_none_or(|manifest| manifest.enabled_by_default)
+}
+
 fn is_lokyrs_own(state: &State) -> bool {
     state
         .manifest

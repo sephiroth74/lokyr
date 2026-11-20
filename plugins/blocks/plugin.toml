@@ -6,6 +6,9 @@ license = "MIT"
 description = "Each command and its output a block: the command's header at the pane's top while its line is above the view, which a click scrolls to, and its button to the block's end; a block's line, or its line and output, copied, the block selected, its status, times and folder shown, and its line run again"
 # The plain header, which comes back while this plugin is off.
 replaces = ["lokyr/command-header"]
+# Off until `[plugins.blocks] enabled = true`, or the Plugins page, turns
+# it on: the plain header in its place.
+enabled-by-default = false
 
 [capabilities]
 terminal-read = true

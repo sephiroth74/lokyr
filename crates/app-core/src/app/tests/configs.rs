@@ -183,7 +183,7 @@ fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_key
     let path = directory.join("config.toml");
     std::fs::write(
         &path,
-        "[plugins.blocks]\nborder = \"accent\"\nalign = \"middle\"\n",
+        "[plugins.blocks]\nenabled = true\nborder = \"accent\"\nalign = \"middle\"\n",
     )
     .unwrap();
     let mut fake = Fake::default();
@@ -200,14 +200,18 @@ fn the_header_s_section_is_checked_against_its_schema_and_the_replaced_one_s_key
     // Of its values, it takes the section.
     std::fs::write(
         &path,
-        "[plugins.blocks]\nborder = \"accent\"\nfont-weight = \"bold\"\npadding-x = 10\n",
+        "[plugins.blocks]\nenabled = true\nborder = \"accent\"\nfont-weight = \"bold\"\npadding-x = 10\n",
     )
     .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.diagnostics.shown_diagnostic(), None);
     // The plain header's keys, which apply once the blocks are off, tell
     // nothing while they run.
-    std::fs::write(&path, "[plugins.command-header]\nborder = \"accent\"\n").unwrap();
+    std::fs::write(
+        &path,
+        "[plugins.blocks]\nenabled = true\n[plugins.command-header]\nborder = \"accent\"\n",
+    )
+    .unwrap();
     change(&mut fake, &mut app);
     assert_eq!(app.diagnostics.shown_diagnostic(), None);
     let _ = std::fs::remove_dir_all(&directory);

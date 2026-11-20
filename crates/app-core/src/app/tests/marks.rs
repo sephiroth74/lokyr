@@ -581,7 +581,7 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
             "printf '{prompt}ls\\r\\n{output}a.txt\\r\\nb.txt\\r\\n\\033]133;D;0\\007{prompt}'; sleep 30"
         );
         let mut fake = Fake::default();
-        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        let mut app = App::new(None, all_plugins(""), None).with_program(shell(&script));
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -626,15 +626,9 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
 }
 
 /// The app's config without padding, of the blocks' header of the pill,
-/// as the header's tests read it.
+/// as the header's tests read it, Blocks turned on.
 fn pill_config() -> Config {
-    let mut config = Config::parse(
-        "[plugins.blocks]\nheader = \"pill\"\n",
-        Path::new("config.toml"),
-    )
-    .unwrap();
-    config.window = unpadded().window;
-    config
+    all_plugins("header = \"pill\"\n")
 }
 
 /// The frame of the part of `key` of the details' panel that shows in
@@ -665,7 +659,7 @@ fn a_block_s_details_tell_its_times_and_its_folder_each_copied_of_a_click() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -763,7 +757,7 @@ fn a_block_runs_again_at_the_prompt_of_zsh_s_bash_s_and_fish_s_marks_and_is_refu
              printf '{prompt}sleep\\r\\n\\033]133;C\\007'; sleep 30"
         );
         let mut fake = Fake::default();
-        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        let mut app = App::new(None, all_plugins(""), None).with_program(shell(&script));
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -876,7 +870,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -963,7 +957,7 @@ fn a_click_on_a_block_selects_it_and_the_prompt_or_a_drag_ends_it() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -1132,12 +1126,7 @@ fn a_blank_row_comes_before_a_prompt_after_a_command_as_blocks_asks() {
         "m A; printf '$ '; m B; echo ls; m C; echo a; stty -echo; m 'D;0'; ",
         "IFS= read -r go; m A; printf '$ '; m B; sleep 30\n",
     ));
-    let mut config = Config::parse(
-        "[plugins.blocks]\nspacing = true\n",
-        Path::new("config.toml"),
-    )
-    .unwrap();
-    config.window = unpadded().window;
+    let config = all_plugins("spacing = true\n");
     let mut fake = Fake::default();
     let mut app = App::new(None, config, None).with_program(program);
     fake.start(&mut app);
@@ -1185,7 +1174,7 @@ fn a_right_click_on_a_block_s_pinned_rows_opens_its_menu_which_acts_on_it() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -1243,7 +1232,7 @@ fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_it
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());

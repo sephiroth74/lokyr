@@ -1,12 +1,12 @@
 # Blocks
 
-<sub>macOS · zsh, bash, fish · on by default · the `lokyr/blocks` plugin · [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) · not released yet</sub>
+<sub>macOS · zsh, bash, fish · off by default · the `lokyr/blocks` plugin · [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) · not released yet</sub>
 
-Lokyr sees each command that your shell runs as a block: its prompt, the command line you typed, and the output that the command printed. When you scroll up through a long output, the block's prompt and command line stay at the top of the pane, so that you always know what you are reading. One click takes you back to the start of the block.
+Lokyr sees each command that your shell runs as a block: its prompt, the command line you typed, and the output that the command printed. Blocks is off until you turn it on. When you scroll up through a long output, the block's prompt and command line stay at the top of the pane, so that you always know what you are reading. One click takes you back to the start of the block.
 
 ## Try it
 
-Run this command:
+Turn Blocks on, in your config file or on the Plugins page of the settings window, as [Turn blocks on](#turn-blocks-on) shows. Then run this command:
 
 ```sh
 seq 1 500
@@ -145,14 +145,16 @@ The changes apply as you save the file, to a header that shows too.
 > [!TIP]
 > If you changed the command header's look before Blocks came, move its keys from `[plugins.command-header]` to `[plugins.blocks]`: the command header's keys apply only while Blocks is off.
 
-## Turn blocks off
+## Turn blocks on
+
+Blocks is off by default, and Lokyr shows the plain [command header](plugins/command-header.md) in its place: the same pill, without the arrow, whose keys are in [`[plugins.command-header]`](CONFIGURATION.md#pluginscommand-header). To turn Blocks on:
 
 ```toml
 [plugins.blocks]
-enabled = false
+enabled = true
 ```
 
-You can also turn off Blocks on the Plugins page of the settings window. Lokyr then shows the plain [command header](plugins/command-header.md): the same pill, without the arrow, whose keys are in [`[plugins.command-header]`](CONFIGURATION.md#pluginscommand-header).
+You can also click Enable next to Blocks on the Plugins page of the settings window, which writes the same key. Remove the key, or click Disable, to turn Blocks off again: the command header comes back.
 
 ## Settings
 

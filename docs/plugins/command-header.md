@@ -5,7 +5,7 @@
 The command whose output you are looking at, at the top of its pane, once its line has scrolled above the view: a pill of the command as you typed it, in the terminal's font, on a thin line across the pane.
 
 > [!NOTE]
-> [Blocks](../blocks.md) replaces this plugin while it runs, as it does by default: it shows the same header, with an arrow to the end of the command's output, and its keys are in [`[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks). The command header comes back when you turn Blocks off, with the keys of `[plugins.command-header]` · not released yet
+> [Blocks](../blocks.md), off by default, replaces this plugin while it runs: it shows the block's own prompt rows at the pane's top, or the same header with an arrow to the end of the command's output, and its keys are in [`[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks). The command header comes back when you turn Blocks off, with the keys of `[plugins.command-header]` · not released yet
 
 ## The header
 

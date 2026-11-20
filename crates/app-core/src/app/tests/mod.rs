@@ -93,6 +93,18 @@ fn started() -> (Fake, App) {
     (fake, app)
 }
 
+/// The config of `text`, of no padding, its plugins that start off, as
+/// Blocks, turned on.
+fn all_plugins(text: &str) -> Config {
+    let mut config = Config::parse(
+        &format!("[plugins.blocks]\nenabled = true\n{text}"),
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    config
+}
+
 /// The items of the main menu's menu `index` that `fake` has: each
 /// one's title and its keys, as `cmd+n`, or a line, `-`.
 fn menu_items(fake: &Fake, index: usize) -> Vec<String> {

@@ -527,6 +527,53 @@ fn a_plugin_that_its_section_turns_off_stops_and_one_turned_on_again_starts_anew
     assert_eq!(plugins.providers(Slot::StatusBar), ["acme/toggled"]);
 }
 
+/// A built-in plugin that starts off, of `Toggled`'s.
+const STARTS_OFF: &str = concat!(
+    "[plugin]\nname = \"acme/toggled\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "enabled-by-default = false\n",
+    "[contributes]\nslots = [\"status-bar\"]\n",
+);
+
+/// A `Toggled`, which the count of the other test's leaves out.
+fn make_starts_off() -> Box<dyn Plugin + Send> {
+    Box::new(Toggled)
+}
+
+#[test]
+fn a_plugin_that_starts_off_runs_only_as_its_section_turns_it_on() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins
+        .add_registered(Registration {
+            manifest: STARTS_OFF,
+            make: make_starts_off,
+        })
+        .unwrap();
+    assert!(!plugins.enabled_by_default("toggled"));
+    assert!(plugins.enabled_by_default("another"));
+    // Off of no section, and of one of no `enabled`.
+    for text in ["", "[plugins.toggled]\n"] {
+        assert!(plugins.configure(&config(text).plugins).is_empty());
+        assert!(plugins.activate(&mut app.context()).is_empty());
+        assert_eq!(
+            plugins.status("acme/toggled"),
+            Some(Status::Off),
+            "{text:?}"
+        );
+        assert!(app.registry.get("toggled.go").is_none());
+    }
+    // On of `enabled = true`, off again as the key goes.
+    let on = config("[plugins.toggled]\nenabled = true\n");
+    assert!(plugins.configure(&on.plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Active));
+    assert!(app.registry.get("toggled.go").is_some());
+    assert!(plugins.configure(&config("").plugins).is_empty());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    assert_eq!(plugins.status("acme/toggled"), Some(Status::Off));
+    assert!(app.registry.get("toggled.go").is_none());
+}
+
 #[test]
 fn enabled_is_true_or_false_the_host_s_key_of_every_section() {
     let mut app = App::default();

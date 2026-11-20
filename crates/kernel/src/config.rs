@@ -1890,16 +1890,22 @@ fn write_hiding(
         .map_err(|error| failed(&target, format!("it cannot be written: {error}")))
 }
 
-/// Turns the plugin of `namespace` on or off in the config file at `path`,
-/// keeping the rest of the file, its comments too, as [`set_string`] does:
-/// off, its section's key `[plugins.<namespace>] enabled = false`, a
+/// Turns the plugin of `namespace`, which runs of no key if `default`, on
+/// or off in the config file at `path`, keeping the rest of the file, its
+/// comments too, as [`set_string`] does: other than its default, its
+/// section's key `[plugins.<namespace>] enabled`, `false` or `true`, a
 /// section that the file lacks going at its end, after its last comments;
-/// on, that key taken away, as on is its default, and the section with it
-/// if nothing else is left of it, no key nor comment of its own, so that
-/// no section stays of a plugin removed since; a file of no such section
-/// is left as it is.
-pub fn set_plugin_enabled(path: &Path, namespace: &str, enabled: bool) -> Result<(), Error> {
-    let value = (!enabled).then(|| toml_edit::Value::from(false));
+/// its default, that key taken away, and the section with it if nothing
+/// else is left of it, no key nor comment of its own, so that no section
+/// stays of a plugin removed since; a file of no such section is left as
+/// it is.
+pub fn set_plugin_enabled(
+    path: &Path,
+    namespace: &str,
+    enabled: bool,
+    default: bool,
+) -> Result<(), Error> {
+    let value = (enabled != default).then(|| toml_edit::Value::from(enabled));
     set_value(path, &["plugins", namespace], "enabled", value)
 }
 
@@ -4150,7 +4156,7 @@ long-command = 0
             "style = \"unified\"   # mine\n",
         );
         fs::write(&file, text).unwrap();
-        set_plugin_enabled(&file, "tabs", false).unwrap();
+        set_plugin_enabled(&file, "tabs", false, true).unwrap();
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             format!("{text}enabled = false\n")
@@ -4180,10 +4186,19 @@ long-command = 0
             ),
         ] {
             fs::write(&file, text).unwrap();
-            set_plugin_enabled(&file, "tabs", true).unwrap();
+            set_plugin_enabled(&file, "tabs", true, true).unwrap();
             assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
             Config::read(&file).unwrap();
         }
+        // A plugin off of no key: on, its key `true`; off, the key gone.
+        fs::write(&file, "[font]\nsize = 14\n").unwrap();
+        set_plugin_enabled(&file, "blocks", true, false).unwrap();
+        assert_eq!(
+            fs::read_to_string(&file).unwrap(),
+            "[font]\nsize = 14\n\n[plugins.blocks]\nenabled = true\n"
+        );
+        set_plugin_enabled(&file, "blocks", false, false).unwrap();
+        assert_eq!(fs::read_to_string(&file).unwrap(), "[font]\nsize = 14\n");
         // A section that the file lacks goes at its end, after its last
         // comments, beside another plugin's.
         for (text, written) in [
@@ -4195,7 +4210,7 @@ long-command = 0
             ("", "[plugins.snap]\nenabled = false\n"),
         ] {
             fs::write(&file, text).unwrap();
-            set_plugin_enabled(&file, "snap", false).unwrap();
+            set_plugin_enabled(&file, "snap", false, true).unwrap();
             assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
         }
         // Where the plugins' sections come earlier, a new one goes after
@@ -4205,7 +4220,7 @@ long-command = 0
             "[plugins.tabs]\nstyle = \"unified\"\n\n[window]\npadding-x = 4\n\n# the end\n",
         )
         .unwrap();
-        set_plugin_enabled(&file, "snap", false).unwrap();
+        set_plugin_enabled(&file, "snap", false, true).unwrap();
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             "[plugins.tabs]\nstyle = \"unified\"\n\n[plugins.snap]\nenabled = false\n\n[window]\npadding-x = 4\n\n# the end\n"
@@ -4245,28 +4260,28 @@ long-command = 0
             ),
         ] {
             fs::write(&file, text).unwrap();
-            set_plugin_enabled(&file, "tabs", true).unwrap();
+            set_plugin_enabled(&file, "tabs", true, true).unwrap();
             assert_eq!(fs::read_to_string(&file).unwrap(), written, "{text:?}");
             Config::read(&file).unwrap();
         }
         // In an inline table too.
         fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
-        set_plugin_enabled(&file, "snap", false).unwrap();
+        set_plugin_enabled(&file, "snap", false, true).unwrap();
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             "plugins = { snap = { enabled = false } }\n"
         );
-        set_plugin_enabled(&file, "snap", true).unwrap();
+        set_plugin_enabled(&file, "snap", true, true).unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "plugins = {}\n");
         fs::write(&file, "plugins = { snap = { enabled = true } }\n").unwrap();
-        set_plugin_enabled(&file, "snap", false).unwrap();
+        set_plugin_enabled(&file, "snap", false, true).unwrap();
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             "plugins = { snap = { enabled = false } }\n"
         );
         // A file that does not read is left as it is.
         fs::write(&file, "[font]\nsize = \"big\"\n").unwrap();
-        assert!(set_plugin_enabled(&file, "snap", false).is_err());
+        assert!(set_plugin_enabled(&file, "snap", false, true).is_err());
         assert_eq!(
             fs::read_to_string(&file).unwrap(),
             "[font]\nsize = \"big\"\n"
