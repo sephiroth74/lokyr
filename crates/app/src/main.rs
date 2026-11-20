@@ -28,7 +28,8 @@ Usage: lokyr [--version | --api-version]
        lokyr --bench output [--window <width>x<height>] -- <program> [args]
        lokyr +show-config [--default] [--docs]
        lokyr +validate-config [path]
-       lokyr +list-fonts [--monospace] [--styles] [--family <name>]";
+       lokyr +list-fonts [--monospace] [--styles] [--family <name>]
+       lokyr +ssh-term -- <ssh's arguments>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -77,10 +78,37 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
+        // The `TERM` of an ssh session of the shells' `ssh`, the terminal's
+        // entry installed on its host first.
+        ["+ssh-term", "--", ssh @ ..] => ssh_term(ssh),
         _ => {
             eprintln!("{USAGE}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Prints the `TERM` of the ssh session of `args`, which the shells' `ssh`
+/// runs it of: the shell's own, or one that every host knows, as the
+/// config's `[terminal]` says, read anew, of the defaults where it does
+/// not read; a host that lacks the terminal's entry gets it first, and is
+/// remembered in the state's folder. An install whose connection fails,
+/// which ssh told of, exits of ssh's own code for it.
+fn ssh_term(args: &[&str]) -> ExitCode {
+    use lokyr_kernel::ssh;
+    let term = std::env::var("TERM").unwrap_or_default();
+    let config = config::path()
+        .filter(|path| path.exists())
+        .and_then(|path| Config::read(&path).ok())
+        .unwrap_or_default();
+    let args: Vec<String> = args.iter().map(ToString::to_string).collect();
+    let hosts = lokyr_kernel::state::directory().map(|folder| folder.join(ssh::HOSTS_FILE));
+    match ssh::term(&args, &term, &config.terminal, hosts.as_deref()) {
+        Ok(term) => {
+            println!("{term}");
+            ExitCode::SUCCESS
+        }
+        Err(ssh::ConnectionFailed) => ExitCode::from(ssh::CONNECTION_FAILED as u8),
     }
 }
 

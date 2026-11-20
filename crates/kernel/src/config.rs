@@ -362,6 +362,13 @@ pub struct TerminalConfig {
     /// Whether the user's shell, zsh, bash or fish, loads the shells'
     /// integration, which tells the prompts' marks and the folder.
     pub shell_integration: bool,
+    /// Whether the shells' integration installs the terminal's own terminfo
+    /// entry on a host before an interactive ssh session of `xterm-lokyr`,
+    /// once a host, or gives the session `xterm-256color`.
+    pub ssh_integration: bool,
+    /// The hosts where the integration installs nothing, by patterns of `*`
+    /// and `?`, whose sessions of `xterm-lokyr` go of `xterm-256color`.
+    pub ssh_hosts_ignored: Vec<String>,
     /// The memory that a pane's inline images take at most, none showing
     /// of 0.
     pub image_memory: ImageMemory,
@@ -419,6 +426,8 @@ impl Default for TerminalConfig {
             ambiguous_width: AmbiguousWidth::default(),
             normalization: TextNormalization::default(),
             shell_integration: true,
+            ssh_integration: true,
+            ssh_hosts_ignored: Vec::new(),
             image_memory: ImageMemory::default(),
         }
     }
@@ -3805,6 +3814,8 @@ long-command = 0
                 "ambiguous-width",
                 "normalization",
                 "shell-integration",
+                "ssh-integration",
+                "ssh-hosts-ignored",
                 "image-memory"
             ]
         );

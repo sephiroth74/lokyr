@@ -59,12 +59,35 @@ _lokyr_preexec() {
     _lokyr_running=1
 }
 
+# ssh, of the terminal's own TERM, which a host lacks until it has the
+# terminal's terminfo entry: the session's TERM as the app tells it, which
+# installs the entry on the host first, or one that every host knows; an
+# install that cannot connect, which ssh told of, ends as ssh would. The
+# name comes after `function`, which no alias expands.
+_lokyr_define_ssh() {
+    function ssh {
+        builtin emulate -L zsh
+        builtin local lokyr="${LOKYR_RESOURCES_DIR%/*}/MacOS/lokyr" term="$TERM"
+        if [[ ( $TERM == xterm-lokyr || $TERM == lokyr ) && -n ${LOKYR_RESOURCES_DIR-} && -x $lokyr ]]; then
+            term="$("$lokyr" +ssh-term -- "$@")"
+            case $? in
+                0) [[ -n $term ]] || term="$TERM" ;;
+                255) builtin return 255 ;;
+                *) term="$TERM" ;;
+            esac
+        fi
+        TERM="$term" command ssh "$@"
+    }
+}
+
 # At the first prompt, once the user's files have loaded: the hooks last,
-# after the user's own, as a prompt's theme may set PS1 in its own.
+# after the user's own, as a prompt's theme may set PS1 in its own, and
+# ssh, unless the user has one of their own, a function or an alias.
 _lokyr_deferred() {
     precmd_functions=(${precmd_functions:#_lokyr_deferred})
     precmd_functions=(${precmd_functions:#_lokyr_precmd} _lokyr_precmd)
     preexec_functions=(${preexec_functions:#_lokyr_preexec} _lokyr_preexec)
+    (( $+functions[ssh] || $+aliases[ssh] )) || _lokyr_define_ssh
     _lokyr_precmd
 }
 

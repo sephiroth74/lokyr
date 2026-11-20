@@ -76,6 +76,28 @@ set -q LOKYR_RESOURCES_DIR; and source "$LOKYR_RESOURCES_DIR/shell-integration/f
 
 Loading a script twice does no harm, so a shell that Lokyr already set up can keep the line.
 
+## ssh sessions
+
+<sub>macOS · zsh, bash, fish · on by default · [`[terminal] ssh-integration`](CONFIGURATION.md#ssh-integration) · not released yet</sub>
+
+When [`term`](CONFIGURATION.md#term) is `"xterm-lokyr"`, programs on the hosts that you reach over `ssh` need Lokyr's terminfo entry, and a host lacks it at first. Without it, programs such as `vim` or `less` can't tell what the terminal does, and may refuse to start or draw garbled text.
+
+`ssh` in your shell takes care of it. The first time that you open a session to a host, `ssh` compiles Lokyr's entry there with `tic`, into `~/.terminfo` on the host, then opens your session. Lokyr remembers the host, so the next sessions open at once. When the host can't take the entry, such as a host without `tic`, your session gets `TERM=xterm-256color`, which every host knows, and Lokyr remembers that too.
+
+```toml
+[terminal]
+term = "xterm-lokyr"
+ssh-hosts-ignored = ["*.example.com", "shared-box"]
+```
+
+- **With the default `term`**, `"xterm-256color"`, `ssh` works as it always does.
+- **A host that asks for a password** asks for it twice the first time: once to install the entry, and once for your session.
+- **The hosts that [`ssh-hosts-ignored`](CONFIGURATION.md#ssh-hosts-ignored) names** get `TERM=xterm-256color`, and nothing is installed there. Use it for hosts where you'd rather not write to your home folder, such as shared machines.
+- **`ssh` with a remote command**, such as `ssh host ls`, or with `-T`, `-N` or `-W`, works as it always does: it opens no terminal.
+- **Your own `ssh` function or alias** stays yours, and installs nothing.
+- **To try a host again**, such as after you install `tic` there, remove its line from `~/Library/Application Support/lokyr/state/ssh-terminfo-hosts`.
+- **To turn it off**, set [`ssh-integration`](CONFIGURATION.md#ssh-integration) to `false`. The change applies to the next `ssh`, in any shell.
+
 ## How it works
 
 At each prompt and around each command, your shell prints escape codes that Lokyr reads and never shows:
@@ -91,6 +113,7 @@ At each prompt, after your own prompt commands run and before the shell draws th
 
 - **macOS's `/bin/bash`** gets no integration unless you add it by hand.
 - **Remote shells** over `ssh` get no integration: their commands get no marks.
+- **`ssh` that another program runs**, such as a script or an editor's remote session, isn't your shell's `ssh`, so it installs no terminfo entry on the host. · not released yet
 - **A bash older than 4.4 with a DEBUG trap of its own** gets no output marks.
 - **A click in the command line** moves nothing in a remote shell over `ssh`, as `ssh` is the program in front, nor in a bash older than 4.4 with a DEBUG trap of its own. A program that a shell runs, such as `cat` of a file or a REPL, gets no keys from a click or a selection, whatever prompts' marks its output holds: Lokyr sends them to a shell in front alone. · Since 1.3
 - **fish 4.0** reports its prompts without saying that it takes clicks, so a click in its command line moves nothing. fish 3, with the integration, and fish 4.1 and later take them. · Since 1.3
@@ -129,6 +152,20 @@ You should see `1`. In fish, `echo $version` should print 4 or later, or `functi
 **Fix**: set `click-to-move` to `true`, or use bash 4.4 or later, such as Homebrew's, or fish 4.1 or later.
 
 **Check**: type `echo hello world`, click on the `w`, then type `X`: the line reads `echo hello Xworld`.
+
+### Programs over ssh draw garbled text
+
+<sub>Platforms: macOS · not released yet</sub>
+
+**Why**: [`term`](CONFIGURATION.md#term) is `"xterm-lokyr"`, and the host lacks Lokyr's terminfo entry: [`ssh-integration`](CONFIGURATION.md#ssh-integration) is `false`, the host is in [`ssh-hosts-ignored`](CONFIGURATION.md#ssh-hosts-ignored), or the session didn't start from your shell's `ssh`.
+
+**Fix**: turn `ssh-integration` on and open the session again from your shell, or install the entry yourself:
+
+```sh
+infocmp -x xterm-lokyr | ssh host -- tic -x -
+```
+
+**Check**: on the host, `infocmp xterm-lokyr` prints the entry, and `echo $TERM` prints `xterm-lokyr`.
 
 ### New tabs open in your home folder
 
@@ -192,4 +229,4 @@ Other options of `A`, and the right prompt:
 - [Blocks](blocks.md)
 - [The command header](plugins/command-header.md)
 - [AI agents](agents.md), where a program's reported state ends when the shell's next prompt starts
-- [The configuration guide](CONFIGURATION.md): [`shell-integration`](CONFIGURATION.md#shell-integration), [`click-to-move`](CONFIGURATION.md#click-to-move), [`gutter`](CONFIGURATION.md#gutter), [`long-command`](CONFIGURATION.md#long-command), [`new-directory`](CONFIGURATION.md#new-directory)
+- [The configuration guide](CONFIGURATION.md): [`shell-integration`](CONFIGURATION.md#shell-integration), [`ssh-integration`](CONFIGURATION.md#ssh-integration), [`ssh-hosts-ignored`](CONFIGURATION.md#ssh-hosts-ignored), [`click-to-move`](CONFIGURATION.md#click-to-move), [`gutter`](CONFIGURATION.md#gutter), [`long-command`](CONFIGURATION.md#long-command), [`new-directory`](CONFIGURATION.md#new-directory)

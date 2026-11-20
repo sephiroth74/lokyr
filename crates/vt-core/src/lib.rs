@@ -19,3 +19,7 @@ pub mod page;
 pub mod parser;
 pub mod terminal;
 pub mod unicode;
+
+/// The source of the terminfo entry that describes the terminal,
+/// `xterm-lokyr`, as `tic -x` compiles it.
+pub const TERMINFO_SOURCE: &str = include_str!("../terminfo/xterm-lokyr.terminfo");

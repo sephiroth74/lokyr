@@ -4,7 +4,7 @@
 use std::sync::LazyLock;
 
 /// The entry's source.
-const SOURCE: &str = include_str!("../../terminfo/xterm-lokyr.terminfo");
+const SOURCE: &str = crate::TERMINFO_SOURCE;
 
 /// What the entry says of a capability.
 #[derive(Clone, Debug, PartialEq, Eq)]

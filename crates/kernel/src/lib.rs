@@ -15,6 +15,7 @@ pub mod keymap;
 pub mod l10n;
 pub mod paste;
 pub mod plugins;
+pub mod ssh;
 pub mod state;
 pub mod themes;
 pub mod workspace;

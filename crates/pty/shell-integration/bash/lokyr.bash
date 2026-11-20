@@ -146,4 +146,27 @@ if [[ $- == *i* && -z "${_lokyr_integration-}" ]]; then
         builtin trap '_lokyr_debug "$_"' DEBUG
         _lokyr_trapped=1
     fi
+
+    # ssh, of the terminal's own TERM, which a host lacks until it has the
+    # terminal's terminfo entry: the session's TERM as the app tells it,
+    # which installs the entry on the host first, or one that every host
+    # knows; an install that cannot connect, which ssh told of, ends as ssh
+    # would. A user's own, a function or an alias, stays theirs; the name
+    # comes after `function`, which no alias expands.
+    if ! builtin declare -F ssh >/dev/null && ! builtin alias ssh >/dev/null 2>&1; then
+        function ssh {
+            builtin local lokyr="${LOKYR_RESOURCES_DIR-}" term="${TERM-}"
+            lokyr="${lokyr%/*}/MacOS/lokyr"
+            if [[ ( "${TERM-}" == xterm-lokyr || "${TERM-}" == lokyr ) &&
+                -n "${LOKYR_RESOURCES_DIR-}" && -x "$lokyr" ]]; then
+                term="$("$lokyr" +ssh-term -- "$@")"
+                case $? in
+                    0) [ -n "$term" ] || term="${TERM-}" ;;
+                    255) builtin return 255 ;;
+                    *) term="${TERM-}" ;;
+                esac
+            fi
+            TERM="$term" command ssh "$@"
+        }
+    fi
 fi

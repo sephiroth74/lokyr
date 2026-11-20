@@ -69,12 +69,34 @@ impl Shell {
             "xterm-256color",
         );
         options.shell_integration = integrated.then(scripts);
+        Self::of_options(options, home)
+    }
+
+    /// The shell at `path`, of the integration, in a home of
+    /// [`ssh_home`]: of the terminal's own `TERM` and entry, the app's
+    /// resources beside its fake command, and its fake `ssh` first in
+    /// `PATH`.
+    fn of_ssh(path: &Path, home: &Path) -> Self {
+        let mut options = Options::new(Program::command(path, Vec::<String>::new()), "xterm-lokyr");
+        options.shell_integration = Some(scripts());
+        options.terminfo_dir = Some(home.join("terminfo"));
+        options.resources_dir = Some(home.join("app").join("Resources"));
+        let path = format!(
+            "{}:{}",
+            home.join("bin").display(),
+            inherited("PATH", "/usr/bin:/bin")
+        );
+        options.env.push(("PATH".into(), path.into()));
+        Self::of_options(options, home)
+    }
+
+    fn of_options(mut options: Options, home: &Path) -> Self {
         options.working_directory = Some(home.to_owned());
-        options.env = vec![
+        options.env.extend([
             ("HOME".into(), home.into()),
             ("BASH_SILENCE_DEPRECATION_WARNING".into(), "1".into()),
             ("ZDOTDIR".into(), home.into()),
-        ];
+        ]);
         let pty = spawn(&options).unwrap();
         let mut reader = pty.reader().unwrap();
         let mut answer = pty.writer().unwrap();
@@ -540,4 +562,153 @@ fn another_shell_or_a_shell_of_arguments_loads_nothing() {
     );
     assert!(text.starts_with(&expected), "{text:?}, not {expected:?}");
     let _ = (pty, Path::new(&home));
+}
+
+/// A home of the test's for the shells' `ssh`, of `files`, or none where
+/// this machine's `tic` cannot compile the terminal's entry: the entry in
+/// `terminfo`; the app's command, `app/MacOS/lokyr`, a script that tells
+/// its arguments and answers the session's `TERM` as the app does,
+/// `xterm-256color` of the host `old`, a failed connection of `down`, and
+/// the shell's own otherwise; and an `ssh` in `bin` that tells the `TERM`
+/// that it ran of and each of its arguments.
+fn ssh_home(test: &str, files: &[(&str, &str)]) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let lokyr = "#!/bin/sh\n\
+        echo \"lokyr-asked:$*\" >&2\n\
+        for last; do :; done\n\
+        case \"$last\" in\n\
+        old) echo xterm-256color ;;\n\
+        down) echo 'ssh: down' >&2; exit 255 ;;\n\
+        *) echo \"$TERM\" ;;\n\
+        esac\n";
+    let ssh = "#!/bin/sh\n\
+        printf 'ssh-ran:TERM=%s:' \"$TERM\"\n\
+        for arg; do printf '[%s]' \"$arg\"; done\n\
+        printf '\\n'\n";
+    let mut all = vec![
+        ("app/MacOS/lokyr", lokyr),
+        ("app/Resources/.keep", ""),
+        ("bin/ssh", ssh),
+    ];
+    all.extend_from_slice(files);
+    let home = home(test, &all);
+    for script in ["app/MacOS/lokyr", "bin/ssh"] {
+        std::fs::set_permissions(home.join(script), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+    }
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../vt-core/terminfo/xterm-lokyr.terminfo");
+    let compiled = std::process::Command::new("tic")
+        .args(["-x", "-o"])
+        .arg(home.join("terminfo"))
+        .arg(source)
+        .output()
+        .is_ok_and(|output| output.status.success());
+    compiled.then_some(home)
+}
+
+/// The shell's `ssh` of the terminal's own `TERM` runs ssh of the `TERM`
+/// that the app tells, of the arguments as typed, the shell's own `TERM`
+/// kept; an install that cannot connect ends of ssh's code, of no session
+/// after it. `status` is the shell's variable of the last status.
+fn ssh_runs_of_the_app_s_term(shell: &mut Shell, status: &str) {
+    shell.run("ssh -p 2222 'my host'");
+    shell.until("lokyr-asked:+ssh-term -- -p 2222 my host");
+    shell.through("ssh-ran:TERM=xterm-lokyr:[-p][2222][my host]");
+    shell.run("ssh old");
+    shell.through("ssh-ran:TERM=xterm-256color:[old]");
+    shell.run(&format!(
+        "ssh down; echo \"code=${status}\"; echo \"term=$TERM\""
+    ));
+    let text = shell.through("term=xterm-lokyr");
+    assert!(text.contains("code=255"), "{text:?}");
+    assert!(!text.contains("ssh-ran"), "{text:?}");
+}
+
+#[test]
+fn zsh_s_ssh_runs_of_the_term_that_the_app_tells_and_leaves_the_user_s_own() {
+    let Some(zsh) = found(&["/bin/zsh", "/usr/bin/zsh", "/opt/homebrew/bin/zsh"]) else {
+        eprintln!("no zsh here");
+        return;
+    };
+    let Some(home) = ssh_home("zsh-ssh", &[(".zshrc", "PS1='zsh> '\n")]) else {
+        eprintln!("no tic here");
+        return;
+    };
+    let mut shell = Shell::of_ssh(&zsh, &home);
+    shell.until("zsh> ");
+    ssh_runs_of_the_app_s_term(&mut shell, "?");
+    // The user's own alias stays theirs.
+    let rc = "PS1='zsh> '\nalias ssh='echo users-alias'\n";
+    let Some(home) = ssh_home("zsh-ssh-own", &[(".zshrc", rc)]) else {
+        return;
+    };
+    let mut shell = Shell::of_ssh(&zsh, &home);
+    shell.until("zsh> ");
+    shell.run("ssh new");
+    let text = shell.through("users-alias new");
+    assert!(!text.contains("lokyr-asked"), "{text:?}");
+}
+
+#[test]
+fn bash_s_ssh_runs_of_the_term_that_the_app_tells_and_leaves_the_user_s_own() {
+    let Some(bash) = modern_bash() else {
+        eprintln!("no bash of 4 or later here");
+        return;
+    };
+    let Some(home) = ssh_home("bash-ssh", &[(".bashrc", "PS1='bash> '\nset -u\n")]) else {
+        eprintln!("no tic here");
+        return;
+    };
+    let mut shell = Shell::of_ssh(&bash, &home);
+    shell.until("bash> ");
+    ssh_runs_of_the_app_s_term(&mut shell, "?");
+    // The user's own function stays theirs.
+    let rc = "PS1='bash> '\nssh() { echo users-function \"$@\"; }\n";
+    let Some(home) = ssh_home("bash-ssh-own", &[(".bashrc", rc)]) else {
+        return;
+    };
+    let mut shell = Shell::of_ssh(&bash, &home);
+    shell.until("bash> ");
+    shell.run("ssh new");
+    let text = shell.through("users-function new");
+    assert!(!text.contains("lokyr-asked"), "{text:?}");
+}
+
+#[test]
+fn fish_s_ssh_runs_of_the_term_that_the_app_tells_and_leaves_the_user_s_own() {
+    let Some(fish) = found(&[
+        "/opt/homebrew/bin/fish",
+        "/usr/local/bin/fish",
+        "/usr/bin/fish",
+    ]) else {
+        eprintln!("no fish here");
+        return;
+    };
+    let config = "function fish_prompt; echo -n 'fish> '; end\n";
+    let Some(home) = ssh_home("fish-ssh", &[(".config/fish/config.fish", config)]) else {
+        eprintln!("no tic here");
+        return;
+    };
+    let mut shell = Shell::of_ssh(&fish, &home);
+    shell.until("fish> ");
+    ssh_runs_of_the_app_s_term(&mut shell, "status");
+    // The user's own function, of their functions' folder, stays theirs.
+    let Some(home) = ssh_home(
+        "fish-ssh-own",
+        &[
+            (".config/fish/config.fish", config),
+            (
+                ".config/fish/functions/ssh.fish",
+                "function ssh; echo users-function $argv; end\n",
+            ),
+        ],
+    ) else {
+        return;
+    };
+    let mut shell = Shell::of_ssh(&fish, &home);
+    shell.until("fish> ");
+    shell.run("ssh new");
+    let text = shell.through("users-function new");
+    assert!(!text.contains("lokyr-asked"), "{text:?}");
 }

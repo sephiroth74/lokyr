@@ -29,6 +29,34 @@ end
 
 status is-interactive; or exit 0
 
+# At the first prompt, once the user's config has loaded, unless the user
+# has an ssh of their own, which `functions -q` loads of their functions'
+# folder: ssh, of the terminal's own TERM, which a host lacks until it has
+# the terminal's terminfo entry, the session's TERM as the app tells it,
+# which installs the entry on the host first, or one that every host
+# knows; an install that cannot connect, which ssh told of, ends as ssh
+# would.
+function __lokyr_wrap_ssh --on-event fish_prompt
+    functions -e __lokyr_wrap_ssh
+    functions -q ssh; and return
+    function ssh
+        set -l lokyr (string replace -r '/[^/]*$' '' -- "$LOKYR_RESOURCES_DIR")/MacOS/lokyr
+        set -l term $TERM
+        if contains -- "$TERM" xterm-lokyr lokyr; and set -q LOKYR_RESOURCES_DIR[1]; and test -x $lokyr
+            set term ($lokyr +ssh-term -- $argv)
+            switch $status
+                case 0
+                    test -n "$term"; or set term $TERM
+                case 255
+                    return 255
+                case '*'
+                    set term $TERM
+            end
+        end
+        TERM=$term command ssh $argv
+    end
+end
+
 # fish 4 and later tell the marks and the folder themselves.
 if test (string split . -- $version)[1] -ge 4
     exit 0

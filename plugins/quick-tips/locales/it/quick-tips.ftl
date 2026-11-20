@@ -32,6 +32,7 @@ tip-links = Tieni premuto ⌘ su un link per sottolinearlo, poi fai clic per apr
 tip-prompt-click = Fai clic nella riga di comando per spostarci il cursore, in zsh, bash e fish; selezionane una parte e premi Backspace, o scrivi, per sostituirla.
 tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senza il prompt; il menu contestuale copia quello di qualsiasi comando.
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
+tip-ssh-terminfo = Imposta term in [terminal] a "xterm-lokyr" per le sottolineature ondulate e ogni tasto nei tuoi programmi: ssh nella tua shell installa la voce terminfo di Lokyr su ogni host alla prima connessione.
 tip-block-header = Sei risalito in un output lungo? Il prompt del comando resta in cima al pannello: fai clic per tornare al comando.
 tip-block-copy = Fai clic destro sull'output di un comando e apri Blocco per copiare il comando, il suo output o entrambi, o per selezionarne l'output o tutto il blocco. Lo stesso menu si apre col clic destro sulle righe fissate in cima.
 tip-block-details = Fai clic destro sull'output di un comando e scegli Blocco › Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.

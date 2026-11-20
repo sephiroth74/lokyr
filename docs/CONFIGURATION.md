@@ -119,6 +119,8 @@ unicode-widths = "8"                 # current | 8: the width tables
 ambiguous-width = 2                  # 1 | 2: the cells of an ambiguous character
 normalization = "nfc"                # none | nfc | nfd | hfs+
 shell-integration = false            # true | false: the shell tells its prompts and its folder
+ssh-integration = false              # true | false: ssh installs the terminfo entry on a host
+ssh-hosts-ignored = ["*.example.com"]   # hosts where ssh installs nothing
 image-memory = 128                   # MiB of a pane's inline images, 0 showing none
 
 [scrollback]
@@ -996,7 +998,7 @@ The `TERM` that programs see, which tells them what the terminal can do: letters
 | a terminfo name, as `"xterm-256color"`, `"xterm-lokyr"`, `"xterm"`, `"vt220"` | `"xterm-256color"` |
 
 - It changes only what programs are told, never what the terminal does, which is the same whatever the name.
-- `"xterm-lokyr"` describes Lokyr itself, with the capabilities that the plain names lack, as undercurls and the keyboard protocol that reports every key; Lokyr carries its entry, and points programs to it, but a host that you reach over ssh lacks it, and its programs then fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
+- `"xterm-lokyr"` describes Lokyr itself, with the capabilities that the plain names lack, as undercurls and the keyboard protocol that reports every key; Lokyr carries its entry, and points programs to it. A host that you reach over ssh lacks it until `ssh` in your shell installs it there, as [`ssh-integration`](#ssh-integration) says; without it, the host's programs fall back to plain behavior. A Lokyr that runs outside its bundle without the entry gives its windows `"xterm-256color"`, and the log tells it.
 - It applies to the windows that open after the change: the programs of a window keep the `TERM` that they started with.
 - A name that no terminfo entry describes where programs look for one, in `~/.terminfo`, the directories of `TERMINFO_DIRS` and the system's, shows a notice across the windows' top, and `lokyr +validate-config` tells it: programs take a terminal that they know nothing of for a dumb one, and a shell's line editing then draws wrongly. Lokyr keeps the name, as a host that you reach over ssh can describe it.
 
@@ -1060,6 +1062,38 @@ Whether your shell loads Lokyr's integration, which reports where each prompt st
 - Lokyr loads it into zsh, bash and fish when they're your login shell, without changing your files. macOS's own bash, `/bin/bash`, which is version 3.2, gets it only when you add a line to `~/.bash_profile`, and a shell that you start from another one when you add it to that shell's startup file, as [Shell integration](shell-integration.md#set-it-up-by-hand) shows.
 - A change applies to the shells that start after it; the shells already open keep what they started with.
 - [Shell integration](shell-integration.md) explains what it gives you, such as the jumps between prompts, the gutter's marks and a click in the command line, how each shell loads it, how to add it by hand, and what to do when commands get no marks.
+
+### `ssh-integration`
+
+<sub>Platforms: macOS · not released yet</sub>
+
+Whether `ssh` in your shell installs Lokyr's terminfo entry on a host the first time that you open a session there, while [`term`](#term) is `"xterm-lokyr"`.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- Programs on a host need the entry to know what Lokyr does, and a host lacks it at first. The first session to a host compiles the entry there with `tic`, into `~/.terminfo`, then opens. Lokyr remembers the host, so the next sessions open at once.
+- A host that can't take the entry, such as a host without `tic`, gets `TERM=xterm-256color`, which every host knows. Lokyr remembers it too.
+- A host that asks for a password asks for it twice the first time: once to install the entry, and once for your session.
+- With the default `term`, `"xterm-256color"`, `ssh` works as it always does.
+- `ssh` with a remote command, such as `ssh host ls`, or with `-T`, `-N` or `-W`, works as it always does. So does your own `ssh` function or alias.
+- It works in zsh, bash and fish, through the [shell integration](#shell-integration). A change applies to the next `ssh`, in any shell. [ssh sessions](shell-integration.md#ssh-sessions) explains how to try a host again.
+
+### `ssh-hosts-ignored`
+
+<sub>Platforms: macOS · not released yet</sub>
+
+The hosts where `ssh` installs nothing: their sessions get `TERM=xterm-256color` while [`term`](#term) is `"xterm-lokyr"`.
+
+| Values | Default |
+|---|---|
+| a list of host patterns | `[]` |
+
+- A pattern matches the host as you type it, such as `build` in `ssh me@build`, or its name as your ssh config resolves it, such as `build.example.com`, whatever the case.
+- `*` stands for any characters and `?` for one, as in `"*.example.com"` or `"pi-?"`.
+- Use it for hosts where you'd rather not write to your home folder, such as shared machines.
+- A change applies to the next `ssh`.
 
 ### `image-memory`
 
