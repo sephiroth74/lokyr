@@ -558,6 +558,19 @@ pub enum Request {
     /// The cells of the rows that a pane's view shows, from its top, as an
     /// image draws them.
     ScreenCells(PaneId),
+    /// The cells of `count` rows of a pane's active screen from the row
+    /// numbered `first`, whole, as an image draws them, as many as the
+    /// pane holds from it, [`MOST_ROWS`](crate::image::MOST_ROWS) at most:
+    /// a block of a command, say; none of a first row that the pane does
+    /// not hold.
+    RowCells {
+        /// The pane.
+        pane: PaneId,
+        /// The first row's number.
+        first: i64,
+        /// How many rows.
+        count: usize,
+    },
     /// Renders an image of cells, of their styles, in the theme's colors
     /// and the terminal's font, as a window shows them, in a frame as a
     /// window's, offscreen: the host answers with the PNG. It reads nothing
@@ -1260,6 +1273,7 @@ impl Request {
             | Self::Styles { .. }
             | Self::SelectionCells(_)
             | Self::ScreenCells(_)
+            | Self::RowCells { .. }
             | Self::EditedLine(_) => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
@@ -1449,7 +1463,8 @@ impl Request {
             | Self::FontStyles(_)
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
-            | Self::ScreenCells(_) => Effect::Read,
+            | Self::ScreenCells(_)
+            | Self::RowCells { .. } => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SetClipboardImage(_)
             | Self::KeepAwake(_)
@@ -2197,7 +2212,9 @@ impl Request {
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
             Self::RenderImage { .. } => "image",
-            Self::SelectionCells { .. } | Self::ScreenCells { .. } => "cells",
+            Self::SelectionCells { .. } | Self::ScreenCells { .. } | Self::RowCells { .. } => {
+                "cells"
+            }
             Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
             Self::Opens { .. } | Self::NoticeShows | Self::KeepsState => "boolean",
             Self::FontSize { .. } => "font-size",
@@ -2583,7 +2600,16 @@ mod tests {
         // The cells of a pane, of `terminal-read`; an image on the
         // clipboard, of `clipboard-write`; a save of none, as the user
         // chooses the place.
-        for read in [Request::SelectionCells(pane), Request::ScreenCells(pane)] {
+        let rows = Request::RowCells {
+            pane,
+            first: 0,
+            count: 3,
+        };
+        for read in [
+            Request::SelectionCells(pane),
+            Request::ScreenCells(pane),
+            rows,
+        ] {
             assert_eq!(read.capabilities(), [Capability::TerminalRead]);
             assert_eq!(read.effect(), Effect::Read);
             assert_eq!(read.answer(), "cells");

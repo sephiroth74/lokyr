@@ -85,6 +85,7 @@ export type Cx = {
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, string?, number?),
     selection_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
     screen_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
+    row_cells: (pane: PaneId, first: number, count: number) -> ({ CellRow }?, string?, number?),
     render_image: (image: ImageSpec) -> (Image?, string?, number?),
     drop_image: (image: number) -> (true?, string?, number?),
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, string?, number?),

@@ -978,6 +978,22 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The cells of `count` rows of `pane` from the row numbered `first`,
+    /// whole, as an image draws them, as many as the pane holds from it,
+    /// [`MOST_ROWS`](crate::image::MOST_ROWS) at most; none of a first row
+    /// that it does not hold.
+    pub fn row_cells(
+        &mut self,
+        pane: PaneId,
+        first: i64,
+        count: usize,
+    ) -> Result<Option<Vec<crate::image::CellRow>>, Error> {
+        match self.request(Request::RowCells { pane, first, count }) {
+            Response::Cells(rows) => Ok(rows),
+            other => Err(failed(other)),
+        }
+    }
+
     /// An image of `image`'s cells, in the theme's colors and the
     /// terminal's font, in a frame as a window's, which the host renders
     /// offscreen: its PNG, of its size and its scale.

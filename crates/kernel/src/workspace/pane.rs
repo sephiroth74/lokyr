@@ -1081,7 +1081,15 @@ impl Pane {
             .unwrap_or_default()
     }
 
-    /// The cells of the selection, `most` rows at most, as
+    /// The cells of `count` rows from the row numbered `first`, as
+    /// [`Terminal::row_cells`] gives them; none without a terminal.
+    pub fn row_cells(&self, first: i64, count: usize) -> Option<Vec<RowCells>> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().row_cells(first, count))
+    }
+
+    /// The cells of the selection's rows, `most` at most, as
     /// [`Terminal::selection_cells`] gives them.
     pub fn selection_cells(&self, most: usize) -> Option<Vec<RowCells>> {
         self.session

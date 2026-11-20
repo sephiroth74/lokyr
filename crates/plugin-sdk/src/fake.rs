@@ -252,6 +252,29 @@ impl FakePane {
     /// The cells of the rows that its view shows, of their texts without
     /// the spaces that end them and their styles, as a read of them gives
     /// them: a fold's placeholder's of none.
+    /// The cells of `count` rows from the row numbered `first`, as many as
+    /// the pane holds; none of a first row that it does not hold.
+    fn row_cells(&self, first: i64, count: usize) -> Option<Vec<crate::image::CellRow>> {
+        if !self.held.contains(&first) {
+            return None;
+        }
+        let last = first
+            .saturating_add(i64::try_from(count).unwrap_or(i64::MAX))
+            .min(self.held.end);
+        Some(
+            (first..last)
+                .map(|row| crate::image::CellRow {
+                    text: self
+                        .rows
+                        .get(&row)
+                        .map(|(text, _)| text.trim_end_matches(' ').to_owned())
+                        .unwrap_or_default(),
+                    runs: self.styles.get(&row).cloned().unwrap_or_default(),
+                })
+                .collect(),
+        )
+    }
+
     fn view_cells(&self) -> Vec<crate::image::CellRow> {
         let view = self.viewport();
         let cells = |row: i64| crate::image::CellRow {
@@ -4151,6 +4174,10 @@ impl Calling<'_> {
                     .map(|rows| rows.iter().take(crate::image::MOST_ROWS).cloned().collect()),
             ),
             Request::ScreenCells(pane) => Response::Cells(Some(host.held(*pane)?.view_cells())),
+            Request::RowCells { pane, first, count } => Response::Cells(
+                host.held(*pane)?
+                    .row_cells(*first, (*count).min(crate::image::MOST_ROWS)),
+            ),
             Request::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, crate::image::LOOKING));

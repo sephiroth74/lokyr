@@ -1086,6 +1086,10 @@ type Cx = {
     selection_cells: (pane: PaneId) -> ({ { text: string, runs: { StyleRun } } }?, Error?),
     -- The cells of the rows that the view shows, from its top, likewise.
     screen_cells: (pane: PaneId) -> ({ { text: string, runs: { StyleRun } } }?, Error?),
+    -- The cells of `count` rows of the active screen from the row numbered `first`, whole, likewise, as many as the
+    -- pane holds from it, 1000 at most, as a command's block's rows; nothing of a first row that it does not hold
+    -- · not released yet.
+    row_cells: (pane: PaneId, first: number, count: number) -> ({ { text: string, runs: { StyleRun } } }?, Error?),
     -- Requires `history-read`: the commands that the shell marked, 10 000 at most kept, whose rows meet the rows
     -- numbered from `top` to before `bottom`, oldest first: the last whose first row is at `top` or above it, whose
     -- output the row `top` may show, and those after it whose first rows are above `bottom`; a command's first row is
