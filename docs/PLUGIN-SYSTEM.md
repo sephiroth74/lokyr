@@ -371,7 +371,7 @@ type Node = {
     on: boolean?, -- for toggle, switch and checkbox nodes, the plugin's state
     mixed: boolean?, -- for checkbox nodes: neither on nor off, a dash in place of its check, as a checkbox over
     -- others of which some are on; its click asks for on
-    disabled: boolean?, -- for button, toggle, switch, checkbox, radios and pop-up nodes: dimmed, and takes neither a click nor the focus
+    disabled: boolean?, -- for button, toggle, switch, checkbox, radios, pop-up and field nodes: dimmed, and takes neither a click nor the focus, a field nor a value of accessibility's (a field's · not released yet)
     -- For radios nodes, a group of radio buttons of one choice: its options, each of its label and whether it is
     -- disabled; the option chosen, from 0, nil of none; whether they go across a row rather than down a column.
     -- A click on an option, or an arrow while the group has the focus, tells a "select" of its index.
@@ -1204,7 +1204,8 @@ type Cx = {
     -- as their manifests have pages; another page is not found.
     show_page: (page: string) -> (boolean, Error?),
     -- Requires `config`, Lokyr's own plugins' alone: the settings, the config's sections of its schema, in its order,
-    -- then each plugin's of a config schema, in the plugins' order, each key of its name, its description, its
+    -- then each plugin's of a config schema, in the plugins' order, whether its plugin runs as the config says,
+    -- `enabled` (· not released yet), each key of its name, its description, its
     -- platforms, its kind ("boolean", a number of its range, step and whether it is whole, a text of its fewest and
     -- most characters and the values that it suggests, a choice of its values, a list of texts, or another), its
     -- control, its default, its value in force and the address of its text in the config guide; the bindings of keys
@@ -1220,8 +1221,10 @@ type Cx = {
     -- as the settings name it, an app's of no plugin or a plugin's of its name, keeping the rest of the file and its
     -- comments, as the call returns, the config applying anew; a value that the key does not take, as the parser or
     -- the plugin's schema tells it, fails at once, nothing written; of no value, the key goes, back to its default.
-    -- The section `keys` binds keys, any as the parser reads them, to a command that the app has, or `false`. Nothing
-    -- is written over a file that does not read.
+    -- The section `keys` binds keys, any as the parser reads them, to a command that the app has, or `false`. A
+    -- plugin's section's `enabled`, `true` or `false`, turns the plugin on or off, as the Plugins page does, written of
+    -- the plugin's own default, its section's `enabled` in the settings telling it · not released yet. Nothing is
+    -- written over a file that does not read.
     set_setting: (section: string, plugin: string?, key: string, value: Data?) -> (boolean, Error?),
 
     -- The plugin's config, its section's values with its schema's defaults; its state, of plain values,

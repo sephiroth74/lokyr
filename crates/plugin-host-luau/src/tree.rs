@@ -82,6 +82,7 @@ pub(crate) fn own(kind: &str) -> Option<&'static [&'static str]> {
             "records",
             "search",
             "size",
+            "disabled",
         ],
         "button" => &[
             "text", "icon", "disabled", "link", "size", "variant", "keycaps",
@@ -303,6 +304,7 @@ fn one(value: Value, budget: &Budget) -> Result<(Node, Vec<Value>, Option<Value>
             records: or_default(take("records"), "records", budget)?,
             search: or_default(take("search"), "search", budget)?,
             size: or_default(take("size"), "size", budget)?,
+            disabled: or_default(take("disabled"), "disabled", budget)?,
         }),
         "button" => Kind::Button(Button {
             label: or_default(take("text"), "text", budget)?,
@@ -506,6 +508,7 @@ mod giving {
                     records,
                     search,
                     size,
+                    disabled,
                 }) => {
                     table.raw_set("placeholder", placeholder.as_str())?;
                     set(lua, &table, "text", text)?;
@@ -513,6 +516,7 @@ mod giving {
                     table.raw_set("records", *records)?;
                     table.raw_set("search", *search)?;
                     set(lua, &table, "size", size)?;
+                    table.raw_set("disabled", *disabled)?;
                 }
                 Kind::Button(Button {
                     label,

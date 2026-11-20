@@ -1877,6 +1877,25 @@ impl FakeHost {
                 settings.keys = keys;
                 continue;
             }
+            // A plugin's section turned on or off, as the app reads its
+            // config again.
+            if let Request::SetSetting {
+                section,
+                plugin: plugin @ Some(_),
+                key,
+                value: Some(Data::Boolean(on)),
+            } = request
+                && key == "enabled"
+            {
+                if let Some(shown) = settings
+                    .sections
+                    .iter_mut()
+                    .find(|shown| shown.name == *section && shown.plugin == *plugin)
+                {
+                    shown.enabled = Some(*on);
+                }
+                continue;
+            }
             if let Request::SetSetting {
                 section,
                 plugin,
@@ -4752,6 +4771,27 @@ impl Calling<'_> {
                         return Err(Error::new(
                             Code::NotFound,
                             format!("there is no command `{command}`"),
+                        ));
+                    }
+                } else if plugin.is_some() && key == "enabled" {
+                    // The host's key of a plugin's section, which turns the
+                    // plugin on or off, of a boolean alone.
+                    let known = self
+                        .host
+                        .settings
+                        .sections
+                        .iter()
+                        .any(|shown| shown.name == *section && shown.plugin == *plugin);
+                    if !known {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("there is no plugin's section `{section}`"),
+                        ));
+                    }
+                    if !matches!(value, Some(Data::Boolean(_))) {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`enabled` in `[plugins.{section}]` is true or false"),
                         ));
                     }
                 } else {

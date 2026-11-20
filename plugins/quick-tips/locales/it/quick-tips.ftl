@@ -60,6 +60,7 @@ tip-settings-keys = Nella pagina Tasti della finestra delle impostazioni, scrivi
 tip-settings-themes = La pagina Temi della finestra delle impostazioni mostra ogni tema con un'anteprima dei suoi colori: un clic lo usa.
 tip-theme-editor = Editor, nella pagina Temi della finestra delle impostazioni, mostra ogni colore di un tema e da dove viene, e modifica i tuoi: fai clic sulla riga di un colore per scriverne il valore, o sul suo campione per sceglierlo nel pannello dei colori. Modifica, nel menu contestuale della scheda di un tema, mostra quel tema lì.
 tip-settings-search = Nella finestra delle impostazioni, scrivi nel campo di ricerca in cima alla barra laterale per trovare un'impostazione per nome, per cosa fa o per i tasti di una scorciatoia.
+tip-settings-plugin-on = Attiva o disattiva un plugin incluso, come Blocks, con l'interruttore Attivo in cima alla sua sezione nelle Impostazioni.
 tip-plugins = Lokyr › Plugin… elenca ogni plugin, il suo stato e cosa può fare, lo disattiva, lo aggiorna o lo rimuove, e installa quelli del registro.
 
 tip-plugin-keys = Premi { $keys } per «{ $title }», un comando di un plugin installato.

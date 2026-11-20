@@ -937,6 +937,7 @@ export type SettingsSection = {
     name: string,
     plugin: string?,
     replaced_by: string?,
+    enabled: boolean?,
     description: string?,
     keys: { SettingKey },
 }

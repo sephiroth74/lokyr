@@ -2767,6 +2767,7 @@ impl Plugins {
                     |key| values.get(key).cloned(),
                 );
                 section.replaced_by = state.replaced_by.clone();
+                section.enabled = Some(state.wanted);
                 Some(section)
             })
             .collect();
@@ -7269,6 +7270,33 @@ impl Host<'_, '_> {
                         Code::InvalidConfig,
                         lokyr_plugin_sdk::keys::system_error(&key),
                     ));
+                }
+                // The host's key of every plugin's section, which turns its
+                // plugin on or off, as the Plugins page does: written of
+                // the plugin's own default, the plugin starting anew.
+                if let Some(plugin) = &plugin
+                    && key == ENABLED
+                {
+                    let known = self.context.plugin_settings.iter().any(|shown| {
+                        shown.name == section && shown.plugin.as_deref() == Some(plugin.as_str())
+                    });
+                    if !known {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("the plugin `{plugin}` has no section `{section}`"),
+                        ));
+                    }
+                    let Some(Data::Boolean(enabled)) = value else {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`{ENABLED}` in `[plugins.{section}]` is true or false"),
+                        ));
+                    };
+                    self.out.requests.push(Request::SetPluginEnabled {
+                        namespace: section,
+                        enabled,
+                    });
+                    return Ok(Response::Done);
                 }
                 if plugin.is_none()
                     && section == "keys"

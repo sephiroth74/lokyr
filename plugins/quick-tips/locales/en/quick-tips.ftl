@@ -65,6 +65,7 @@ tip-settings-keys = On the settings window's Keys page, type in its filter to fi
 tip-settings-themes = The settings window's Themes page shows every theme of a preview of its colors: a click uses it.
 tip-theme-editor = Editor, on the settings window's Themes page, shows every color of a theme and where it comes from, and edits your own: click a color's row to type its value, or its swatch to pick it in the color panel. Edit, in a theme card's context menu, shows that theme in it.
 tip-settings-search = In the settings window, type in the search field at the sidebar's top to find a setting by its name, what it does, or a shortcut's keys.
+tip-settings-plugin-on = Turn a bundled plugin, such as Blocks, on or off with the Enabled switch at the top of its section in Settings.
 tip-plugins = Lokyr › Plugins… lists every plugin, its state and what it may do, disables, updates or removes one, and installs those of the registry.
 
 # The tips of an installed plugin's command, `$title`: of its keys, or of

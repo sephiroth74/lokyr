@@ -1934,6 +1934,11 @@ pub struct SettingsSection {
     /// replaced: its keys apply once that one is off.
     #[serde(default)]
     pub replaced_by: Option<String>,
+    /// Whether its plugin runs as the config says: its section's
+    /// `enabled`, or, of none, the plugin's own default, which a write of
+    /// the key `enabled` turns; none of the app's sections.
+    #[serde(default)]
+    pub enabled: Option<bool>,
     /// What it holds, of its schema's description.
     #[serde(default)]
     pub description: String,

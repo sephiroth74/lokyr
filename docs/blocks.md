@@ -6,7 +6,7 @@ Lokyr sees each command that your shell runs as a block: its prompt, the command
 
 ## Try it
 
-Turn Blocks on, in your config file or on the Plugins page of the settings window, as [Turn blocks on](#turn-blocks-on) shows. Then run this command:
+Turn Blocks on, with the Enabled switch of its section on the Settings page, in your config file, or on the Plugins page, as [Turn blocks on](#turn-blocks-on) shows. Then run this command:
 
 ```sh
 seq 1 500
@@ -154,7 +154,7 @@ Blocks is off by default, and Lokyr shows the plain [command header](plugins/com
 enabled = true
 ```
 
-You can also click Enable next to Blocks on the Plugins page of the settings window, which writes the same key. Remove the key, or click Disable, to turn Blocks off again: the command header comes back.
+You can also turn on the **Enabled** switch at the top of the Blocks section of the settings window's Settings page, or click Enable next to Blocks on its Plugins page: both write the same key. While Blocks is off, its settings on the Settings page are dimmed, and apply once you turn it on. Remove the key, turn the switch off, or click Disable, to turn Blocks off again: the command header comes back.
 
 ## Settings
 

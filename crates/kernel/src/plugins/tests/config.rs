@@ -1104,6 +1104,7 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
         name: "greeter".to_owned(),
         plugin: Some("acme/greeter".to_owned()),
         replaced_by: None,
+        enabled: None,
         description: "Greets".to_owned(),
         keys: vec![SettingKey {
             name: "count".to_owned(),
@@ -1164,6 +1165,21 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
             "count",
             Some(Data::Integer(5)),
         ),
+        // The host's key, which turns the plugin on or off, of a boolean
+        // alone, of a plugin that has its section.
+        (
+            "greeter",
+            Some("acme/greeter"),
+            "enabled",
+            Some(Data::Boolean(false)),
+        ),
+        ("greeter", Some("acme/greeter"), "enabled", None),
+        (
+            "greeter",
+            Some("acme/other"),
+            "enabled",
+            Some(Data::Boolean(true)),
+        ),
     ];
     let codes = Rc::new(RefCell::new(Vec::new()));
     let seen = Rc::clone(&codes);
@@ -1200,11 +1216,19 @@ fn a_key_of_the_settings_is_written_of_a_value_that_it_takes_and_refused_otherwi
             Err(Code::InvalidConfig),
             Err(Code::InvalidConfig),
             Err(Code::NotFound),
+            Ok(()),
+            Err(Code::InvalidConfig),
+            Err(Code::NotFound),
         ]
     );
-    // The writes that the app makes, of each section's path.
-    let writes: Vec<(Vec<String>, String, Option<Data>)> = plugins
-        .take_requests()
+    // The writes that the app makes, of each section's path, and the
+    // plugin turned off, as the Plugins page asks.
+    let requests = plugins.take_requests();
+    assert!(requests.iter().any(|request| matches!(
+        request,
+        Request::SetPluginEnabled { namespace, enabled: false } if namespace == "greeter"
+    )));
+    let writes: Vec<(Vec<String>, String, Option<Data>)> = requests
         .into_iter()
         .filter_map(|request| match request {
             Request::SetSetting {

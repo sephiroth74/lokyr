@@ -150,6 +150,12 @@ pub fn perform<P: Copy + Eq>(
             }) else {
                 return Vec::new();
             };
+            // A disabled field takes no value.
+            if matches!(asked, Action::SetValue(_))
+                && matches!(tree.kind(node), Some(Kind::Field(field)) if field.disabled)
+            {
+                return Vec::new();
+            }
             // A pop-up button's press opens its menu, as the host shows it,
             // but a disabled one's.
             if matches!(asked, Action::Press)
@@ -302,7 +308,11 @@ impl WindowTree {
                 if !field.placeholder.is_empty() {
                     node.set_placeholder(field.placeholder.as_str());
                 }
-                node.add_action(AxAction::SetValue);
+                if field.disabled {
+                    node.set_disabled();
+                } else {
+                    node.add_action(AxAction::SetValue);
+                }
             }
             Kind::Button(button) => pressable(&mut node, button.disabled),
             Kind::Toggle(toggle) => {
