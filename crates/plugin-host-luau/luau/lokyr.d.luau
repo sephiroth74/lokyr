@@ -1118,6 +1118,13 @@ export type Underline =
     | "dotted"
     | "dashed"
 
+export type ViewFold = {
+    command: number,
+    whole: boolean,
+    first: number,
+    last: number,
+}
+
 export type ViewId =
     | { tab_bar: WindowId }
     | { window_strip: WindowId }
@@ -1134,6 +1141,7 @@ export type Viewport = {
     oldest: number,
     epoch: number,
     alternate: boolean,
+    folds: { ViewFold }?,
 }
 
 export type WindowId = number

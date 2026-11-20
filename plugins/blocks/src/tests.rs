@@ -80,6 +80,7 @@ fn scrolled(host: &mut FakeHost, plugin: &mut Blocks, top: i64) -> Option<Node> 
             oldest: 0,
             epoch: 1,
             alternate: false,
+            folds: Vec::new(),
         },
     });
     host.deliver(plugin).unwrap();
@@ -562,6 +563,7 @@ fn a_block_whose_prompt_left_the_scrollback_is_its_rows_that_the_pane_holds() {
         oldest: 2,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
     assert!(!host.applies(&mut plugin, COPY_COMMAND, &cell(0, 2)));
     run(&mut host, &mut plugin, COPY_BLOCK, cell(0, 2));
@@ -582,6 +584,7 @@ fn nothing_applies_on_the_alternate_screen_nor_of_a_pane_of_no_marks() {
         oldest: 0,
         epoch: 1,
         alternate: true,
+        folds: Vec::new(),
     });
     for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS, RERUN] {
         assert!(!host.applies(&mut plugin, name, &cell(0, 1)), "{name}");
@@ -829,6 +832,7 @@ fn a_block_s_details_open_in_place_of_others_and_of_another_day_s_date() {
         oldest: 0,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
     // A day later.
     host.set_local_time(lokyr_plugin_sdk::host::LocalTime {
@@ -1025,6 +1029,7 @@ fn viewed(host: &mut FakeHost, top: i64, screen: i64) {
         oldest: 0,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
 }
 

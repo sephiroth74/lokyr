@@ -254,17 +254,13 @@ impl Terminal {
     /// rectangle, or of more than [`MOST_ARROWS`] arrows or deletes.
     pub fn command_line_selection(&mut self) -> Option<(Option<PromptClick>, usize)> {
         let clicks = self.prompt_clicks?;
-        let selected = self.selection()?;
-        if selected.shape != super::SelectionShape::Cells {
+        let (shape, first, last) = self.selected_cells()?;
+        if shape != super::SelectionShape::Cells {
             return None;
         }
         let (start, _) = self.command_line_start()?;
-        let origin = self.origin();
-        let first = (
-            selected.start.0,
-            self.screen_y(origin.top + selected.start.1)?,
-        );
-        let last = (selected.end.0, self.screen_y(origin.top + selected.end.1)?);
+        let first = (first.0, self.screen_y(first.1)?);
+        let last = (last.0, self.screen_y(last.1)?);
         if (first.1, first.0) < (start.1, start.0) {
             return None;
         }

@@ -237,34 +237,50 @@ impl FakePane {
 
     /// Its view, as a read of it gives it.
     fn viewport(&self) -> host::Viewport {
-        self.viewport.unwrap_or_else(|| {
+        self.viewport.clone().unwrap_or_else(|| {
             let top = self.held.end - i64::from(self.grid.1);
             host::Viewport {
                 top,
                 rows: self.grid.1,
                 screen: top,
                 oldest: self.held.start,
-                epoch: 0,
-                alternate: false,
+                ..host::Viewport::default()
             }
         })
     }
 
     /// The cells of the rows that its view shows, of their texts without
     /// the spaces that end them and their styles, as a read of them gives
-    /// them.
+    /// them: a fold's placeholder's of none.
     fn view_cells(&self) -> Vec<crate::image::CellRow> {
         let view = self.viewport();
-        (view.top..view.top + i64::from(view.rows))
-            .map(|row| crate::image::CellRow {
-                text: self
-                    .rows
-                    .get(&row)
-                    .map(|(text, _)| text.trim_end_matches(' ').to_owned())
-                    .unwrap_or_default(),
-                runs: self.styles.get(&row).cloned().unwrap_or_default(),
-            })
-            .collect()
+        let cells = |row: i64| crate::image::CellRow {
+            text: self
+                .rows
+                .get(&row)
+                .map(|(text, _)| text.trim_end_matches(' ').to_owned())
+                .unwrap_or_default(),
+            runs: self.styles.get(&row).cloned().unwrap_or_default(),
+        };
+        let mut shown = Vec::with_capacity(usize::from(view.rows));
+        let mut row = view.top;
+        let mut folds = view.folds.iter().peekable();
+        for _ in 0..view.rows {
+            match folds.next_if(|fold| fold.first <= row) {
+                Some(fold) => {
+                    shown.push(crate::image::CellRow {
+                        text: String::new(),
+                        runs: Vec::new(),
+                    });
+                    row = fold.last + 1;
+                }
+                None => {
+                    shown.push(cells(row));
+                    row += 1;
+                }
+            }
+        }
+        shown
     }
 }
 

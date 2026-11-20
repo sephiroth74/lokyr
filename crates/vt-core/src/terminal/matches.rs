@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::Terminal;
+use super::folds::ViewMap;
 use super::selection::{CellPin, row_at};
 use crate::page::{Content, Width};
 
@@ -168,11 +169,15 @@ impl Terminal {
     /// Shows the matches of the search `id`, or hides them, as `all` says,
     /// and `current`'s cells, from its first to its last, apart, as the
     /// current match, if it gives one, which the terminal pins, as they
-    /// keep their text. Whether the terminal keeps the search's matches.
+    /// keep their text, and whose rows the folds that take them give back.
+    /// Whether the terminal keeps the search's matches.
     pub fn show_matches(&mut self, id: u64, all: bool, current: Option<MatchCells>) -> bool {
         let Some(at) = self.matches.iter().position(|kept| kept.id == id) else {
             return false;
         };
+        if let Some((from, to)) = current {
+            self.unfold_rows(from.1, to.1);
+        }
         if let Some((start, end, _)) = self.matches[at].current.take() {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
@@ -226,13 +231,14 @@ impl Terminal {
         self.scroll_on_output && !self.holds_view()
     }
 
-    /// The spans that the view shows of the matches shown, row by row, and
-    /// of the current matches, apart, of those whose cells hold the text
+    /// The spans that the view `map` shows of the matches shown, row by
+    /// row, but on the rows that a fold takes, and of the current matches,
+    /// apart, of those whose cells hold the text
     /// that the search found; nothing, and no cost, without them. Those of
     /// the view are found by a binary search, as their matches lie in
     /// reading order: of their last cells' rows, of those whose text left
     /// before the others, as the oldest rows leave first.
-    pub(super) fn highlighted_view(&self) -> Vec<Highlighted> {
+    pub(super) fn highlighted_view(&self, map: &ViewMap) -> Vec<Highlighted> {
         if self
             .matches
             .iter()
@@ -240,8 +246,7 @@ impl Terminal {
         {
             return Vec::new();
         }
-        let top = self.origin().top;
-        let bottom = top + i64::from(self.rows) - 1;
+        let (top, bottom) = (map.top(), map.end() - 1);
         let mut spans = Vec::new();
         for kept in &self.matches {
             let current = kept.current.as_ref().and_then(|span| self.kept_cells(span));
@@ -249,12 +254,12 @@ impl Terminal {
                 for (part, index, cells) in self.in_view(kept, (top, bottom)) {
                     let span = &kept.parts[&part][index];
                     if Some(cells) != current && self.span_print(&span.0, &span.1) == Some(span.2) {
-                        self.spans_of(cells, (top, bottom), false, &mut spans);
+                        self.spans_of(cells, map, false, &mut spans);
                     }
                 }
             }
             if let Some(cells) = current {
-                self.spans_of(cells, (top, bottom), true, &mut spans);
+                self.spans_of(cells, map, true, &mut spans);
             }
         }
         spans
@@ -399,12 +404,12 @@ impl Terminal {
         }
     }
 
-    /// Lets go the matches of the view whose cells hold other text than the
+    /// Lets go the matches of the view `map` whose cells hold other text than the
     /// search found there, as a program writes over them where they are,
     /// and a current match's, their pins going, so that the matches' reads
     /// and places leave them out; nothing, and no cost, without matches
     /// shown.
-    pub(super) fn drop_rewritten_matches(&mut self) {
+    pub(super) fn drop_rewritten_matches(&mut self, map: &ViewMap) {
         if self
             .matches
             .iter()
@@ -412,8 +417,7 @@ impl Terminal {
         {
             return;
         }
-        let top = self.origin().top;
-        let bottom = top + i64::from(self.rows) - 1;
+        let (top, bottom) = (map.top(), map.end() - 1);
         let mut gone = Vec::new();
         for at in 0..self.matches.len() {
             let kept = &self.matches[at];
@@ -478,22 +482,22 @@ impl Terminal {
         found
     }
 
-    /// Pushes onto `spans` those of the match of `cells` on the rows of the
-    /// view, from the row numbered `top` to `bottom`, its last character's
-    /// both cells of a wide one, whose first half its last cell is.
+    /// Pushes onto `spans` those of the match of `cells` on the rows that
+    /// the view `map` shows, those that a fold takes left out, its last
+    /// character's both cells of a wide one, whose first half its last cell
+    /// is.
     fn spans_of(
         &self,
         (start, end): MatchCells,
-        (top, bottom): (i64, i64),
+        map: &ViewMap,
         current: bool,
         spans: &mut Vec<Highlighted>,
     ) {
         let last_column = self.cols - 1;
         let end = (self.character_end(end), end.1);
-        for row in start.1.max(top)..=end.1.min(bottom) {
+        for (y, row) in map.shown(start.1, end.1) {
             spans.push(Highlighted {
-                // Within the view's rows, which a `u16` holds.
-                row: (row - top) as u16,
+                row: y,
                 first: if row == start.1 { start.0 } else { 0 },
                 last: if row == end.1 { end.0 } else { last_column },
                 current,

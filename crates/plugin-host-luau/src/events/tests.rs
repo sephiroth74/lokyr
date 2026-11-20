@@ -100,6 +100,7 @@ fn every() -> Vec<Event> {
                 oldest: -1000,
                 epoch: 2,
                 alternate: true,
+                folds: Vec::new(),
             },
         },
         Event::CommandStarted { pane, command: 4 },

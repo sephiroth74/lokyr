@@ -39,7 +39,7 @@ pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Label, Look, MOST_DECORATIONS};
-pub use folds::{FoldMark, MOST_FOLDS, ViewRow};
+pub use folds::{FoldMark, MOST_FOLDS, ShownRow, ViewRow};
 pub use gutter::{BlockMark, GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
     IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
@@ -51,7 +51,8 @@ pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use prompt_click::{PromptClick, PromptClicks};
 pub use selection::{
-    CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
+    CellPin, RowCells, RowText, Selected, SelectedCells, SelectionShape, SelectionUnit,
+    WORD_SEPARATORS,
 };
 pub use session_status::SessionStatus;
 pub use snapshot::{Line, Snapshot, SnapshotCursor};

@@ -18,7 +18,7 @@ use lokyr_platform_core::{
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
-    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit,
+    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow,
 };
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
@@ -675,8 +675,7 @@ impl<B: Backend> App<B> {
         let Some(pane) = self.workspace.pane(target).filter(|pane| !pane.is_kept()) else {
             return;
         };
-        let on_screen =
-            mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height);
+        let on_screen = on_screen(pane, pointer);
         if pressed {
             let Some(pointer) = on_screen else {
                 return;
@@ -770,7 +769,9 @@ impl<B: Backend> App<B> {
         };
         let pane = self.workspace.focused(state.window);
         let context = context(pane);
-        let row = pane.map_or(0, shown_top) + i64::from(pointer.row);
+        let row = pane.map_or(i64::from(pointer.row), |pane| {
+            shown_number(pane, pointer.row)
+        });
         let Resolved::Run(mut invocation) =
             Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
         else {
@@ -840,8 +841,8 @@ impl<B: Backend> App<B> {
         let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
-        let grid = pane.grid();
-        let spot = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
+        let extended = state.selecting.as_ref().filter(|_| mods.shift);
+        let spot = spot_of(pane, pointer, extended.map(|selecting| selecting.anchor));
         let tracking = !pane.is_kept()
             && pane
                 .input_modes()
@@ -915,7 +916,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let grid = pane.grid();
-        selecting.last = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
+        selecting.last = spot_of(pane, pointer, Some(selecting.anchor));
         selecting.beyond = mouse::beyond(position.y, scale, top, grid);
         show_selection(pane, selecting);
         platform.request_frame(window);
@@ -993,7 +994,7 @@ impl<B: Backend> App<B> {
             } else {
                 pane.grid().rows.saturating_sub(1)
             };
-            selecting.last.row = pane.origin().map_or(0, |origin| origin.row(edge));
+            selecting.last.row = pane.shown_row_now(edge).map_or(0, ShownRow::row);
             show_selection(pane, selecting);
             platform.request_frame(window);
             scrolled |= offset != before;
@@ -1091,8 +1092,7 @@ impl<B: Backend> App<B> {
         if modes.mouse_tracking == MouseTracking::None {
             return;
         }
-        let offset = pane.snapshot().offset();
-        let Some(pointer) = mouse::on_screen(pointer, offset, pane.grid().cell_height) else {
+        let Some(pointer) = on_screen(pane, pointer) else {
             return;
         };
         let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
@@ -1150,12 +1150,13 @@ impl<B: Backend> App<B> {
             let pane = self.pane_under(platform, window, position)?;
             let pointer = self.pointer_in(platform, window, pane, position)?;
             // The drawn frame's numbers, which take no lock of the pane.
-            let top = self.workspace.pane(pane)?.snapshot().origin()?.top;
-            Some((
-                pane,
-                Some((pointer.col, top + i64::from(pointer.row))),
-                command,
-            ))
+            let row = self
+                .workspace
+                .pane(pane)?
+                .snapshot()
+                .shown_row(pointer.row)?
+                .row();
+            Some((pane, Some((pointer.col, row)), command))
         });
         // Out of the panes, the pane that it left learns so.
         let told = over.or_else(|| self.pointer_told.map(|(pane, _, _)| (pane, None, command)));
@@ -1213,8 +1214,7 @@ impl<B: Backend> App<B> {
         let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
         // A step that the program takes over the scrollback goes to it at
         // the screen's top row.
-        let pointer = mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height)
-            .unwrap_or(mouse::at_top(pointer));
+        let pointer = on_screen(pane, pointer).unwrap_or(mouse::at_top(pointer));
         let to_program = !mods.shift && !pane.is_kept();
         // A binding of a step takes it first, before the program and the
         // view.
@@ -1384,15 +1384,63 @@ fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseE
     }
 }
 
-/// The number of the first row of `pane`'s view as the drawn frame showed
-/// it, which the pointer's cells take, though output scrolled the view
-/// since; as the terminal has it now, when a resize laid the rows out
-/// again since, or the other screen became the active one.
-pub(super) fn shown_top(pane: &Pane) -> i64 {
-    let now = pane.origin();
-    match (pane.snapshot().origin(), now) {
-        (Some(drawn), Some(now)) if drawn.epoch == now.epoch => drawn.top,
-        (_, now) => now.map_or(0, |now| now.top),
+/// The row of `pane`'s view `y`, by the numbers of the rows that it shows,
+/// as the drawn frame showed it, which the pointer's cells take, though
+/// output scrolled the view since: the list's row, or a fold's
+/// placeholder, the screen's last past the list's last; the row `y` from
+/// the view's first as the terminal has it now, when a resize laid the
+/// rows out again since, or the other screen became the active one.
+pub(super) fn shown_row(pane: &Pane, y: u16) -> ShownRow {
+    let snapshot = pane.snapshot();
+    match (snapshot.origin(), pane.origin()) {
+        (Some(drawn), Some(now)) if drawn.epoch == now.epoch => {
+            snapshot.shown_row(y).unwrap_or_else(|| {
+                // Fewer rows than an `i64` holds.
+                let screen = drawn.top.saturating_add(snapshot.offset() as i64);
+                ShownRow::Row(screen + i64::from(snapshot.rows()) - 1)
+            })
+        }
+        (_, now) => ShownRow::Row(now.map_or(0, |now| now.top) + i64::from(y)),
+    }
+}
+
+/// `pointer` over `pane`, at its place on the screen, whose rows the program
+/// counts, as [`mouse::on_screen`] finds it, of the drawn view: over a view
+/// of folds, at its row's place on the screen, a fold's placeholder's first
+/// row's; `None` above the screen.
+fn on_screen(pane: &Pane, pointer: Pointer) -> Option<Pointer> {
+    let snapshot = pane.snapshot();
+    let cell_height = pane.grid().cell_height;
+    if snapshot.view().is_empty() {
+        return mouse::on_screen(pointer, snapshot.offset(), cell_height);
+    }
+    mouse::onto_row(pointer, snapshot.screen_row(pointer.row)?, cell_height)
+}
+
+/// The number of the row of `pane`'s view `y`, as [`shown_row`] finds it:
+/// a fold's placeholder's first row's.
+pub(super) fn shown_number(pane: &Pane, y: u16) -> i64 {
+    shown_row(pane, y).row()
+}
+
+/// The spot of `pointer` in `pane`, its row as [`shown_row`] finds it: over
+/// a fold's placeholder, the end of the fold's last row from an anchor
+/// `from` above the fold, the start of its first otherwise, so that a drag
+/// over it selects the fold's rows whole.
+fn spot_of(pane: &Pane, pointer: Pointer, from: Option<Spot>) -> Spot {
+    let grid = pane.grid();
+    match shown_row(pane, pointer.row) {
+        ShownRow::Row(row) => mouse::spot(pointer, row, grid.cell_width, grid.columns),
+        ShownRow::Folded { first, last, .. } if from.is_some_and(|from| from.row < first) => Spot {
+            row: last,
+            col: grid.columns.saturating_sub(1),
+            boundary: grid.columns,
+        },
+        ShownRow::Folded { first, .. } => Spot {
+            row: first,
+            col: 0,
+            boundary: 0,
+        },
     }
 }
 

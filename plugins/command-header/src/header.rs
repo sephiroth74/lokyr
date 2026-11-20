@@ -244,8 +244,8 @@ impl Headers {
                         }
                     }
                 }
-                Event::ViewportChanged { pane, viewport } => {
-                    self.panes.entry(pane).or_default().viewport = Some(viewport);
+                Event::ViewportChanged { pane, ref viewport } => {
+                    self.panes.entry(pane).or_default().viewport = Some(viewport.clone());
                     looked.insert(pane);
                 }
                 Event::CommandStarted { pane, .. } | Event::CommandEnded { pane, .. } => {
@@ -348,7 +348,7 @@ impl Headers {
         let Some(followed) = self.panes.get(&pane) else {
             return Ok(());
         };
-        let wanted = match followed.viewport {
+        let wanted = match &followed.viewport {
             Some(viewport) if !viewport.alternate => {
                 shown_at(cx, pane, viewport, followed.shown.as_ref(), self.ends)
             }
@@ -406,7 +406,7 @@ impl Headers {
 fn shown_at(
     cx: &mut Cx<'_>,
     pane: PaneId,
-    viewport: Viewport,
+    viewport: &Viewport,
     before: Option<&Shown>,
     ends: bool,
 ) -> Option<Shown> {
@@ -454,16 +454,17 @@ fn shown_at(
 /// `viewport`, if the view does not show it: the block's last row at the
 /// view's bottom; the screen's, which the view then follows, of a command
 /// that has not ended.
-fn to_end(end: Option<(u16, i64)>, viewport: Viewport) -> Option<Scroll> {
+fn to_end(end: Option<(u16, i64)>, viewport: &Viewport) -> Option<Scroll> {
     let rows = i64::from(viewport.rows);
     match end {
         Some((column, row)) => {
             // An end at a row's start, as an output's last new line leaves
             // it, follows the block's last row.
             let last = if column == 0 { row - 1 } else { row };
-            (last >= viewport.top + rows).then_some(Scroll::Row(last + 1 - rows))
+            (last >= viewport.top && viewport.view_row(last).is_none())
+                .then_some(Scroll::Row(last + 1 - rows))
         }
-        None => (viewport.top < viewport.screen).then_some(Scroll::Bottom),
+        None => (!viewport.at_screen()).then_some(Scroll::Bottom),
     }
 }
 

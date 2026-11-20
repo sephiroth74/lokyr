@@ -6,6 +6,7 @@
 //! takes its rows. The snapshot carries the spans that the view shows.
 
 use super::Terminal;
+use super::folds::ViewMap;
 use super::selection::CellPin;
 use crate::page::{Rgb, Underline};
 
@@ -133,10 +134,11 @@ impl Terminal {
             .collect()
     }
 
-    /// The spans that the view shows of the active screen's decorations,
-    /// row by row; the decorations whose text left go. Nothing, and no
-    /// cost, without decorations.
-    pub(super) fn decorated_view(&mut self) -> Vec<Decorated> {
+    /// The spans that the view `map` shows of the active screen's
+    /// decorations, row by row, those of the rows that a fold takes left
+    /// out; the decorations whose text left go. Nothing, and no cost,
+    /// without decorations.
+    pub(super) fn decorated_view(&mut self, map: &ViewMap) -> Vec<Decorated> {
         if self.decorations.is_empty() {
             return Vec::new();
         }
@@ -149,8 +151,6 @@ impl Terminal {
         for id in gone {
             self.undecorate(id);
         }
-        let top = self.origin().top;
-        let bottom = top + i64::from(self.rows) - 1;
         let last_column = self.cols - 1;
         let mut spans = Vec::new();
         for decoration in &self.decorations {
@@ -165,11 +165,10 @@ impl Terminal {
             if (end.1, end.0) < (start.1, start.0) {
                 continue;
             }
-            for row in start.1.max(top)..=end.1.min(bottom) {
+            for (y, row) in map.shown(start.1, end.1) {
                 spans.push(Decorated {
                     id: decoration.id,
-                    // Within the view's rows, which a `u16` holds.
-                    row: (row - top) as u16,
+                    row: y,
                     first: if row == start.1 { start.0 } else { 0 },
                     last: if row == end.1 { end.0 } else { last_column },
                     look: decoration.look,

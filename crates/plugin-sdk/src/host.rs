@@ -813,9 +813,24 @@ pub enum SelectionKind {
     Block,
 }
 
+/// A fold of a pane's view: a command's output, or its whole block, which
+/// the view shows as one row, its placeholder, by its command's id, whether
+/// it hides the whole block, and the numbers of its first row and its last.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewFold {
+    /// The command's id.
+    pub command: u64,
+    /// Whether it hides the whole block, the command's prompt and line too.
+    pub whole: bool,
+    /// The number of its first row.
+    pub first: i64,
+    /// The number of its last row.
+    pub last: i64,
+}
+
 /// A pane's view: the rows that it shows, of its screen or of the
 /// scrollback above it, by their numbers, as its last frame showed them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Viewport {
     /// The number of its first row.
     pub top: i64,
@@ -834,6 +849,79 @@ pub struct Viewport {
     /// Whether the alternate screen shows, as a program such as vim shows
     /// its own: rows of its own, of no scrollback nor commands.
     pub alternate: bool,
+    /// The folds that it shows, from its top, each one of its rows, so
+    /// that it shows the rows past `top + rows` too: none of no fold.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folds: Vec<ViewFold>,
+}
+
+impl Viewport {
+    /// The numbers of the rows that it shows, from its top: each fold's
+    /// rows left out, its placeholder's row taking one of its `rows`.
+    pub fn shown_rows(&self) -> Vec<i64> {
+        let mut shown = Vec::with_capacity(usize::from(self.rows));
+        let mut row = self.top;
+        let mut folds = self.folds.iter().peekable();
+        for _ in 0..self.rows {
+            match folds.peek() {
+                Some(fold) if fold.first <= row => {
+                    row = fold.last.saturating_add(1);
+                    folds.next();
+                }
+                _ => {
+                    shown.push(row);
+                    row = row.saturating_add(1);
+                }
+            }
+        }
+        shown
+    }
+
+    /// Whether it shows the screen's last row, as a view that follows the
+    /// screen does: of no fold, whether its `top` is the screen's.
+    pub fn at_screen(&self) -> bool {
+        let last = self.screen.saturating_add(i64::from(self.rows)) - 1;
+        self.view_row(last).is_some()
+    }
+
+    /// The runs of rows that it shows, from its top, each from its first
+    /// row's number to past its last's, the folds between them: one run of
+    /// `top` to `top + rows` of no fold.
+    pub fn shown_runs(&self) -> Vec<(i64, i64)> {
+        let mut runs: Vec<(i64, i64)> = Vec::new();
+        for row in self.shown_rows() {
+            match runs.last_mut() {
+                Some((_, past)) if *past == row => *past = row + 1,
+                _ => runs.push((row, row + 1)),
+            }
+        }
+        runs
+    }
+
+    /// The row of the view that shows the row numbered `row`, its own or
+    /// its fold's placeholder; none of a row above the view or past it.
+    pub fn view_row(&self, row: i64) -> Option<u16> {
+        if row < self.top {
+            return None;
+        }
+        let mut at = self.top;
+        let mut y = 0;
+        for fold in &self.folds {
+            if row < fold.first {
+                break;
+            }
+            // The rows before the fold, then its placeholder.
+            y += fold.first - at;
+            if row <= fold.last {
+                return u16::try_from(y).ok().filter(|&y| y < self.rows);
+            }
+            y += 1;
+            at = fold.last + 1;
+        }
+        u16::try_from(y + (row - at))
+            .ok()
+            .filter(|&y| y < self.rows)
+    }
 }
 
 /// A command, as a read of the registry gives it: its name, its title, in
@@ -2267,6 +2355,46 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_of_folds_shows_the_rows_past_them_each_fold_one_row() {
+        let fold = |first, last| ViewFold {
+            command: 1,
+            whole: false,
+            first,
+            last,
+        };
+        // Ten rows from 100, of the folds of 102 to 149 and 152 to 152.
+        let view = Viewport {
+            top: 100,
+            rows: 10,
+            screen: 140,
+            folds: vec![fold(102, 149), fold(152, 152)],
+            ..Viewport::default()
+        };
+        assert_eq!(view.shown_rows(), [100, 101, 150, 151, 153, 154, 155, 156]);
+        assert_eq!(view.shown_runs(), [(100, 102), (150, 152), (153, 157)]);
+        assert_eq!(view.view_row(101), Some(1));
+        assert_eq!(view.view_row(120), Some(2));
+        assert_eq!(view.view_row(150), Some(3));
+        assert_eq!(view.view_row(152), Some(5));
+        assert_eq!(view.view_row(156), Some(9));
+        assert_eq!(view.view_row(157), None);
+        assert_eq!(view.view_row(99), None);
+        // The screen's last row, 149, in a fold.
+        assert!(view.at_screen());
+        // Of no fold, the rows from `top` alone.
+        let plain = Viewport {
+            top: 130,
+            rows: 10,
+            screen: 140,
+            ..Viewport::default()
+        };
+        assert_eq!(plain.shown_runs(), [(130, 140)]);
+        assert_eq!(plain.view_row(139), Some(9));
+        assert!(!plain.at_screen());
+        assert!(Viewport { top: 140, ..plain }.at_screen());
+    }
 
     #[test]
     fn a_local_time_s_date_and_time_of_day_are_of_its_offset() {

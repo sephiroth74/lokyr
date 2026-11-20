@@ -453,6 +453,7 @@ fn no_output_applies_while_the_alternate_screen_shows() {
         oldest: 0,
         epoch: 0,
         alternate: true,
+        folds: Vec::new(),
     });
     assert!(!host.applies(&mut plugin, COPY_OUTPUT, &Args::new()));
     assert!(!host.applies(&mut plugin, SELECT_OUTPUT, &cell(0, 1)));

@@ -525,7 +525,7 @@ impl Blocks {
             Some((column, row)) => Anchor::Cell { pane, column, row },
             None => {
                 let view = cx.viewport(pane)?;
-                if view.top == view.screen {
+                if view.at_screen() {
                     Anchor::Cursor(pane)
                 } else {
                     Anchor::PaneCorner {
@@ -1008,9 +1008,7 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
             let above =
                 |command: &ShellCommand| first_row(command).is_some_and(|row| row < view.top);
             match (at, forward) {
-                (_, false) if view.top >= view.screen => {
-                    walk(cx, last.saturating_add(1), &started)?
-                }
+                (_, false) if view.at_screen() => walk(cx, last.saturating_add(1), &started)?,
                 (Some(at), false) if above(&at) && started(&at) => Some(at),
                 (Some(at), false) => {
                     walk(cx, at.id, &|command| started(command) && above(command))?

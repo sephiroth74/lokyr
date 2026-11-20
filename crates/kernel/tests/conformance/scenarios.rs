@@ -2253,7 +2253,7 @@ fn capabilities(world: &World) -> Scenario {
             ),
             (
                 Request::Viewport(world.pane),
-                Response::Viewport(world.viewport),
+                Response::Viewport(world.viewport.clone()),
             ),
             // The windows, the tabs and the panes; what the panes show; what
             // a plugin draws over them; and the pointer.
@@ -2353,7 +2353,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
     let events = vec![
         Event::ViewportChanged {
             pane: world.pane,
-            viewport: world.viewport,
+            viewport: world.viewport.clone(),
         },
         Event::CommandStarted {
             pane: world.pane,
@@ -2466,7 +2466,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
                     ),
                     (
                         Request::Viewport(world.pane),
-                        Response::Viewport(world.viewport),
+                        Response::Viewport(world.viewport.clone()),
                     ),
                     (
                         Request::Viewport(NO_PANE),

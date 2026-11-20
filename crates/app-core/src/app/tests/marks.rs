@@ -80,9 +80,9 @@ impl Plugin for Follower {
         let mut followed = self.0.borrow_mut();
         for event in events {
             match *event {
-                plugins::Event::ViewportChanged { pane, viewport } => {
+                plugins::Event::ViewportChanged { pane, ref viewport } => {
                     followed.pane = Some(pane);
-                    followed.viewports.push(viewport);
+                    followed.viewports.push(viewport.clone());
                 }
                 plugins::Event::CommandStarted { command, .. } => {
                     followed.commands_told.push((command, None));
@@ -218,7 +218,8 @@ fn a_plugin_follows_three_commands_and_its_pane_s_view_through_output_and_the_sc
     );
     // The view follows the screen down to the last prompt, the oldest row
     // raised past the first, as the limit took the rows above.
-    let last = |followed: &Rc<RefCell<Followed>>| *followed.borrow().viewports.last().unwrap();
+    let last =
+        |followed: &Rc<RefCell<Followed>>| followed.borrow().viewports.last().unwrap().clone();
     let shows_end = |viewport: Viewport| {
         viewport.screen <= end && end < viewport.screen + i64::from(viewport.rows)
     };
@@ -936,4 +937,87 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
     fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
     run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+}
+
+#[test]
+fn a_click_and_a_drag_below_a_fold_take_the_rows_that_the_view_shows_there() {
+    // `ls` of five rows, `echo hi`, then the prompt where you type: rows 0
+    // to 8 of the screen.
+    let marks = |line: &str, output: &str| {
+        format!(
+            "\\033]133;A\\007$ \\033]133;B\\007{line}\\r\\n\\033]133;C\\007{output}\\033]133;D;0\\007"
+        )
+    };
+    let script = format!(
+        "printf '{}{}\\033]133;A\\007$ \\033]133;B\\007'; sleep 30",
+        marks("ls", "a1\\r\\na2\\r\\na3\\r\\na4\\r\\na5\\r\\n"),
+        marks("echo hi", "hi\\r\\n"),
+    );
+    let mut fake = Fake::default();
+    let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 3)
+    });
+    // `ls`' output folded: the view shows `$ ls`, the placeholder, `$ echo
+    // hi`, `hi` and the prompt.
+    let ls = app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)[0]
+        .id;
+    assert!(
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .fold(ls, false)
+    );
+    framed_until(&mut fake, &mut app, window, |app| {
+        !app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .view()
+            .is_empty()
+    });
+    assert!(row(&app, window, 2).starts_with("$ echo hi"));
+    // A right click on `hi`, the view's row 3, marks the row 7's cell.
+    right_click(&mut fake, &mut app, window, cell(1, 3), Modifiers::NONE);
+    assert_eq!(
+        app.workspace.pane(pane).unwrap().marked_cell(),
+        Some((1, 7))
+    );
+    // A drag from `$ ls` over the placeholder to `hi` selects the fold's
+    // rows too.
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (cell(0, 0), cell(2, 3)),
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        selected_text(&app, window).as_deref(),
+        Some("$ ls\na1\na2\na3\na4\na5\n$ echo hi\nhi")
+    );
+    // Its end on the placeholder, from above it: the fold's rows whole.
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (cell(0, 0), cell(3, 1)),
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        selected_text(&app, window).as_deref(),
+        Some("$ ls\na1\na2\na3\na4\na5")
+    );
 }

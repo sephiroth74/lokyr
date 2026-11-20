@@ -67,6 +67,7 @@ fn viewport(top: i64, alternate: bool) -> Viewport {
         oldest: 0,
         epoch: 1,
         alternate,
+        folds: Vec::new(),
     }
 }
 

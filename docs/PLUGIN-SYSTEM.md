@@ -502,9 +502,12 @@ type ShellCommand = {
 
 -- A pane's view, as its last frame showed it: the number of its first row, its rows, the number of the screen's first
 -- row, as `top` is while it shows the screen and less above, the number of the oldest row, which the scrollback's limit
--- raises, the epoch of the rows' numbers, which a resize changes as it numbers them anew, and whether the alternate
--- screen shows, of rows of its own, of no scrollback nor commands.
-type Viewport = { top: number, rows: number, screen: number, oldest: number, epoch: number, alternate: boolean }
+-- raises, the epoch of the rows' numbers, which a resize changes as it numbers them anew, whether the alternate
+-- screen shows, of rows of its own, of no scrollback nor commands, and the folds that it shows, from its top, each one
+-- row in place of a command's output or of its whole block, `whole`, from its `first` row to its `last`, so that the
+-- view shows the rows past `top + rows` too · not released yet.
+type ViewFold = { command: number, whole: boolean, first: number, last: number }
+type Viewport = { top: number, rows: number, screen: number, oldest: number, epoch: number, alternate: boolean, folds: { ViewFold }? }
 
 -- The cells of a row from a column to another, of one style, as the program gave it.
 type StyleRun = { first: number, last: number, style: { foreground: any?, background: any?, bold: boolean, italic: boolean, underline: string? } }

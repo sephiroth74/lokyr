@@ -2459,7 +2459,5 @@ fn text_changed_under(told: Option<PointerTold>, id: PaneId, pane: &Pane) -> boo
     if snapshot.scrolled() != 0 {
         return true;
     }
-    snapshot.origin().is_some_and(|origin| {
-        u16::try_from(row - origin.top).is_ok_and(|y| y < snapshot.rows() && snapshot.changed(y))
-    })
+    snapshot.view_y(row).is_some_and(|y| snapshot.changed(y))
 }

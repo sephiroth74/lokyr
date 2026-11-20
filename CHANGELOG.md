@@ -29,6 +29,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - The plugin API draws the commands' blocks of every pane, `cx.set_block_looks`, of `pane-view`: the gutter's bars along them, their dividers, and a failed block's tint.
 - The plugin API selects a block of a pane, `cx.select_block`, of `pane-view`, which the host outlines and ends as a key is typed or the pane clicked, and reads it, `cx.selected_block`, of `history-read`; a binding's `when` takes `<namespace>.selected` while it lasts.
 - The plugin API reads the command line that the shell edits at its prompt, `cx.edited_line`, of `terminal-read`, and runs a command line there, `cx.run_line`, of `pty-write`, while that line is empty.
+- The plugin API tells the folds that a pane's view shows, `folds` of `cx.viewport`, each in place of a command's output or of its whole block, from its first row to its last, so that the view shows the rows past its own count too.
 - The plugin API 0.1.6 draws a switch, a view node of `kind = "switch"`, as macOS's, of two sizes, which tells its plugin a `toggle` as a toggle does; a theme colors it of `switch.off.bg`, `switch.on.bg`, `switch.knob.bg` and `switch.knob.shadow`, which the Theme Editor lists under Toggles and shows in its panel's preview.
 
 ### Changed

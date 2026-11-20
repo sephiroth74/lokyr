@@ -1,6 +1,7 @@
 //! Snapshots: what a renderer draws, copied from the terminal under the
 //! lock, so that it can draw without the lock.
 
+use super::folds::{FoldMark, ShownRow, ViewMap};
 use super::{
     BlockMark, Colors, Cursor, CursorStyle, Decorated, GutterMark, Highlighted, InputModes,
     KeyboardFlags, Origin, Selected, Terminal, ViewRow,
@@ -177,6 +178,51 @@ impl Snapshot {
     /// one.
     pub fn folded(&self) -> (usize, usize) {
         self.folded
+    }
+
+    /// The map of the view as the last update found it, none before the
+    /// first.
+    fn map(&self) -> Option<ViewMap<'_>> {
+        let origin = self.origin?;
+        let top = self.scrollback - self.offset.min(self.scrollback);
+        // Fewer rows than an `i64` holds.
+        let first = origin.top.saturating_sub(top as i64);
+        Some(ViewMap::new(first, top, self.lines.len(), &self.view))
+    }
+
+    /// The row of the view `y`, by the numbers of the rows that it shows,
+    /// as the last update found it: the list's row, or a fold's
+    /// placeholder; none past the list's last or the view's, or before the
+    /// first update.
+    pub fn shown_row(&self, y: u16) -> Option<ShownRow> {
+        self.map()?.at(y)
+    }
+
+    /// The folds that the view shows, from its top, by their rows'
+    /// numbers, as the last update found them.
+    pub fn shown_folds(&self) -> Vec<FoldMark> {
+        self.map().map_or_else(Vec::new, |map| map.folds())
+    }
+
+    /// The row of the view that shows the row numbered `row`, as the last
+    /// update found it: its own, or its fold's placeholder; none of a row
+    /// that the view does not show.
+    pub fn view_y(&self, row: i64) -> Option<u16> {
+        self.map()?.showing(row)
+    }
+
+    /// The row of the screen that the view's row `y` shows, as the last
+    /// update found it, a fold's placeholder's first row's; none of a row
+    /// above the screen, past the list's last or before the first update.
+    pub fn screen_row(&self, y: u16) -> Option<u16> {
+        let origin = self.origin?;
+        // The screen's first row, `offset` of the list's rows below the
+        // view's first.
+        let screen = origin.top.saturating_add(self.offset as i64);
+        let row = self.shown_row(y)?.row();
+        u16::try_from(row.checked_sub(screen)?)
+            .ok()
+            .filter(|&row| usize::from(row) < self.lines.len())
     }
 
     /// The spans of the searches' matches that the view shows, as the last
@@ -392,7 +438,8 @@ impl Terminal {
         }
         let offset = self.settle_viewport();
         let in_view = usize::from(self.cursor().y) + offset;
-        self.snapshot_state(snapshot, in_view);
+        let top = self.screen().rows.scrollback_rows() - offset;
+        self.snapshot_state(snapshot, in_view, &self.view_map(top, &[]));
         let origin = self.origin();
         // A view of folds before, whose lines are other rows: every line
         // is copied anew.
@@ -474,9 +521,9 @@ impl Terminal {
     }
 
     /// Brings the parts of `snapshot` but its rows up to date: the cursor,
-    /// at the view's row `in_view`, shown if the view has it, the colors
-    /// and the modes.
-    fn snapshot_state(&mut self, snapshot: &mut Snapshot, in_view: usize) {
+    /// at the view's row `in_view`, shown if the view has it, or the held
+    /// one, of the view `map`, the colors and the modes.
+    fn snapshot_state(&self, snapshot: &mut Snapshot, in_view: usize, map: &ViewMap) {
         let cursor = self.cursor();
         let rows_shown = usize::from(self.rows);
         snapshot.cursor = SnapshotCursor {
@@ -489,7 +536,7 @@ impl Terminal {
             blink: self.cursor_blink(),
         };
         // An embedder's cursor in its place, still, of the program's shape.
-        if let Some(held) = self.held_cursor_in_view() {
+        if let Some(held) = self.held_cursor_in_view(map) {
             let (x, y) = held.unwrap_or((cursor.x, 0));
             snapshot.cursor = SnapshotCursor {
                 position: Cursor {
@@ -515,18 +562,22 @@ impl Terminal {
         }
     }
 
-    /// The parts of `snapshot` past its rows: the selection, the
-    /// decorations, the gutter's marks and the blocks, the matches and the
-    /// images.
+    /// The parts of `snapshot` past its rows, as its view shows them: the
+    /// selection, the decorations, the gutter's marks and the blocks, the
+    /// matches and the images.
     #[inline]
     fn snapshot_rest(&mut self, snapshot: &mut Snapshot) {
-        snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
-        snapshot.decorations = self.decorated_view();
-        (snapshot.gutter, snapshot.blocks) = self.gutter_view();
-        self.drop_rewritten_matches();
-        snapshot.highlights = self.highlighted_view();
+        let top = snapshot.scrollback - snapshot.offset.min(snapshot.scrollback);
+        let view = std::mem::take(&mut snapshot.view);
+        let map = self.view_map(top, &view);
+        snapshot.selection = self.selection_in_snapshot(&map, &snapshot.changed);
+        snapshot.decorations = self.decorated_view(&map);
+        (snapshot.gutter, snapshot.blocks) = self.gutter_view(&map);
+        self.drop_rewritten_matches(&map);
+        snapshot.highlights = self.highlighted_view(&map);
         snapshot.matches_shown = self.matches_shown();
-        snapshot.images = self.images_view();
+        snapshot.images = self.images_view(&map);
+        snapshot.view = view;
     }
 
     /// Brings `snapshot` up to date with `view`, a view of folds of the
@@ -550,7 +601,7 @@ impl Terminal {
             .iter()
             .position(|&row| row == ViewRow::Row(index))
             .unwrap_or(usize::MAX);
-        self.snapshot_state(snapshot, in_view);
+        self.snapshot_state(snapshot, in_view, &self.view_map(view.top, &view.rows));
         let origin = super::Origin {
             epoch: self.primary.rows.epoch(),
             top: self.row_number(view.top),
