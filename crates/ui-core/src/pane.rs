@@ -1594,9 +1594,10 @@ pub fn gutter_marks<'a>(
 /// and its width, on a display of `scale`: each block's rows that the view
 /// shows tinted across the pane, the block of the command `selected` of
 /// `blocks.selected.bg`, else a failed block of `blocks.failed` where
-/// `looks` asks for it; then a hairline of a point at
-/// the top of each block's first row that the view shows, of
-/// `blocks.divider`.
+/// `looks` asks for it, to the middle of the blank rows that the terminal
+/// put around it, so that two blocks' tints meet there; then a hairline of
+/// a point at the top of each block's first row that the view shows, of
+/// `blocks.divider`, or through the middle of the blank row before it.
 pub fn block_shapes(
     snapshot: &Snapshot,
     top: i32,
@@ -1627,6 +1628,9 @@ pub fn block_shapes(
     let y_of = |row: i32| {
         top.saturating_add(row.saturating_mul(i32::try_from(row_height).unwrap_or(i32::MAX)))
     };
+    // The middle of the view's row `row`, of a blank row between blocks.
+    let half = i32::try_from(row_height / 2).unwrap_or(0);
+    let middle = |row: i32| y_of(row).saturating_add(half);
     let chosen = tokens.get("blocks.selected.bg");
     let failed = tokens.get("blocks.failed").filter(|_| looks.failed_tint);
     let mut shapes = Vec::new();
@@ -1642,19 +1646,44 @@ pub fn block_shapes(
         if let Some(tint) = tint
             && first <= last
         {
-            let height = u32::try_from(last - first + 1).unwrap_or(0) * row_height;
-            shapes.push(shape(y_of(first), height, tint));
+            let start = if block.room_above && block.first >= 1 {
+                middle(block.first - 1)
+            } else {
+                y_of(first)
+            };
+            let end = if block.room_below && block.last < rows - 1 {
+                middle(block.last + 1)
+            } else {
+                y_of(last + 1)
+            };
+            let height = u32::try_from(end.saturating_sub(start)).unwrap_or(0);
+            shapes.push(shape(start, height, tint));
         }
     }
     let divider = tokens.get("blocks.divider").filter(|_| looks.dividers);
     if let Some(divider) = divider {
         // Casts from floats saturate.
         let thickness = (scale.round() as u32).clamp(1, row_height.max(1));
+        let view = 0..rows;
+        let mut lines = Vec::new();
         for block in snapshot.blocks() {
-            if (0..rows).contains(&block.first) {
-                shapes.push(shape(y_of(block.first), thickness, divider));
+            let above = block.first.saturating_sub(1);
+            if block.room_above {
+                if view.contains(&above) {
+                    lines.push(middle(above));
+                }
+            } else if view.contains(&block.first) {
+                lines.push(y_of(block.first));
+            }
+            // The blank row after a block whose next one the view does not
+            // show.
+            let below = block.last.saturating_add(1);
+            if block.room_below && view.contains(&below) {
+                lines.push(middle(below));
             }
         }
+        lines.dedup();
+        shapes.extend(lines.into_iter().map(|y| shape(y, thickness, divider)));
     }
     shapes
 }
@@ -3757,6 +3786,7 @@ mod tests {
                 dividers: true,
                 failed_tint: true,
                 prompt_rows: false,
+                spacing: false,
             }),
             [
                 (48, 176, 16, tint),
@@ -3816,5 +3846,53 @@ mod tests {
         );
         let shapes = block_shapes(&scrolled, 0, 16, (0, 176), 2.0, &tokens, (plain, Some(1)));
         assert_eq!((shapes[0].rect.y, shapes[0].rect.height), (0, 3 * 16));
+    }
+
+    #[test]
+    fn the_blank_rows_between_blocks_hold_the_dividers_and_the_tints_meet_there() {
+        let mut terminal = Terminal::new(20, 8, Options::default());
+        terminal.set_block_spacing(true);
+        // `ls` of a row, `false`, which failed, then the prompt where the
+        // user types: blank rows 2 and 4 between them.
+        Parser::new().advance(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07",
+            )
+            .as_bytes(),
+        );
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let looks = lokyr_plugin_sdk::host::BlockLooks {
+            dividers: true,
+            failed_tint: true,
+            ..lokyr_plugin_sdk::host::BlockLooks::default()
+        };
+        let shapes = |selected: Option<u64>| -> Vec<(i32, u32, Color)> {
+            block_shapes(&shown, 0, 16, (0, 176), 2.0, &tokens, (looks, selected))
+                .iter()
+                .map(|shape| (shape.rect.y, shape.rect.height, shape.fill))
+                .collect()
+        };
+        let chosen = tokens.get("blocks.selected.bg").unwrap();
+        let failed = tokens.get("blocks.failed").unwrap();
+        let divider = tokens.get("blocks.divider").unwrap();
+        // `ls` selected to the blank row's middle, 40, and `false`'s tint
+        // from there to the next blank row's, 72; the dividers at the top
+        // and through the blank rows' middles.
+        assert_eq!(
+            shapes(Some(1)),
+            [
+                (0, 40, chosen),
+                (40, 32, failed),
+                (0, 2, divider),
+                (40, 2, divider),
+                (72, 2, divider),
+            ]
+        );
+        assert_eq!(shapes(Some(2))[0], (40, 32, chosen));
     }
 }

@@ -159,6 +159,7 @@ pub fn cells(
         dividers: true,
         failed_tint: true,
         prompt_rows: false,
+        spacing: false,
     };
     let across = (
         origin.0 - i32::try_from(padding).unwrap_or(0),

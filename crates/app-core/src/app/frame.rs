@@ -632,8 +632,14 @@ impl<B: Backend> App<B> {
         let asked = platform.accessibility_asked(window);
         let mut cursors = Vec::new();
         // The block's prompt rows pinned at each view's top, as a plugin
-        // asks.
-        let sticky = self.plugins.block_looks().prompt_rows;
+        // asks, and a blank row before the prompts of every pane, those
+        // that no window shows too, so that their commands' blocks have it
+        // as they show.
+        let looks = self.plugins.block_looks();
+        let sticky = looks.prompt_rows;
+        for pane in self.workspace.panes_mut() {
+            pane.set_block_spacing(looks.spacing);
+        }
         for view in &views {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;

@@ -632,8 +632,9 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
 
 /// How the host draws the blocks, as `config` says: the gutter's bars along
 /// them, their dividers, `dividers`, a failed block's tint, `failed-tint`,
-/// and the block's prompt rows pinned at the view's top, unless `header`
-/// asks for the pill, of the schema's defaults where it says nothing.
+/// the block's prompt rows pinned at the view's top, unless `header` asks
+/// for the pill, and a blank row before each prompt, `spacing`, of the
+/// schema's defaults where it says nothing.
 fn looks_of(config: &Data) -> BlockLooks {
     let switch = |key: &str, default: bool| match config {
         Data::Map(config) => match config.get(key) {
@@ -650,6 +651,7 @@ fn looks_of(config: &Data) -> BlockLooks {
             config,
             Data::Map(config) if matches!(config.get("header"), Some(Data::Text(header)) if header == "pill")
         ),
+        spacing: switch("spacing", false),
     }
 }
 

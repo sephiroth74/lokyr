@@ -57,6 +57,12 @@ pub struct BlockMark {
     pub last: i32,
     /// Its state, as its prompt's mark shows it.
     pub kind: Option<GutterKind>,
+    /// Whether the row before its first is the blank row that the terminal
+    /// put before its prompt, as [`Terminal::set_block_spacing`] asks.
+    pub room_above: bool,
+    /// Whether the row after its last is the blank row that the terminal
+    /// put before the next command's prompt.
+    pub room_below: bool,
 }
 
 /// A mark that a terminal keeps laid.
@@ -128,6 +134,8 @@ impl Terminal {
                     first: of_view(block.first),
                     last: of_view(block.last),
                     kind: block.kind,
+                    room_above: block.room_above,
+                    room_below: block.room_below,
                 });
             }
         }

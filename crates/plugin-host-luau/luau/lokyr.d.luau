@@ -436,6 +436,7 @@ export type BlockLooks = {
     dividers: boolean?,
     failed_tint: boolean?,
     prompt_rows: boolean?,
+    spacing: boolean?,
 }
 
 export type Border = {

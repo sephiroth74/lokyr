@@ -1124,6 +1124,57 @@ fn a_click_and_a_drag_below_a_fold_take_the_rows_that_the_view_shows_there() {
 }
 
 #[test]
+fn a_blank_row_comes_before_a_prompt_after_a_command_as_blocks_asks() {
+    // `ls`, then, once a line comes, of no echo from the end on, the
+    // prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf '$ '; m B; echo ls; m C; echo a; stty -echo; m 'D;0'; ",
+        "IFS= read -r go; m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let mut config = Config::parse(
+        "[plugins.blocks]\nspacing = true\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    let mut fake = Fake::default();
+    let mut app = App::new(None, config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    let blocks = |app: &App| -> Vec<(i32, i32, bool, bool)> {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .blocks()
+            .iter()
+            .map(|block| (block.first, block.last, block.room_above, block.room_below))
+            .collect()
+    };
+    // `ls` ended, its frames having told the terminal of the blank row.
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .blocks()
+            .first()
+            .is_some_and(|block| {
+                block
+                    .kind
+                    .is_some_and(|kind| kind != lokyr_vt_core::terminal::GutterKind::Running)
+            })
+    });
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    // The prompt a row below the end, the blank row of no block.
+    framed_until(&mut fake, &mut app, window, |app| blocks(app).len() == 2);
+    assert_eq!(blocks(&app), [(0, 1, false, true), (3, 3, true, false)]);
+}
+
+#[test]
 fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_its_prompt() {
     // A prompt of two rows, then 80 rows of output, more than the pane's
     // 62, then the prompt where you type.

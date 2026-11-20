@@ -944,8 +944,10 @@ type Cx = {
     -- theme's `blocks.divider` (`dividers`), a failed block's rows tinted of `blocks.failed` (`failed_tint`), and the
     -- prompt rows of the block whose rows the view's top shows pinned over the view's first rows once the prompt's first
     -- row leaves the view's top, three at most, which the block's end pushes up, a line of `blocks.divider` under them,
-    -- which a click scrolls to the prompt (`prompt_rows`) · not released yet.
-    set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean?, prompt_rows: boolean? }) -> (boolean, Error?),
+    -- which a click scrolls to the prompt (`prompt_rows`), and a blank row before each prompt that follows a command that
+    -- ended, which the terminal puts there as the prompt's mark comes, of no block, the divider through its middle and the
+    -- blocks' tints meeting there, none before the first prompt nor at the screen's top (`spacing`) · not released yet.
+    set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean?, prompt_rows: boolean?, spacing: boolean? }) -> (boolean, Error?),
     -- Selects the block of a pane's command, by its id, or none: the host tints its rows, of the theme's
     -- `blocks.selected.bg`, and the keys' context holds `namespace.selected` while the pane has the keyboard, until the
     -- plugin selects another or none, or a key that the program takes, a text typed or a click in the pane ends it;

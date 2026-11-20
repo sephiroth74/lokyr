@@ -235,6 +235,9 @@ pub struct Pane {
     /// Whether its terminal pins the prompt rows of the block at the view's
     /// top, as the app asked last.
     sticky_prompts: bool,
+    /// Whether its terminal puts a blank row before each prompt that
+    /// follows a command that ended, as the last ask said.
+    block_spacing: bool,
     /// The command that started last, of its id, and when the workspace's
     /// look found its start, until its end.
     pub(super) command_started: Option<(u64, Instant)>,
@@ -401,6 +404,7 @@ impl Pane {
             slices: 0,
             told_viewport: None,
             sticky_prompts: false,
+            block_spacing: false,
             command_started: None,
             commands_told: false,
             agent: None,
@@ -620,6 +624,19 @@ impl Pane {
         if let Some(session) = &self.session {
             session.lock().set_sticky_prompts(on);
             self.sticky_prompts = on;
+        }
+    }
+
+    /// Has its terminal put a blank row before each prompt that follows a
+    /// command that ended, or not, as [`Terminal::set_block_spacing`] does:
+    /// of the terminal's lock only as the ask changes.
+    pub fn set_block_spacing(&mut self, on: bool) {
+        if self.block_spacing == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_block_spacing(on);
+            self.block_spacing = on;
         }
     }
 

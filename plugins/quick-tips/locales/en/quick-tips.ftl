@@ -42,6 +42,7 @@ tip-block-copy = Right-click a command's output to copy the command, or the comm
 tip-block-details = Right-click a command's output and choose Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
 tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
 tip-block-rerun = Right-click a command's output and choose Run Command Again to run it once more at the prompt.
+tip-block-spacing = Want room between your commands? Set spacing = true in [plugins.blocks] for a blank row before each prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.

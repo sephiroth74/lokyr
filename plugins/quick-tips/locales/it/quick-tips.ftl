@@ -37,6 +37,7 @@ tip-block-copy = Fai clic destro sull'output di un comando per copiare il comand
 tip-block-details = Fai clic destro sull'output di un comando e scegli Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
 tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
 tip-block-rerun = Fai clic destro sull'output di un comando e scegli Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
+tip-block-spacing = Vuoi più spazio fra i comandi? Imposta spacing = true in [plugins.blocks] per una riga vuota prima di ogni prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
 tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.

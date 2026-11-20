@@ -247,6 +247,7 @@ max-length = 80                      # characters, 1 to 1000, of the line, cut o
 dividers = true                      # true | false
 failed-tint = true                   # true | false
 header = "pill"                      # rows | pill: the prompt's rows pinned, or a pill of the command line
+spacing = true                       # true | false
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
@@ -2207,7 +2208,7 @@ The most characters of the command's line that the header shows.
 
 <sub>Platforms: macOS</sub>
 
-The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, the block's prompt rows stay pinned at the pane's top, which a click scrolls to the command's prompt, or, of `header = "pill"`, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted.
+The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. As soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, which a click scrolls to the command's prompt, or, of `header = "pill"`, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted. A blank row before each prompt can make room between the blocks.
 
 `lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 
@@ -2330,9 +2331,24 @@ How the header of the block whose output the pane's top shows looks.
 |---|---|
 | `rows`, `pill` | `rows` |
 
-- `rows` pins the block's own prompt rows at the pane's top, its prompt and its command line as your shell drew them, three rows at most, over the first rows of the output, with a line under them; a click on them scrolls to the prompt.
+- `rows` pins the block's own prompt rows at the pane's top as soon as the prompt's first row scrolls above it, its prompt and its command line as your shell drew them, three rows at most, over the rows that scroll under them, with a line under them; a click on them scrolls to the prompt.
 - `pill` shows the command line in a pill on a line across the pane, of the keys above, with an arrow to the block's end.
 - It applies at once, as you save the file.
+
+### `spacing`
+
+<sub>Platforms: macOS</sub>
+
+Whether a blank row comes before each prompt that follows a command, as room between the blocks.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- Lokyr puts the blank row there itself as the prompt starts, in any shell that marks its prompts, so your shell's config needs nothing.
+- The divider between the blocks runs through the middle of the blank row, and a selected block's tint reaches it.
+- No blank row comes before the first prompt, after an empty line, or at the top of a cleared screen.
+- It applies at once, from the next prompt, as you save the file; the blank rows already there stay when you turn it off.
 
 ## `[plugins.quick-tips]`
 

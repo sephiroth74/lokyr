@@ -920,6 +920,7 @@ fn the_blocks_looks_are_each_that_an_active_plugin_asks_for() {
                         dividers: true,
                         failed_tint: false,
                         prompt_rows: false,
+                        spacing: false,
                     })
                 },
                 |_, _, _| Ok(()),
@@ -948,6 +949,7 @@ fn the_blocks_looks_are_each_that_an_active_plugin_asks_for() {
         dividers: true,
         failed_tint: false,
         prompt_rows: false,
+        spacing: false,
     };
     assert_eq!(plugins.block_looks(), dividing);
     // A call that fails gives up its writes, and its plugin goes with its

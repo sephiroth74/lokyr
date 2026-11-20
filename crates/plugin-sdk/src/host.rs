@@ -709,7 +709,8 @@ pub struct BlockLooks {
     #[serde(default)]
     pub bars: bool,
     /// A hairline at the top of each block's first row, across the pane,
-    /// of the theme's token `blocks.divider`.
+    /// of the theme's token `blocks.divider`, or through the middle of the
+    /// blank row before it, of `spacing`.
     #[serde(default)]
     pub dividers: bool,
     /// The rows of a block whose command failed tinted, across the pane, of
@@ -724,6 +725,14 @@ pub struct BlockLooks {
     /// prompt.
     #[serde(default)]
     pub prompt_rows: bool,
+    /// A blank row before each prompt that follows a command that ended,
+    /// which the terminal puts there as the prompt's mark comes, as room
+    /// between the blocks, the divider through its middle and the blocks'
+    /// tints meeting there; none before the first prompt nor at the
+    /// screen's top, as a clear leaves it. The rows that it put stay as the
+    /// look goes.
+    #[serde(default)]
+    pub spacing: bool,
 }
 
 impl BlockLooks {
@@ -736,6 +745,7 @@ impl BlockLooks {
             dividers: self.dividers || other.dividers,
             failed_tint: self.failed_tint || other.failed_tint,
             prompt_rows: self.prompt_rows || other.prompt_rows,
+            spacing: self.spacing || other.spacing,
         }
     }
 }

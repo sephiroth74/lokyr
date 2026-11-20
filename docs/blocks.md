@@ -25,6 +25,7 @@ Scroll up into the numbers. The prompt and `seq 1 500` stay at the top of the pa
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 - **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
 - **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
+- **Room between the blocks**: with `spacing = true`, a blank row comes before each prompt that follows a command, with the line between the blocks through its middle · not released yet.
 - **Select a block**: a click or ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · not released yet.
 
 ## Copy a command or its output
@@ -97,6 +98,19 @@ failed-tint = true    # a failed block's rows tinted
 
 The colors are your theme's: `blocks.divider` for the line, `blocks.failed` for a failed block, `blocks.selected.bg` for the selected one, and the gutter's colors for the bars. The Theme Editor shows them in its terminal's preview.
 
+## Room between the blocks
+
+To put a blank row between the blocks, turn on `spacing`:
+
+```toml
+[plugins.blocks]
+spacing = true    # a blank row before each prompt that follows a command
+```
+
+From the next prompt, a blank row comes before each prompt that follows a command, and the line between the blocks runs through its middle. A selected block's tint, and a failed block's, reach the line, so the two blocks meet there.
+
+Lokyr puts the blank row there itself, as your shell starts its prompt, so your shell's config needs nothing, and it works in any shell that marks its prompts with OSC 133. No blank row comes before the first prompt, after you press Return on an empty command line, or at the top of the pane after `clear`.
+
 ## Change the header's look
 
 By default, the header is the block's own prompt rows, in your terminal's colors, with the theme's `blocks.divider` line under them. To show the command line in a pill instead:
@@ -141,6 +155,7 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 - [`max-length`](CONFIGURATION.md#max-length-1): the most characters of the command line that the pill shows.
 - [`dividers`](CONFIGURATION.md#dividers): the line between the blocks · not released yet.
 - [`failed-tint`](CONFIGURATION.md#failed-tint): a failed block's rows tinted · not released yet.
+- [`spacing`](CONFIGURATION.md#spacing): a blank row before each prompt that follows a command · not released yet.
 
 ## Commands and keys
 
@@ -167,6 +182,8 @@ Your shell marks each command with OSC 133, the shell integration's sequences: w
 
 Lokyr draws the dividers, the bars and the tints from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback. It pins the prompt rows of the block at the pane's top from the same marks too, copying them again only when another block reaches the top.
 
+With `spacing`, the blank row comes when your shell marks the start of its prompt after a command that ended: Lokyr moves the cursor down a row, so that the prompt starts a row lower than where the shell began to draw it. Shells draw their prompts from where the cursor is, and move within them from there, so they draw the command line and redraw the prompt in the right place. The blank row is part of no block.
+
 When a command's output starts, Lokyr notes the time and the folder that your shell reported last with OSC 7, which the shell integration sends before each prompt. When the command ends, Lokyr notes the time again. The duration is the time between the two, by the Mac's clock.
 
 The header lies over the pane's first row, and takes none of the grid's rows, so the program's grid keeps its size as the header comes and goes. A scroll over the header scrolls the pane, and the header takes no keys.
@@ -180,6 +197,7 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - A program's own screen, such as vim's or less's, shows no header.
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
 - The pinned rows are the prompt as your shell drew it when you ran the command: a prompt that the shell draws again as you press Return, such as a transient prompt, pins as it was drawn last. A prompt of more than three rows pins its first three · not released yet.
+- The blank rows of `spacing` are rows of the scrollback, which a copy of several blocks includes, and they stay when you turn `spacing` off. A full row is more room than a line between the blocks needs: rows all have the same height. A shell whose own config already prints an empty line before each prompt gets two · not released yet.
 - The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
 - A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
 - Run Command Again and Copy Command take the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's first row: a command that you typed over several lines, such as a loop, runs again or is copied from its first line alone. Run it again from the shell's history instead, with the Up arrow.

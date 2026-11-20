@@ -1182,6 +1182,7 @@ fn tabs(world: &World) -> Scenario {
                         dividers: true,
                         failed_tint: false,
                         prompt_rows: false,
+                        spacing: false,
                     }),
                     Response::Done,
                 ),

@@ -41,6 +41,9 @@ pub(super) struct Marked {
     started: Option<SystemTime>,
     ended: Option<SystemTime>,
     folder: Option<Arc<WorkingDirectory>>,
+    /// Whether the terminal put a blank row before its prompt, as
+    /// [`Terminal::set_block_spacing`] asks.
+    spaced: bool,
 }
 
 /// The kept commands of a terminal, oldest first, and the id of the last
@@ -111,6 +114,12 @@ pub(super) struct Block {
     pub(super) prompt: Option<i64>,
     pub(super) last: i64,
     pub(super) kind: Option<GutterKind>,
+    /// Whether the row before its first is the blank row that the terminal
+    /// put before its prompt.
+    pub(super) room_above: bool,
+    /// Whether the row after its last is the blank row that the terminal
+    /// put before the next command's prompt.
+    pub(super) room_below: bool,
 }
 
 /// The first row of `marked`'s block, by its number, as `row_of` gives a
@@ -159,6 +168,34 @@ pub(super) enum Mark {
 }
 
 impl Terminal {
+    /// Whether a blank row comes before each prompt that follows a command
+    /// that ended, as room between the commands' blocks: as the prompt's
+    /// mark comes, of a command whose output and end's marks came before
+    /// it, the cursor goes a row down, the region scrolling at its bottom
+    /// margin, after a line's end where it is past the first column, so
+    /// that the prompt starts a row lower than the shell drew it, the blank
+    /// row of no command's block; none before the first prompt, nor of the
+    /// cursor at the screen's first cell, as a screen cleared leaves it,
+    /// nor on the alternate screen. Shells draw their prompts from where
+    /// the cursor is, and move within them of relative moves, so that the
+    /// row is no part of what they draw again.
+    pub fn set_block_spacing(&mut self, on: bool) {
+        self.block_spacing = on;
+    }
+
+    /// Whether the prompt's mark that comes now has a blank row before it,
+    /// as [`Terminal::set_block_spacing`] tells.
+    fn spaces_prompt(&self) -> bool {
+        let cursor = &self.primary.cursor;
+        self.block_spacing
+            && (cursor.x, cursor.y) != (0, 0)
+            && self
+                .commands
+                .list
+                .back()
+                .is_some_and(|last| last.output.is_some() && last.end.is_some())
+    }
+
     /// Marks the cursor's cell of the primary screen as `mark` of the last
     /// command, a prompt starting a new one; the alternate screen's prompts
     /// are its program's, which no command keeps.
@@ -180,6 +217,15 @@ impl Terminal {
     pub(super) fn mark_command(&mut self, mark: Mark) {
         if self.alternate_active {
             return;
+        }
+        let spaced = mark == Mark::Prompt && self.spaces_prompt();
+        if spaced {
+            self.moved();
+            if self.primary.cursor.x > 0 {
+                self.carriage_return();
+                self.index();
+            }
+            self.index();
         }
         let folder = match mark {
             Mark::Output => self.working_directory.clone(),
@@ -225,6 +271,7 @@ impl Terminal {
             commands.last += 1;
             commands.list.push_back(Marked {
                 id: commands.last,
+                spaced,
                 ..Marked::default()
             });
         }
@@ -493,9 +540,10 @@ impl Terminal {
             .checked_sub(1)
             .filter(|&at| first_row(&list[at]).is_some())
             .unwrap_or(after);
-        list.range(begin..)
-            .map_while(|marked| Some((first_row(marked).filter(|&row| row < bottom)?, marked)))
-            .filter_map(|(first, marked)| {
+        (begin..list.len())
+            .map_while(|at| Some((first_row(&list[at]).filter(|&row| row < bottom)?, at)))
+            .filter_map(|(first, at)| {
+                let marked = &list[at];
                 let end = cell(marked.end);
                 // A line of no command, which the shell ends at once without
                 // its output's mark, has no state.
@@ -518,12 +566,21 @@ impl Terminal {
                     None => first,
                 }
                 .max(first);
+                // The blank rows before the prompts, of their commands, as the
+                // terminal put them: its own before its prompt's row, and the
+                // next command's right after its last row.
+                let room_above = marked.spaced && row_of(marked.prompt) == Some(first);
+                let room_below = list.get(at + 1).is_some_and(|next| {
+                    next.spaced && row_of(next.prompt) == Some(last.saturating_add(2))
+                });
                 (last >= top).then(|| Block {
                     id: marked.id,
                     first,
                     prompt: shown_row(marked),
                     last,
                     kind,
+                    room_above,
+                    room_below,
                 })
             })
             .collect()
@@ -586,3 +643,6 @@ fn let_go(rows: &mut PageList, events: &mut Events, marked: &Marked) {
         });
     }
 }
+
+#[cfg(test)]
+mod spacing_tests;

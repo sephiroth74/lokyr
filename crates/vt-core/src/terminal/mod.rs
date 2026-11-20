@@ -548,6 +548,9 @@ pub struct Terminal {
     /// Whether the snapshot pins the prompt rows of the block whose output
     /// the view's top shows, as an embedder asks, which RIS keeps.
     sticky_prompts: bool,
+    /// Whether a blank row comes before each prompt that follows a command
+    /// that ended, as an embedder asks, which RIS keeps.
+    block_spacing: bool,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
@@ -672,6 +675,7 @@ impl Terminal {
             gutter: Vec::new(),
             folds: Vec::new(),
             sticky_prompts: false,
+            block_spacing: false,
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),
