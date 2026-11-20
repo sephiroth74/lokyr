@@ -64,6 +64,9 @@ impl Terminal {
 
     /// Clears the active screen's scrollback, as ED 3 does.
     pub fn clear_scrollback(&mut self) {
+        if !self.alternate_active {
+            self.forget_folds();
+        }
         self.screen_mut().rows.clear_scrollback();
         // The view's rows went: it follows the screen at once, so that
         // output does not leave it on the scrollback's next rows.

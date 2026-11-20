@@ -3,7 +3,7 @@
 
 use super::{
     BlockMark, Colors, Cursor, CursorStyle, Decorated, GutterMark, Highlighted, InputModes,
-    KeyboardFlags, Origin, Selected, Terminal,
+    KeyboardFlags, Origin, Selected, Terminal, ViewRow,
 };
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
@@ -57,6 +57,13 @@ pub struct Snapshot {
     matches_shown: bool,
     /// The images' placements that the view shows, the lowest first.
     images: Vec<super::Placed>,
+    /// The view's rows, of folds: each the list's row or a fold's
+    /// placeholder; none of no fold, as the view's rows are the list's from
+    /// its first.
+    view: Vec<ViewRow>,
+    /// The rows that the folds take out of the list, all of them and those
+    /// above the view's first row.
+    folded: (usize, usize),
 }
 
 /// The cursor, as a renderer draws it.
@@ -144,6 +151,32 @@ impl Snapshot {
     /// last update found them, of their rows and states.
     pub fn blocks(&self) -> &[BlockMark] {
         &self.blocks
+    }
+
+    /// The view's rows, of folds, as the last update found them: each the
+    /// list's row, by its index, or a fold's placeholder; none of no fold,
+    /// as the view's rows are then the list's from the view's first.
+    pub fn view(&self) -> &[ViewRow] {
+        &self.view
+    }
+
+    /// The row of the view `y`: the list's row, by its index, or a fold's
+    /// placeholder, as the last update found it.
+    pub fn view_row(&self, y: u16) -> ViewRow {
+        match self.view.get(usize::from(y)) {
+            Some(&row) => row,
+            None => ViewRow::Row(
+                (self.scrollback - self.offset.min(self.scrollback)).saturating_add(usize::from(y)),
+            ),
+        }
+    }
+
+    /// The rows that the folds take out of the list, all of them and those
+    /// above the view's first row, as the last update found them: the view
+    /// scrolls through the list's rows less them, each fold's placeholder
+    /// one.
+    pub fn folded(&self) -> (usize, usize) {
+        self.folded
     }
 
     /// The spans of the searches' matches that the view shows, as the last
@@ -271,6 +304,17 @@ impl Line {
         self.prompt_start
     }
 
+    /// Makes the line empty, of `cols` cells, as a fold's placeholder's.
+    fn clear(&mut self, cols: u16) {
+        self.cells.clear();
+        self.cells.resize(usize::from(cols), Cell::EMPTY);
+        self.styles.clear();
+        self.codepoints.clear();
+        self.clusters.clear();
+        self.soft_wrapped = false;
+        self.prompt_start = false;
+    }
+
     /// Makes the line a copy of row `row` of `page`.
     fn copy(&mut self, page: &Page, row: u16) {
         self.fill(page, row, page.cells(row), |x| page.grapheme(row, x));
@@ -343,45 +387,20 @@ impl Terminal {
     /// snapshot of another screen, or of rows laid out again by a resize,
     /// copies every row.
     pub fn snapshot(&mut self, snapshot: &mut Snapshot) -> usize {
+        if let Some(view) = self.settle_folded() {
+            return self.snapshot_folded(snapshot, view);
+        }
         let offset = self.settle_viewport();
-        let cursor = self.cursor();
-        let rows_shown = usize::from(self.rows);
-        let in_view = usize::from(cursor.y) + offset;
-        snapshot.cursor = SnapshotCursor {
-            position: Cursor {
-                y: u16::try_from(in_view).unwrap_or(u16::MAX),
-                ..cursor
-            },
-            visible: self.cursor_visible() && in_view < rows_shown,
-            style: self.cursor_style(),
-            blink: self.cursor_blink(),
-        };
-        // An embedder's cursor in its place, still, of the program's shape.
-        if let Some(held) = self.held_cursor_in_view() {
-            let (x, y) = held.unwrap_or((cursor.x, 0));
-            snapshot.cursor = SnapshotCursor {
-                position: Cursor {
-                    x,
-                    y,
-                    pending_wrap: false,
-                },
-                visible: held.is_some(),
-                style: self.cursor_style(),
-                blink: false,
-            };
-        }
-        let reverse_video = self.reverse_video();
-        snapshot.colors_changed =
-            snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
-        snapshot.reverse_video = reverse_video;
-        snapshot.smooth_scroll = self.smooth_scroll();
-        snapshot.alternate = self.alternate_active;
-        snapshot.input_modes = self.input_modes();
-        snapshot.keyboard_flags = self.keyboard_flags();
-        if snapshot.colors != self.colors {
-            snapshot.colors.clone_from(&self.colors);
-        }
+        let in_view = usize::from(self.cursor().y) + offset;
+        self.snapshot_state(snapshot, in_view);
         let origin = self.origin();
+        // A view of folds before, whose lines are other rows: every line
+        // is copied anew.
+        if !snapshot.view.is_empty() {
+            snapshot.view.clear();
+            snapshot.folded = (0, 0);
+            snapshot.origin = None;
+        }
         let rows = &mut self.screen_mut().rows;
         let (cols, height) = (rows.cols(), rows.rows());
         let lines = usize::from(height);
@@ -450,6 +469,57 @@ impl Terminal {
                 copied += 1;
             }
         }
+        self.snapshot_rest(snapshot);
+        copied
+    }
+
+    /// Brings the parts of `snapshot` but its rows up to date: the cursor,
+    /// at the view's row `in_view`, shown if the view has it, the colors
+    /// and the modes.
+    fn snapshot_state(&mut self, snapshot: &mut Snapshot, in_view: usize) {
+        let cursor = self.cursor();
+        let rows_shown = usize::from(self.rows);
+        snapshot.cursor = SnapshotCursor {
+            position: Cursor {
+                y: u16::try_from(in_view).unwrap_or(u16::MAX),
+                ..cursor
+            },
+            visible: self.cursor_visible() && in_view < rows_shown,
+            style: self.cursor_style(),
+            blink: self.cursor_blink(),
+        };
+        // An embedder's cursor in its place, still, of the program's shape.
+        if let Some(held) = self.held_cursor_in_view() {
+            let (x, y) = held.unwrap_or((cursor.x, 0));
+            snapshot.cursor = SnapshotCursor {
+                position: Cursor {
+                    x,
+                    y,
+                    pending_wrap: false,
+                },
+                visible: held.is_some(),
+                style: self.cursor_style(),
+                blink: false,
+            };
+        }
+        let reverse_video = self.reverse_video();
+        snapshot.colors_changed =
+            snapshot.reverse_video != reverse_video || snapshot.colors != self.colors;
+        snapshot.reverse_video = reverse_video;
+        snapshot.smooth_scroll = self.smooth_scroll();
+        snapshot.alternate = self.alternate_active;
+        snapshot.input_modes = self.input_modes();
+        snapshot.keyboard_flags = self.keyboard_flags();
+        if snapshot.colors != self.colors {
+            snapshot.colors.clone_from(&self.colors);
+        }
+    }
+
+    /// The parts of `snapshot` past its rows: the selection, the
+    /// decorations, the gutter's marks and the blocks, the matches and the
+    /// images.
+    #[inline]
+    fn snapshot_rest(&mut self, snapshot: &mut Snapshot) {
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
         snapshot.decorations = self.decorated_view();
         (snapshot.gutter, snapshot.blocks) = self.gutter_view();
@@ -457,6 +527,112 @@ impl Terminal {
         snapshot.highlights = self.highlighted_view();
         snapshot.matches_shown = self.matches_shown();
         snapshot.images = self.images_view();
+    }
+
+    /// Brings `snapshot` up to date with `view`, a view of folds of the
+    /// primary screen, as [`Terminal::snapshot`] does: a line of a row of the
+    /// list as its row changed, or as the line showed another row or a
+    /// placeholder before; a placeholder's line empty. Each run of the
+    /// list's rows between the placeholders is read once, so that a view of
+    /// folds costs a view's rows, whatever the scrollback.
+    fn snapshot_folded(
+        &mut self,
+        snapshot: &mut Snapshot,
+        view: super::folds::FoldedView,
+    ) -> usize {
+        let scrollback = self.primary.rows.scrollback_rows();
+        let offset = scrollback.saturating_sub(view.top);
+        // The cursor, at its row's place in the view, shown if the view
+        // has it.
+        let index = scrollback + usize::from(self.cursor().y);
+        let in_view = view
+            .rows
+            .iter()
+            .position(|&row| row == ViewRow::Row(index))
+            .unwrap_or(usize::MAX);
+        self.snapshot_state(snapshot, in_view);
+        let origin = super::Origin {
+            epoch: self.primary.rows.epoch(),
+            top: self.row_number(view.top),
+        };
+        let rows = &mut self.primary.rows;
+        let (cols, height) = (rows.cols(), rows.rows());
+        let lines = usize::from(height);
+        let fresh = snapshot
+            .origin
+            .is_none_or(|before| before.epoch != origin.epoch)
+            || snapshot.cols != cols
+            || snapshot.lines.len() != lines;
+        snapshot.origin = Some(origin);
+        snapshot.offset = offset;
+        snapshot.scrollback = scrollback;
+        snapshot.cols = cols;
+        snapshot.lines.resize_with(lines, Line::default);
+        snapshot.changed.clear();
+        snapshot.changed.resize(lines, false);
+        let mut before = std::mem::take(&mut snapshot.view);
+        // A view moved by rows, as a scroll moves it: its lines move with
+        // their rows, and those that came in alone are read.
+        let shift = (!fresh && before.len() == lines)
+            .then(|| shift_of(&before, &view.rows))
+            .flatten()
+            .unwrap_or(0);
+        if shift > 0 {
+            snapshot.lines.rotate_left(shift.unsigned_abs());
+            before.rotate_left(shift.unsigned_abs());
+        } else if shift < 0 {
+            snapshot.lines.rotate_right(shift.unsigned_abs());
+            before.rotate_right(shift.unsigned_abs());
+        }
+        // The view has at most `u16::MAX` rows.
+        snapshot.scrolled = shift as i32;
+        let came_in = |y: usize| {
+            if shift > 0 {
+                y >= lines - shift.unsigned_abs()
+            } else {
+                y < shift.unsigned_abs()
+            }
+        };
+        let moved = |y: usize| fresh || came_in(y) || before.get(y) != view.rows.get(y);
+        let mut copied = 0;
+        let mut drawn = Vec::new();
+        let mut y = 0;
+        while y < view.rows.len() {
+            // A placeholder's line, or one past the list's last, empty.
+            let ViewRow::Row(start) = view.rows[y] else {
+                if moved(y) {
+                    snapshot.lines[y].clear(cols);
+                    snapshot.changed[y] = true;
+                    copied += 1;
+                }
+                y += 1;
+                continue;
+            };
+            let run = view.rows[y..]
+                .iter()
+                .enumerate()
+                .take_while(|&(at, &row)| row == ViewRow::Row(start + at))
+                .count();
+            for (at, row) in rows.rows_from(start).take(run).enumerate() {
+                let line = y + at;
+                let dirty = row.metadata().has(RowFlag::Dirty);
+                if dirty || moved(line) {
+                    snapshot.lines[line].copy_list_row(row);
+                    snapshot.changed[line] = true;
+                    copied += 1;
+                }
+                if dirty {
+                    drawn.push(start + at);
+                }
+            }
+            y += run;
+        }
+        for index in drawn {
+            rows.mark_drawn(index);
+        }
+        snapshot.view = view.rows;
+        snapshot.folded = (view.folded, view.folded_above);
+        self.snapshot_rest(snapshot);
         copied
     }
 }
@@ -509,7 +685,24 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         highlights: Vec::new(),
         matches_shown: terminal.matches_shown(),
         images: Vec::new(),
+        view: Vec::new(),
+        folded: (0, 0),
     }
+}
+
+/// How many rows a view of folds moved down since `before`, to `now`, as
+/// its lines move up, or up of a negative number, where its rows are the
+/// same but for those that came in: none of another view, nor of a view
+/// that moved by its whole height or more.
+fn shift_of(before: &[ViewRow], now: &[ViewRow]) -> Option<isize> {
+    let first = *now.first()?;
+    if let Some(at) = before.iter().position(|&row| row == first) {
+        let shift = isize::try_from(at).ok()?;
+        return (before[at..] == now[..now.len() - at]).then_some(shift);
+    }
+    let at = now.iter().position(|&row| Some(&row) == before.first())?;
+    let shift = isize::try_from(at).ok()?;
+    (now[at..] == before[..before.len() - at]).then_some(-shift)
 }
 
 #[cfg(test)]

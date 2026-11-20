@@ -13,6 +13,7 @@ mod edit;
 mod erase;
 mod escape;
 mod events;
+mod folds;
 mod gutter;
 mod images;
 mod keyboard;
@@ -38,6 +39,7 @@ pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Label, Look, MOST_DECORATIONS};
+pub use folds::{FoldMark, MOST_FOLDS, ViewRow};
 pub use gutter::{BlockMark, GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
     IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
@@ -540,6 +542,8 @@ pub struct Terminal {
     decorations: Vec<decorations::Decoration>,
     /// The gutter's marks that the embedder laid.
     gutter: Vec<gutter::Laid>,
+    /// The folds of the primary screen, in their rows' order.
+    folds: Vec<folds::Fold>,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
@@ -662,6 +666,7 @@ impl Terminal {
             held_cursor: None,
             decorations: Vec::new(),
             gutter: Vec::new(),
+            folds: Vec::new(),
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),
@@ -885,6 +890,7 @@ impl Terminal {
         if self.alternate_active {
             return;
         }
+        self.forget_folds();
         let y = self.cursor().y;
         let (start, end) = {
             let rows = &self.screen().rows;

@@ -111,6 +111,10 @@ impl Terminal {
         if self.alternate_active {
             return 0;
         }
+        // Of folds, the view's first row is the folded view's.
+        if let Some(view) = self.folded_view() {
+            return self.primary.rows.scrollback_rows().saturating_sub(view.top);
+        }
         let Some(pin) = self.viewport else {
             return 0;
         };
@@ -130,6 +134,9 @@ impl Terminal {
     /// which it then follows, but while a search holds it at its current
     /// match.
     pub(super) fn settle_viewport(&mut self) -> usize {
+        if let Some(view) = self.settle_folded() {
+            return self.primary.rows.scrollback_rows().saturating_sub(view.top);
+        }
         let offset = self.viewport_offset();
         if offset == 0 && self.viewport.is_some() && !self.holds_view() {
             self.set_viewport_offset(0);
@@ -153,6 +160,10 @@ impl Terminal {
     /// the screen; the alternate screen's never moves.
     pub fn scroll_viewport(&mut self, scroll: Scroll) {
         if self.alternate_active {
+            return;
+        }
+        if let Some(view) = self.settle_folded() {
+            self.scroll_folded(scroll, &view);
             return;
         }
         let offset = self.settle_viewport();
@@ -185,6 +196,67 @@ impl Terminal {
             }
         };
         self.set_viewport_offset(target);
+    }
+
+    /// The view of folds, as [`Terminal::folded_view`] finds it, its folds
+    /// whose rows left let go of first, and its pin let go of where it
+    /// ends at the list's last, which it then follows, but while a search
+    /// holds it at its current match; none of no fold.
+    #[inline]
+    pub(super) fn settle_folded(&mut self) -> Option<super::folds::FoldedView> {
+        if self.folds.is_empty() || self.alternate_active {
+            return None;
+        }
+        self.settle_folds()
+    }
+
+    /// The view of folds of [`Terminal::settle_folded`], of at least a fold
+    /// on the primary screen.
+    #[cold]
+    fn settle_folds(&mut self) -> Option<super::folds::FoldedView> {
+        self.drop_lost_folds();
+        let view = self.folded_view()?;
+        if view.following && self.viewport.is_some() && !self.holds_view() {
+            self.set_viewport_offset(0);
+        }
+        Some(view)
+    }
+
+    /// Scrolls the view of folds `view` by its rows,
+    /// each fold's placeholder one: as far as the view that ends at the
+    /// list's last, which then follows it. A jump to a prompt goes to the
+    /// prompt before or after the view's first row, or to the placeholder
+    /// of a fold that holds it.
+    fn scroll_folded(&mut self, scroll: Scroll, view: &super::folds::FoldedView) {
+        let (page, top) = (usize::from(self.rows), view.top);
+        let target = match scroll {
+            Scroll::Up(rows) => self.folded_step(view, rows, false),
+            Scroll::Down(rows) => self.folded_step(view, rows, true),
+            Scroll::PageUp => self.folded_step(view, page, false),
+            Scroll::PageDown => self.folded_step(view, page, true),
+            Scroll::Top => self.folded_top_at(view, 0),
+            Scroll::Bottom => None,
+            Scroll::Row(row) => self.folded_top_at(view, self.nearest_index(row)),
+            Scroll::PreviousPrompt | Scroll::NextPrompt => {
+                let prompts = self.folded_prompts(view);
+                let found = if scroll == Scroll::PreviousPrompt {
+                    prompts.into_iter().filter(|&index| index < top).max()
+                } else {
+                    prompts.into_iter().filter(|&index| index > top).min()
+                };
+                match found {
+                    Some(index) => self.folded_top_at(view, index),
+                    // No prompt above: the view stays.
+                    None if scroll == Scroll::PreviousPrompt => Some(top),
+                    None => None,
+                }
+            }
+        };
+        let scrollback = self.primary.rows.scrollback_rows();
+        match target {
+            Some(top) => self.set_viewport_offset(scrollback.saturating_sub(top).max(1)),
+            None => self.set_viewport_offset(0),
+        }
     }
 
     /// Puts the view `offset` rows above the screen's top, within the
