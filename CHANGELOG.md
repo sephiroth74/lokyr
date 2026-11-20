@@ -49,6 +49,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A Luau plugin that hands back an empty list that Lokyr gave it, such as a setting's value of `[]`, hands back a list, no longer an empty map.
 - Show Hints labels the links and paths of a long line of no spaces, such as a minified JSON wrapped over more rows than the pane shows, where it labelled none.
 - A text field that has the keyboard, such as the find bar's, the command palette's or the settings window's, leaves Option-Command and an arrow, as the move between panes, and Shift-Command-C, Copy Mode, to Lokyr, where it took them as its own.
 - In zsh, with a plugin that switches the history list as you type, such as Oh My Zsh's per-directory-history together with `share_history`, the shell integration reports each command's line again, so that the command's header leaves the right prompt out.

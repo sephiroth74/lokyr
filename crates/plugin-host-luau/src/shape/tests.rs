@@ -120,8 +120,39 @@ fn plain_values_are_as_a_luau_table_is() {
     assert!(crate::same::value(&given, &expected, 0), "{given:?}");
     assert_eq!(from_lua::<Data>(given), Ok(data));
     assert_eq!(take::<Data>("{}"), Ok(Data::Map(BTreeMap::new())));
-    // A list of no items comes as an empty table, and back as a map.
     gives(&Data::Map(BTreeMap::new()), "{}");
+    // A list of no items comes as an empty table, marked, and back as a
+    // list; a field set in it makes it a map; the plugin's own `{}` and
+    // another metatable's a map.
+    let lua = Lua::new();
+    let given = to_lua(&lua, &Data::List(Vec::new())).unwrap();
+    let Value::Table(table) = &given else {
+        panic!("a list is a table");
+    };
+    assert_eq!(table.raw_len(), 0);
+    assert_eq!(from_lua::<Data>(given.clone()), Ok(Data::List(Vec::new())));
+    let list = to_lua(&lua, &Data::List(Vec::new())).unwrap();
+    lua.globals().set("given", list).unwrap();
+    assert_eq!(
+        from_lua::<Data>(eval(
+            &lua,
+            "(function() table.insert(given, 1); return given end)()"
+        )),
+        Ok(Data::List(vec![Data::Integer(1)]))
+    );
+    let list = to_lua(&lua, &Data::List(Vec::new())).unwrap();
+    lua.globals().set("given", list).unwrap();
+    assert_eq!(
+        from_lua::<Data>(eval(&lua, "(function() given.x = 1; return given end)()")),
+        Ok(Data::Map(BTreeMap::from([(
+            "x".to_owned(),
+            Data::Integer(1)
+        )])))
+    );
+    assert_eq!(
+        take::<Data>("setmetatable({}, { __index = {} })"),
+        Ok(Data::Map(BTreeMap::new()))
+    );
     assert_eq!(take::<Data>("nil"), Ok(Data::Nil));
     assert_eq!(take::<Data>("2.0"), Ok(Data::Integer(2)));
     // A command's arguments.
