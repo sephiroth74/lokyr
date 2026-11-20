@@ -8,7 +8,9 @@
 //! list is a sequence. A plain value, the SDK's `Data`, an event's or a
 //! state's, and a command's argument are as a Luau table is: `nil`, `true`
 //! or `false`, a number, a text, or a table of them, a sequence a list and
-//! another table, an empty one too, a map.
+//! another table, an empty one too, a map; but an empty list that the host
+//! gives, which a metatable of [`LIST_MARK`] tells, comes back a list, as
+//! a setting's value handed back.
 //!
 //! A plugin's value nests [`MOST_LEVELS`] levels of tables at most, and a
 //! plain value [`Data::DEEPEST`], as the host takes it, a table that holds
@@ -55,6 +57,18 @@ const LOOK_EVERY: usize = 64;
 /// The types whose values are plain, as a Luau table is, rather than
 /// variants: the SDK's `Data` and a command's argument's `Value`.
 const PLAIN: [&str; 2] = ["Data", "Value"];
+
+/// The field of the metatable that marks an empty list that the host gave,
+/// which an empty table of the plugin's, a map, lacks.
+const LIST_MARK: &str = "__lokyr_list";
+
+/// Whether `table` is an empty list that the host gave, of a metatable of
+/// [`LIST_MARK`], read raw.
+fn marked_list(table: &Table) -> bool {
+    table
+        .metatable()
+        .is_some_and(|meta| meta.raw_get::<bool>(LIST_MARK).unwrap_or(false))
+}
 
 /// The enums whose variants of a value are texts of their name, `:` and
 /// the value, as a manifest writes a capability, `net:example.com`.
@@ -947,10 +961,10 @@ impl<'b> Plain<'b> {
                     )));
                 }
                 value.data += 1;
-                if sequence(table, value.budget)?.is_some_and(|items| !items.is_empty()) {
-                    "list"
-                } else {
-                    "map"
+                match sequence(table, value.budget)? {
+                    Some(items) if !items.is_empty() => "list",
+                    Some(_) if marked_list(table) => "list",
+                    _ => "map",
                 }
             }
             _ if data => {
@@ -1298,7 +1312,17 @@ impl<'l> ser::Serializer for Giving<'l> {
         value: &T,
     ) -> Result<Value, ShapeError> {
         if PLAIN.contains(&name) {
-            return value.serialize(self);
+            let value = value.serialize(self)?;
+            // An empty list marked, so that it comes back one.
+            if variant == "list"
+                && let Value::Table(table) = &value
+                && table.raw_len() == 0
+            {
+                let meta = self.lua.create_table()?;
+                meta.raw_set(LIST_MARK, true)?;
+                table.set_metatable(Some(meta))?;
+            }
+            return Ok(value);
         }
         let value = value.serialize(self.inner()?)?;
         if TEXTS.contains(&name)
