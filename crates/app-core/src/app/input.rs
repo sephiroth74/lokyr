@@ -1585,18 +1585,21 @@ pub(super) fn editing_field<B: Backend>(state: &crate::window::Window<B>) -> boo
 }
 
 /// Holds in `context` the plugins of `plugins` that selected a block of
-/// `pane`: `<namespace>.selected`, while the pane keeps its command, on its
-/// primary screen.
+/// `pane`: `<namespace>.selected`, while the pane keeps its command and the
+/// command ended, on its primary screen.
 pub(super) fn hold_selected_blocks(
     plugins: &plugins::Plugins,
     pane: &Pane,
     context: &mut keymap::Context,
 ) {
     let id = plugins::host::PaneId(pane.id().get());
+    // A command that runs takes its keys, the arrows and Escape, as a
+    // remote shell's or a pager's.
     let kept = !pane.snapshot().alternate_screen()
-        && plugins
-            .selected_block(id)
-            .is_some_and(|command| pane.shell_command(command).is_some());
+        && plugins.selected_block(id).is_some_and(|command| {
+            pane.shell_command(command)
+                .is_some_and(|shown| shown.end.is_some())
+        });
     if kept {
         for namespace in plugins.selecting(id) {
             context.hold(format!("{namespace}.selected"));

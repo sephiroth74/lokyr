@@ -1225,17 +1225,19 @@ fn a_click_on_a_block_selects_it_and_one_past_the_blocks_selects_none() {
         host.deliver(&mut plugin).unwrap();
         host.selected_block(PANE)
     };
-    // `ls`' output, then `true`'s prompt, then `sleep`'s, which runs.
+    // `ls`' output, then `true`'s prompt; `sleep`'s, which runs, none, as
+    // a click that gives a running program the keyboard.
     assert_eq!(click(&mut host, 2), Some(1));
     assert_eq!(click(&mut host, 4), Some(2));
-    assert_eq!(click(&mut host, 6), Some(3));
+    assert_eq!(click(&mut host, 6), None);
+    assert_eq!(click(&mut host, 5), None);
     // Above every command, none.
     host.pane(PANE).commands.remove(0);
     assert_eq!(click(&mut host, 0), None);
     // The alternate screen, which hides the commands' rows, keeps it.
-    assert_eq!(click(&mut host, 5), Some(3));
+    assert_eq!(click(&mut host, 4), Some(2));
     host.pane(PANE).viewport.as_mut().unwrap().alternate = true;
-    assert_eq!(click(&mut host, 2), Some(3));
+    assert_eq!(click(&mut host, 2), Some(2));
 }
 
 #[test]

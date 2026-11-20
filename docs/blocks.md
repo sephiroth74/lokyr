@@ -77,7 +77,7 @@ The command line goes in as a paste, so a command of several lines stays whole, 
 
 ## Select a block
 
-Click a block to select it: its rows are tinted, across the pane. A click at the prompt where you type, or below the last block, selects none.
+Click a block to select it: its rows are tinted, across the pane. A click at the prompt where you type, or below the last block, selects none, and so does a click in a command that still runs, such as a remote shell or a REPL, which keeps its keys: while a running command's block is selected, ↑, ↓ and Escape go to the command.
 
 Press ⌘↑ to select the last block from the keyboard. Press ↑ and ↓ to select the block before or after: the view follows, with the selected block's prompt at the top. Below the last block, ↓ selects none and takes you back to the prompt where you type.
 

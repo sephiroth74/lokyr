@@ -1213,14 +1213,17 @@ fn block(
 }
 
 /// Selects the block of `pane` whose rows hold the row numbered `row`, as a
-/// click there selects it: of a command that started, or none, as at the
-/// prompt where the user types, past an end or above the first command;
-/// none on the alternate screen, which hides the commands' rows.
+/// click there selects it: of a command that ended, or none, as at the
+/// prompt where one types, in a command that runs, as a click that gives a
+/// remote shell or a REPL the keyboard, past an end or above the first
+/// command; none on the alternate screen, which hides the commands' rows.
 fn select_clicked(cx: &mut Cx<'_>, pane: PaneId, row: i64) -> Result<(), Error> {
     if cx.viewport(pane)?.alternate {
         return Ok(());
     }
-    let command = cx.command_at(pane, row)?.filter(started);
+    let command = cx
+        .command_at(pane, row)?
+        .filter(|command| started(command) && command.end.is_some());
     cx.select_block(pane, command.map(|command| command.id))
 }
 
