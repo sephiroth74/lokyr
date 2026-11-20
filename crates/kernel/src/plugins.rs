@@ -2715,6 +2715,9 @@ impl Plugins {
                 &state.granted,
                 &state.undecided,
                 &state.replaced_by,
+                // Whether its section turns it on, which tells a replaced
+                // plugin's state from one turned off.
+                state.wanted,
             )
                 .hash(&mut hasher);
         }
