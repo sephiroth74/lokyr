@@ -197,7 +197,7 @@ impl FakePane {
                     input: held(command.input),
                     output: held(command.output),
                     end: held(command.end),
-                    ..*command
+                    ..command.clone()
                 })
             })
             .collect()
@@ -214,7 +214,7 @@ impl FakePane {
             input: held(command.input),
             output: held(command.output),
             end: held(command.end),
-            ..*command
+            ..command.clone()
         })
     }
 
@@ -533,6 +533,9 @@ pub struct FakeHost {
     day: u64,
     notice: bool,
     keeps_state: bool,
+    /// The system's time and the local time zone's offset that a read of
+    /// the time gives.
+    local_time: host::LocalTime,
     /// The AI agents that a read of the agents gives, as the test gave them.
     agents: Vec<host::AgentInfo>,
     /// The plugins that a read of the plugins gives, as the test gave them,
@@ -666,6 +669,7 @@ impl FakeHost {
             registry: Vec::new(),
             fonts: fonts(),
             day: DAY,
+            local_time: LOCAL_TIME,
             agents: Vec::new(),
             plugins: Vec::new(),
             settings: host::Settings::default(),
@@ -964,6 +968,13 @@ impl FakeHost {
     /// the day gives, in place of [`DAY`].
     pub fn set_day(&mut self, day: u64) -> &mut Self {
         self.day = day;
+        self
+    }
+
+    /// Gives the system's time and the local time zone's offset, which a
+    /// read of the time gives, in place of [`LOCAL_TIME`].
+    pub fn set_local_time(&mut self, now: host::LocalTime) -> &mut Self {
+        self.local_time = now;
         self
     }
 
@@ -4241,6 +4252,7 @@ impl Calling<'_> {
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
+            Request::Now => Response::Now(host.local_time),
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
@@ -4362,14 +4374,53 @@ impl Calling<'_> {
             Request::CommandLine { pane, command } => {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
             }
+            // Their folders, the processes' working directories, to a plugin
+            // that reads the processes alone.
             Request::ShellCommands { pane, top, bottom } => {
-                Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
+                let reads = host.reads_processes();
+                let commands = host.held(*pane)?.commands_meeting(*top, *bottom);
+                Response::ShellCommands(
+                    commands
+                        .into_iter()
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .collect(),
+                )
             }
             Request::ShellCommand { pane, command } => {
-                Response::ShellCommand(host.held(*pane)?.command(*command).map(Box::new))
+                let reads = host.reads_processes();
+                let command = host.held(*pane)?.command(*command);
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
             }
             Request::CommandAt { pane, row } => {
-                Response::ShellCommand(host.held(*pane)?.command_at(*row).map(Box::new))
+                let reads = host.reads_processes();
+                let command = host.held(*pane)?.command_at(*row);
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
             }
             Request::Viewport(pane) => Response::Viewport(host.held(*pane)?.viewport()),
             Request::CursorCell(pane) => Response::Cell(Some(host.held(*pane)?.cursor)),
@@ -5663,6 +5714,14 @@ struct Declared {
 /// The system's day that the fake host gives by default, in days since
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
+
+/// The system's time that the fake host gives by default: 11 November 2026
+/// at noon in UTC, of a time zone an hour east of it, as Central European
+/// Time.
+pub const LOCAL_TIME: host::LocalTime = host::LocalTime {
+    time: (DAY * 86_400 + 12 * 3600) * 1000,
+    offset: 3600,
+};
 
 /// The tokens of the themes that the fake host gives by default: Lokyr
 /// Dark's, in force, of a token of its own, one of a rule and a plugin's.

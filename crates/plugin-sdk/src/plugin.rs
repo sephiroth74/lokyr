@@ -814,6 +814,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, which a time of day is of.
+    pub fn now(&mut self) -> Result<crate::host::LocalTime, Error> {
+        match self.request(Request::Now) {
+            Response::Now(now) => Ok(now),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Whether a notice of the app's shows, which a plugin's card of its
     /// own yields to.
     pub fn notice_shows(&mut self) -> Result<bool, Error> {

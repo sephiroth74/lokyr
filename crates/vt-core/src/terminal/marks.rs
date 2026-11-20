@@ -3,15 +3,19 @@
 //! where it ended and its exit status, each a cell of the primary screen
 //! that a pin follows through output, the scrollback and a reflowing
 //! resize, until its row leaves the list; and the view's jumps from prompt
-//! to prompt.
+//! to prompt. A command that started keeps the times of the system's
+//! clock at its start and its end, and the working directory that OSC 7
+//! told last as it started.
 //!
 //! <https://gitlab.freedesktop.org/Per_Bothner/specifications/-/blob/master/proposals/semantic-prompts.md>
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::time::SystemTime;
 
 use super::events::Events;
 use super::gutter::GutterKind;
-use super::{Event, Terminal};
+use super::{Event, Terminal, WorkingDirectory};
 use crate::page::{Content, ListRow, PageList, PinId, Position};
 
 /// The most commands that a terminal keeps, its oldest going first, so
@@ -22,8 +26,9 @@ pub const MOST_COMMANDS: usize = 10_000;
 /// rest goes, so that the lines of the commands kept cost no more.
 const MOST_LINE: usize = 2048;
 
-/// A command's marks, of the cells that their pins follow, its id, and its
-/// line, as the shell told it, if it did.
+/// A command's marks, of the cells that their pins follow, its id, its
+/// line, as the shell told it, if it did, the times of its start and its
+/// end, and the working directory as it started.
 #[derive(Clone, Debug, Default)]
 pub(super) struct Marked {
     id: u64,
@@ -33,6 +38,9 @@ pub(super) struct Marked {
     end: Option<PinId>,
     status: Option<i32>,
     line: Option<String>,
+    started: Option<SystemTime>,
+    ended: Option<SystemTime>,
+    folder: Option<Arc<WorkingDirectory>>,
 }
 
 /// The kept commands of a terminal, oldest first, and the id of the last
@@ -45,9 +53,10 @@ pub(super) struct Commands {
 
 /// A command that the shell marked, as the terminal keeps it: its id, each
 /// mark the cell where it came, by its column and its row's number, of the
-/// primary screen's, if its row is in the list still, and the exit status
-/// that the shell told as the command ended.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// primary screen's, if its row is in the list still, the exit status
+/// that the shell told as the command ended, the times of its start and
+/// its end, and the working directory where it started.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CommandMarks {
     /// Its id, of the terminal's commands from 1 in the order of their
     /// prompts, which [`Event::CommandStarted`] and
@@ -63,6 +72,32 @@ pub struct CommandMarks {
     pub end: Option<(u16, i64)>,
     /// Its exit status, if it ended and the shell told it.
     pub status: Option<i32>,
+    /// The time of the system's clock as it started, at its output's mark,
+    /// if it did.
+    pub started: Option<SystemTime>,
+    /// The time of the system's clock as it ended, at its end's mark after
+    /// its start, if it did.
+    pub ended: Option<SystemTime>,
+    /// The working directory that OSC 7 told last as it started, if one
+    /// was told.
+    pub folder: Option<Arc<WorkingDirectory>>,
+}
+
+impl CommandMarks {
+    /// The command of `marked`, of its marks' cells as `cell` gives them.
+    fn of(marked: &Marked, cell: impl Fn(Option<PinId>) -> Option<(u16, i64)>) -> Self {
+        Self {
+            id: marked.id,
+            prompt: cell(marked.prompt),
+            input: cell(marked.input),
+            output: cell(marked.output),
+            end: cell(marked.end),
+            status: marked.status,
+            started: marked.started,
+            ended: marked.ended,
+            folder: marked.folder.clone(),
+        }
+    }
 }
 
 /// Which of a command's marks OSC 133 gives.
@@ -95,11 +130,16 @@ impl Terminal {
     /// [`Event::CommandStarted`] and [`Event::CommandEnded`] tell: a line of
     /// no command, whose end the shell marks at once, tells nothing; one
     /// that started and that the list lets go of before its end ends of no
-    /// status.
+    /// status. A command keeps the system's time as it starts, and the
+    /// working directory told last, and the time as it ends.
     pub(super) fn mark_command(&mut self, mark: Mark) {
         if self.alternate_active {
             return;
         }
+        let folder = match mark {
+            Mark::Output => self.working_directory.clone(),
+            _ => None,
+        };
         let (x, y) = (self.primary.cursor.x, self.primary.cursor.y);
         let rows = &mut self.primary.rows;
         let (page, row) = rows.screen_row_id(y);
@@ -148,9 +188,12 @@ impl Terminal {
         };
         let told = match mark {
             Mark::Output if last.output.is_none() && last.end.is_none() => {
+                last.started = Some(SystemTime::now());
+                last.folder = folder;
                 Some(Event::CommandStarted(last.id))
             }
             Mark::End(status) if last.output.is_some() && last.end.is_none() => {
+                last.ended = Some(SystemTime::now());
                 Some(Event::CommandEnded {
                     id: last.id,
                     status,
@@ -235,14 +278,7 @@ impl Terminal {
         list.range(begin..)
             .map_while(|marked| {
                 first_row(marked).filter(|&row| row < bottom)?;
-                Some(CommandMarks {
-                    id: marked.id,
-                    prompt: cell(marked.prompt),
-                    input: cell(marked.input),
-                    output: cell(marked.output),
-                    end: cell(marked.end),
-                    status: marked.status,
-                })
+                Some(CommandMarks::of(marked, cell))
             })
             .collect()
     }
@@ -259,14 +295,13 @@ impl Terminal {
             let index = rows.row_index(position.page, position.row)?;
             Some((position.col, first.saturating_add(index as i64)))
         };
-        Some(CommandMarks {
-            id,
-            prompt: cell(marked.prompt),
-            input: cell(marked.input),
-            output: cell(marked.output),
-            end: cell(marked.end),
-            status: marked.status,
-        })
+        Some(CommandMarks::of(marked, cell))
+    }
+
+    /// The last command that the shell marked, as [`Terminal::command`]
+    /// gives it, if the terminal keeps one.
+    pub fn last_command(&self) -> Option<CommandMarks> {
+        self.command(self.commands.list.back()?.id)
     }
 
     /// The command whose block holds the primary screen's row numbered

@@ -38,6 +38,7 @@ export type Cx = {
     set_theme_value: (theme: string, name: string, value: string?) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
     day: () -> (number?, string?, number?),
+    now: () -> (LocalTime?, string?, number?),
     notice_shows: () -> (boolean?, string?, number?),
     keeps_state: () -> (boolean?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
@@ -655,6 +656,11 @@ export type ListItem = {
     texts: { string }?,
 }
 
+export type LocalTime = {
+    time: number,
+    offset: number,
+}
+
 export type MenuItem = {
     place: MenuPlace,
     command: string,
@@ -934,6 +940,10 @@ export type ShellCommand = {
     output: { number }?,
     ["end"]: { number }?,
     status: number?,
+    started: number?,
+    ended: number?,
+    folder: string?,
+    host: string?,
 }
 
 export type Side =

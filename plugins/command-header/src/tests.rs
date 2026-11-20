@@ -27,6 +27,7 @@ fn commands() -> Vec<ShellCommand> {
         output: Some((0, row + 1)),
         end: end.map(|end| (0, end)),
         status,
+        ..ShellCommand::default()
     };
     vec![
         command(1, 0, Some(30), Some(0)),

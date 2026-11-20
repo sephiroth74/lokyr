@@ -6643,6 +6643,8 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
     term.feed(marked_command("false", &[], 1));
     term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
     let commands = term.terminal.commands();
+    // The times of their starts and ends, which the system's clock gives.
+    let times = |at: usize| (commands[at].started, commands[at].ended);
     assert_eq!(
         commands,
         [
@@ -6653,6 +6655,9 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: Some((0, 1)),
                 end: Some((0, 3)),
                 status: Some(0),
+                started: times(0).0,
+                ended: times(0).1,
+                folder: None,
             },
             CommandMarks {
                 id: 2,
@@ -6661,6 +6666,9 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: Some((0, 4)),
                 end: Some((0, 4)),
                 status: Some(1),
+                started: times(1).0,
+                ended: times(1).1,
+                folder: None,
             },
             CommandMarks {
                 id: 3,
@@ -6669,6 +6677,7 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: None,
                 end: None,
                 status: None,
+                ..CommandMarks::default()
             },
         ]
     );
@@ -6690,6 +6699,46 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
         .map(|(_, row)| row)
         .collect();
     assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{after:?}");
+}
+
+#[test]
+fn a_command_keeps_the_times_of_its_start_and_end_and_the_folder_where_it_started() {
+    use std::time::SystemTime;
+    let mut term = Term::new(40, 6);
+    let before = SystemTime::now();
+    term.feed("\x1b]7;file://box/Users/me/src\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07cd /tmp\r\n\x1b]133;C\x07");
+    let running = term.terminal.last_command().unwrap();
+    let started = running.started.unwrap();
+    assert!(started >= before, "{running:?}");
+    assert_eq!(running.ended, None);
+    let folder = running.folder.as_deref().unwrap();
+    assert_eq!(
+        (folder.host.as_str(), folder.path.as_str()),
+        ("box", "/Users/me/src")
+    );
+    // The folder that the command moves to is the next command's, not its
+    // own, and its end keeps its time.
+    term.feed("\x1b]7;file://box/tmp\x07\x1b]133;D;0\x07");
+    let ended = term.terminal.command(1).unwrap();
+    assert_eq!(ended.started, Some(started));
+    let end = ended.ended.unwrap();
+    assert!(end >= started && end <= SystemTime::now(), "{ended:?}");
+    assert_eq!(ended.folder.as_deref().unwrap().path, "/Users/me/src");
+    // An end given again keeps the first time; a line of no command, ended
+    // at once, has none.
+    term.feed("\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;D\x07");
+    assert_eq!(term.terminal.command(1).unwrap().ended, Some(end));
+    let empty = term.terminal.command(2).unwrap();
+    assert_eq!(
+        (empty.started, empty.ended, empty.folder),
+        (None, None, None)
+    );
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07");
+    assert_eq!(
+        term.terminal.last_command().unwrap().folder.unwrap().path,
+        "/tmp"
+    );
 }
 
 #[test]
@@ -7038,8 +7087,18 @@ fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
     }
     term.feed("\x1b]133;D;2\x07\x1b]133;A\x07$ ");
     let end = 1 + 20_000;
+    // Of no times, which the system's clock gives.
+    let untimed = term
+        .terminal
+        .commands()
+        .into_iter()
+        .map(|command| CommandMarks {
+            started: None,
+            ended: None,
+            ..command
+        });
     assert_eq!(
-        term.terminal.commands(),
+        untimed.collect::<Vec<_>>(),
         [
             CommandMarks {
                 id: 1,

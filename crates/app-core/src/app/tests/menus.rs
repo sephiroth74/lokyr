@@ -112,6 +112,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Select Command Output shift+cmd+a",
             "-",
             "Select Block",
+            "Block Details",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -251,6 +252,7 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Select Command Output shift+cmd+a",
             "-",
             "Select Block",
+            "Block Details",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -516,6 +518,7 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Seleziona output del comando shift+cmd+a",
             "-",
             "Seleziona blocco",
+            "Dettagli del blocco",
             "-",
             "Modalità copia shift+cmd+c",
             "-",
@@ -592,6 +595,7 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "Clear",
             "Select Command Output",
             "Select Block",
+            "Block Details",
             "Copy Mode",
             "-",
             "Rename Tab…",
@@ -625,6 +629,7 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         "blocks.copy-block",
         "pane.select-output",
         "blocks.select-block",
+        "blocks.details",
     ];
     assert_eq!(dimmed[..], [&links[..], &outputs, &alone].concat());
     // Within the selection, which stays.

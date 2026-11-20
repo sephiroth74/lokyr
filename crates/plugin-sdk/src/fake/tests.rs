@@ -585,6 +585,48 @@ fn a_read_of_commands_gives_those_that_meet_its_rows_and_the_view_its_screen() {
     assert_eq!(found[1][0].prompt, None);
 }
 
+#[test]
+fn a_command_s_folder_and_the_time_go_to_a_plugin_that_reads_the_processes_alone() {
+    let command = host::ShellCommand {
+        id: 1,
+        prompt: Some((0, 0)),
+        output: Some((0, 1)),
+        started: Some(5),
+        folder: Some("/srv".to_owned()),
+        host: Some("box".to_owned()),
+        ..host::ShellCommand::default()
+    };
+    let mut read = Vec::new();
+    for capabilities in [
+        "history-read = true\n",
+        "history-read = true\nprocess-read = true\n",
+    ] {
+        let manifest = format!("[plugin]\nname = \"acme/probe\"\n[capabilities]\n{capabilities}");
+        let mut host = FakeHost::new("acme/probe").with_manifest(&manifest);
+        host.pane(PaneId(1)).commands = vec![command.clone()];
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let mut probe = Probe::new({
+            let seen = Rc::clone(&seen);
+            move |cx, _| {
+                let all = cx.shell_commands(PaneId(1), i64::MIN, i64::MAX)?;
+                let one = cx.shell_command(PaneId(1), 1)?;
+                let at = cx.command_at(PaneId(1), 1)?;
+                seen.borrow_mut()
+                    .extend([all[0].clone(), one.unwrap(), at.unwrap()]);
+                assert_eq!(cx.now()?, crate::fake::LOCAL_TIME);
+                Ok(())
+            }
+        });
+        host.command(&mut probe, "probe.go", Args::new()).unwrap();
+        read.push(seen.take());
+    }
+    let blind = command.clone().without_folder();
+    assert_eq!(
+        read,
+        [vec![blind.clone(), blind.clone(), blind], vec![command; 3]]
+    );
+}
+
 /// A plugin whose look decorates, opens a panel, reads rows and opens a
 /// tab, as a menu's question should not.
 struct Looker;

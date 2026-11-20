@@ -549,6 +549,9 @@ pub struct Context<'a> {
     pub config_error: Option<&'a host::ConfigProblem>,
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub day: u64,
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, as the app reads them.
+    pub local_time: &'a dyn Fn() -> host::LocalTime,
     /// Whether a notice of the app's shows.
     pub notice: bool,
     /// Whether a window shows a save panel.
@@ -6075,14 +6078,27 @@ impl Host<'_, '_> {
             Asked::CommandLine { pane, command } => {
                 Response::Text(self.pane(pane)?.command_line(command))
             }
+            // Their folders, the processes' working directories, to a plugin
+            // that reads the processes alone.
             Asked::ShellCommands { pane, top, bottom } => {
-                Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
+                let reads = self.state.reads_processes();
+                let commands = self.pane(pane)?.commands_meeting(top, bottom);
+                Response::ShellCommands(
+                    commands
+                        .into_iter()
+                        .map(|command| folder_for(command, reads))
+                        .collect(),
+                )
             }
             Asked::ShellCommand { pane, command } => {
-                Response::ShellCommand(self.pane(pane)?.shell_command(command).map(Box::new))
+                let reads = self.state.reads_processes();
+                let command = self.pane(pane)?.shell_command(command);
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
             }
             Asked::CommandAt { pane, row } => {
-                Response::ShellCommand(self.pane(pane)?.command_at(row).map(Box::new))
+                let reads = self.state.reads_processes();
+                let command = self.pane(pane)?.command_at(row);
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
             }
             Asked::CursorCell(pane) => Response::Cell(self.pane(pane)?.cursor_cell()),
             Asked::Viewport(pane) => {
@@ -6114,6 +6130,7 @@ impl Host<'_, '_> {
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),
+            Asked::Now => Response::Now((self.context.local_time)()),
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Settings => {
                 let mut sections = crate::config::schema::sections(self.context.config);
@@ -7544,6 +7561,16 @@ fn window_title(workspace: &Workspace, window: &crate::workspace::Window, reads:
     any_tab_info(workspace, window.active_tab(), false)
         .map(|tab| tab.title)
         .unwrap_or_default()
+}
+
+/// `command`, of its folder if the plugin `reads` the processes, whose
+/// working directories they are, and of none otherwise.
+fn folder_for(command: host::ShellCommand, reads: bool) -> host::ShellCommand {
+    if reads {
+        command
+    } else {
+        command.without_folder()
+    }
 }
 
 /// What a read of a window's tabs tells of `tab` of `workspace`, a tab of

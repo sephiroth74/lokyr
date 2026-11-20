@@ -225,6 +225,34 @@
   {
     "capabilities": [
       "history-read",
+      "process-read",
+      "clipboard-write"
+    ],
+    "category": "edit",
+    "name": "blocks.details",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/blocks",
+    "title": "Block Details",
+    "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "history-read",
       "terminal-read"
     ],
     "category": "edit",

@@ -30,6 +30,7 @@ fn commands() -> Vec<ShellCommand> {
         output: Some((0, row + 1)),
         end: end.map(|end| (0, end)),
         status,
+        ..ShellCommand::default()
     };
     vec![
         command(1, 0, Some(30), Some(0)),
@@ -301,8 +302,32 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
 
 #[test]
 fn the_texts_are_in_both_languages() {
+    let details = [
+        "details-label",
+        "details-line",
+        "details-status",
+        "details-started",
+        "details-duration",
+        "details-folder",
+        "details-copy-line",
+        "details-copy-status",
+        "details-copy-started",
+        "details-copy-duration",
+        "details-copy-folder",
+        "details-running",
+        "details-succeeded",
+        "details-failed",
+        "details-ended",
+        "details-milliseconds",
+        "details-seconds",
+        "details-minutes",
+        "details-hours",
+    ];
     for (_, catalog) in CATALOGS {
-        for id in ["header-label", "header-tooltip", "header-end"] {
+        for id in ["header-label", "header-tooltip", "header-end"]
+            .into_iter()
+            .chain(details)
+        {
             assert!(catalog.contains(&format!("\n{id} = ")), "{id}");
         }
     }
@@ -337,6 +362,7 @@ fn commands_host() -> (FakeHost, Blocks) {
         output: Some((0, output)),
         end: end.map(|end| (0, end)),
         status: end.map(|_| 0),
+        ..ShellCommand::default()
     };
     // `ls`' output ends of a blank row; `true`'s end is the next prompt's
     // row, which its output's mark shares.
@@ -428,6 +454,11 @@ fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories(
                 Category::Edit,
                 strings(&["history-read", "terminal-read"])
             ),
+            (
+                DETAILS,
+                Category::Edit,
+                strings(&["history-read", "process-read", "clipboard-write"])
+            ),
         ]
     );
 }
@@ -509,13 +540,303 @@ fn nothing_applies_on_the_alternate_screen_nor_of_a_pane_of_no_marks() {
         epoch: 1,
         alternate: true,
     });
-    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK] {
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS] {
         assert!(!host.applies(&mut plugin, name, &cell(0, 1)), "{name}");
     }
     let (mut host, mut plugin) = commands_host();
     host.pane(PANE).commands.clear();
-    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK] {
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS] {
         assert!(!host.applies(&mut plugin, name, &Args::new()), "{name}");
         assert!(run(&mut host, &mut plugin, name, Args::new()).is_empty());
+    }
+}
+
+/// The started time of the details' tests' commands: the fake host's time,
+/// 11 November 2026 at noon in UTC, 13:00 of its time zone.
+const STARTED: u64 = lokyr_plugin_sdk::fake::LOCAL_TIME.time;
+
+/// The host of the commands, `ls` of a start, an end 1.25 s later and a
+/// folder, and `sleep 60` of a start, of a remote machine's folder, its
+/// messages of the duration and the statuses written, and its time 5 s
+/// after `ls`' start.
+fn details_host() -> (FakeHost, Blocks) {
+    let (mut host, plugin) = commands_host();
+    let pane = host.pane(PANE);
+    pane.commands[0].started = Some(STARTED);
+    pane.commands[0].ended = Some(STARTED + 1250);
+    pane.commands[0].folder = Some("/Users/me/src".to_owned());
+    pane.commands[2].started = Some(STARTED + 3000);
+    pane.commands[2].folder = Some("/srv".to_owned());
+    pane.commands[2].host = Some("box".to_owned());
+    let number = |value: i64| Data::Integer(value);
+    host.set_message(
+        "details-seconds",
+        &[("whole", number(1)), ("tenths", number(2))],
+        Some("1.2 s"),
+    );
+    host.set_message(
+        "details-succeeded",
+        &[("status", number(0))],
+        Some("0 · OK"),
+    );
+    host.set_message(
+        "details-failed",
+        &[("status", number(1))],
+        Some("1 · Failed"),
+    );
+    host.set_local_time(lokyr_plugin_sdk::host::LocalTime {
+        time: STARTED + 5000,
+        offset: 3600,
+    });
+    (host, plugin)
+}
+
+/// The id of the details' panel that opened `nth`.
+fn details_panel(nth: u64) -> PanelId {
+    PanelId(format!("{DETAILS_PANEL}{nth}"))
+}
+
+/// The rows of the details that `panel` shows, as the plugin renders them:
+/// each of its key, if it copies, its texts, and its button's icon, if it
+/// has one.
+fn details_rows(
+    host: &mut FakeHost,
+    plugin: &mut Blocks,
+    panel: &PanelId,
+) -> Vec<(Option<String>, Vec<String>, Option<String>)> {
+    let tree = host
+        .render(plugin, &ViewId::Panel(panel.clone()))
+        .expect("the details");
+    tree.children
+        .iter()
+        .filter(|row| !row.children.is_empty())
+        .map(|row| {
+            let texts = row.children.iter().filter_map(|child| match &child.kind {
+                Kind::Text(text) => Some(text.clone()),
+                _ => None,
+            });
+            let button = row.children.iter().find_map(|child| match &child.kind {
+                Kind::Button(button) => Some(button.icon.clone()),
+                _ => None,
+            });
+            (
+                row.key.as_ref().map(|key| key.0.clone()),
+                texts.collect(),
+                button,
+            )
+        })
+        .collect()
+}
+
+fn details_click(panel: &PanelId, key: &str) -> UiEvent {
+    UiEvent {
+        view: ViewId::Panel(panel.clone()),
+        key: Key::from(key),
+        kind: UiEventKind::Click,
+    }
+}
+
+#[test]
+fn a_cell_s_block_shows_its_details_each_copied_of_a_click() {
+    let (mut host, mut plugin) = details_host();
+    assert!(host.applies(&mut plugin, DETAILS, &cell(3, 1)));
+    run(&mut host, &mut plugin, DETAILS, cell(3, 1));
+    let panel = details_panel(1);
+    let options = host.panels().get(&panel).expect("the details' panel");
+    assert_eq!(
+        options.anchor,
+        Anchor::Cell {
+            pane: PANE,
+            column: 3,
+            row: 1
+        }
+    );
+    assert_eq!(options.role, PanelRole::Dialog);
+    assert!(options.close_outside && options.close_escape);
+    let copy = || Some("copy".to_owned());
+    let texts = |texts: &[&str]| texts.iter().map(|text| (*text).to_owned()).collect();
+    let key = |key: &str| Some(key.to_owned());
+    assert_eq!(
+        details_rows(&mut host, &mut plugin, &panel),
+        [
+            (key("line"), texts(&["ls"]), copy()),
+            (key("status"), texts(&["details-status", "0 · OK"]), copy()),
+            // Noon in UTC, of a time zone an hour east, today.
+            (
+                key("started"),
+                texts(&["details-started", "13:00:00"]),
+                copy()
+            ),
+            (
+                key("duration"),
+                texts(&["details-duration", "1.2 s"]),
+                copy()
+            ),
+            (
+                key("folder"),
+                texts(&["details-folder", "/Users/me/src"]),
+                copy()
+            ),
+        ]
+    );
+    // A click on a part's button, or on its row, copies it, its button's
+    // icon a tick since.
+    for (clicked, copied) in [
+        ("copy-duration", "1.2 s"),
+        ("folder", "/Users/me/src"),
+        ("copy-status", "0"),
+        ("line", "ls"),
+        ("started", "13:00:00"),
+    ] {
+        host.ui_event(&mut plugin, &details_click(&panel, clicked))
+            .unwrap();
+        assert_eq!(host.clipboard(), Some(copied), "{clicked}");
+    }
+    let rows = details_rows(&mut host, &mut plugin, &panel);
+    let icons: Vec<_> = rows.iter().map(|(_, _, icon)| icon.as_deref()).collect();
+    assert_eq!(
+        icons,
+        [
+            Some("copy"),
+            Some("copy"),
+            Some("check"),
+            Some("copy"),
+            Some("copy")
+        ]
+    );
+    // Escape closes it, and the plugin forgets it.
+    host.close_panel(&panel);
+    host.deliver(&mut plugin).unwrap();
+    assert!(plugin.details.is_none());
+}
+
+#[test]
+fn a_running_block_s_details_tell_it_runs_until_its_end_comes() {
+    let (mut host, mut plugin) = details_host();
+    // Of no cell, as the Edit menu runs it: the last command, which runs,
+    // below the cursor of a view of the screen.
+    run(&mut host, &mut plugin, DETAILS, Args::new());
+    let panel = details_panel(1);
+    assert_eq!(
+        host.panels().get(&panel).map(|options| &options.anchor),
+        Some(&Anchor::Cursor(PANE))
+    );
+    let texts = |texts: &[&str]| texts.iter().map(|text| (*text).to_owned()).collect();
+    let key = |key: &str| Some(key.to_owned());
+    let copy = || Some("copy".to_owned());
+    assert_eq!(
+        details_rows(&mut host, &mut plugin, &panel),
+        [
+            (key("line"), texts(&["sleep 60"]), copy()),
+            // Running: nothing to copy, and no duration yet.
+            (None, texts(&["details-status", "details-running"]), None),
+            (
+                key("started"),
+                texts(&["details-started", "13:00:03"]),
+                copy()
+            ),
+            (
+                key("folder"),
+                texts(&["details-folder", "box:/srv"]),
+                copy()
+            ),
+        ]
+    );
+    // It ends of the status 1, 1.25 s after its start.
+    let pane = host.pane(PANE);
+    pane.commands[2].end = Some((0, 7));
+    pane.commands[2].status = Some(1);
+    pane.commands[2].ended = Some(STARTED + 3000 + 1250);
+    host.post(Event::CommandEnded {
+        pane: PANE,
+        command: 3,
+        status: Some(1),
+    });
+    host.take_renders();
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.take_renders(), [ViewId::Panel(panel.clone())]);
+    let rows = details_rows(&mut host, &mut plugin, &panel);
+    assert_eq!(
+        rows[1],
+        (
+            key("status"),
+            texts(&["details-status", "1 · Failed"]),
+            copy()
+        )
+    );
+    assert_eq!(
+        rows[3],
+        (
+            key("duration"),
+            texts(&["details-duration", "1.2 s"]),
+            copy()
+        )
+    );
+}
+
+#[test]
+fn a_block_s_details_open_in_place_of_others_and_of_another_day_s_date() {
+    let (mut host, mut plugin) = details_host();
+    run(&mut host, &mut plugin, DETAILS, cell(0, 0));
+    // The view scrolled up: the pane's top, rather than the cursor.
+    host.pane(PANE).viewport = Some(Viewport {
+        top: 0,
+        rows: 12,
+        screen: 40,
+        oldest: 0,
+        epoch: 1,
+        alternate: false,
+    });
+    // A day later.
+    host.set_local_time(lokyr_plugin_sdk::host::LocalTime {
+        time: STARTED + 86_400_000,
+        offset: 3600,
+    });
+    run(&mut host, &mut plugin, DETAILS, Args::new());
+    // The first closed, its closing told after the second opened.
+    assert!(!host.panels().contains_key(&details_panel(1)));
+    let second = details_panel(2);
+    assert_eq!(
+        host.panels().get(&second).map(|options| &options.anchor),
+        Some(&Anchor::PaneCorner {
+            pane: PANE,
+            corner: Corner::Top
+        })
+    );
+    host.deliver(&mut plugin).unwrap();
+    // The last that started, which runs, its start of its date, as a day
+    // went since.
+    let rows = details_rows(&mut host, &mut plugin, &second);
+    assert_eq!(rows[0].1, ["sleep 60"]);
+    assert_eq!(rows[2].1, ["details-started", "2026-11-11 13:00:03"]);
+    run(&mut host, &mut plugin, DETAILS, cell(3, 1));
+    host.deliver(&mut plugin).unwrap();
+    let rows = details_rows(&mut host, &mut plugin, &details_panel(3));
+    assert_eq!(rows[2].1, ["details-started", "2026-11-11 13:00:00"]);
+}
+
+#[test]
+fn a_duration_is_of_its_unit_s_message() {
+    let mut text = |id: &str, args: &[(&str, Data)]| {
+        let args: Vec<String> = args
+            .iter()
+            .map(|(name, value)| match value {
+                Data::Integer(value) => format!("{name}={value}"),
+                other => format!("{name}={other:?}"),
+            })
+            .collect();
+        format!("{id}({})", args.join(","))
+    };
+    for (millis, written) in [
+        (0, "details-milliseconds(count=0)"),
+        (999, "details-milliseconds(count=999)"),
+        (1000, "details-seconds(whole=1,tenths=0)"),
+        (59_999, "details-seconds(whole=59,tenths=9)"),
+        (60_000, "details-minutes(minutes=1,seconds=0)"),
+        (3_599_999, "details-minutes(minutes=59,seconds=59)"),
+        (3_600_000, "details-hours(hours=1,minutes=0)"),
+        (90_061_000, "details-hours(hours=25,minutes=1)"),
+    ] {
+        assert_eq!(duration(&mut text, millis), written, "{millis}");
     }
 }

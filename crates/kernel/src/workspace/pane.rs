@@ -942,11 +942,11 @@ impl Pane {
         let Some(session) = &self.session else {
             return Vec::new();
         };
-        session
-            .lock()
-            .commands_meeting(top, bottom)
+        let commands = session.lock().commands_meeting(top, bottom);
+        let mut machine = Machine::default();
+        commands
             .into_iter()
-            .map(shell_command)
+            .map(|marks| shell_command(&marks, &mut machine))
             .collect()
     }
 
@@ -956,7 +956,7 @@ impl Pane {
             .as_ref()?
             .lock()
             .command(command)
-            .map(shell_command)
+            .map(|marks| shell_command(&marks, &mut Machine::default()))
     }
 
     /// The command whose block holds the row numbered `row`, as
@@ -966,7 +966,7 @@ impl Pane {
             .as_ref()?
             .lock()
             .command_at(row)
-            .map(shell_command)
+            .map(|marks| shell_command(&marks, &mut Machine::default()))
     }
 
     /// The command line of the command of the id `command`, as
@@ -1562,7 +1562,23 @@ pub fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path
 }
 
 /// A command's marks, as the plugins read them.
-fn shell_command(marks: lokyr_vt_core::terminal::CommandMarks) -> ShellCommand {
+fn shell_command(
+    marks: &lokyr_vt_core::terminal::CommandMarks,
+    machine: &mut Machine,
+) -> ShellCommand {
+    let millis = |time: std::time::SystemTime| {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            })
+    };
+    let (folder, host) = match marks.folder.as_deref() {
+        Some(told) => {
+            let other = !told.host.is_empty() && !machine.is_local(&told.host);
+            (Some(told.path.clone()), other.then(|| told.host.clone()))
+        }
+        None => (None, None),
+    };
     ShellCommand {
         id: marks.id,
         prompt: marks.prompt,
@@ -1570,6 +1586,23 @@ fn shell_command(marks: lokyr_vt_core::terminal::CommandMarks) -> ShellCommand {
         output: marks.output,
         end: marks.end,
         status: marks.status,
+        started: marks.started.map(millis),
+        ended: marks.ended.map(millis),
+        folder,
+        host,
+    }
+}
+
+/// This machine's name, read once a read of commands needs it, as a
+/// folder of a host's name tells it.
+#[derive(Default)]
+struct Machine(Option<String>);
+
+impl Machine {
+    /// Whether `host`, as a shell told it of its folder, is this machine.
+    fn is_local(&mut self, host: &str) -> bool {
+        let name = self.0.get_or_insert_with(lokyr_pty::host_name);
+        lokyr_plugin_sdk::host::is_local_host(host, name)
     }
 }
 

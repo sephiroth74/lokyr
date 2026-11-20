@@ -22,6 +22,7 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **The command as you typed it**: zsh, and fish 4 or later, report the command line itself, so a right prompt on its row, such as zsh's `RPROMPT`, stays out of the pill.
 - **Long lines stay short**: a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
 - **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
+- **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 
 ## Copy a command or its output
 
@@ -34,6 +35,20 @@ Right-click anywhere in a block, on its prompt, its command line or its output, 
 The same commands are in the Edit menu and the command palette, where they act on the last command: Copy Command takes the last command that started, even one that still runs, and the other two the last command that ended. A command that still runs has no output to copy yet, so Copy Command and Output and Select Block are dimmed in its block.
 
 A block whose prompt has left the scrollback still copies and selects the rows that the pane holds.
+
+## See a block's details
+
+Right-click anywhere in a block and choose **Block Details**. A panel opens below the pointer with:
+
+- **the command line**, as you typed it;
+- **the status**: the exit status, 0 when the command succeeded and another number when it failed, or Running while the command still runs;
+- **the start**: the time of day when the command started, with the date when it wasn't today;
+- **the duration**: how long the command ran, once it ended, such as `1.2 s` or `3 min 5 s`;
+- **the folder** where the command ran, as your shell reported it. When the shell runs on another machine, such as over ssh, the machine's name comes first, as `server:/srv/app`.
+
+Click a line, or its copy button, to copy what it shows: the button turns into a tick. For the status, the copy is the exit status alone. Press Escape, or click outside the panel, to close it. Tab moves between the copy buttons, and Space copies.
+
+Edit › Block Details, with no click, shows the last command that started, below the cursor. While the command runs, the panel says Running, and it shows the status and the duration as soon as the command ends.
 
 ## Change the header's look
 
@@ -78,6 +93,7 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 | `blocks.copy-command` | Edit › Copy Command | | Copies the command line of the block under the pointer, from the pane's context menu, or of the last command that started |
 | `blocks.copy-block` | Edit › Copy Command and Output | | Copies the command line and the output of the block under the pointer, or of the last command that ended, its wrapped rows joined, 100 000 rows at most |
 | `blocks.select-block` | Edit › Select Block | | Selects that block, from its prompt to the end of its output |
+| `blocks.details` | Edit › Block Details | | Shows the details of the block under the pointer, or of the last command that started: its command line, exit status, start, duration and folder, each copied by a click |
 
 <!-- commands end -->
 
@@ -86,6 +102,8 @@ None of them has default keys: bind them in [`[keys]`](CONFIGURATION.md#keys), s
 ## How it works
 
 Your shell marks each command with OSC 133, the shell integration's sequences: where the prompt starts, where the command line starts, where the output starts, and where the command ended. Lokyr keeps the marks with the rows of the scrollback, and the Blocks plugin reads them as the view moves.
+
+When a command's output starts, Lokyr notes the time and the folder that your shell reported last with OSC 7, which the shell integration sends before each prompt. When the command ends, Lokyr notes the time again. The duration is the time between the two, by the Mac's clock.
 
 The header lies over the pane's first row, and takes none of the grid's rows, so the program's grid keeps its size as the header comes and goes. A scroll over the header scrolls the pane, and the header takes no keys.
 
@@ -97,6 +115,8 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - A shell on another host, such as one that you reach over ssh, marks no commands, so its output shows no header.
 - A program's own screen, such as vim's or less's, shows no header.
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
+- The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
+- A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
 
 ## Troubleshooting
 
@@ -107,6 +127,14 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 **Fix**: turn shell integration on, or set it up by hand, as [shell integration](shell-integration.md#set-it-up-by-hand) explains.
 
 **Check**: run `seq 1 500` and scroll up. The header with `seq 1 500` appears at the pane's top.
+
+### Block Details shows no folder
+
+**Why**: your shell doesn't report its folder with OSC 7, which Lokyr's shell integration does for zsh, bash and fish.
+
+**Fix**: turn shell integration on, or set it up by hand, as [shell integration](shell-integration.md#set-it-up-by-hand) explains.
+
+**Check**: run `ls`, then right-click its output and choose Block Details. The Folder line shows the folder where you ran it.
 
 ### The arrow isn't there
 

@@ -617,13 +617,15 @@ pub const MOST_COMMANDS: usize = 10_000;
 /// A command that the shell marked, as its integration tells it (OSC 133),
 /// as a read of a pane's commands gives it: its id, the cell of each of its
 /// marks, by its column and its row's number, if its row is in the pane
-/// still, and its exit status, if it ended and the shell told it.
+/// still, its exit status, if it ended and the shell told it, the times of
+/// its start and its end, and the folder where it started, as the shell
+/// told it (OSC 7).
 ///
 /// Its prompt starts at `prompt`, the input that the user typed at
 /// `input`, its output at `output`, and it ended at `end`: its output is
 /// the cells from `output` to before `end`, in reading order, which a read
 /// of rows reads.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellCommand {
     /// Its id, of the pane's commands from 1 in their prompts' order, as
     /// `command-started` and `command-ended` tell it.
@@ -638,6 +640,99 @@ pub struct ShellCommand {
     pub end: Option<(u16, i64)>,
     /// Its exit status.
     pub status: Option<i32>,
+    /// The time of the system's clock as it started, at its output's mark,
+    /// in milliseconds since 1970-01-01 in UTC, if it started.
+    #[serde(default)]
+    pub started: Option<u64>,
+    /// The time of the system's clock as it ended, at its end's mark, in
+    /// milliseconds since 1970-01-01 in UTC, if it ended after its start.
+    #[serde(default)]
+    pub ended: Option<u64>,
+    /// The folder where it started, the working directory that the shell
+    /// told last before its start, if it told one, to a plugin that reads
+    /// the processes (`process-read`).
+    #[serde(default)]
+    pub folder: Option<String>,
+    /// The machine of its folder, as the shell told it, of a machine other
+    /// than this one, as a shell's over ssh; none of this one.
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+impl ShellCommand {
+    /// The command, of no folder nor machine, as a plugin that does not
+    /// read the processes, whose working directories they are, reads it.
+    #[must_use]
+    pub fn without_folder(self) -> Self {
+        Self {
+            folder: None,
+            host: None,
+            ..self
+        }
+    }
+}
+
+/// The time of the system's clock and the local time zone's offset from
+/// UTC, as a read of the time gives them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalTime {
+    /// The time, in milliseconds since 1970-01-01 at midnight in UTC.
+    pub time: u64,
+    /// The local time zone's offset from UTC, in seconds east of it, as
+    /// 3600 of Central European Time.
+    pub offset: i32,
+}
+
+/// A date and a time of day of the Gregorian calendar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CivilTime {
+    /// The year.
+    pub year: i64,
+    /// The month, from 1.
+    pub month: u8,
+    /// The day of the month, from 1.
+    pub day: u8,
+    /// The hour, from 0 to 23.
+    pub hour: u8,
+    /// The minute.
+    pub minute: u8,
+    /// The second.
+    pub second: u8,
+}
+
+impl LocalTime {
+    /// The local date and time of day of `time`, in milliseconds since
+    /// 1970-01-01 in UTC, of the time zone's offset.
+    pub fn civil(&self, time: u64) -> CivilTime {
+        let seconds = i64::try_from(time / 1000)
+            .unwrap_or(i64::MAX)
+            .saturating_add(i64::from(self.offset));
+        let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+        // The civil date of the days since 1970-01-01, after Howard
+        // Hinnant's `civil_from_days`
+        // (https://howardhinnant.github.io/date_algorithms.html).
+        let days = days + 719_468;
+        let era = days.div_euclid(146_097);
+        let of_era = days.rem_euclid(146_097);
+        let year_of_era = (of_era - of_era / 1460 + of_era / 36_524 - of_era / 146_096) / 365;
+        let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let shifted_month = (5 * of_year + 2) / 153;
+        let day = of_year - (153 * shifted_month + 2) / 5 + 1;
+        let month = if shifted_month < 10 {
+            shifted_month + 3
+        } else {
+            shifted_month - 9
+        };
+        let small = |value: i64| u8::try_from(value).unwrap_or(0);
+        CivilTime {
+            year: year_of_era + era * 400 + i64::from(month <= 2),
+            month: small(month),
+            day: small(day),
+            hour: small(rest / 3600),
+            minute: small(rest % 3600 / 60),
+            second: small(rest % 60),
+        }
+    }
 }
 
 /// What a selection of cells takes, from its first cell to its last.
@@ -2113,6 +2208,30 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_local_time_s_date_and_time_of_day_are_of_its_offset() {
+        let at = |offset: i32, time: u64| LocalTime { time: 0, offset }.civil(time);
+        let civil = |year, month, day, hour, minute, second| CivilTime {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        };
+        assert_eq!(at(0, 0), civil(1970, 1, 1, 0, 0, 0));
+        // 11 November 2026 at 23:30:15 in UTC, of its milliseconds.
+        let late = (20_768 * 86_400 + 23 * 3600 + 30 * 60 + 15) * 1000 + 999;
+        assert_eq!(at(0, late), civil(2026, 11, 11, 23, 30, 15));
+        // An hour east is the next day; five hours west, the same evening.
+        assert_eq!(at(3600, late), civil(2026, 11, 12, 0, 30, 15));
+        assert_eq!(at(-5 * 3600, late), civil(2026, 11, 11, 18, 30, 15));
+        // A leap day, and a time before 1970 of a west offset.
+        let leap = 11_016 * 86_400 * 1000;
+        assert_eq!(at(0, leap), civil(2000, 2, 29, 0, 0, 0));
+        assert_eq!(at(-3600, 0), civil(1969, 12, 31, 23, 0, 0));
+    }
 
     #[test]
     fn a_group_s_name_holds_no_control_nor_hidden_character() {

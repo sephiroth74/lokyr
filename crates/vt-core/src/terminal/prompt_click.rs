@@ -307,15 +307,16 @@ impl Terminal {
         if self.alternate_active || zone != Semantic::Input {
             return None;
         }
-        let command = self.commands().last().copied();
+        let command = self.last_command();
         let on_screen = |mark: Option<(u16, i64)>| {
             let (x, row) = mark?;
             Some((x, self.screen_y(row)?))
         };
-        let top = on_screen(command.and_then(|command| command.prompt))
+        let top = on_screen(command.as_ref().and_then(|command| command.prompt))
             .map(|(_, y)| y)
             .or_else(|| self.prompt_row(self.cursor().y))?;
-        let start = on_screen(command.and_then(|command| command.input)).unwrap_or((0, top));
+        let start =
+            on_screen(command.as_ref().and_then(|command| command.input)).unwrap_or((0, top));
         Some((start, top))
     }
 

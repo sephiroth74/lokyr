@@ -2325,7 +2325,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
                 .commands
                 .iter()
                 .filter(|command| ids.contains(&command.id))
-                .copied()
+                .cloned()
                 .collect(),
         )
     };
@@ -2402,7 +2402,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
                         pane: world.pane,
                         command: second,
                     },
-                    Response::ShellCommand(Some(Box::new(world.commands[1]))),
+                    Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
                 ),
                 (
                     Request::ShellCommand {
@@ -2423,14 +2423,14 @@ fn commands_and_viewport(world: &World) -> Scenario {
                         pane: world.pane,
                         row: row + 1,
                     },
-                    Response::ShellCommand(Some(Box::new(world.commands[0]))),
+                    Response::ShellCommand(Some(Box::new(world.commands[0].clone()))),
                 ),
                 (
                     Request::CommandAt {
                         pane: world.pane,
                         row: row + 2,
                     },
-                    Response::ShellCommand(Some(Box::new(world.commands[1]))),
+                    Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
                 ),
                 (
                     Request::CommandAt { pane: NO_PANE, row },
@@ -3024,9 +3024,14 @@ fn app_requests(world: &World) -> Scenario {
                 ),
             ),
             (Request::SetFont("Monaco".to_owned()), Response::Done),
-            // The system's day, whether a notice shows, and whether the
-            // state lasts, as the harness gives the kernel's host a folder.
+            // The system's day and time, whether a notice shows, and
+            // whether the state lasts, as the harness gives the kernel's
+            // host a folder.
             (Request::Day, Response::Day(lokyr_plugin_sdk::fake::DAY)),
+            (
+                Request::Now,
+                Response::Now(lokyr_plugin_sdk::fake::LOCAL_TIME),
+            ),
             (Request::NoticeShows, Response::Boolean(false)),
             (Request::KeepsState, Response::Boolean(true)),
             // No agent runs in the scenarios' panes.

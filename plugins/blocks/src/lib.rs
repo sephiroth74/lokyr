@@ -9,19 +9,26 @@
 //!
 //! Its commands act on a block: the one under a cell, as the pane's
 //! context menu gives its `column` and `row`, or else the last command's.
-//! They copy its line, or its line and its output, or select it whole.
-//! Like every built-in plugin, it depends only on the plugin SDK.
+//! They copy its line, or its line and its output, or select it whole, or
+//! show its details in a panel: its line, its exit status, its start, its
+//! duration and its folder, each copied of a click. Like every built-in
+//! plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{PaneId, ShellCommand};
-use lokyr_plugin_sdk::message::Event;
+use lokyr_plugin_sdk::host::{LocalTime, PaneId, ShellCommand};
+use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
-use lokyr_plugin_sdk::ui::{UiEvent, ViewId};
-use lokyr_plugin_sdk::view::Node;
+use lokyr_plugin_sdk::ui::{
+    Anchor, Corner, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId,
+};
+use lokyr_plugin_sdk::view::{
+    Align, Border, Button, ControlSize, Direction, Edges, FontFamily, Hover, Kind as NodeKind,
+    Layout, Length, Node, PointerShape, Role, Shadow, Style, Token, UiEventKind,
+};
 
 // The command's header, of `lokyr/command-header`'s source, and the text of
 // a command's output, of `lokyr/core-actions`', as a built-in plugin
@@ -54,6 +61,24 @@ const COPY_COMMAND: &str = "blocks.copy-command";
 const COPY_BLOCK: &str = "blocks.copy-block";
 const SELECT_BLOCK: &str = "blocks.select-block";
 
+/// Show a block's details in a panel at its cell, of `column` and `row`,
+/// or, of none, the last command's at the cursor.
+const DETAILS: &str = "blocks.details";
+
+/// The prefix of a details' panel's id, of a number that each opening
+/// takes, so that a panel that opens in place of another is not the one
+/// whose closing the host tells.
+const DETAILS_PANEL: &str = "block-details-";
+
+/// The width of a details' panel, in points.
+const DETAILS_WIDTH: f32 = 340.0;
+
+/// The width of the names of a details' parts, in points.
+const NAME_WIDTH: f32 = 72.0;
+
+/// The most lines of a command's line that a details' panel shows.
+const LINE_LINES: u16 = 3;
+
 /// The context of the commands: a focused pane.
 const PANE: &str = "pane.focused";
 
@@ -65,12 +90,79 @@ const MOST_OUTPUT_ROWS: usize = lokyr_plugin_sdk::host::MOST_LINES;
 /// command reads first, before every command's.
 const RECENT_ROWS: i64 = 10_000;
 
-/// The plugin: the panes' headers, of a button to their blocks' ends, and
-/// the read of a block's rows under way.
+/// The plugin: the panes' headers, of a button to their blocks' ends, the
+/// read of a block's rows under way, and the details' panel that shows.
 #[derive(Debug)]
 pub struct Blocks {
     headers: Headers,
     reading: Option<Reading>,
+    details: Option<Details>,
+    /// The number of the last details' panel that opened.
+    opened: u64,
+}
+
+/// A block's details that a panel shows: its panel, its pane, its command,
+/// its line, the system's time as it opened or the command ended, and the
+/// part that a click copied last.
+#[derive(Debug)]
+struct Details {
+    panel: PanelId,
+    pane: PaneId,
+    command: ShellCommand,
+    line: Option<String>,
+    now: LocalTime,
+    copied: Option<Part>,
+}
+
+/// A part of a block's details, which a click copies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Part {
+    Line,
+    Status,
+    Started,
+    Duration,
+    Folder,
+}
+
+impl Part {
+    /// The key of its row in the panel.
+    fn key(self) -> &'static str {
+        match self {
+            Self::Line => "line",
+            Self::Status => "status",
+            Self::Started => "started",
+            Self::Duration => "duration",
+            Self::Folder => "folder",
+        }
+    }
+
+    /// The part of a key of its row, or of its copy's button, `copy-` and
+    /// its row's key.
+    fn of(key: &str) -> Option<Self> {
+        let key = key.strip_prefix("copy-").unwrap_or(key);
+        [
+            Self::Line,
+            Self::Status,
+            Self::Started,
+            Self::Duration,
+            Self::Folder,
+        ]
+        .into_iter()
+        .find(|part| part.key() == key)
+    }
+}
+
+/// A row of a block's details: its part, its name, the text that it shows,
+/// an icon of its state, of a token, and the text that a click copies,
+/// none of a row that copies nothing, and the label of its copy's button.
+#[derive(Debug, PartialEq)]
+struct Row {
+    part: Part,
+    name: String,
+    shown: String,
+    icon: Option<(&'static str, &'static str)>,
+    copied: Option<String>,
+    copy: String,
 }
 
 /// A read of a block's rows under way: the read's id, its pane, and what
@@ -98,6 +190,8 @@ impl Default for Blocks {
         Self {
             headers: Headers::new(PANEL, true),
             reading: None,
+            details: None,
+            opened: 0,
         }
     }
 }
@@ -136,6 +230,16 @@ impl Plugin for Blocks {
                 vec![Capability::HistoryRead, Capability::TerminalRead],
             ),
         ];
+        let commands = commands.into_iter().chain([(
+            DETAILS,
+            "Block Details",
+            Category::Edit,
+            vec![
+                Capability::HistoryRead,
+                Capability::ProcessRead,
+                Capability::ClipboardWrite,
+            ],
+        )]);
         for (name, title, category, capabilities) in commands {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -161,6 +265,7 @@ impl Plugin for Blocks {
     /// block that a command read go to the clipboard or the selection.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         self.headers.on_event(cx, events)?;
+        self.follow_details(cx, events)?;
         for event in events {
             let Event::Lines {
                 id, pane, lines, ..
@@ -193,11 +298,43 @@ impl Plugin for Blocks {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
-        self.headers.render(cx, view)
+        match &self.details {
+            Some(details) if *view == ViewId::Panel(details.panel.clone()) => {
+                let rows = rows(cx, details);
+                let line = details.line.clone().unwrap_or_default();
+                let label = cx
+                    .message("details-label", &[("line", Data::Text(line))])
+                    .unwrap_or_default();
+                Some(details_tree(&rows, details.copied, &label))
+            }
+            _ => self.headers.render(cx, view),
+        }
     }
 
+    /// A click on a row of the details, or on its button, copies its part.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
-        self.headers.on_ui_event(cx, event)
+        let Some(details) = &self.details else {
+            return self.headers.on_ui_event(cx, event);
+        };
+        if event.view != ViewId::Panel(details.panel.clone()) {
+            return self.headers.on_ui_event(cx, event);
+        }
+        let (UiEventKind::Click, Some(part)) = (&event.kind, Part::of(&event.key.0)) else {
+            return Ok(());
+        };
+        let Some(text) = rows(cx, details)
+            .into_iter()
+            .find(|row| row.part == part)
+            .and_then(|row| row.copied)
+        else {
+            return Ok(());
+        };
+        cx.set_clipboard_text(&text)?;
+        let panel = details.panel.clone();
+        if let Some(details) = &mut self.details {
+            details.copied = Some(part);
+        }
+        cx.request_render(ViewId::Panel(panel))
     }
 
     /// A command applies where its block has what it takes: a line to
@@ -213,6 +350,7 @@ impl Plugin for Blocks {
                 .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
                 .is_some(),
             COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
+            DETAILS => block(cx, pane, args, false).ok().flatten().is_some(),
             _ => true,
         }
     }
@@ -285,12 +423,379 @@ impl Plugin for Blocks {
                 });
                 Ok(())
             }
+            DETAILS => {
+                let Some(command) = block(cx, pane, &args, false)? else {
+                    return Ok(());
+                };
+                self.open_details(cx, pane, command, &args)
+            }
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("blocks has no command `{name}`"),
             )),
         }
     }
+}
+
+impl Blocks {
+    /// Opens the details of `command`, of `pane`, in a panel below the cell
+    /// of `args`, or, of none, below the cursor while the view shows the
+    /// screen, at the pane's top otherwise; in place of the details that
+    /// show.
+    fn open_details(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: ShellCommand,
+        args: &Args,
+    ) -> Result<(), Error> {
+        let line = cx.command_line(pane, command.id)?;
+        let now = cx.now()?;
+        let anchor = match cell_of(args) {
+            Some((column, row)) => Anchor::Cell { pane, column, row },
+            None => {
+                let view = cx.viewport(pane)?;
+                if view.top == view.screen {
+                    Anchor::Cursor(pane)
+                } else {
+                    Anchor::PaneCorner {
+                        pane,
+                        corner: Corner::Top,
+                    }
+                }
+            }
+        };
+        if let Some(shown) = self.details.take() {
+            cx.close_panel(shown.panel)?;
+        }
+        self.opened += 1;
+        let panel = PanelId(format!("{DETAILS_PANEL}{}", self.opened));
+        cx.open_panel(
+            panel.clone(),
+            PanelOptions {
+                anchor,
+                role: PanelRole::Dialog,
+                close_outside: true,
+                close_escape: true,
+                takes_keys: false,
+                close_typing: false,
+            },
+        )?;
+        self.details = Some(Details {
+            panel,
+            pane,
+            command,
+            line,
+            now,
+            copied: None,
+        });
+        Ok(())
+    }
+
+    /// The details follow their command: its end shows in them as it comes.
+    /// They go as their panel closes.
+    fn follow_details(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        for event in events {
+            let Some(details) = &self.details else {
+                return Ok(());
+            };
+            match event {
+                Event::PanelClosed(id) if *id == details.panel => self.details = None,
+                Event::CommandEnded { pane, command, .. }
+                    if *pane == details.pane && *command == details.command.id =>
+                {
+                    let (pane, panel) = (details.pane, details.panel.clone());
+                    let Some(ended) = cx.shell_command(pane, *command)? else {
+                        continue;
+                    };
+                    let now = cx.now()?;
+                    if let Some(details) = &mut self.details {
+                        details.command = ended;
+                        details.now = now;
+                    }
+                    cx.request_render(ViewId::Panel(panel))?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The cell that `args` names, of its `column` and `row`, if it names one.
+fn cell_of(args: &Args) -> Option<(u16, i64)> {
+    let column = match args.get("column") {
+        Some(&Value::Integer(column)) => u16::try_from(column).ok()?,
+        _ => return None,
+    };
+    match args.get("row") {
+        Some(&Value::Integer(row)) if row >= 0 => Some((column, row)),
+        _ => None,
+    }
+}
+
+/// The rows of `details`: its line; its exit status, or that it runs; the
+/// time of its start, its time of day of the local time zone, of its date
+/// too where it is not today's; its duration, once it ended; and its
+/// folder, of its machine where it is another one, as the shell told it.
+fn rows(cx: &mut Cx<'_>, details: &Details) -> Vec<Row> {
+    let mut text = |id: &str, args: &[(&str, Data)]| cx.message(id, args).unwrap_or_default();
+    let command = &details.command;
+    let mut rows = Vec::new();
+    if let Some(line) = &details.line {
+        rows.push(Row {
+            part: Part::Line,
+            name: text("details-line", &[]),
+            shown: line.clone(),
+            icon: None,
+            copied: Some(line.clone()),
+            copy: text("details-copy-line", &[]),
+        });
+    }
+    let status = |status: i32| [("status", Data::Integer(i64::from(status)))];
+    let (shown, icon, copied) = match (command.end, command.status) {
+        (None, _) => (
+            text("details-running", &[]),
+            ("circle-filled", "gutter.running"),
+            None,
+        ),
+        (Some(_), Some(0)) => (
+            text("details-succeeded", &status(0)),
+            ("check", "gutter.succeeded"),
+            Some("0".to_owned()),
+        ),
+        (Some(_), Some(code)) => (
+            text("details-failed", &status(code)),
+            ("error", "gutter.failed"),
+            Some(code.to_string()),
+        ),
+        (Some(_), None) => (
+            text("details-ended", &[]),
+            ("circle-filled", "gutter.succeeded"),
+            None,
+        ),
+    };
+    rows.push(Row {
+        part: Part::Status,
+        name: text("details-status", &[]),
+        shown,
+        icon: Some(icon),
+        copied,
+        copy: text("details-copy-status", &[]),
+    });
+    if let Some(started) = command.started {
+        let shown = clock_time(details.now, started);
+        rows.push(Row {
+            part: Part::Started,
+            name: text("details-started", &[]),
+            shown: shown.clone(),
+            icon: None,
+            copied: Some(shown),
+            copy: text("details-copy-started", &[]),
+        });
+    }
+    if let (Some(started), Some(ended), Some(_)) = (command.started, command.ended, command.end) {
+        let shown = duration(&mut text, ended.saturating_sub(started));
+        rows.push(Row {
+            part: Part::Duration,
+            name: text("details-duration", &[]),
+            shown: shown.clone(),
+            icon: None,
+            copied: Some(shown),
+            copy: text("details-copy-duration", &[]),
+        });
+    }
+    if let Some(folder) = &command.folder {
+        let shown = match &command.host {
+            Some(host) => format!("{host}:{folder}"),
+            None => folder.clone(),
+        };
+        rows.push(Row {
+            part: Part::Folder,
+            name: text("details-folder", &[]),
+            shown: shown.clone(),
+            icon: None,
+            copied: Some(shown),
+            copy: text("details-copy-folder", &[]),
+        });
+    }
+    rows
+}
+
+/// The local time of day of `time`, in milliseconds since 1970 in UTC, as
+/// `24:00:00`, of `now`'s time zone, its date first, as `2026-11-19`, where
+/// it is not `now`'s day.
+fn clock_time(now: LocalTime, time: u64) -> String {
+    let at = now.civil(time);
+    let today = now.civil(now.time);
+    let clock = format!("{:02}:{:02}:{:02}", at.hour, at.minute, at.second);
+    if (at.year, at.month, at.day) == (today.year, today.month, today.day) {
+        clock
+    } else {
+        format!("{:04}-{:02}-{:02} {clock}", at.year, at.month, at.day)
+    }
+}
+
+/// A duration of `millis` milliseconds, as the catalogs write it: its
+/// milliseconds below a second, its seconds and tenths below a minute, its
+/// minutes and seconds below an hour, and its hours and minutes past it.
+fn duration(text: &mut impl FnMut(&str, &[(&str, Data)]) -> String, millis: u64) -> String {
+    let number = |value: u64| Data::Integer(i64::try_from(value).unwrap_or(i64::MAX));
+    let seconds = millis / 1000;
+    if millis < 1000 {
+        text("details-milliseconds", &[("count", number(millis))])
+    } else if seconds < 60 {
+        let tenths = millis / 100;
+        text(
+            "details-seconds",
+            &[
+                ("whole", number(tenths / 10)),
+                ("tenths", number(tenths % 10)),
+            ],
+        )
+    } else if seconds < 3600 {
+        text(
+            "details-minutes",
+            &[
+                ("minutes", number(seconds / 60)),
+                ("seconds", number(seconds % 60)),
+            ],
+        )
+    } else {
+        text(
+            "details-hours",
+            &[
+                ("hours", number(seconds / 3600)),
+                ("minutes", number(seconds % 3600 / 60)),
+            ],
+        )
+    }
+}
+
+/// The details' panel of `rows`, which `label` names to accessibility: a
+/// card of the command's line, in the terminal's font, of three lines at
+/// most, above a hairline and the other parts' rows, each of its name, its
+/// state's icon and its text, and of a button that copies it, as a click
+/// on its row does, whose icon is a tick once it copied, as `copied` says.
+fn details_tree(rows: &[Row], copied: Option<Part>, label: &str) -> Node {
+    let copy_button = |row: &Row| {
+        let done = copied == Some(row.part);
+        Node::new(NodeKind::Button(Button {
+            icon: if done { "check" } else { "copy" }.to_owned(),
+            size: ControlSize::Small,
+            ..Button::default()
+        }))
+        .key(format!("copy-{}", row.part.key()).as_str())
+        .label(row.copy.as_str())
+        .tooltip(row.copy.as_str())
+    };
+    let row_node = |row: &Row| {
+        let line = row.part == Part::Line;
+        let mut children = Vec::new();
+        if !line {
+            children.push(
+                Node::text(row.name.as_str())
+                    .layout(Layout {
+                        width: Length::Points(NAME_WIDTH),
+                        ..Layout::default()
+                    })
+                    .style(Style {
+                        color: Some(Token::from("text.secondary")),
+                        ..Style::default()
+                    }),
+            );
+        }
+        if let Some((icon, color)) = row.icon {
+            children.push(Node::icon(icon).style(Style {
+                color: Some(Token::from(color)),
+                ..Style::default()
+            }));
+        }
+        // Of no least width, so that the layout shrinks it within the card,
+        // which the host's ellipsis cuts.
+        children.push(
+            Node::text(row.shown.as_str())
+                .layout(Layout {
+                    grow: 1.0,
+                    min_width: Length::Points(0.0),
+                    lines: line.then_some(LINE_LINES),
+                    ..Layout::default()
+                })
+                .style(Style {
+                    font_family: line.then_some(FontFamily::Terminal),
+                    ..Style::default()
+                }),
+        );
+        let copies = row.copied.is_some();
+        if copies {
+            children.push(copy_button(row));
+        }
+        let node = Node::container(children)
+            .layout(Layout {
+                direction: Direction::Row,
+                gap: 6.0,
+                align: if line { Align::Start } else { Align::Center },
+                padding: Edges {
+                    top: 3.0,
+                    right: 4.0,
+                    bottom: 3.0,
+                    left: 6.0,
+                },
+                ..Layout::default()
+            })
+            .style(Style {
+                radius: 6.0,
+                pointer: copies.then_some(PointerShape::PointingHand),
+                hover: copies.then(|| Hover {
+                    background: Some(Token::from("button.hover.bg")),
+                    ..Hover::default()
+                }),
+                ..Style::default()
+            });
+        if copies {
+            node.key(row.part.key())
+        } else {
+            node
+        }
+    };
+    let mut children = Vec::new();
+    for row in rows {
+        children.push(row_node(row));
+        if row.part == Part::Line {
+            children.push(
+                Node::container(Vec::new())
+                    .layout(Layout {
+                        height: Length::Points(1.0),
+                        ..Layout::default()
+                    })
+                    .style(Style {
+                        background: Some(Token::from("separator")),
+                        ..Style::default()
+                    }),
+            );
+        }
+    }
+    Node::container(children)
+        .key("details")
+        .role(Role::Group)
+        .label(label)
+        .layout(Layout {
+            direction: Direction::Column,
+            gap: 4.0,
+            width: Length::Points(DETAILS_WIDTH),
+            padding: Edges::all(8.0),
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("panel.bg")),
+            border: Some(Border {
+                color: Token::from("panel.border"),
+                width: 1.0,
+            }),
+            radius: 10.0,
+            shadow: Some(Shadow::default()),
+            ..Style::default()
+        })
 }
 
 /// The block that `args` names in `pane`: of the command whose block holds

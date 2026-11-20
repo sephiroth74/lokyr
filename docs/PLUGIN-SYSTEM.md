@@ -489,11 +489,15 @@ type SearchMatch = { first: { number }, last: { number } }
 -- A command that the shell marked, as its integration tells it (OSC 133): its id, of the pane's commands from 1 in their
 -- prompts' order; each mark's cell, { column, row's number }, if its row is in the pane still, of its prompt, the input
 -- typed past it, its output, and its end; and its exit status, if it ended and the shell told it. Its output is the
--- cells from `output` to before `end`, in reading order, which `read_lines` reads.
+-- cells from `output` to before `end`, in reading order, which `read_lines` reads. The times of its start, at its
+-- output's mark, and of its end, of the system's clock, in milliseconds since 1970 in UTC; and the folder where it
+-- started, as the shell told it last before its start (OSC 7), with its machine where it is another one, as a
+-- shell's over ssh, to a plugin of `process-read` alone · not released yet.
 type ShellCommand = {
     id: number,
     prompt: { number }?, input: { number }?, output: { number }?, ["end"]: { number }?,
     status: number?,
+    started: number?, ended: number?, folder: string?, host: string?,
 }
 
 -- A pane's view, as its last frame showed it: the number of its first row, its rows, the number of the screen's first
@@ -844,6 +848,9 @@ type Cx = {
     -- Today, in whole days since 1 January 1970, of the system's clock, of no capability, as a plugin that shows
     -- something once a week counts its days.
     day: () -> (number?, Error?),
+    -- The time of the system's clock, in milliseconds since 1970 in UTC, and the local time zone's offset from UTC,
+    -- in seconds east of it, of no capability, as a plugin that shows a time of day reads them · not released yet.
+    now: () -> ({ time: number, offset: number }?, Error?),
     -- Whether a notice of the app's shows, as an error of the config, of no capability, so that a plugin's card that
     -- can wait gives way to it.
     notice_shows: () -> (boolean?, Error?),
@@ -1257,7 +1264,7 @@ type Plugin = {
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends, as `shell_commands`, `shell_command`, `command_at`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
-| `process-read` | Seeing the panes' processes: their command lines and working directories, and what their programs tell of their state, as an agent's and a session's status | Medium: command lines can hold passwords |
+| `process-read` | Seeing the panes' processes: their command lines and working directories, a command's folder among them, and what their programs tell of their state, as an agent's and a session's status | Medium: command lines can hold passwords |
 | `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |
 | `decorate` | Drawing over a pane: decorations and their labels, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |

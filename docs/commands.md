@@ -119,6 +119,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
+| `blocks.details` | Block Details | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
 | `blocks.select-block` | Select Block | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
 | [`copy-mode.act`](plugins/copy-mode.md) | Act in Copy Mode | `action`, text | `o`, `action = "swap"`, while `copy-mode.open && pane.focused`; `y`, `action = "copy"`, while `copy-mode.open && pane.focused`; Return (`enter`), `action = "copy"`, while `copy-mode.open && pane.focused`; `Y` (`shift+y`), `action = "copy-line"`, while `copy-mode.open && pane.focused`; Escape (`escape`), `action = "back"`, while `copy-mode.open && pane.focused`; `q`, `action = "exit"`, while `copy-mode.open && pane.focused`; ⌃C (`ctrl+c`), `action = "exit"`, while `copy-mode.open && pane.focused` |
 | [`copy-mode.count`](plugins/copy-mode.md) | Count in Copy Mode | `digit`, whole number | `0` to `9`, `digit` 0 to 9, while `copy-mode.open && pane.focused` |

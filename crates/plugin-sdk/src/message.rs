@@ -220,6 +220,9 @@ pub enum Request {
     /// The day of the system's clock, in days since 1970-01-01, in UTC, as
     /// a plugin that shows something once in a while counts its days.
     Day,
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, as a plugin that shows a time of day reads them.
+    Now,
     /// Whether a notice of the app's shows, as of a config that does not
     /// read, which a plugin's card of its own yields to.
     NoticeShows,
@@ -1329,6 +1332,7 @@ impl Request {
             | Self::Fonts
             | Self::FontStyles(_)
             | Self::Day
+            | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
             | Self::RenderImage(_)
@@ -1387,6 +1391,7 @@ impl Request {
             | Self::ThemeTokens(_)
             | Self::Fonts
             | Self::Day
+            | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
             | Self::Agents
@@ -1534,6 +1539,8 @@ pub enum Response {
     FontStyles(Vec<String>),
     /// A day of the system's clock, in days since 1970-01-01.
     Day(u64),
+    /// The time of the system's clock and the local time zone's offset.
+    Now(crate::host::LocalTime),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
     /// The plugins, built in and installed.
@@ -2073,6 +2080,7 @@ impl Request {
             Self::Fonts { .. } => "fonts",
             Self::FontStyles { .. } => "font-styles",
             Self::Day { .. } => "day",
+            Self::Now { .. } => "now",
             Self::Agents { .. } => "agents",
             Self::Plugins { .. } => "plugins",
             Self::Settings { .. } => "settings",

@@ -114,7 +114,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 | [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |
 | [`command-header`](docs/plugins/command-header.md) | The command whose output you are looking at, at the pane's top, which a click scrolls to, while `blocks` is off |
-| [`blocks`](docs/blocks.md) | Each command and its output a block: its command at the pane's top, which a click scrolls to, and an arrow to the block's end · not released yet |
+| [`blocks`](docs/blocks.md) | Each command and its output a block: its command at the pane's top, which a click scrolls to, an arrow to the block's end, and its parts copied or its details shown from the context menu · not released yet |
 | [`copy-mode`](docs/plugins/copy-mode.md) | The copy mode: ⇧⌘C, then vi's keys move a cursor through the scrollback, select and copy, without the mouse |
 | [`quick-tips`](docs/plugins/quick-tips.md) | A tip at the start, once a week at most: a shortcut as your keymap binds it, or a feature that shows in no menu |
 | [`settings`](docs/plugins/settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |

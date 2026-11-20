@@ -58,8 +58,19 @@ impl Plugin for Follower {
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
         let pane = self.0.borrow().pane.expect("the pane of a view");
         if name == "follower.read" {
+            // Their marks, of no times nor folder, which the clock and the
+            // shell give.
             let commands = cx.shell_commands(pane, i64::MIN, i64::MAX)?;
-            self.0.borrow_mut().commands = commands;
+            self.0.borrow_mut().commands = commands
+                .into_iter()
+                .map(|command| ShellCommand {
+                    started: None,
+                    ended: None,
+                    folder: None,
+                    host: None,
+                    ..command
+                })
+                .collect();
             return Ok(());
         }
         cx.scroll(pane, Scroll::Up(10))
@@ -124,6 +135,7 @@ fn marks(
         output: output.map(|row| (0, row)),
         end: end.map(|row| (0, row)),
         status,
+        ..ShellCommand::default()
     }
 }
 
@@ -609,5 +621,78 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
             Some(format!("{shown}ls\na.txt\nb.txt")),
             "{name}"
         );
+    }
+}
+
+/// The frame of the part of `key` of the details' panel that shows in
+/// `window`, if one.
+fn details_part(app: &App, window: WindowId, key: &str) -> Option<Frame> {
+    let state = &app.windows[&window];
+    let view = state.chrome.iter().find(
+        |view| matches!(&view.view, ViewId::Panel(id) if id.0.starts_with("block-details-")),
+    )?;
+    let frame = view.frame?;
+    let node = view.surface.tree.by_key(&key.into())?;
+    let part = view.surface.layout.frame(&view.surface.tree, node)?;
+    Some(Frame {
+        x: part.x + frame.x,
+        y: part.y + frame.y,
+        ..part
+    })
+}
+
+#[test]
+fn a_block_s_details_tell_its_times_and_its_folder_each_copied_of_a_click() {
+    // `ls` in /tmp, which OSC 7 told before its prompt, then the prompt
+    // where you type.
+    let program = shell(concat!(
+        "printf '\\033]7;file://localhost/tmp\\007\\033]133;A\\007$ \\033]133;B\\007ls\\r\\n",
+        "\\033]133;C\\007a.txt\\r\\n\\033]133;D;0\\007\\033]133;A\\007$ \\033]133;B\\007'; ",
+        "sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(pane).is_some_and(|pane| {
+            pane.commands_meeting(i64::MIN, i64::MAX)
+                .first()
+                .is_some_and(|command| command.ended.is_some())
+        })
+    });
+    let command = app.workspace.pane(pane).unwrap().commands_meeting(0, 1)[0].clone();
+    let (started, ended) = (command.started.unwrap(), command.ended.unwrap());
+    assert!(ended >= started, "{command:?}");
+    assert_eq!(
+        (command.folder.as_deref(), command.host.as_deref()),
+        (Some("/tmp"), None)
+    );
+    // The details of a cell of its output, each part copied of a click on
+    // its row or its button.
+    let cell = Args::from([
+        (
+            "column".to_owned(),
+            lokyr_kernel::commands::Value::Integer(1),
+        ),
+        ("row".to_owned(), lokyr_kernel::commands::Value::Integer(1)),
+    ]);
+    app.run(&mut fake, "blocks.details", cell);
+    run_until(&mut fake, &mut app, |_, app| {
+        details_part(app, window, "duration").is_some()
+    });
+    assert!(details_part(&app, window, "started").is_some());
+    let scale = fake.window(window).unwrap().size.scale;
+    for (key, copied) in [("folder", "/tmp"), ("copy-status", "0"), ("line", "ls")] {
+        let at = middle(details_part(&app, window, key).unwrap(), scale);
+        fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+        fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.clipboard_text().as_deref() == Some(copied)
+        });
     }
 }

@@ -362,7 +362,7 @@ impl Terminal {
             host: text(&percent_decoded(host)),
             path: text(&percent_decoded(path)),
         };
-        self.working_directory = Some(directory.clone());
+        self.working_directory = Some(std::sync::Arc::new(directory.clone()));
         self.events.push(Event::WorkingDirectory(directory));
     }
 

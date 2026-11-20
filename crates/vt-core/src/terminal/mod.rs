@@ -58,6 +58,7 @@ pub use viewport::{Origin, Scroll};
 pub use window::Window;
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::page::{
     Cell, Content, Grow, PageList, PinId, Position, Rgb, RowFlag, Scrollback, Semantic, Style,
@@ -490,8 +491,9 @@ pub struct Terminal {
     osc: Vec<u8>,
     /// What the embedder has to act on, oldest first.
     events: events::Events,
-    /// The working directory that OSC 7 gave last.
-    working_directory: Option<WorkingDirectory>,
+    /// The working directory that OSC 7 gave last, which the commands that
+    /// start share.
+    working_directory: Option<Arc<WorkingDirectory>>,
     /// The tab's color, from OSC 6;1.
     tab_color: Option<Rgb>,
     /// The programs' statuses that OSC 7501 told, from the least recently
@@ -1188,7 +1190,7 @@ impl Terminal {
 
     /// The working directory that OSC 7 gave last.
     pub fn working_directory(&self) -> Option<&WorkingDirectory> {
-        self.working_directory.as_ref()
+        self.working_directory.as_deref()
     }
 
     /// The tab's color, from OSC 6;1.

@@ -269,6 +269,7 @@ impl App {
             plugin_settings: &self.plugin_settings,
             config_error: self.config_error.as_ref(),
             day: lokyr_plugin_sdk::fake::DAY,
+            local_time: &|| lokyr_plugin_sdk::fake::LOCAL_TIME,
             notice: false,
             saving: match &self.saving {
                 Some(saving) => &**saving,
@@ -1489,6 +1490,82 @@ fn a_tab_s_folder_and_program_are_read_of_process_read_alone() {
     assert_eq!(
         *titles.borrow(),
         [("mine".to_owned(), "mine".to_owned(), false, false)]
+    );
+}
+
+#[test]
+fn a_command_s_folder_is_told_to_a_plugin_that_reads_the_processes_alone() {
+    let mut app = App::default();
+    window(
+        &mut app,
+        concat!(
+            "printf '\\033]7;file://localhost/tmp\\007\\033]133;A\\007$ \\033]133;B\\007'; ",
+            "printf 'true\\n\\033]133;C\\007'; printf '\\033]133;D;0\\007'; sleep 10",
+        ),
+    );
+    let shown = app.focused.unwrap();
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let pane = app.workspace.tab(tab).unwrap().active_pane();
+    let start = Instant::now();
+    while app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)
+        .first()
+        .is_none_or(|command| command.ended.is_none())
+    {
+        assert!(start.elapsed() < Duration::from_secs(10));
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut plugins = Plugins::new();
+    let read = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [
+        ("acme/blind", "history-read = true\n"),
+        ("acme/seeing", "history-read = true\nprocess-read = true\n"),
+    ] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let namespace = name.rsplit('/').next().unwrap().to_owned();
+        let seen = Rc::clone(&read);
+        let command_name = format!("{namespace}.read");
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| cx.register_command(command(&command_name)),
+                    move |cx, _, _| {
+                        let pane = host::PaneId(pane.get());
+                        let all = cx.shell_commands(pane, i64::MIN, i64::MAX)?;
+                        let one = cx.shell_command(pane, 1)?.unwrap();
+                        let at = cx.command_at(pane, 0)?.unwrap();
+                        assert_eq!((&all[0], &one), (&at, &at));
+                        seen.borrow_mut().push((
+                            at.folder,
+                            at.host,
+                            at.started.is_some(),
+                            at.ended >= at.started,
+                        ));
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in ["blind.read", "seeing.read"] {
+        plugins
+            .run(command, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    assert_eq!(
+        *read.borrow(),
+        [
+            (None, None, true, true),
+            (Some("/tmp".to_owned()), None, true, true)
+        ]
     );
 }
 

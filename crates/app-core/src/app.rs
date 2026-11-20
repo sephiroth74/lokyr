@@ -3699,6 +3699,7 @@ impl<B: Backend> App<B> {
             day: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs() / 86_400),
+            local_time: &crate::clock::local_time,
             notice: self.diagnostics.shown().is_some(),
             saving: &saving,
             language: self.texts.language(),

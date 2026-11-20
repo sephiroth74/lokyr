@@ -102,6 +102,7 @@ impl App {
             plugin_settings: &[],
             config_error: None,
             day: 0,
+            local_time: &host::LocalTime::default,
             notice: false,
             saving: &|_| false,
             language: "en",

@@ -691,6 +691,7 @@ impl Kernel {
             plugin_settings: &[],
             config_error: None,
             day: lokyr_plugin_sdk::fake::DAY,
+            local_time: &|| lokyr_plugin_sdk::fake::LOCAL_TIME,
             notice: false,
             saving: &|_| false,
             language: "en",
@@ -1158,11 +1159,12 @@ fn kind(request: &Request) -> usize {
         Request::WatchDoubleTap(_) => 139,
         Request::ShellCommand { .. } => 140,
         Request::CommandAt { .. } => 141,
+        Request::Now => 142,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 142;
+const KINDS: usize = 143;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

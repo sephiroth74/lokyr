@@ -3,7 +3,7 @@
 name = "lokyr/blocks"
 kind = "builtin"
 license = "MIT"
-description = "Each command and its output a block: the command's header at the pane's top while its line is above the view, which a click scrolls to, and its button to the block's end; a block's line, or its line and output, copied, and the block selected"
+description = "Each command and its output a block: the command's header at the pane's top while its line is above the view, which a click scrolls to, and its button to the block's end; a block's line, or its line and output, copied, the block selected, and its status, times and folder shown"
 # The plain header, which comes back while this plugin is off.
 replaces = ["lokyr/command-header"]
 
@@ -13,6 +13,9 @@ history-read = true
 pane-view = true
 # A block's line, or its line and output, copied.
 clipboard-write = true
+# A block's folder, of its details, the shell's working directory as the
+# command started.
+process-read = true
 
 [contributes]
 config-schema = "blocks.schema.json"

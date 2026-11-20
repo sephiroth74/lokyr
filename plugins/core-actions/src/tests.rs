@@ -278,6 +278,7 @@ fn commands_host() -> FakeHost {
         output: output.map(|row| (0, row)),
         end: Some((0, end)),
         status: Some(0),
+        ..ShellCommand::default()
     };
     pane.commands = vec![command(1, 0, Some(1), 6), command(2, 6, Some(7), 7)];
     host
@@ -360,6 +361,7 @@ fn output_host(rows: &[(&str, bool)], output: (u16, i64), end: (u16, i64)) -> Fa
         output: Some(output),
         end: Some(end),
         status: Some(0),
+        ..ShellCommand::default()
     }];
     host
 }

@@ -9,6 +9,7 @@
 use std::sync::atomic::AtomicBool;
 
 mod app;
+mod clock;
 mod dist;
 mod drawing;
 mod environment;
