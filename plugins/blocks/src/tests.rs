@@ -434,8 +434,28 @@ fn selection(first: (u16, i64), last: (u16, i64)) -> Request {
 #[test]
 fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories() {
     let (host, _) = commands_host();
-    let registered: Vec<(&str, Category, Vec<String>)> = host
-        .commands()
+    // The block's selection's, of no cell, in the view's category.
+    let (of_cells, selecting) = host.commands().split_at(5);
+    let selection: Vec<(&str, Category, usize)> = selecting
+        .iter()
+        .map(|command| {
+            assert_eq!(command.when.as_deref(), Some(super::PANE));
+            (
+                command.name.as_str(),
+                command.category,
+                command.params.len(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        selection,
+        [
+            (SELECT_PREVIOUS, Category::View, 0),
+            (SELECT_NEXT, Category::View, 0),
+            (DESELECT, Category::View, 0),
+        ]
+    );
+    let registered: Vec<(&str, Category, Vec<String>)> = of_cells
         .iter()
         .map(|command| {
             let params: Vec<&str> = command
@@ -977,4 +997,128 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             .iter()
             .any(|request| matches!(request, Request::SetBlockLooks(_)))
     );
+}
+
+/// Runs `name` of no arguments in the commands' host, its events
+/// delivered, and gives the block that it selected then and the view's
+/// scroll that it asked for, if any.
+fn selected_after(
+    host: &mut FakeHost,
+    plugin: &mut Blocks,
+    name: &str,
+) -> (Option<u64>, Option<Scroll>) {
+    let done = run(host, plugin, name, Args::new());
+    let scroll = done.iter().find_map(|request| match request {
+        Request::Scroll { scroll, .. } => Some(*scroll),
+        _ => None,
+    });
+    (host.selected_block(PANE), scroll)
+}
+
+/// The commands' host of a view of 12 rows from `top`, of the screen from
+/// the row `screen`, the rows above it the scrollback's.
+fn viewed(host: &mut FakeHost, top: i64, screen: i64) {
+    host.pane(PANE).viewport = Some(Viewport {
+        top,
+        rows: 12,
+        screen,
+        oldest: 0,
+        epoch: 1,
+        alternate: false,
+    });
+}
+
+#[test]
+fn the_keyboard_selects_the_last_block_and_moves_the_selection() {
+    let (mut host, mut plugin) = commands_host();
+    // The view at the screen, of every block: the last one, which runs, as
+    // the prompt where the user types follows it.
+    viewed(&mut host, 0, 0);
+    assert!(!host.applies(&mut plugin, DESELECT, &Args::new()));
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(3), Some(Scroll::Row(5)))
+    );
+    // The ones before, each at the view's top, as far as the first.
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(2), Some(Scroll::Row(4)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(1), Some(Scroll::Row(0)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(1), None)
+    );
+    // The ones after, then, past the last, none, and the view at the
+    // screen.
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(2), Some(Scroll::Row(4)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(3), Some(Scroll::Row(5)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (None, Some(Scroll::Bottom))
+    );
+    // Escape's command selects none.
+    selected_after(&mut host, &mut plugin, SELECT_PREVIOUS);
+    assert!(host.applies(&mut plugin, DESELECT, &Args::new()));
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, DESELECT),
+        (None, None)
+    );
+}
+
+#[test]
+fn of_a_view_scrolled_up_the_keyboard_selects_after_a_prompt_s_jump() {
+    let (mut host, mut plugin) = commands_host();
+    // The view's top at `true`'s prompt, above the screen: the block of
+    // the prompt above it, `ls`', at the view's top, as ⌘↑ jumps.
+    viewed(&mut host, 4, 6);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(1), Some(Scroll::Row(0)))
+    );
+    // The view's top at `ls`' output: the next prompt's block, `true`'s.
+    host.end_block_selection(PANE);
+    viewed(&mut host, 1, 6);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(2), Some(Scroll::Row(4)))
+    );
+    // At the view's top, the first's prompt: none above it.
+    host.end_block_selection(PANE);
+    viewed(&mut host, 0, 6);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (None, None)
+    );
+}
+
+#[test]
+fn the_actions_of_no_cell_take_the_selected_block() {
+    let (mut host, mut plugin) = commands_host();
+    viewed(&mut host, 0, 0);
+    for _ in 0..3 {
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS);
+    }
+    assert_eq!(host.selected_block(PANE), Some(1));
+    // `ls`, rather than the last command.
+    run(&mut host, &mut plugin, COPY_COMMAND, Args::new());
+    assert_eq!(host.clipboard(), Some("ls"));
+    run(&mut host, &mut plugin, COPY_BLOCK, Args::new());
+    assert_eq!(host.clipboard(), Some("ls\na.txt\nb.txt"));
+    // A cell's block before the selection.
+    run(&mut host, &mut plugin, COPY_COMMAND, cell(0, 4));
+    assert_eq!(host.clipboard(), Some("true"));
+    // The selection gone, as a key typed ends it: the last command again.
+    host.end_block_selection(PANE);
+    run(&mut host, &mut plugin, COPY_COMMAND, Args::new());
+    assert_eq!(host.clipboard(), Some("sleep 60"));
 }

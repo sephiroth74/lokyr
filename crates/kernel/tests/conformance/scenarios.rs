@@ -2373,142 +2373,192 @@ fn commands_and_viewport(world: &World) -> Scenario {
             "command-started".to_owned(),
             "command-ended".to_owned(),
         ],
-        steps: vec![Step {
-            wait: 0,
-            asks: vec![
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        commands(-1_000_000, 1_000_000),
+                        Response::ShellCommands(world.commands.clone()),
+                    ),
+                    (commands(row, row + 1), ids(&[])),
+                    (commands(row + 1, row + 2), ids(&[first])),
+                    (commands(row, row + 3), ids(&[first, second])),
+                    (commands(row + 2, row + 3), ids(&[second])),
+                    (commands(row + 5, row + 5), ids(&[])),
+                    // Their lines, as the long command's notification reads them.
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: first,
+                        },
+                        Response::Text(world.command_lines[0].clone()),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: second,
+                        },
+                        Response::Text(world.command_lines[1].clone()),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: 999_999,
+                        },
+                        Response::Text(None),
+                    ),
+                    // Each by its id, and the block that holds a row: the
+                    // line's row is above both, each prompt's row its own.
+                    (
+                        Request::ShellCommand {
+                            pane: world.pane,
+                            command: second,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
+                    ),
+                    (
+                        Request::ShellCommand {
+                            pane: world.pane,
+                            command: 999_999,
+                        },
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row,
+                        },
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row: row + 1,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[0].clone()))),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row: row + 2,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
+                    ),
+                    (
+                        Request::CommandAt { pane: NO_PANE, row },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: NO_PANE,
+                            command: first,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::ShellCommands {
+                            pane: NO_PANE,
+                            top: 0,
+                            bottom: 1,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::Viewport(world.pane),
+                        Response::Viewport(world.viewport),
+                    ),
+                    (
+                        Request::Viewport(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    // The shell's last prompt has no input's mark: it edits no
+                    // command line, and runs none.
+                    (Request::EditedLine(world.pane), Response::Text(None)),
+                    (
+                        Request::EditedLine(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: world.pane,
+                            line: "true".to_owned(),
+                        },
+                        failed(
+                            Code::Unavailable,
+                            &format!(
+                                "the shell of the pane {} is not at its prompt",
+                                world.pane.0
+                            ),
+                        ),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: world.pane,
+                            line: " ".to_owned(),
+                        },
+                        failed(Code::Unavailable, "an empty command line runs nothing"),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: NO_PANE,
+                            line: "true".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    // A block selected, of a command that the pane keeps, which a
+                    // read of the same call does not see yet.
+                    (
+                        Request::SelectedBlock(world.pane),
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: world.pane,
+                            command: Some(first),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: world.pane,
+                            command: Some(999),
+                        },
+                        failed(
+                            Code::NotFound,
+                            &lokyr_plugin_sdk::host::no_command(world.pane, 999),
+                        ),
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: NO_PANE,
+                            command: None,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::SelectedBlock(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                ],
+                posts: events.clone(),
+                heard: events,
+            },
+            // The next call reads it, and selects none.
+            ask(vec![
                 (
-                    commands(-1_000_000, 1_000_000),
-                    Response::ShellCommands(world.commands.clone()),
-                ),
-                (commands(row, row + 1), ids(&[])),
-                (commands(row + 1, row + 2), ids(&[first])),
-                (commands(row, row + 3), ids(&[first, second])),
-                (commands(row + 2, row + 3), ids(&[second])),
-                (commands(row + 5, row + 5), ids(&[])),
-                // Their lines, as the long command's notification reads them.
-                (
-                    Request::CommandLine {
-                        pane: world.pane,
-                        command: first,
-                    },
-                    Response::Text(world.command_lines[0].clone()),
-                ),
-                (
-                    Request::CommandLine {
-                        pane: world.pane,
-                        command: second,
-                    },
-                    Response::Text(world.command_lines[1].clone()),
-                ),
-                (
-                    Request::CommandLine {
-                        pane: world.pane,
-                        command: 999_999,
-                    },
-                    Response::Text(None),
-                ),
-                // Each by its id, and the block that holds a row: the
-                // line's row is above both, each prompt's row its own.
-                (
-                    Request::ShellCommand {
-                        pane: world.pane,
-                        command: second,
-                    },
-                    Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
-                ),
-                (
-                    Request::ShellCommand {
-                        pane: world.pane,
-                        command: 999_999,
-                    },
-                    Response::ShellCommand(None),
-                ),
-                (
-                    Request::CommandAt {
-                        pane: world.pane,
-                        row,
-                    },
-                    Response::ShellCommand(None),
-                ),
-                (
-                    Request::CommandAt {
-                        pane: world.pane,
-                        row: row + 1,
-                    },
+                    Request::SelectedBlock(world.pane),
                     Response::ShellCommand(Some(Box::new(world.commands[0].clone()))),
                 ),
                 (
-                    Request::CommandAt {
+                    Request::SelectBlock {
                         pane: world.pane,
-                        row: row + 2,
+                        command: None,
                     },
-                    Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
+                    Response::Done,
                 ),
-                (
-                    Request::CommandAt { pane: NO_PANE, row },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::CommandLine {
-                        pane: NO_PANE,
-                        command: first,
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::ShellCommands {
-                        pane: NO_PANE,
-                        top: 0,
-                        bottom: 1,
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::Viewport(world.pane),
-                    Response::Viewport(world.viewport),
-                ),
-                (
-                    Request::Viewport(NO_PANE),
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                // The shell's last prompt has no input's mark: it edits no
-                // command line, and runs none.
-                (Request::EditedLine(world.pane), Response::Text(None)),
-                (
-                    Request::EditedLine(NO_PANE),
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::RunLine {
-                        pane: world.pane,
-                        line: "true".to_owned(),
-                    },
-                    failed(
-                        Code::Unavailable,
-                        &format!(
-                            "the shell of the pane {} is not at its prompt",
-                            world.pane.0
-                        ),
-                    ),
-                ),
-                (
-                    Request::RunLine {
-                        pane: world.pane,
-                        line: " ".to_owned(),
-                    },
-                    failed(Code::Unavailable, "an empty command line runs nothing"),
-                ),
-                (
-                    Request::RunLine {
-                        pane: NO_PANE,
-                        line: "true".to_owned(),
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-            ],
-            posts: events.clone(),
-            heard: events,
-        }],
+            ]),
+        ],
     }
 }
 

@@ -690,6 +690,8 @@ struct State {
     follows: bool,
     /// The looks of the commands' blocks that it asked for.
     block_looks: host::BlockLooks,
+    /// The blocks that it selected, by their panes, of their commands' ids.
+    selected_blocks: BTreeMap<host::PaneId, u64>,
     /// Where its tab bar goes in windows of a place of their own, as a
     /// window of a single tab shows its title, which goes as the window
     /// closes.
@@ -1766,6 +1768,7 @@ impl Plugins {
                 dim: 0.0,
                 follows: false,
                 block_looks: host::BlockLooks::default(),
+                selected_blocks: BTreeMap::new(),
                 told_tabs: BTreeMap::new(),
                 told_panes: BTreeMap::new(),
                 searches: Vec::new(),
@@ -2509,6 +2512,39 @@ impl Plugins {
             .filter(|entry| entry.state.status == Status::Active)
             .map(|entry| entry.state.dim)
             .fold(0.0, f32::max)
+    }
+
+    /// The id of the command whose block an active plugin selected in
+    /// `pane`, if one did.
+    pub fn selected_block(&self, pane: host::PaneId) -> Option<u64> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .find_map(|entry| entry.state.selected_blocks.get(&pane).copied())
+    }
+
+    /// The namespaces of the active plugins that selected a block of
+    /// `pane`, whose keys' context holds `<namespace>.selected`.
+    pub fn selecting(&self, pane: host::PaneId) -> Vec<&str> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry.state.status == Status::Active
+                    && entry.state.selected_blocks.contains_key(&pane)
+            })
+            .map(|entry| entry.state.name.rsplit('/').next().unwrap_or_default())
+            .collect()
+    }
+
+    /// Ends every block's selection of `pane`, as a key that its program
+    /// takes, a text typed into it or a click in it does. Whether one
+    /// ended.
+    pub fn end_block_selections(&mut self, pane: host::PaneId) -> bool {
+        let mut ended = false;
+        for entry in &mut self.entries {
+            ended |= entry.state.selected_blocks.remove(&pane).is_some();
+        }
+        ended
     }
 
     /// How the panes draw the commands' blocks: each look that an active
@@ -4896,6 +4932,14 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SetInactiveDim(dim) => state.dim = dim,
             Asked::SetFocusFollowsMouse(on) => state.follows = on,
             Asked::SetBlockLooks(looks) => state.block_looks = looks,
+            Asked::SelectBlock { pane, command } => match command {
+                Some(command) => {
+                    state.selected_blocks.insert(pane, command);
+                }
+                None => {
+                    state.selected_blocks.remove(&pane);
+                }
+            },
             Asked::SetWindowTabBarPlace { window, place } => {
                 // The places of windows that closed go.
                 state
@@ -6119,6 +6163,16 @@ impl Host<'_, '_> {
                 Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
             }
             Asked::EditedLine(pane) => Response::Text(self.pane(pane)?.edited_command_line()),
+            Asked::SelectedBlock(pane) => {
+                let reads = self.state.reads_processes();
+                let found = self.pane(pane)?;
+                let command = self
+                    .state
+                    .selected_blocks
+                    .get(&pane)
+                    .and_then(|&id| found.shell_command(id));
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
+            }
             Asked::CommandAt { pane, row } => {
                 let reads = self.state.reads_processes();
                 let command = self.pane(pane)?.command_at(row);
@@ -6314,6 +6368,17 @@ impl Host<'_, '_> {
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SelectBlock { pane, command } => {
+                let found = self.pane(*pane)?;
+                if let Some(command) = command
+                    && found.shell_command(*command).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        host::no_command(*pane, *command),
+                    ));
+                }
             }
             // A line runs at the shell's prompt alone, as it edits an empty
             // command line now.

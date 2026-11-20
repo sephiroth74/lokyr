@@ -73,6 +73,9 @@ impl<B: Backend> App<B> {
             .map(workspace::Pane::id);
         if let Some(pane) = pane {
             self.workspace.typed(pane);
+            // A block that a plugin selected goes as the program takes keys.
+            self.plugins
+                .end_block_selections(lokyr_kernel::plugins::host::PaneId(pane.get()));
         }
     }
 

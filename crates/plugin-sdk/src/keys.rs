@@ -497,16 +497,17 @@ pub enum When {
 /// the plugins' panels, which [`is_panel_context`] tells.
 pub const CONTEXTS: [&str; 3] = ["pane.focused", "selection", "alternate-screen"];
 
-/// Whether `name` is a context of a plugin's panels: `namespace.open`,
-/// while one of them shows, or `namespace.focused`, while one of them has
-/// the keyboard's focus, of the plugin's namespace, as `search.open`; not
-/// of the first part of a host's context, as `pane` or `selection`, whose
-/// names are those of [`CONTEXTS`] alone.
+/// Whether `name` is a context of a plugin's: `namespace.open`, while one
+/// of its panels shows, `namespace.focused`, while one of them has the
+/// keyboard's focus, or `namespace.selected`, while it selects a block of
+/// the pane that has the keyboard, of the plugin's namespace, as
+/// `search.open`; not of the first part of a host's context, as `pane` or
+/// `selection`, whose names are those of [`CONTEXTS`] alone.
 pub fn is_panel_context(name: &str) -> bool {
     let Some((namespace, state)) = name.split_once('.') else {
         return false;
     };
-    matches!(state, "open" | "focused")
+    matches!(state, "open" | "focused" | "selected")
         && crate::command::is_part(namespace)
         && !CONTEXTS
             .iter()

@@ -1592,8 +1592,11 @@ pub fn gutter_marks<'a>(
 /// of the theme's `tokens`, over its cells, its grid's top at `top`, in
 /// pixels, of rows of `row_height`, across `across`, the pane's left edge
 /// and its width, on a display of `scale`: a failed block's rows tinted, of
-/// `blocks.failed`, and a hairline of a point at the top of each block's
-/// first row that the view shows, of `blocks.divider`.
+/// `blocks.failed`, a hairline of a point at the top of each block's first
+/// row that the view shows, of `blocks.divider`, and a line of a point
+/// round the block of the command `selected`, of `blocks.selected`, of
+/// round corners, its edges that the view cuts past it, which the pane's
+/// clip leaves out.
 pub fn block_shapes(
     snapshot: &Snapshot,
     top: i32,
@@ -1601,7 +1604,7 @@ pub fn block_shapes(
     across: (i32, u32),
     scale: f64,
     tokens: &theme::Tokens,
-    looks: lokyr_plugin_sdk::host::BlockLooks,
+    (looks, selected): (lokyr_plugin_sdk::host::BlockLooks, Option<u64>),
 ) -> Vec<Shape> {
     use lokyr_vt_core::terminal::GutterKind;
     let rows = i32::from(snapshot.rows());
@@ -1645,8 +1648,48 @@ pub fn block_shapes(
             }
         }
     }
+    let chosen = selected
+        .and_then(|id| snapshot.blocks().iter().find(|block| block.id == id))
+        .zip(tokens.get("blocks.selected"));
+    if let Some((block, color)) = chosen {
+        // Casts from floats saturate.
+        let line = (scale.round() as u32).max(1);
+        let radius = (OUTLINE_RADIUS * scale) as f32;
+        let past = i32::try_from(line).unwrap_or(0) + radius.ceil() as i32;
+        let (first, last) = (block.first.max(-1), block.last.min(rows));
+        let upper = if block.first < 0 {
+            y_of(0) - past
+        } else {
+            y_of(first)
+        };
+        let lower = if block.last >= rows {
+            y_of(rows) + past
+        } else {
+            y_of(last + 1)
+        };
+        let inset = i32::try_from(line).unwrap_or(0);
+        shapes.push(Shape {
+            rect: Rect {
+                x: across.0 + inset,
+                y: upper,
+                width: across.1.saturating_sub(2 * line),
+                height: u32::try_from(lower - upper).unwrap_or(0),
+            },
+            radius,
+            fill: Color::CLEAR,
+            border: line as f32,
+            border_color: color,
+            shadow: None,
+            arc: None,
+            knockout: false,
+            mark: None,
+        });
+    }
     shapes
 }
+
+/// The radius of the corners of a selected block's outline, in points.
+const OUTLINE_RADIUS: f64 = 4.0;
 
 /// Faint text's color `text` at `opacity` over `under`, in the encoded
 /// space, where the text blends, of its own opacity.
@@ -3723,7 +3766,7 @@ mod tests {
         let snapshot = blocks_snapshot();
         let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
         let shapes = |looks: lokyr_plugin_sdk::host::BlockLooks| -> Vec<(i32, u32, u32, Color)> {
-            block_shapes(&snapshot, 0, 16, (0, 176), 2.0, &tokens, looks)
+            block_shapes(&snapshot, 0, 16, (0, 176), 2.0, &tokens, (looks, None))
                 .iter()
                 .map(|shape| {
                     (
@@ -3752,6 +3795,56 @@ mod tests {
                 (48, 176, 2, divider),
                 (64, 176, 2, divider),
             ]
+        );
+    }
+
+    #[test]
+    fn a_selected_block_s_outline_runs_round_its_rows_and_past_the_view_s_edges() {
+        let shown = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let none = lokyr_plugin_sdk::host::BlockLooks::default();
+        let outline = |selected: u64| {
+            let shapes = block_shapes(
+                &shown,
+                0,
+                16,
+                (0, 176),
+                2.0,
+                &tokens,
+                (none, Some(selected)),
+            );
+            let [shape] = &shapes[..] else {
+                panic!("{shapes:?}");
+            };
+            assert_eq!(
+                (shape.fill, shape.border, shape.border_color),
+                (Color::CLEAR, 2.0, tokens.get("blocks.selected").unwrap())
+            );
+            (
+                shape.rect.x,
+                shape.rect.y,
+                shape.rect.width,
+                shape.rect.height,
+            )
+        };
+        // `ls`' three rows, within the pane's width, a point in.
+        assert_eq!(outline(1), (2, 0, 172, 48));
+        // `seq`'s, which runs to the cursor's row, the view's last.
+        assert_eq!(outline(3), (2, 64, 172, 32));
+        // None of a command that the view does not show.
+        assert!(block_shapes(&shown, 0, 16, (0, 176), 2.0, &tokens, (none, Some(9))).is_empty());
+        // A block whose first rows output scrolled above the view: its top
+        // edge past the view's by the line and the corner's radius, 2 and 8
+        // pixels at 2x, which the pane's clip leaves out.
+        let scrolled = snapshot(
+            20,
+            4,
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\nc\r\nd\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ ",
+        );
+        let shapes = block_shapes(&scrolled, 0, 16, (0, 176), 2.0, &tokens, (none, Some(1)));
+        assert_eq!(
+            (shapes[0].rect.y, shapes[0].rect.height),
+            (-10, 3 * 16 + 10)
         );
     }
 }

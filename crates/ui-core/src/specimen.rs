@@ -6,7 +6,8 @@
 //! selection, the find's matches, a hint's label over the link, an error
 //! and a warning, and a block cursor over a character on the cursor guide's
 //! row; the commands' blocks as Blocks shows them, the gutter's bars along
-//! them, a divider at each block's top, and a failed block's tint.
+//! them, a divider at each block's top, a failed block's tint, and the
+//! first block's outline, as the keyboard selects it.
 
 use lokyr_render_core::{CellBatch, Shape};
 use lokyr_text_core::CellMetrics;
@@ -162,6 +163,8 @@ pub fn cells(
         origin.0 - i32::try_from(padding).unwrap_or(0),
         u32::from(COLUMNS) * cell.width + 2 * padding,
     );
+    // The first block selected, as the keyboard selects one.
+    let selected = snapshot.blocks().first().map(|block| block.id);
     let mut shapes = pane::block_shapes(
         &snapshot,
         origin.1,
@@ -169,7 +172,7 @@ pub fn cells(
         across,
         scale,
         tokens,
-        looks,
+        (looks, selected),
     );
     shapes.extend(pane::gutter_marks(
         &snapshot,

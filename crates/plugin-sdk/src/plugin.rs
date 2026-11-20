@@ -1445,6 +1445,25 @@ impl<'a> Cx<'a> {
         self.done(Request::SetFocusFollowsMouse(on))
     }
 
+    /// Selects the block of `pane`'s command of the id `command`, or none,
+    /// as this call returns: the host outlines it, and the keys' context
+    /// holds `<namespace>.selected` while the pane has the keyboard, until
+    /// another selection, a key that the program takes, a text typed or a
+    /// click in the pane. Requires `pane-view`.
+    pub fn select_block(&mut self, pane: PaneId, command: Option<u64>) -> Result<(), Error> {
+        self.done(Request::SelectBlock { pane, command })
+    }
+
+    /// The command whose block the plugin selected in `pane`, while the
+    /// selection lasts, as [`shell_commands`](Self::shell_commands) gives
+    /// it. Requires `history-read`.
+    pub fn selected_block(&mut self, pane: PaneId) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::SelectedBlock(pane)) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Draws the commands' blocks of every pane of `looks`, while the
     /// plugin runs, as this call returns: their gutter's bars along them,
     /// their dividers, a failed one's tint. Requires `pane-view`.

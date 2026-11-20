@@ -885,6 +885,22 @@ pub enum Request {
     /// Draws the commands' blocks of every pane so, while the plugin runs:
     /// each look that any plugin asks for.
     SetBlockLooks(crate::host::BlockLooks),
+    /// Selects the block of a pane's command, by its id, as the keyboard
+    /// selects one, or none: the host outlines it, of the theme's
+    /// `blocks.selected`, and the keys' context holds `<namespace>.selected`
+    /// while the pane has the keyboard, until the plugin selects another or
+    /// none, or a key that the pane's program takes, a text typed into the
+    /// pane or a click in it ends it; of a command that the pane keeps.
+    SelectBlock {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id, or none.
+        command: Option<u64>,
+    },
+    /// The command whose block the plugin selected in a pane, as a read of
+    /// the commands gives it, while the selection lasts and the pane keeps
+    /// the command.
+    SelectedBlock(PaneId),
     /// Puts the plugin's tab bar of `window` at `place`, over the place of
     /// its bar in every window, as a window of a single tab shows its title
     /// in its titlebar, [`BarPlace::Title`]; `None` gives it that place
@@ -1247,7 +1263,8 @@ impl Request {
             Self::ShellCommands { .. }
             | Self::CommandLine { .. }
             | Self::ShellCommand { .. }
-            | Self::CommandAt { .. } => Some(Capability::HistoryRead),
+            | Self::CommandAt { .. }
+            | Self::SelectedBlock(_) => Some(Capability::HistoryRead),
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
@@ -1309,7 +1326,8 @@ impl Request {
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
             | Self::SetFocusFollowsMouse(_)
-            | Self::SetBlockLooks(_) => Some(Capability::PaneView),
+            | Self::SetBlockLooks(_)
+            | Self::SelectBlock { .. } => Some(Capability::PaneView),
             // What a plugin draws over a pane.
             Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -1396,6 +1414,7 @@ impl Request {
             | Self::ShellCommand { .. }
             | Self::CommandAt { .. }
             | Self::EditedLine(_)
+            | Self::SelectedBlock(_)
             | Self::Viewport(_)
             | Self::CursorCell(_)
             | Self::Styles { .. }
@@ -1468,6 +1487,7 @@ impl Request {
             | Self::SetInactiveDim(_)
             | Self::SetFocusFollowsMouse(_)
             | Self::SetBlockLooks(_)
+            | Self::SelectBlock { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -2083,6 +2103,7 @@ impl Request {
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }
             | Self::SetBlockLooks { .. }
+            | Self::SelectBlock { .. }
             | Self::SetWindowTabBarPlace { .. }
             | Self::ActivateTab { .. }
             | Self::FocusPane { .. }
@@ -2133,7 +2154,9 @@ impl Request {
             Self::SearchMatches { .. } => "matches",
             Self::CurrentMatch { .. } => "current",
             Self::ShellCommands { .. } => "shell-commands",
-            Self::ShellCommand { .. } | Self::CommandAt { .. } => "shell-command",
+            Self::ShellCommand { .. } | Self::CommandAt { .. } | Self::SelectedBlock { .. } => {
+                "shell-command"
+            }
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
             Self::RenderImage { .. } => "image",

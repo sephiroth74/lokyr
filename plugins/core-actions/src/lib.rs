@@ -24,6 +24,13 @@ lokyr_plugin_sdk::export_plugin!(CoreActions);
 /// Copies the focused pane's selection to the clipboard.
 const COPY: &str = "pane.copy";
 
+/// The context of a copy: a selection, or a block that Blocks selected.
+const COPY_WHEN: &str = "selection || blocks.selected";
+
+/// Blocks' copy of a block, its line and its output, which a copy of no
+/// selection runs of the block that Blocks selected.
+const COPY_BLOCK: &str = "blocks.copy-block";
+
 /// The context of a window whose pane has the keyboard, which the panes'
 /// actions take.
 const PANE: &str = "pane.focused";
@@ -148,11 +155,12 @@ impl Plugin for CoreActions {
                 category,
                 capabilities: capabilities.to_vec(),
                 params: Vec::new(),
-                // Copying takes a selection, and the rest but the text's
-                // size a pane that has the keyboard, which a window that
-                // shows the settings tab has not.
+                // Copying takes a selection, or a block that Blocks
+                // selected, and the rest but the text's size a pane that has
+                // the keyboard, which a window that shows the settings tab
+                // has not.
                 when: match name {
-                    COPY => Some("selection".to_owned()),
+                    COPY => Some(COPY_WHEN.to_owned()),
                     FONT_BIGGER | FONT_SMALLER | FONT_RESET => None,
                     _ => Some(PANE.to_owned()),
                 },
@@ -318,13 +326,19 @@ impl Plugin for CoreActions {
             };
         }
         match name {
+            // The text selected, or else, as the context holds a block that
+            // Blocks selected, that block, its line and its output, as
+            // Blocks copies it; nothing of no Blocks.
             COPY => {
                 if let Some(text) = cx.selection_text(pane)?
                     && !text.is_empty()
                 {
-                    cx.set_clipboard_text(&text)?;
+                    return cx.set_clipboard_text(&text);
                 }
-                Ok(())
+                match cx.run_command(COPY_BLOCK, Args::new()) {
+                    Err(error) if error.code == Code::NotFound => Ok(()),
+                    done => done,
+                }
             }
             PASTE => {
                 if let Some(text) = cx.clipboard_text()?

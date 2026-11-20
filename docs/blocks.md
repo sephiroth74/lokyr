@@ -25,6 +25,7 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 - **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
 - **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
+- **Select a block with the keyboard**: ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · not released yet.
 
 ## Copy a command or its output
 
@@ -63,6 +64,20 @@ It runs only while your shell waits at its prompt with an empty command line. Ot
 - the block has no command line.
 
 The command line goes in as a paste, so a command of several lines stays whole, and Lokyr doesn't ask you to confirm it, as it can for a paste of several lines. Edit › Run Command Again, with no click, runs the last command that started.
+
+## Select a block with the keyboard
+
+Press ⌘↑ to select the last block: an outline goes round it. Press ↑ and ↓ to select the block before or after: the view follows, with the selected block's prompt at the top. Below the last block, ↓ selects none and takes you back to the prompt where you type.
+
+When you have scrolled up, ⌘↑ and ⌘↓ jump to the prompt above or below the top of the view, as they do without Blocks, and select its block.
+
+While a block is selected:
+
+- **⌘C** copies its command line and its output, unless you selected some text, which ⌘C copies as usual;
+- **Copy Command**, **Select Block**, **Block Details** and **Run Command Again**, from the Edit menu or the command palette, act on it;
+- **Escape**, any key that you type, or a click in the pane ends the selection.
+
+The outline's color is your theme's `blocks.selected`, the accent by default.
 
 ## Dividers and the gutter's bar
 
@@ -125,12 +140,15 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 | `blocks.copy-command` | Edit › Copy Command | | Copies the command line of the block under the pointer, from the pane's context menu, or of the last command that started |
 | `blocks.copy-block` | Edit › Copy Command and Output | | Copies the command line and the output of the block under the pointer, or of the last command that ended, its wrapped rows joined, 100 000 rows at most |
 | `blocks.select-block` | Edit › Select Block | | Selects that block, from its prompt to the end of its output |
+| `blocks.select-previous` | View › Select Previous Block | ⌘↑, and ↑ while a block is selected | Selects the block before the selected one, or the last block, or, of a view scrolled up, the block of the prompt above its top |
+| `blocks.select-next` | View › Select Next Block | ⌘↓, and ↓ while a block is selected | Selects the block after the selected one, or none past the last, or, of a view scrolled up, the block of the prompt below its top |
+| `blocks.deselect` | View › Deselect Block | Escape, while a block is selected | Selects no block |
 | `blocks.rerun` | Edit › Run Command Again | | Runs the command line of the block under the pointer, or of the last command that started, at the shell's prompt, while its command line is empty |
 | `blocks.details` | Edit › Block Details | | Shows the details of the block under the pointer, or of the last command that started: its command line, exit status, start, duration and folder, each copied by a click |
 
 <!-- commands end -->
 
-None of them has default keys: bind them in [`[keys]`](CONFIGURATION.md#keys), such as `"cmd+alt+shift+b" = "blocks.copy-block"`.
+The commands of the Edit menu have no default keys: bind them in [`[keys]`](CONFIGURATION.md#keys), such as `"cmd+alt+shift+b" = "blocks.copy-block"`. They act on the selected block when you run them with no click. ⌘↑ and ⌘↓ jump between the prompts again while Blocks is off.
 
 ## How it works
 

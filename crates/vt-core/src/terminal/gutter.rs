@@ -41,12 +41,15 @@ pub struct GutterMark {
     pub kind: GutterKind,
 }
 
-/// A command's block, as the view shows it: its first row and its last,
+/// A command's block, as the view shows it: its command's id, its first
+/// row and its last,
 /// by the view's rows from its top, either past the view where the block
 /// goes past it, and its state, none of a command whose output has not
 /// started, as the prompt where the user types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BlockMark {
+    /// Its command's id.
+    pub id: u64,
     /// Its first row, its prompt's, of the view's rows.
     pub first: i32,
     /// Its last row, its output's, of the view's rows.
@@ -118,6 +121,7 @@ impl Terminal {
                     marks.push(GutterMark { row, kind });
                 }
                 blocks.push(BlockMark {
+                    id: block.id,
                     first: of_view(block.first),
                     last: of_view(block.last),
                     kind: block.kind,

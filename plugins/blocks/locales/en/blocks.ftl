@@ -16,6 +16,9 @@ command-blocks-copy-block = Copy Command and Output
 command-blocks-select-block = Select Block
 command-blocks-details = Block Details
 command-blocks-rerun = Run Command Again
+command-blocks-select-previous = Select Previous Block
+command-blocks-select-next = Select Next Block
+command-blocks-deselect = Deselect Block
 
 # A block's details: what an accessibility client calls the panel, of the
 # command's whole line, and the names of its parts.

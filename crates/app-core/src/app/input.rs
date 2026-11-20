@@ -402,6 +402,11 @@ impl<B: Backend> App<B> {
         } else {
             keymap::Context::new(Vec::<&str>::new())
         };
+        if state.pane_has_focus()
+            && let Some(pane) = self.workspace.focused(state.window)
+        {
+            hold_selected_blocks(&self.plugins, pane, &mut context);
+        }
         // The plugins' panels: `<namespace>.open` of each that shows, not
         // of one whose pane another tab or a zoomed pane hides, and
         // `<namespace>.focused` of the one whose node has the keyboard.
@@ -613,6 +618,17 @@ impl<B: Backend> App<B> {
             && self.focused(window) != Some(under)
         {
             self.focus_pane(platform, window, under);
+        }
+        // A click of the left button ends the selection of a block of the
+        // pane under it, as the keyboard selected it.
+        if pressed
+            && button == lokyr_vt_core::input::MouseButton::Left
+            && let Some(under) = self.pane_at(platform, window, position)
+            && self
+                .plugins
+                .end_block_selections(lokyr_kernel::plugins::host::PaneId(under.get()))
+        {
+            platform.request_frame(window);
         }
         // A press that a binding takes starts no selection, and reaches no
         // program, which then learns of no release.
@@ -1424,4 +1440,24 @@ pub(super) fn editing_field<B: Backend>(state: &crate::window::Window<B>) -> boo
                 Some(plugins::view::Kind::Field(field)) if !field.records
             )
     })
+}
+
+/// Holds in `context` the plugins of `plugins` that selected a block of
+/// `pane`: `<namespace>.selected`, while the pane keeps its command, on its
+/// primary screen.
+pub(super) fn hold_selected_blocks(
+    plugins: &plugins::Plugins,
+    pane: &Pane,
+    context: &mut keymap::Context,
+) {
+    let id = plugins::host::PaneId(pane.id().get());
+    let kept = !pane.snapshot().alternate_screen()
+        && plugins
+            .selected_block(id)
+            .is_some_and(|command| pane.shell_command(command).is_some());
+    if kept {
+        for namespace in plugins.selecting(id) {
+            context.hold(format!("{namespace}.selected"));
+        }
+    }
 }

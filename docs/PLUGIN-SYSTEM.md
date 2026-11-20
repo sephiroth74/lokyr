@@ -738,7 +738,8 @@ type CommandInfo = {
 
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
 -- panels give `namespace.open` while one shows, not one of a pane behind another tab or a zoomed pane, and
--- `namespace.focused` while one has the keyboard. A key taken from every
+-- `namespace.focused` while one has the keyboard, and its selection of a block `namespace.selected` while the pane
+-- that has the keyboard shows it (· not released yet). A key taken from every
 -- app, with `global-hotkey`, starts with "global:", as "global:ctrl+`", without `when`: one key, by its place on the US
 -- layout, with Command, Control or Alt, or a function key; the config's global keys come first.
 type Binding = { keys: string, command: string, args: Args?, when: string? }
@@ -936,6 +937,14 @@ type Cx = {
     -- theme's `blocks.divider` (`dividers`), and a failed block's rows tinted of `blocks.failed` (`failed_tint`) ·
     -- not released yet.
     set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean? }) -> (boolean, Error?),
+    -- Selects the block of a pane's command, by its id, or none: the host outlines it, of the theme's
+    -- `blocks.selected`, and the keys' context holds `namespace.selected` while the pane has the keyboard, until the
+    -- plugin selects another or none, or a key that the program takes, a text typed or a click in the pane ends it;
+    -- of a command that the pane keeps · not released yet.
+    select_block: (pane: PaneId, command: number?) -> (boolean, Error?),
+    -- Requires `history-read`: the command whose block the plugin selected in a pane, while the selection lasts, as
+    -- `shell_commands` gives it · not released yet.
+    selected_block: (pane: PaneId) -> (ShellCommand?, Error?),
     -- Swaps two panes of one tab, each taking the other's room, the tab's keyboard staying with its pane.
     swap_panes: (pane: PaneId, with: PaneId) -> (boolean, Error?),
     -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.

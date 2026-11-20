@@ -10,6 +10,9 @@ command-blocks-copy-block = Copia comando e output
 command-blocks-select-block = Seleziona blocco
 command-blocks-details = Dettagli del blocco
 command-blocks-rerun = Esegui di nuovo il comando
+command-blocks-select-previous = Seleziona il blocco precedente
+command-blocks-select-next = Seleziona il blocco successivo
+command-blocks-deselect = Deseleziona il blocco
 
 # I dettagli di un blocco.
 details-label = Dettagli di { $line }

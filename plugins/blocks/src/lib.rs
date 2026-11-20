@@ -10,8 +10,15 @@
 //! its block, a divider at each block's top, and a failed block's tint, as
 //! its config says.
 //!
+//! A block is selected of the keyboard: ⌘↑ and ⌘↓ jump to the prompt before
+//! or after, as the prompts' jumps do, and select its block, which the host
+//! outlines; while one is selected, ↑ and ↓ move the selection and the view
+//! to the block before or after, and Escape, a key typed or a click ends
+//! it.
+//!
 //! Its commands act on a block: the one under a cell, as the pane's
-//! context menu gives its `column` and `row`, or else the last command's.
+//! context menu gives its `column` and `row`, or else the selected one, or
+//! else the last command's.
 //! They copy its line, or its line and its output, or select it whole, or
 //! show its details in a panel: its line, its exit status, its start, its
 //! duration and its folder, each copied of a click, or run its line again
@@ -23,7 +30,7 @@
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, ShellCommand};
+use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, Scroll, ShellCommand};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
@@ -72,6 +79,13 @@ const DETAILS: &str = "blocks.details";
 /// Run a block's command line again, at the shell's prompt, the block of
 /// a cell, of `column` and `row`, or, of none, the last command's.
 const RERUN: &str = "blocks.rerun";
+
+/// Select the block before or after the selected one, or of the prompt
+/// before or after the view's top, as the prompts' jumps go, at the view's
+/// top; select none.
+const SELECT_PREVIOUS: &str = "blocks.select-previous";
+const SELECT_NEXT: &str = "blocks.select-next";
+const DESELECT: &str = "blocks.deselect";
 
 /// The prefix of a details' panel's id, of a number that each opening
 /// takes, so that a panel that opens in place of another is not the one
@@ -275,6 +289,20 @@ impl Plugin for Blocks {
                 when: Some(PANE.to_owned()),
             })?;
         }
+        for (name, title) in [
+            (SELECT_PREVIOUS, "Select Previous Block"),
+            (SELECT_NEXT, "Select Next Block"),
+            (DESELECT, "Deselect Block"),
+        ] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: title.to_owned(),
+                category: Category::View,
+                capabilities: vec![Capability::HistoryRead, Capability::PaneView],
+                params: Vec::new(),
+                when: Some(PANE.to_owned()),
+            })?;
+        }
         Ok(())
     }
 
@@ -383,6 +411,7 @@ impl Plugin for Blocks {
                 .is_some(),
             COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
             DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
+            DESELECT => cx.selected_block(pane).ok().flatten().is_some(),
             _ => true,
         }
     }
@@ -467,6 +496,9 @@ impl Plugin for Blocks {
                 };
                 rerun(cx, pane, &command)
             }
+            SELECT_PREVIOUS => select_step(cx, pane, false),
+            SELECT_NEXT => select_step(cx, pane, true),
+            DESELECT => cx.select_block(pane, None),
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("blocks has no command `{name}`"),
@@ -905,6 +937,9 @@ fn block(
     if let Some(row) = number("column").and(number("row")) {
         return Ok(cx.command_at(pane, row)?.filter(takes));
     }
+    if let Some(selected) = cx.selected_block(pane)? {
+        return Ok(Some(selected).filter(takes));
+    }
     // The recent commands first, as the menus ask at each look.
     let recent = cx.shell_commands(pane, view.screen.saturating_sub(RECENT_ROWS), i64::MAX / 2)?;
     if let Some(found) = recent.into_iter().rev().find(takes) {
@@ -912,6 +947,109 @@ fn block(
     }
     let commands = cx.shell_commands(pane, i64::MIN / 2, i64::MAX / 2)?;
     Ok(commands.into_iter().rev().find(takes))
+}
+
+/// Selects the block after the selected one, `forward`, or before it, and
+/// takes the view to its first row; past the last, none, and the view to
+/// the screen. Of none selected: before, the last block while the view
+/// shows the screen, as the prompt where the user types follows it, else
+/// the block of the prompt before the view's top, as the prompts' jumps
+/// go; after, the block of the prompt after the view's top, else the
+/// screen.
+fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error> {
+    let view = cx.viewport(pane)?;
+    if view.alternate {
+        return Ok(());
+    }
+    // The ids of the commands that the pane keeps, from the oldest's to the
+    // last's, which a walk from one to the next goes through, past the ids
+    // of the prompts that a shell drew again, which none keeps.
+    let ends = |commands: Vec<ShellCommand>| {
+        commands
+            .first()
+            .zip(commands.last())
+            .map(|(first, last)| (first.id, last.id))
+    };
+    let oldest = ends(cx.shell_commands(pane, view.oldest, view.oldest + 1)?);
+    let newest = ends(cx.shell_commands(pane, view.screen, i64::MAX / 2)?);
+    let (Some((first, _)), Some((_, last))) = (oldest, newest) else {
+        return Ok(());
+    };
+    let walk = |cx: &mut Cx<'_>,
+                from: u64,
+                takes: &dyn Fn(&ShellCommand) -> bool|
+     -> Result<Option<ShellCommand>, Error> {
+        let mut id = from;
+        loop {
+            id = if forward {
+                match id.checked_add(1).filter(|&next| next <= last) {
+                    Some(next) => next,
+                    None => return Ok(None),
+                }
+            } else {
+                match id.checked_sub(1).filter(|&before| before >= first) {
+                    Some(before) => before,
+                    None => return Ok(None),
+                }
+            };
+            if let Some(command) = cx.shell_command(pane, id)?
+                && takes(&command)
+            {
+                return Ok(Some(command));
+            }
+        }
+    };
+    let found = match cx.selected_block(pane)? {
+        Some(selected) => walk(cx, selected.id, &started)?,
+        None => {
+            // The command whose block holds the view's top row: before it,
+            // its own if its prompt is above the top; after it, the next.
+            let top = cx.shell_commands(pane, view.top, view.top + 1)?;
+            let at = top.first().cloned();
+            let above =
+                |command: &ShellCommand| first_row(command).is_some_and(|row| row < view.top);
+            match (at, forward) {
+                (_, false) if view.top >= view.screen => {
+                    walk(cx, last.saturating_add(1), &started)?
+                }
+                (Some(at), false) if above(&at) && started(&at) => Some(at),
+                (Some(at), false) => {
+                    walk(cx, at.id, &|command| started(command) && above(command))?
+                }
+                (Some(at), true) => walk(cx, at.id, &|command| {
+                    started(command) && first_row(command).is_some_and(|row| row > view.top)
+                })?,
+                (None, false) => None,
+                (None, true) => walk(cx, first.saturating_sub(1), &started)?,
+            }
+        }
+    };
+    match found {
+        Some(command) => {
+            cx.select_block(pane, Some(command.id))?;
+            if let Some(row) = first_row(&command) {
+                cx.scroll(pane, Scroll::Row(row))?;
+            }
+            Ok(())
+        }
+        // Past the last block, back to the prompt where the user types.
+        None if forward => {
+            cx.select_block(pane, None)?;
+            cx.scroll(pane, Scroll::Bottom)
+        }
+        None => Ok(()),
+    }
+}
+
+/// The first row of `command`'s block that the pane holds: its prompt's, or
+/// its first mark's.
+fn first_row(command: &ShellCommand) -> Option<i64> {
+    command
+        .prompt
+        .or(command.input)
+        .or(command.output)
+        .or(command.end)
+        .map(|(_, row)| row)
 }
 
 /// Whether `command` started: of its output's mark, or of no mark before

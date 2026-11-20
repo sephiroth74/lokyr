@@ -814,3 +814,124 @@ fn a_block_runs_again_at_the_prompt_of_zsh_s_bash_s_and_fish_s_marks_and_is_refu
         }
     }
 }
+
+/// Draws `window`'s frames until `done` holds of its last, for a while at
+/// most.
+fn framed_until(fake: &mut Fake, app: &mut App, window: WindowId, done: impl Fn(&App) -> bool) {
+    for _ in 0..500 {
+        fake.send(app, window, WindowEvent::Frame);
+        if done(app) {
+            return;
+        }
+        run_until(fake, app, |_, _| true);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    panic!("the frame never came");
+}
+
+/// The outlines that `window`'s frame draws of a theme's token `color`, as
+/// a selected block's, by their rectangles.
+fn outlines(
+    app: &App,
+    window: WindowId,
+    color: lokyr_render_core::Color,
+) -> Vec<lokyr_render_core::Rect> {
+    app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| shape.border > 0.0 && shape.border_color == color)
+        .map(|shape| shape.rect)
+        .collect()
+}
+
+#[test]
+fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_click_ends_it() {
+    // Three commands of a line of output each, then the prompt.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "echo \"out $c\"; m 'D;0'; done; m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 4)
+    });
+    let ids: Vec<u64> = app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)
+        .iter()
+        .map(|command| command.id)
+        .collect();
+    let host_pane = lokyr_kernel::plugins::host::PaneId(pane.get());
+    let selected = |app: &App| app.plugins.selected_block(host_pane);
+    let press = |fake: &mut Fake, app: &mut App, code: KeyCode, text: &str, mods: Modifiers| {
+        fake.send(app, window, key_event(code, text, mods, true));
+        fake.send(app, window, key_event(code, text, mods, false));
+    };
+    let cmd = Modifiers {
+        super_key: true,
+        ..Modifiers::NONE
+    };
+    // ⌘↑ selects the last block, which the frame outlines of the theme's
+    // `blocks.selected`.
+    press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[2]));
+    let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
+    let outline = app
+        .theme
+        .variant(dark)
+        .tokens
+        .get("blocks.selected")
+        .unwrap();
+    framed_until(&mut fake, &mut app, window, |app| {
+        outlines(app, window, outline).len() == 1
+    });
+    // ↑ selects the one before; ⌘C, of no text selected, copies it.
+    press(&mut fake, &mut app, KeyCode::ArrowUp, "", Modifiers::NONE);
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[1]));
+    press(&mut fake, &mut app, KeyCode::KeyC, "c", cmd);
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.clipboard_text().as_deref() == Some("two\nout two")
+    });
+    // Escape ends it, and the frame draws no outline.
+    press(
+        &mut fake,
+        &mut app,
+        KeyCode::Escape,
+        "\u{1b}",
+        Modifiers::NONE,
+    );
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+    framed_until(&mut fake, &mut app, window, |app| {
+        outlines(app, window, outline).is_empty()
+    });
+    // So do a key typed, which goes to the program, and a click.
+    press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_some());
+    press(&mut fake, &mut app, KeyCode::KeyX, "x", Modifiers::NONE);
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+    press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_some());
+    let at = Point { x: 40.0, y: 10.0 };
+    fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+}

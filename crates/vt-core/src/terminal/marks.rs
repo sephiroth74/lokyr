@@ -101,11 +101,12 @@ impl CommandMarks {
 }
 
 /// A command's block, of the primary screen's rows, by their numbers: its
-/// first row, its prompt's first row of text, if the list holds its
+/// command's id, its first row, its prompt's first row of text, if the list holds its
 /// prompt, its last row, and its state, none of a command whose output has
 /// not started, as the prompt where the user types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Block {
+    pub(super) id: u64,
     pub(super) first: i64,
     pub(super) prompt: Option<i64>,
     pub(super) last: i64,
@@ -518,6 +519,7 @@ impl Terminal {
                 }
                 .max(first);
                 (last >= top).then(|| Block {
+                    id: marked.id,
                     first,
                     prompt: shown_row(marked),
                     last,

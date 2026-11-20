@@ -567,6 +567,9 @@ pub struct FakeHost {
     focus_follows_mouse: bool,
     /// The looks of the commands' blocks that the plugin asked for.
     block_looks: host::BlockLooks,
+    /// The blocks that the plugin selected, by their panes, of their
+    /// commands' ids.
+    selected_blocks: BTreeMap<PaneId, u64>,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -709,6 +712,7 @@ impl FakeHost {
             inactive_dim: 0.0,
             focus_follows_mouse: false,
             block_looks: host::BlockLooks::default(),
+            selected_blocks: BTreeMap::new(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -1270,6 +1274,19 @@ impl FakeHost {
     /// The looks of the commands' blocks that the plugin asked for.
     pub fn block_looks(&self) -> host::BlockLooks {
         self.block_looks
+    }
+
+    /// The id of the command whose block the plugin selected in `pane`, if
+    /// it selected one.
+    pub fn selected_block(&self, pane: PaneId) -> Option<u64> {
+        self.selected_blocks.get(&pane).copied()
+    }
+
+    /// Ends the block's selection of `pane`, as a key that its program
+    /// takes, a text typed into it or a click in it does.
+    pub fn end_block_selection(&mut self, pane: PaneId) -> &mut Self {
+        self.selected_blocks.remove(&pane);
+        self
     }
 
     /// The clipboard's text.
@@ -2119,6 +2136,14 @@ impl FakeHost {
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
             Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
             Request::SetBlockLooks(looks) => self.block_looks = *looks,
+            Request::SelectBlock { pane, command } => match command {
+                Some(command) => {
+                    self.selected_blocks.insert(*pane, *command);
+                }
+                None => {
+                    self.selected_blocks.remove(pane);
+                }
+            },
             Request::SetWindowTabBarPlace { window, place } => match place {
                 Some(place) => {
                     self.window_bar_places.insert(*window, *place);
@@ -4389,6 +4414,25 @@ impl Calling<'_> {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
             }
             Request::EditedLine(pane) => Response::Text(host.held(*pane)?.edited_line.clone()),
+            Request::SelectedBlock(pane) => {
+                let reads = host.reads_processes();
+                let held = host.held(*pane)?;
+                let command = host
+                    .selected_blocks
+                    .get(pane)
+                    .and_then(|&id| held.command(id));
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
+            }
             // Their folders, the processes' working directories, to a plugin
             // that reads the processes alone.
             Request::ShellCommands { pane, top, bottom } => {
@@ -4489,6 +4533,18 @@ impl Calling<'_> {
             }
             Request::SetTabTitle { tab, .. } => {
                 self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::SelectBlock { pane, command } => {
+                let held = self.host.held(*pane)?;
+                if let Some(command) = command
+                    && held.command(*command).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        host::no_command(*pane, *command),
+                    ));
+                }
                 Response::Done
             }
             Request::RunLine { pane, line } => {

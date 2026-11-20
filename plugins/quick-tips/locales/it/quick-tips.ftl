@@ -35,6 +35,7 @@ tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-
 tip-block-header = Sei risalito in un output lungo? Fai clic sull'intestazione del comando in cima al pannello per andare al suo prompt, o sulla sua freccia per andare alla fine dell'output.
 tip-block-copy = Fai clic destro sull'output di un comando per copiare il comando, o il comando e il suo output, o per selezionare tutto il blocco.
 tip-block-details = Fai clic destro sull'output di un comando e scegli Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
+tip-select-block = Premi { $keys } per selezionare il blocco dell'ultimo comando: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
 tip-block-rerun = Fai clic destro sull'output di un comando e scegli Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.

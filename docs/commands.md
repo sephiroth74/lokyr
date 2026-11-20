@@ -152,6 +152,9 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `app.new-theme` | New Theme from Current… | `theme`, text, `""` by default; `variant`, text, `""` by default |  |
 | `app.open-themes-folder` | Open Themes Folder |  |  |
 | `app.performance` | Show Performance |  |  |
+| `blocks.deselect` | Deselect Block |  | Escape (`escape`), while `blocks.selected && pane.focused` · not released yet |
+| `blocks.select-next` | Select Next Block |  | ⌘↓ (`cmd+down`); ↓ (`down`), while `blocks.selected && pane.focused` · not released yet |
+| `blocks.select-previous` | Select Previous Block |  | ⌘↑ (`cmd+up`); ↑ (`up`), while `blocks.selected && pane.focused` · not released yet |
 | [`command-palette.move`](plugins/command-palette.md) | Move in the Command Palette | `delta`, whole number | ↑ (`up`), `delta = -1`, while `command-palette.focused`; ↓ (`down`), `delta = 1`, while `command-palette.focused` |
 | [`command-palette.open`](plugins/command-palette.md) | Command Palette… |  | ⇧⌘P (`cmd+shift+p`) |
 | [`command-palette.theme`](plugins/command-palette.md) | Choose Theme… |  |  |
@@ -161,8 +164,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | [`links.hints`](plugins/links.md) | Show Hints | `action`, text, `"open"` by default | ⇧⌘E (`cmd+shift+e`) |
 | [`links.hints-action`](plugins/links.md) | Next Hint Action | `delta`, whole number | Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused` |
 | [`links.open`](plugins/links.md) | Open Link | `column`, whole number; `row`, whole number | ⌘-click (`cmd+click`) |
-| [`pane.prompt-next`](plugins/core-actions.md) | Jump to Next Prompt |  | ⌘↓ (`cmd+down`) |
-| [`pane.prompt-previous`](plugins/core-actions.md) | Jump to Previous Prompt |  | ⌘↑ (`cmd+up`) |
+| [`pane.prompt-next`](plugins/core-actions.md) | Jump to Next Prompt |  |  |
+| [`pane.prompt-previous`](plugins/core-actions.md) | Jump to Previous Prompt |  |  |
 | [`pane.scroll-bottom`](plugins/core-actions.md) | Scroll to the Bottom |  | ⌘End (`cmd+end`) |
 | [`pane.scroll-line-down`](plugins/core-actions.md) | Scroll Down a Line |  | ⇧⌘↓ (`cmd+shift+down`) |
 | [`pane.scroll-line-up`](plugins/core-actions.md) | Scroll Up a Line |  | ⇧⌘↑ (`cmd+shift+up`) |

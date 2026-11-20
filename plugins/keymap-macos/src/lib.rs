@@ -170,6 +170,27 @@ pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
     ),
 ];
 
+/// The bindings of the selection of a block of Blocks', after the prompts'
+/// jumps of the same keys, which they take the place of while Blocks runs,
+/// as a binding of a command that no plugin registers takes no key: ⌘↑ and
+/// ⌘↓ jump to the prompt before or after and select its block.
+pub const BLOCKS: [(&str, &str); 2] = [
+    ("cmd+up", "blocks.select-previous"),
+    ("cmd+down", "blocks.select-next"),
+];
+
+/// The context of a selected block's keys: while Blocks selects a block of
+/// the pane that has the keyboard, not a panel's field.
+pub const IN_BLOCK: &str = "blocks.selected && pane.focused";
+
+/// The bindings that hold while a block is selected, after the others: ↑
+/// and ↓ move the selection, Escape ends it.
+pub const BLOCK_SELECTED: [(&str, &str); 3] = [
+    ("up", "blocks.select-previous"),
+    ("down", "blocks.select-next"),
+    ("escape", "blocks.deselect"),
+];
+
 /// The context of the copy mode's keys: while its badge shows, and the pane
 /// has the keyboard, not a panel's field.
 pub const IN_COPY_MODE: &str = "copy-mode.open && pane.focused";
@@ -274,6 +295,22 @@ impl Plugin for KeymapMacos {
                 command: command.to_owned(),
                 args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
                 when: None,
+            })?;
+        }
+        for (keys, command) in BLOCKS {
+            cx.bind(Binding {
+                keys: keys.to_owned(),
+                command: command.to_owned(),
+                args: Args::new(),
+                when: None,
+            })?;
+        }
+        for (keys, command) in BLOCK_SELECTED {
+            cx.bind(Binding {
+                keys: keys.to_owned(),
+                command: command.to_owned(),
+                args: Args::new(),
+                when: Some(IN_BLOCK.to_owned()),
             })?;
         }
         for (keys, command, name, value, when) in IN_PANELS {

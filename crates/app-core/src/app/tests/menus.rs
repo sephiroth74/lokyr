@@ -147,8 +147,10 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Scroll Down a Page cmd+PageDown",
             "Scroll to the Top cmd+Home",
             "Scroll to the Bottom cmd+End",
-            "Jump to Previous Prompt cmd+ArrowUp",
-            "Jump to Next Prompt cmd+ArrowDown",
+            // The prompts' jumps of no keys, which the selection of a block
+            // takes while Blocks runs.
+            "Jump to Previous Prompt",
+            "Jump to Next Prompt",
             "-",
             "Show Hints shift+cmd+e",
             "-",
@@ -160,6 +162,10 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "New Theme from Current…",
             "Import Themes…",
             "Open Themes Folder",
+            "-",
+            "Select Previous Block cmd+ArrowUp",
+            "Select Next Block cmd+ArrowDown",
+            "Deselect Block",
             "-",
             "Appearance",
             "-",
@@ -348,7 +354,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 134);
+    assert_eq!(app.keymap.bindings().len(), 139);
 }
 
 #[test]

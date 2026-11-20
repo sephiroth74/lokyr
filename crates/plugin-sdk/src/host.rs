@@ -659,6 +659,12 @@ pub struct ShellCommand {
     pub host: Option<String>,
 }
 
+/// The message of a request of a command that `pane` keeps not, by its id
+/// `command`, as both hosts tell it.
+pub fn no_command(pane: PaneId, command: u64) -> String {
+    format!("the pane {} keeps no command {command}", pane.0)
+}
+
 /// Whether `pane`, whose shell edits `edited` at its prompt, as a read of
 /// the edited line tells it, runs `line`: while the shell edits an empty
 /// command line, of a line of other than spaces; why not otherwise, as

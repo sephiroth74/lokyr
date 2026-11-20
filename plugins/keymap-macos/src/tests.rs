@@ -10,6 +10,21 @@ const NAME: &str = "lokyr/keymap-macos";
 /// The config's guide, whose table of the defaults tells the plugin's keys.
 const GUIDE: &str = include_str!("../../../docs/CONFIGURATION.md");
 
+/// The keys and the commands of `bindings`, each of no argument and of the
+/// context `when`.
+fn unargued<'a>(
+    bindings: &'a [lokyr_plugin_sdk::host::Binding],
+    when: Option<&str>,
+) -> Vec<(&'a str, &'a str)> {
+    bindings
+        .iter()
+        .map(|binding| {
+            assert_eq!((binding.args.len(), binding.when.as_deref()), (0, when));
+            (binding.keys.as_str(), binding.command.as_str())
+        })
+        .collect()
+}
+
 #[test]
 fn it_binds_its_keys_in_their_order_and_registers_no_command() {
     let mut host = FakeHost::new(NAME);
@@ -18,6 +33,8 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
     let (plain, rest) = host.bindings().split_at(BINDINGS.len());
     let (windows, rest) = rest.split_at(ARGUED.len());
     let (directed, rest) = rest.split_at(DIRECTED.len());
+    let (blocks, rest) = rest.split_at(BLOCKS.len());
+    let (selected, rest) = rest.split_at(BLOCK_SELECTED.len());
     let (in_panels, rest) = rest.split_at(IN_PANELS.len());
     let (copy_mode, counts) = rest.split_at(COPY_MODE.len());
     let bound: Vec<(&str, &str)> = plain
@@ -61,6 +78,16 @@ fn it_binds_its_keys_in_their_order_and_registers_no_command() {
         })
         .collect();
     assert_eq!(pointed, DIRECTED);
+    // Then the blocks' selection's, ⌘↑ and ⌘↓ after the prompts' jumps, and
+    // the keys of a block selected, of its context.
+    assert_eq!(unargued(blocks, None), BLOCKS);
+    assert_eq!(unargued(selected, Some(IN_BLOCK)), BLOCK_SELECTED);
+    let jumps: Vec<&str> = BINDINGS
+        .iter()
+        .filter(|(keys, _)| BLOCKS.iter().any(|(blocks, _)| blocks == keys))
+        .map(|(_, command)| *command)
+        .collect();
+    assert_eq!(jumps, ["pane.prompt-previous", "pane.prompt-next"]);
     // Then those of a panel's context.
     let panels: Vec<(&str, &str, &str, i64, &str)> = in_panels
         .iter()
@@ -178,6 +205,12 @@ fn the_guide_s_table_of_the_defaults_is_the_plugin_s_keys() {
             DIRECTED
                 .iter()
                 .map(|&(keys, command, _)| (keys.to_owned(), command.to_owned())),
+        )
+        .chain(
+            BLOCKS
+                .iter()
+                .chain(&BLOCK_SELECTED)
+                .map(|&(keys, command)| (keys.to_owned(), command.to_owned())),
         )
         .chain(
             IN_PANELS

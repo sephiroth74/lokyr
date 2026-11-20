@@ -838,10 +838,11 @@ impl<B: Backend> App<B> {
         // pane, as of a window that shows the settings tab.
         let focused = self.windows.get(&window).filter(|state| state.focused);
         let context = focused.and_then(|state| match self.workspace.focused(state.window) {
-            Some(_) => self
-                .workspace
-                .pane(active)
-                .map(|pane| menu_context(pane.snapshot())),
+            Some(_) => self.workspace.pane(active).map(|pane| {
+                let mut context = menu_context(pane.snapshot());
+                super::input::hold_selected_blocks(&self.plugins, pane, &mut context);
+                context
+            }),
             None => Some(lokyr_kernel::keymap::Context::new(Vec::<&str>::new())),
         });
         if let Some(context) = context {
@@ -1104,34 +1105,49 @@ impl<B: Backend> App<B> {
                 .map_or(0, |view| view.rect.width)
         };
         let shown = || {
-            std::iter::once((snapshot, (x, y), width(active), 0.0)).chain(
-                others
-                    .iter()
-                    .map(move |(pane, at)| (pane.snapshot(), *at, width(pane.id()), dim)),
+            std::iter::once((active, snapshot, (x, y), width(active), 0.0)).chain(
+                others.iter().map(move |(pane, at)| {
+                    (pane.id(), pane.snapshot(), *at, width(pane.id()), dim)
+                }),
             )
         };
-        let mut shapes: Vec<Shape> = Vec::new();
-        if looks.dividers || looks.failed_tint {
-            let pad = i32::try_from(bar_padding).unwrap_or(0);
-            for (snapshot, at, width, dim) in shown() {
-                let across = (at.0 - pad, width + 2 * bar_padding);
-                shapes.extend(
-                    cells::block_shapes(
-                        snapshot,
-                        at.1,
-                        cell.height,
-                        across,
-                        size.scale,
-                        tokens,
-                        looks,
-                    )
-                    .into_iter()
-                    .map(faded(dim)),
-                );
+        let pad = i32::try_from(bar_padding).unwrap_or(0);
+        for (pane, snapshot, at, width, dim) in shown() {
+            let selected = self
+                .plugins
+                .selected_block(lokyr_kernel::plugins::host::PaneId(pane.get()));
+            if !(looks.dividers || looks.failed_tint || selected.is_some()) {
+                continue;
+            }
+            // Within the pane and its paddings, as a selected block's
+            // outline goes past the edges of the view that cut it.
+            let across = (at.0 - pad, width + 2 * bar_padding);
+            let blocks: Vec<Shape> = cells::block_shapes(
+                snapshot,
+                at.1,
+                cell.height,
+                across,
+                size.scale,
+                tokens,
+                (looks, selected),
+            )
+            .into_iter()
+            .map(faded(dim))
+            .collect();
+            if !blocks.is_empty() {
+                items.push(Item::PushClip(Rect {
+                    x: across.0,
+                    y: at.1,
+                    width: across.1,
+                    height: u32::from(snapshot.rows()) * cell.height,
+                }));
+                items.push(Item::Shapes(blocks));
+                items.push(Item::PopClip);
             }
         }
+        let mut shapes: Vec<Shape> = Vec::new();
         if let Some(padding) = gutter {
-            for (snapshot, at, _, dim) in shown() {
+            for (_, snapshot, at, _, dim) in shown() {
                 shapes.extend(
                     cells::gutter_marks(
                         snapshot,

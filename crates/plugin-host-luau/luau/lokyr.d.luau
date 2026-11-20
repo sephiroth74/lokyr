@@ -133,6 +133,8 @@ export type Cx = {
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
     set_focus_follows_mouse: (on: boolean) -> (true?, string?, number?),
     set_block_looks: (value: BlockLooks) -> (true?, string?, number?),
+    select_block: (pane: PaneId, command: number?) -> (true?, string?, number?),
+    selected_block: (pane: PaneId) -> (ShellCommand?, string?, number?),
     set_window_tab_bar_place: (window: WindowId, place: BarPlace?) -> (true?, string?, number?),
     tab_bar_place: () -> (BarPlace?, string?, number?),
     keys_of: (command: string, args: { [string]: Value }?) -> (string?, string?, number?),

@@ -2284,6 +2284,7 @@ fn a_call_is_its_own_plugin_s() {
             dim: 0.0,
             follows: false,
             block_looks: host::BlockLooks::default(),
+            selected_blocks: BTreeMap::new(),
             told_tabs: BTreeMap::new(),
             told_panes: BTreeMap::new(),
             searches: Vec::new(),
