@@ -2459,6 +2459,40 @@ fn commands_and_viewport(world: &World) -> Scenario {
                     Request::Viewport(NO_PANE),
                     failed(Code::NotFound, "there is no pane 999999"),
                 ),
+                // The shell's last prompt has no input's mark: it edits no
+                // command line, and runs none.
+                (Request::EditedLine(world.pane), Response::Text(None)),
+                (
+                    Request::EditedLine(NO_PANE),
+                    failed(Code::NotFound, "there is no pane 999999"),
+                ),
+                (
+                    Request::RunLine {
+                        pane: world.pane,
+                        line: "true".to_owned(),
+                    },
+                    failed(
+                        Code::Unavailable,
+                        &format!(
+                            "the shell of the pane {} is not at its prompt",
+                            world.pane.0
+                        ),
+                    ),
+                ),
+                (
+                    Request::RunLine {
+                        pane: world.pane,
+                        line: " ".to_owned(),
+                    },
+                    failed(Code::Unavailable, "an empty command line runs nothing"),
+                ),
+                (
+                    Request::RunLine {
+                        pane: NO_PANE,
+                        line: "true".to_owned(),
+                    },
+                    failed(Code::NotFound, "there is no pane 999999"),
+                ),
             ],
             posts: events.clone(),
             heard: events,

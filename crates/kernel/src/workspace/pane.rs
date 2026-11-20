@@ -969,6 +969,14 @@ impl Pane {
             .map(|marks| shell_command(&marks, &mut Machine::default()))
     }
 
+    /// The command line that the shell edits at its prompt, as
+    /// [`Terminal::edited_command_line`] gives it; none for a pane whose
+    /// program did not start or ended.
+    pub fn edited_command_line(&self) -> Option<String> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        session.lock().edited_command_line()
+    }
+
     /// The command line of the command of the id `command`, as
     /// [`Terminal::command_line`] gives it.
     pub fn command_line(&self, command: u64) -> Option<String> {

@@ -4803,6 +4803,14 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.send_text(&text);
                 }
             }
+            // The line, as a paste, bracketed as the program asks, then
+            // Return, as the user types it; of no question, as it runs.
+            Asked::RunLine { pane: id, line } => {
+                if let Some(pane) = pane(id) {
+                    pane.paste(&line);
+                    pane.send_text("\r");
+                }
+            }
             Asked::Scroll { pane: id, scroll } => {
                 if let Some(pane) = pane(id) {
                     pane.scroll(scrolled(scroll));
@@ -6095,6 +6103,7 @@ impl Host<'_, '_> {
                 let command = self.pane(pane)?.shell_command(command);
                 Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
             }
+            Asked::EditedLine(pane) => Response::Text(self.pane(pane)?.edited_command_line()),
             Asked::CommandAt { pane, row } => {
                 let reads = self.state.reads_processes();
                 let command = self.pane(pane)?.command_at(row);
@@ -6290,6 +6299,13 @@ impl Host<'_, '_> {
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            // A line runs at the shell's prompt alone, as it edits an empty
+            // command line now.
+            Asked::RunLine { pane, line } => {
+                let edited = self.pane(*pane)?.edited_command_line();
+                host::check_run_line(*pane, edited.as_deref(), line)
+                    .map_err(|why| Error::new(Code::Unavailable, why))?;
             }
             Asked::Decorate {
                 pane,

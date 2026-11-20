@@ -322,6 +322,10 @@ fn the_texts_are_in_both_languages() {
         "details-seconds",
         "details-minutes",
         "details-hours",
+        "rerun-title",
+        "rerun-no-line",
+        "rerun-busy",
+        "rerun-typed",
     ];
     for (_, catalog) in CATALOGS {
         for id in ["header-label", "header-tooltip", "header-end"]
@@ -459,6 +463,11 @@ fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories(
                 Category::Edit,
                 strings(&["history-read", "process-read", "clipboard-write"])
             ),
+            (
+                RERUN,
+                Category::Edit,
+                strings(&["history-read", "terminal-read", "pty-write"])
+            ),
         ]
     );
 }
@@ -540,12 +549,12 @@ fn nothing_applies_on_the_alternate_screen_nor_of_a_pane_of_no_marks() {
         epoch: 1,
         alternate: true,
     });
-    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS] {
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS, RERUN] {
         assert!(!host.applies(&mut plugin, name, &cell(0, 1)), "{name}");
     }
     let (mut host, mut plugin) = commands_host();
     host.pane(PANE).commands.clear();
-    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS] {
+    for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS, RERUN] {
         assert!(!host.applies(&mut plugin, name, &Args::new()), "{name}");
         assert!(run(&mut host, &mut plugin, name, Args::new()).is_empty());
     }
@@ -839,4 +848,69 @@ fn a_duration_is_of_its_unit_s_message() {
     ] {
         assert_eq!(duration(&mut text, millis), written, "{millis}");
     }
+}
+
+/// The notice of a run again that `why` refuses, as the host's catalogs
+/// give no text in the tests: its message's id.
+fn refused(why: &str) -> Request {
+    Request::Notify {
+        text: why.to_owned(),
+        level: lokyr_plugin_sdk::host::NoticeLevel::Warning,
+        title: Some("rerun-title".to_owned()),
+    }
+}
+
+fn ran(line: &str) -> Request {
+    Request::RunLine {
+        pane: PANE,
+        line: line.to_owned(),
+    }
+}
+
+#[test]
+fn a_block_runs_again_at_the_shell_s_prompt_of_an_empty_command_line() {
+    let (mut host, mut plugin) = commands_host();
+    host.pane(PANE).edited_line = Some(String::new());
+    // A cell of `ls`' output, or of `true`'s prompt: their lines.
+    assert!(host.applies(&mut plugin, RERUN, &cell(1, 2)));
+    assert_eq!(run(&mut host, &mut plugin, RERUN, cell(1, 2)), [ran("ls")]);
+    assert_eq!(
+        run(&mut host, &mut plugin, RERUN, cell(0, 4)),
+        [ran("true")]
+    );
+    // Of no cell, as the Edit menu runs it: the last command that started.
+    host.pane(PANE).commands[2].end = Some((0, 7));
+    assert_eq!(
+        run(&mut host, &mut plugin, RERUN, Args::new()),
+        [ran("sleep 60")]
+    );
+}
+
+#[test]
+fn a_block_does_not_run_again_while_a_command_runs_or_the_line_holds_text() {
+    let (mut host, mut plugin) = commands_host();
+    // `sleep 60` runs: the shell edits no command line.
+    assert!(host.applies(&mut plugin, RERUN, &cell(0, 6)));
+    assert_eq!(
+        run(&mut host, &mut plugin, RERUN, cell(1, 2)),
+        [refused("rerun-busy")]
+    );
+    // Again within the second: the notice shows still, and the command
+    // fails not.
+    assert!(run(&mut host, &mut plugin, RERUN, cell(1, 2)).is_empty());
+    // A second later, at the prompt, of text typed.
+    host.advance(std::time::Duration::from_secs(1));
+    host.pane(PANE).edited_line = Some("git st".to_owned());
+    assert_eq!(
+        run(&mut host, &mut plugin, RERUN, cell(1, 2)),
+        [refused("rerun-typed")]
+    );
+    // A block of no line, at an empty command line.
+    host.advance(std::time::Duration::from_secs(1));
+    host.pane(PANE).edited_line = Some(String::new());
+    host.pane(PANE).command_lines.remove(&1);
+    assert_eq!(
+        run(&mut host, &mut plugin, RERUN, cell(1, 2)),
+        [refused("rerun-no-line")]
+    );
 }

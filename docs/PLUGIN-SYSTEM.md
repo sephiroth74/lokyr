@@ -1119,6 +1119,15 @@ type Cx = {
     -- and text sent as typed.
     paste: (pane: PaneId, text: string) -> (boolean, Error?),
     send_text: (pane: PaneId, text: string) -> (boolean, Error?),
+    -- Requires `terminal-read`: the command line that the shell edits at its prompt, as its cells show it, after its
+    -- input's mark and before its output's (OSC 133), of no right prompt, its lines apart, without the spaces that end
+    -- it; "" of nothing typed; nil while a command runs, a program's own screen shows, or the shell marks no prompt ·
+    -- not released yet.
+    edited_line: (pane: PaneId) -> (string?, Error?),
+    -- Requires `pty-write`: a command line run at the shell's prompt, pasted, bracketed as the program asks, and
+    -- Return, of no confirmation, while the shell edits an empty command line, as `edited_line` tells it; refused,
+    -- `unavailable`, otherwise, and of a line of nothing but spaces · not released yet.
+    run_line: (pane: PaneId, line: string) -> (boolean, Error?),
     scroll: (pane: PaneId, scroll: Scroll) -> (boolean, Error?),
     -- The text's size, in points, of every window, from 4 to 200, or the config's with none.
     font_size: () -> (number?, Error?),

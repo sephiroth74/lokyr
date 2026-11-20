@@ -23,6 +23,7 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **Long lines stay short**: a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
 - **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
+- **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
 
 ## Copy a command or its output
 
@@ -49,6 +50,18 @@ Right-click anywhere in a block and choose **Block Details**. A panel opens belo
 Click a line, or its copy button, to copy what it shows: the button turns into a tick. For the status, the copy is the exit status alone. Press Escape, or click outside the panel, to close it. Tab moves between the copy buttons, and Space copies.
 
 Edit › Block Details, with no click, shows the last command that started, below the cursor. While the command runs, the panel says Running, and it shows the status and the duration as soon as the command ends.
+
+## Run a command again
+
+Right-click a block and choose **Run Command Again**. Lokyr types the block's command line at your shell's prompt and presses Return for you.
+
+It runs only while your shell waits at its prompt with an empty command line. Otherwise Lokyr sends nothing, and a notice tells you why:
+
+- a command is still running, or a program such as vim shows its own screen;
+- the command line holds text that you typed, which the command would be added to: clear it first;
+- the block has no command line.
+
+The command line goes in as a paste, so a command of several lines stays whole, and Lokyr doesn't ask you to confirm it, as it can for a paste of several lines. Edit › Run Command Again, with no click, runs the last command that started.
 
 ## Change the header's look
 
@@ -93,6 +106,7 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 | `blocks.copy-command` | Edit › Copy Command | | Copies the command line of the block under the pointer, from the pane's context menu, or of the last command that started |
 | `blocks.copy-block` | Edit › Copy Command and Output | | Copies the command line and the output of the block under the pointer, or of the last command that ended, its wrapped rows joined, 100 000 rows at most |
 | `blocks.select-block` | Edit › Select Block | | Selects that block, from its prompt to the end of its output |
+| `blocks.rerun` | Edit › Run Command Again | | Runs the command line of the block under the pointer, or of the last command that started, at the shell's prompt, while its command line is empty |
 | `blocks.details` | Edit › Block Details | | Shows the details of the block under the pointer, or of the last command that started: its command line, exit status, start, duration and folder, each copied by a click |
 
 <!-- commands end -->
@@ -117,6 +131,7 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
 - The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
 - A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
+- Run Command Again types the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's row.
 
 ## Troubleshooting
 

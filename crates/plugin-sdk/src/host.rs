@@ -659,6 +659,27 @@ pub struct ShellCommand {
     pub host: Option<String>,
 }
 
+/// Whether `pane`, whose shell edits `edited` at its prompt, as a read of
+/// the edited line tells it, runs `line`: while the shell edits an empty
+/// command line, of a line of other than spaces; why not otherwise, as
+/// both hosts tell it.
+pub fn check_run_line(pane: PaneId, edited: Option<&str>, line: &str) -> Result<(), String> {
+    if line.trim().is_empty() {
+        return Err("an empty command line runs nothing".to_owned());
+    }
+    match edited {
+        None => Err(format!(
+            "the shell of the pane {} is not at its prompt",
+            pane.0
+        )),
+        Some(text) if !text.is_empty() => Err(format!(
+            "the command line of the pane {} holds text",
+            pane.0
+        )),
+        Some(_) => Ok(()),
+    }
+}
+
 impl ShellCommand {
     /// The command, of no folder nor machine, as a plugin that does not
     /// read the processes, whose working directories they are, reads it.

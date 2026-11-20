@@ -11,15 +11,16 @@
 //! context menu gives its `column` and `row`, or else the last command's.
 //! They copy its line, or its line and its output, or select it whole, or
 //! show its details in a panel: its line, its exit status, its start, its
-//! duration and its folder, each copied of a click. Like every built-in
-//! plugin, it depends only on the plugin SDK.
+//! duration and its folder, each copied of a click, or run its line again
+//! at the shell's prompt, while the shell waits there of an empty command
+//! line. Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{LocalTime, PaneId, ShellCommand};
+use lokyr_plugin_sdk::host::{LocalTime, NoticeLevel, PaneId, ShellCommand};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
@@ -64,6 +65,10 @@ const SELECT_BLOCK: &str = "blocks.select-block";
 /// Show a block's details in a panel at its cell, of `column` and `row`,
 /// or, of none, the last command's at the cursor.
 const DETAILS: &str = "blocks.details";
+
+/// Run a block's command line again, at the shell's prompt, the block of
+/// a cell, of `column` and `row`, or, of none, the last command's.
+const RERUN: &str = "blocks.rerun";
 
 /// The prefix of a details' panel's id, of a number that each opening
 /// takes, so that a panel that opens in place of another is not the one
@@ -230,16 +235,28 @@ impl Plugin for Blocks {
                 vec![Capability::HistoryRead, Capability::TerminalRead],
             ),
         ];
-        let commands = commands.into_iter().chain([(
-            DETAILS,
-            "Block Details",
-            Category::Edit,
-            vec![
-                Capability::HistoryRead,
-                Capability::ProcessRead,
-                Capability::ClipboardWrite,
-            ],
-        )]);
+        let commands = commands.into_iter().chain([
+            (
+                DETAILS,
+                "Block Details",
+                Category::Edit,
+                vec![
+                    Capability::HistoryRead,
+                    Capability::ProcessRead,
+                    Capability::ClipboardWrite,
+                ],
+            ),
+            (
+                RERUN,
+                "Run Command Again",
+                Category::Edit,
+                vec![
+                    Capability::HistoryRead,
+                    Capability::TerminalRead,
+                    Capability::PtyWrite,
+                ],
+            ),
+        ]);
         for (name, title, category, capabilities) in commands {
             cx.register_command(Command {
                 name: name.to_owned(),
@@ -350,7 +367,7 @@ impl Plugin for Blocks {
                 .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
                 .is_some(),
             COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
-            DETAILS => block(cx, pane, args, false).ok().flatten().is_some(),
+            DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
             _ => true,
         }
     }
@@ -428,6 +445,12 @@ impl Plugin for Blocks {
                     return Ok(());
                 };
                 self.open_details(cx, pane, command, &args)
+            }
+            RERUN => {
+                let Some(command) = block(cx, pane, &args, false)? else {
+                    return Ok(());
+                };
+                rerun(cx, pane, &command)
             }
             _ => Err(Error::new(
                 Code::NotFound,
@@ -519,6 +542,34 @@ impl Blocks {
             }
         }
         Ok(())
+    }
+}
+
+/// Runs `command`'s line again in `pane`, at the shell's prompt, while
+/// the shell edits an empty command line there; a notice of why not
+/// otherwise, of nothing sent: of a block of no line, of a shell that is
+/// not at its prompt, as a command runs, and of a command line that holds
+/// text, which the run would add to.
+fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Error> {
+    let why = match cx.command_line(pane, command.id)? {
+        None => "rerun-no-line",
+        Some(line) => match cx.edited_line(pane)? {
+            None => "rerun-busy",
+            Some(edited) if !edited.is_empty() => "rerun-typed",
+            Some(_) => match cx.run_line(pane, &line) {
+                Ok(()) => return Ok(()),
+                // The prompt went between the read and the run.
+                Err(error) if error.code == Code::Unavailable => "rerun-busy",
+                Err(error) => return Err(error),
+            },
+        },
+    };
+    let text = cx.message(why, &[])?;
+    let title = cx.message("rerun-title", &[])?;
+    match cx.notify(&text, NoticeLevel::Warning, Some(&title)) {
+        // The notice of a second ago, of the same why, still shows.
+        Err(error) if error.code == Code::Unavailable => Ok(()),
+        done => done,
     }
 }
 

@@ -696,3 +696,121 @@ fn a_block_s_details_tell_its_times_and_its_folder_each_copied_of_a_click() {
         });
     }
 }
+
+/// The text of the plugin's notice that `app` shows, if one shows.
+fn plugin_notice(app: &App) -> Option<String> {
+    match app.diagnostics.shown()? {
+        lokyr_kernel::diagnostics::Notice::Plugin { notice, .. } => Some(notice.text.clone()),
+        lokyr_kernel::diagnostics::Notice::Diagnostic(_) => None,
+    }
+}
+
+/// Whether a row of `window`'s screen holds `text`.
+fn screen_holds(app: &App, window: WindowId, text: &str) -> bool {
+    (0..24).any(|at| row(app, window, at).contains(text))
+}
+
+#[test]
+fn a_block_runs_again_at_the_prompt_of_zsh_s_bash_s_and_fish_s_marks_and_is_refused_otherwise() {
+    // `ls`, then an empty command line of bracketed paste, which a line
+    // read takes, its bytes shown; of zsh, first, a command line of text
+    // typed, and, last, a command that runs.
+    let shells = [
+        (
+            "zsh",
+            "\\033]133;A;cl=line\\007%% \\033]133;B\\007",
+            "\\033]133;C;cmdline_url=ls\\007",
+        ),
+        (
+            "bash",
+            "\\033]133;A;cl=line\\007$ \\033]133;B\\007",
+            "\\033]133;C\\007",
+        ),
+        (
+            "fish",
+            "\\033]133;A;click_events=1\\007\\033]133;A;cl=line\\007> \\033]133;B\\007",
+            "\\033]133;C;cmdline_url=ls\\007",
+        ),
+    ];
+    for (name, prompt, output) in shells {
+        let refusals = name == "zsh";
+        let typed = if refusals {
+            format!(
+                "printf '{prompt}git st'; IFS= read -r first; \
+                 printf '\\r\\n\\033]133;C\\007first:%s\\r\\n\\033]133;D;0\\007' \"$first\"; "
+            )
+        } else {
+            String::new()
+        };
+        let script = format!(
+            "printf '{prompt}ls\\r\\n{output}a.txt\\r\\n\\033]133;D;0\\007'; {typed}\
+             printf '{prompt}\\033[?2004h'; IFS= read -r line; \
+             printf '\\033[?2004l\\r\\n\\033]133;C\\007ran:%s\\r\\n\\033]133;D;0\\007' \
+             \"$(printf %s \"$line\" | cat -v)\"; \
+             printf '{prompt}sleep\\r\\n\\033]133;C\\007'; sleep 30"
+        );
+        let mut fake = Fake::default();
+        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        fake.start(&mut app);
+        let window = fake.windows().next().unwrap();
+        fake.send(&mut app, window, WindowEvent::Focused(true));
+        let pane = app.windows[&window].views[0].pane;
+        let edited = |app: &App| app.workspace.pane(pane).unwrap().edited_command_line();
+        let cell = Args::from([
+            (
+                "column".to_owned(),
+                lokyr_kernel::commands::Value::Integer(1),
+            ),
+            ("row".to_owned(), lokyr_kernel::commands::Value::Integer(1)),
+        ]);
+        if refusals {
+            // Of text typed: a notice, and nothing sent, as the line that
+            // the shell reads next is the one sent after.
+            run_until(&mut fake, &mut app, |_, app| {
+                edited(app).as_deref() == Some("git st")
+            });
+            app.run(&mut fake, "blocks.rerun", cell.clone());
+            run_until(&mut fake, &mut app, |_, app| plugin_notice(app).is_some());
+            assert_eq!(
+                plugin_notice(&app).as_deref(),
+                Some("The command line holds text. Clear it, then run the command again.")
+            );
+            app.diagnostics.dismiss();
+            app.workspace.pane(pane).unwrap().send_text("go\r");
+            run_until(&mut fake, &mut app, |_, app| {
+                screen_holds(app, window, "first:go")
+            });
+        }
+        // At an empty command line: the line, bracketed, then Return.
+        run_until(&mut fake, &mut app, |_, app| {
+            edited(app).as_deref() == Some("")
+                && app
+                    .workspace
+                    .pane(pane)
+                    .unwrap()
+                    .input_modes()
+                    .is_some_and(|modes| modes.bracketed_paste)
+        });
+        app.run(&mut fake, "blocks.rerun", cell.clone());
+        run_until(&mut fake, &mut app, |_, app| {
+            screen_holds(app, window, "ran:^[[200~ls^[[201~")
+        });
+        assert!(plugin_notice(&app).is_none(), "{name}");
+        if refusals {
+            // While a command runs: a notice, past the second between two.
+            run_until(&mut fake, &mut app, |_, app| {
+                edited(app).is_none() && screen_holds(app, window, "sleep")
+            });
+            std::thread::sleep(Duration::from_millis(1100));
+            app.run(&mut fake, "blocks.rerun", cell);
+            run_until(&mut fake, &mut app, |_, app| plugin_notice(app).is_some());
+            assert_eq!(
+                plugin_notice(&app).as_deref(),
+                Some(
+                    "The shell isn't at its prompt: a command is still running. \
+                     Run it again once the command ends."
+                )
+            );
+        }
+    }
+}

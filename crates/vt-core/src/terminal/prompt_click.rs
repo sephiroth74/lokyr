@@ -210,6 +210,39 @@ impl Terminal {
         })
     }
 
+    /// The command line that the shell's line editor holds, as its cells
+    /// show it, while it edits one at its prompt (after `B`, before `C`) on
+    /// the primary screen: its characters, of no right prompt, its lines
+    /// apart, without the spaces that end it; empty of nothing typed. None
+    /// otherwise, as while a command runs, the alternate screen shows, or
+    /// the shell marks no prompt.
+    pub fn edited_command_line(&self) -> Option<String> {
+        let (start, _) = self.command_line_start()?;
+        let rows = &self.screen().rows;
+        let mut text = String::new();
+        for step in self.edited_line(start).steps {
+            match step {
+                Step::Char { x, y, .. } => {
+                    let (page, row) = rows.screen_row(y);
+                    match page
+                        .cells(row)
+                        .get(usize::from(x))
+                        .map(|cell| cell.content())
+                    {
+                        Some(Content::Char(character)) if character != '\0' => text.push(character),
+                        Some(Content::Grapheme(character)) => {
+                            text.push(character);
+                            text.extend(page.grapheme(row, x));
+                        }
+                        _ => text.push(' '),
+                    }
+                }
+                Step::Break { .. } => text.push('\n'),
+            }
+        }
+        Some(text.trim_end().to_owned())
+    }
+
     /// What replaces the selection, which a key that deletes or types
     /// takes the place of, where it lies within the command line that the
     /// shell edits, as its prompt announced that its line editor takes the

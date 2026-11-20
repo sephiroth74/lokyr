@@ -253,6 +253,34 @@
   {
     "capabilities": [
       "history-read",
+      "terminal-read",
+      "pty-write"
+    ],
+    "category": "edit",
+    "name": "blocks.rerun",
+    "params": [
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
+    "plugin": "lokyr/blocks",
+    "title": "Run Command Again",
+    "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "history-read",
       "terminal-read"
     ],
     "category": "edit",

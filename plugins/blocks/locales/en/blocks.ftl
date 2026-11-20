@@ -15,6 +15,7 @@ command-blocks-copy-command = Copy Command
 command-blocks-copy-block = Copy Command and Output
 command-blocks-select-block = Select Block
 command-blocks-details = Block Details
+command-blocks-rerun = Run Command Again
 
 # A block's details: what an accessibility client calls the panel, of the
 # command's whole line, and the names of its parts.
@@ -43,3 +44,11 @@ details-milliseconds = { $count } ms
 details-seconds = { $whole }.{ $tenths } s
 details-minutes = { $minutes } min { $seconds } s
 details-hours = { $hours } h { $minutes } min
+
+# Why a block's command does not run again: the notice's title, then its
+# text of a block of no command line, of a shell that is not at its prompt,
+# and of a command line that holds text.
+rerun-title = Can't Run the Command Again
+rerun-no-line = This block has no command line to run.
+rerun-busy = The shell isn't at its prompt: a command is still running. Run it again once the command ends.
+rerun-typed = The command line holds text. Clear it, then run the command again.

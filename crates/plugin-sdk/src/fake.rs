@@ -111,6 +111,10 @@ pub struct FakePane {
     /// The lines of its commands, by their ids, as a read of a command's
     /// line gives them.
     pub command_lines: BTreeMap<u64, String>,
+    /// The command line that its shell edits at its prompt, as a read of
+    /// it gives it, and as a run of a line needs it empty: none by
+    /// default, as of a shell that marks no prompt.
+    pub edited_line: Option<String>,
     /// Its view, as a read of it gives it; of none, its screen, the last
     /// of its rows held, as many as its grid's, of no scrollback above
     /// them.
@@ -280,6 +284,7 @@ impl Default for FakePane {
             title: None,
             commands: Vec::new(),
             command_lines: BTreeMap::new(),
+            edited_line: None,
             viewport: None,
             cursor: (0, 0),
             held_cursor: None,
@@ -4374,6 +4379,7 @@ impl Calling<'_> {
             Request::CommandLine { pane, command } => {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
             }
+            Request::EditedLine(pane) => Response::Text(host.held(*pane)?.edited_line.clone()),
             // Their folders, the processes' working directories, to a plugin
             // that reads the processes alone.
             Request::ShellCommands { pane, top, bottom } => {
@@ -4474,6 +4480,12 @@ impl Calling<'_> {
             }
             Request::SetTabTitle { tab, .. } => {
                 self.known_tab(*tab)?;
+                Response::Done
+            }
+            Request::RunLine { pane, line } => {
+                let edited = self.host.held(*pane)?.edited_line.as_deref();
+                host::check_run_line(*pane, edited, line)
+                    .map_err(|why| Error::new(Code::Unavailable, why))?;
                 Response::Done
             }
             Request::SetClipboardImage(png) => {

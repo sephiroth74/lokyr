@@ -648,6 +648,25 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// The command line that a pane's shell edits at its prompt, as its
+    /// cells show it, if it edits one: after its input's mark and before
+    /// its output's (OSC 133), on the primary screen, of no right prompt,
+    /// its lines apart, without the spaces that end it; empty of nothing
+    /// typed. None while a command runs, a program's own screen shows, or
+    /// the shell marks no prompt.
+    EditedLine(PaneId),
+    /// Runs a command line in a pane's shell, at its prompt: while the
+    /// shell edits an empty command line there, as a read of the edited
+    /// line tells it, the host pastes `line`, bracketed as the program
+    /// asks, and Return, of no question, as a paste of several lines may
+    /// ask, as the line is one to run; refused, `unavailable`, otherwise,
+    /// and of a line of nothing but spaces.
+    RunLine {
+        /// The pane.
+        pane: PaneId,
+        /// The command line.
+        line: String,
+    },
     /// Scrolls a pane's view.
     Scroll {
         /// The pane.
@@ -1218,7 +1237,8 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::Styles { .. }
             | Self::SelectionCells(_)
-            | Self::ScreenCells(_) => Some(Capability::TerminalRead),
+            | Self::ScreenCells(_)
+            | Self::EditedLine(_) => Some(Capability::TerminalRead),
             Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. }
@@ -1240,7 +1260,9 @@ impl Request {
                 Some(Capability::GlobalHotkey)
             }
             Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
-            Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
+            Self::Paste { .. } | Self::SendText { .. } | Self::RunLine { .. } => {
+                Some(Capability::PtyWrite)
+            }
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
             | Self::CloseWindow(_)
@@ -1369,6 +1391,7 @@ impl Request {
             | Self::CommandLine { .. }
             | Self::ShellCommand { .. }
             | Self::CommandAt { .. }
+            | Self::EditedLine(_)
             | Self::Viewport(_)
             | Self::CursorCell(_)
             | Self::Styles { .. }
@@ -1414,6 +1437,7 @@ impl Request {
             | Self::Clear(_)
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -2031,6 +2055,7 @@ impl Request {
             | Self::Clear { .. }
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::SetFontSize { .. }
             | Self::OpenWindow { .. }
@@ -2089,6 +2114,7 @@ impl Request {
             | Self::LinkAt { .. }
             | Self::WorkingDirectory { .. }
             | Self::CommandLine { .. }
+            | Self::EditedLine { .. }
             | Self::KeysOf { .. }
             | Self::Message { .. }
             | Self::PaneTitle { .. } => "text",

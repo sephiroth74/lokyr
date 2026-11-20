@@ -40,6 +40,7 @@ tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and â
 tip-block-header = Scrolled up through a long output? Click the command's header at the pane's top to go to its prompt, or its arrow to go to the output's end.
 tip-block-copy = Right-click a command's output to copy the command, or the command and its output, or to select its whole block.
 tip-block-details = Right-click a command's output and choose Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
+tip-block-rerun = Right-click a command's output and choose Run Command Again to run it once more at the prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither âŒ˜W nor Close Other Tabs will close it.

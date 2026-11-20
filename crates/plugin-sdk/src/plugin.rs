@@ -1119,6 +1119,25 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// The command line that `pane`'s shell edits at its prompt, as its
+    /// cells show it, of no right prompt; empty of nothing typed; `None`
+    /// while a command runs, a program's own screen shows, or the shell
+    /// marks no prompt. Requires `terminal-read`.
+    pub fn edited_line(&mut self, pane: PaneId) -> Result<Option<String>, Error> {
+        self.text(Request::EditedLine(pane))
+    }
+
+    /// Runs `line` in `pane`'s shell, as this call returns: pasted at its
+    /// prompt, bracketed as the program asks, and Return, while the shell
+    /// edits an empty command line; `unavailable` otherwise, now. Requires
+    /// `pty-write`.
+    pub fn run_line(&mut self, pane: PaneId, line: &str) -> Result<(), Error> {
+        self.done(Request::RunLine {
+            pane,
+            line: line.to_owned(),
+        })
+    }
+
     /// Scrolls `pane`'s view, as this call returns.
     pub fn scroll(&mut self, pane: PaneId, scroll: Scroll) -> Result<(), Error> {
         self.done(Request::Scroll { pane, scroll })

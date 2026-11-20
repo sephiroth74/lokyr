@@ -9,6 +9,7 @@ command-blocks-copy-command = Copia comando
 command-blocks-copy-block = Copia comando e output
 command-blocks-select-block = Seleziona blocco
 command-blocks-details = Dettagli del blocco
+command-blocks-rerun = Esegui di nuovo il comando
 
 # I dettagli di un blocco.
 details-label = Dettagli di { $line }
@@ -30,3 +31,9 @@ details-milliseconds = { $count } ms
 details-seconds = { $whole },{ $tenths } s
 details-minutes = { $minutes } min { $seconds } s
 details-hours = { $hours } h { $minutes } min
+
+# Perché il comando di un blocco non viene eseguito di nuovo.
+rerun-title = Impossibile eseguire di nuovo il comando
+rerun-no-line = Questo blocco non ha una riga di comando da eseguire.
+rerun-busy = La shell non è al prompt: un comando è ancora in esecuzione. Eseguilo di nuovo quando il comando termina.
+rerun-typed = La riga di comando contiene del testo. Cancellalo, poi esegui di nuovo il comando.
