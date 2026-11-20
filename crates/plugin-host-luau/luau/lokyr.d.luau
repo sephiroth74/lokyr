@@ -186,6 +186,7 @@ export type Event =
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
+    | { kind: "click", pane: PaneId, at: { number } }
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     | { kind: "panel-closed", id: PanelId }
@@ -434,7 +435,6 @@ export type BlockLooks = {
     bars: boolean?,
     dividers: boolean?,
     failed_tint: boolean?,
-    hover: boolean?,
 }
 
 export type Border = {

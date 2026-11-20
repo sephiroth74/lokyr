@@ -170,6 +170,5 @@ failed = "#ff5f57"
 [blocks]
 divider = "separator"               # the line at the top of each block
 selected.bg = "accent / 20%"        # the tint over the selected block's rows
-hover.bg = "accent / 8%"            # the tint over the block under the pointer
 failed = "gutter.failed / 12%"      # the tint over a failed block's rows
 pill = "#2a2a2d"

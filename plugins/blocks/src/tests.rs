@@ -285,7 +285,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys.len(), 14, "{keys:?}");
+    assert_eq!(keys.len(), 13, "{keys:?}");
     let example = guide
         .split_once("\n[plugins.blocks]\n")
         .and_then(|(_, rest)| rest.split_once("\n\n"))
@@ -967,7 +967,6 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: true,
             failed_tint: false,
-            hover: true,
         }
     );
     let config = |pairs: &[(&str, bool)]| {
@@ -986,7 +985,6 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: false,
             failed_tint: true,
-            hover: true,
         }
     );
     // A change of other keys asks nothing anew.
@@ -1164,4 +1162,29 @@ fn rows_of_no_command_before_the_first_prompt_leave_the_selection_whole() {
         selected_after(&mut host, &mut plugin, SELECT_NEXT),
         (Some(1), Some(Scroll::Row(2)))
     );
+}
+
+#[test]
+fn a_click_on_a_block_selects_it_and_one_past_the_blocks_selects_none() {
+    let (mut host, mut plugin) = commands_host();
+    viewed(&mut host, 0, 0);
+    let mut click = |host: &mut FakeHost, row: i64| {
+        host.post(Event::Click {
+            pane: PANE,
+            at: (3, row),
+        });
+        host.deliver(&mut plugin).unwrap();
+        host.selected_block(PANE)
+    };
+    // `ls`' output, then `true`'s prompt, then `sleep`'s, which runs.
+    assert_eq!(click(&mut host, 2), Some(1));
+    assert_eq!(click(&mut host, 4), Some(2));
+    assert_eq!(click(&mut host, 6), Some(3));
+    // Above every command, none.
+    host.pane(PANE).commands.remove(0);
+    assert_eq!(click(&mut host, 0), None);
+    // The alternate screen, which hides the commands' rows, keeps it.
+    assert_eq!(click(&mut host, 5), Some(3));
+    host.pane(PANE).viewport.as_mut().unwrap().alternate = true;
+    assert_eq!(click(&mut host, 2), Some(3));
 }

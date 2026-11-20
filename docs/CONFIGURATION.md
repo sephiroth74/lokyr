@@ -246,7 +246,6 @@ align = "left"                       # left | center | right: where its pill sit
 max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
 dividers = true                      # true | false
 failed-tint = true                   # true | false
-hover-tint = false                   # true | false
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
@@ -2207,7 +2206,7 @@ The most characters of the command's line that the header shows.
 
 <sub>Platforms: macOS</sub>
 
-The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block under the pointer and the one that the keyboard selects are tinted, and a failed block's rows can be tinted.
+The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted.
 
 `lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 
@@ -2318,20 +2317,6 @@ Whether the rows of a block whose command failed are tinted, across the pane.
 
 - A command fails of an exit status other than 0, as an interrupted command does.
 - By default a failed block shows the gutter's red bar alone; `true` tints its rows too, of the theme's `blocks.failed`, a faint red by default.
-- It applies at once, as you save the file.
-
-### `hover-tint`
-
-<sub>Platforms: macOS</sub>
-
-Whether the rows of the block under the pointer are tinted, across the pane.
-
-| Values | Default |
-|---|---|
-| `true`, `false` | `true` |
-
-- The tint is the theme's `blocks.hover.bg`, a faint shade of the accent by default; the block that the keyboard selects shows the stronger `blocks.selected.bg`.
-- No block is tinted while the program in front takes the mouse, while a program that takes the whole screen, such as an editor, runs, or right after you type, until the pointer moves.
 - It applies at once, as you save the file.
 
 ## `[plugins.quick-tips]`

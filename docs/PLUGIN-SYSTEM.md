@@ -580,6 +580,10 @@ type Event =
     -- of its row or scrolled its pane's rows under it, at the same cell; while Command is up, its
     -- moves come only as the system gives them, as a program that tracks the mouse asks.
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: { shift: boolean, control: boolean, option: boolean, command: boolean } }
+    -- A click of the left button on a pane's cell that the terminal kept: one click, of no modifier, that dragged over no
+    -- cell, and that no binding nor program took, as the button went up; the cell, its column and its row's number, as
+    -- the drawn frame showed it · not released yet.
+    | { kind: "click", pane: PaneId, at: { number } }
     -- A pane's view changed, as a frame showed it: its first row, as a scroll by hand or output moved it, its rows, the
     -- screen's first row, as output scrolled the screen under a view above it, the oldest row, as the scrollback's limit
     -- took rows away, the epoch or the screen shown; once a frame of the pane at most, a pane that does not show telling
@@ -937,9 +941,9 @@ type Cx = {
     set_focus_follows_mouse: (on: boolean) -> (boolean, Error?),
     -- The commands' blocks of every pane drawn so, while the plugin runs, each look that any plugin asks: the gutter's
     -- bar of a command along its block's rows (`bars`), a hairline at the top of each block, across the pane, of the
-    -- theme's `blocks.divider` (`dividers`), a failed block's rows tinted of `blocks.failed` (`failed_tint`), and the
-    -- block under the pointer tinted of `blocks.hover.bg` (`hover`) · not released yet.
-    set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean?, hover: boolean? }) -> (boolean, Error?),
+    -- theme's `blocks.divider` (`dividers`), and a failed block's rows tinted of `blocks.failed` (`failed_tint`) ·
+    -- not released yet.
+    set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean? }) -> (boolean, Error?),
     -- Selects the block of a pane's command, by its id, or none: the host tints its rows, of the theme's
     -- `blocks.selected.bg`, and the keys' context holds `namespace.selected` while the pane has the keyboard, until the
     -- plugin selects another or none, or a key that the program takes, a text typed or a click in the pane ends it;
@@ -1294,7 +1298,7 @@ type Plugin = {
 | `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |
 | `decorate` | Drawing over a pane: decorations and their labels, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
-| `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
+| `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held; and the `click` event, a plain click on a pane's cell · not released yet | Low |
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep, `keep_awake`, of a power assertion that the host holds for every plugin together, the strongest that one asks, and releases as the last lets go, stops, faults or is turned off | High: a display kept awake keeps the screen from locking, and of a battery's cost |
 | `config` | The config in force, the app's keys and every plugin's section with their schemas, `settings`, and their changes, `settings-changed`; its keys written into the file, `set_setting`; a theme copied into the themes folder, `copy_theme`, a new one there, `new_theme`, or an `.itermcolors` one there converted, `convert_theme`, each once its question is answered, and a theme's colors there written, `set_theme_value`, or shown before they are, `preview_theme_value`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through the bundle's Sleip: the installed ones, the registry's search and a plugin's versions, installs, updates and removals, `packages`, of their lines as events, and `cancel_packages`; every plugin's state and capabilities' decisions, `plugins`, and a plugin turned on or off in the config, `set_plugin_enabled`; Lokyr's own plugins' alone, refused to another's manifest with a notice and by `sleip check` | Very high: a plugin that installs another runs code of its choice |

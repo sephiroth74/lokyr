@@ -166,6 +166,7 @@ fn every() -> Vec<Event> {
         Event::SettingsChanged,
         Event::ThemesChanged,
         Event::ThemeChanged,
+        Event::Click { pane, at: (4, -2) },
         Event::DoubleTapped {
             modifier: lokyr_plugin_sdk::host::Modifier::Ctrl,
         },
@@ -209,6 +210,8 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(pointer.kind == "pointer" and pointer.at[1] == 4 and pointer.at[2] == -2 and pointer.mods.command)
         assert(events[16].at == nil)
         assert(events[19].kind == "panel-closed" and events[19].id == "find")
+        local clicked = events[#events - 3]
+        assert(clicked.kind == "click" and clicked.at[1] == 4 and clicked.at[2] == -2 and clicked.pane == 3)
         local tapped = events[#events - 2]
         assert(tapped.kind == "double-tapped" and tapped.modifier == "ctrl")
         local shown, hidden = events[#events - 1], events[#events]

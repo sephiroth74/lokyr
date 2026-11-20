@@ -158,16 +158,13 @@ pub fn cells(
         bars: true,
         dividers: true,
         failed_tint: true,
-        hover: true,
     };
     let across = (
         origin.0 - i32::try_from(padding).unwrap_or(0),
         u32::from(COLUMNS) * cell.width + 2 * padding,
     );
-    // The first block selected, as the keyboard selects one, and the
-    // second under the pointer.
+    // The first block selected, as the keyboard selects one.
     let selected = snapshot.blocks().first().map(|block| block.id);
-    let hovered = snapshot.blocks().get(1).map(|block| block.id);
     let mut shapes = pane::block_shapes(
         &snapshot,
         origin.1,
@@ -175,7 +172,7 @@ pub fn cells(
         across,
         scale,
         tokens,
-        (looks, selected, hovered),
+        (looks, selected),
     );
     shapes.extend(pane::gutter_marks(
         &snapshot,

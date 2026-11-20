@@ -1593,9 +1593,8 @@ pub fn gutter_marks<'a>(
 /// pixels, of rows of `row_height`, across `across`, the pane's left edge
 /// and its width, on a display of `scale`: each block's rows that the view
 /// shows tinted across the pane, the block of the command `selected` of
-/// `blocks.selected.bg`, else the block under the pointer, `hovered`, of
-/// `blocks.hover.bg` where `looks` asks for it, else a failed block of
-/// `blocks.failed` where `looks` asks for it; then a hairline of a point at
+/// `blocks.selected.bg`, else a failed block of `blocks.failed` where
+/// `looks` asks for it; then a hairline of a point at
 /// the top of each block's first row that the view shows, of
 /// `blocks.divider`.
 pub fn block_shapes(
@@ -1605,7 +1604,7 @@ pub fn block_shapes(
     across: (i32, u32),
     scale: f64,
     tokens: &theme::Tokens,
-    (looks, selected, hovered): (lokyr_plugin_sdk::host::BlockLooks, Option<u64>, Option<u64>),
+    (looks, selected): (lokyr_plugin_sdk::host::BlockLooks, Option<u64>),
 ) -> Vec<Shape> {
     use lokyr_vt_core::terminal::GutterKind;
     let rows = i32::from(snapshot.rows());
@@ -1629,14 +1628,11 @@ pub fn block_shapes(
         top.saturating_add(row.saturating_mul(i32::try_from(row_height).unwrap_or(i32::MAX)))
     };
     let chosen = tokens.get("blocks.selected.bg");
-    let hover = tokens.get("blocks.hover.bg").filter(|_| looks.hover);
     let failed = tokens.get("blocks.failed").filter(|_| looks.failed_tint);
     let mut shapes = Vec::new();
     for block in snapshot.blocks() {
         let tint = if Some(block.id) == selected {
             chosen
-        } else if Some(block.id) == hovered {
-            hover
         } else if block.kind == Some(GutterKind::Failed) {
             failed
         } else {
@@ -3738,25 +3734,17 @@ mod tests {
         let snapshot = blocks_snapshot();
         let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
         let shapes = |looks: lokyr_plugin_sdk::host::BlockLooks| -> Vec<(i32, u32, u32, Color)> {
-            block_shapes(
-                &snapshot,
-                0,
-                16,
-                (0, 176),
-                2.0,
-                &tokens,
-                (looks, None, None),
-            )
-            .iter()
-            .map(|shape| {
-                (
-                    shape.rect.y,
-                    shape.rect.width,
-                    shape.rect.height,
-                    shape.fill,
-                )
-            })
-            .collect()
+            block_shapes(&snapshot, 0, 16, (0, 176), 2.0, &tokens, (looks, None))
+                .iter()
+                .map(|shape| {
+                    (
+                        shape.rect.y,
+                        shape.rect.width,
+                        shape.rect.height,
+                        shape.fill,
+                    )
+                })
+                .collect()
         };
         assert!(shapes(lokyr_plugin_sdk::host::BlockLooks::default()).is_empty());
         let divider = tokens.get("blocks.divider").unwrap();
@@ -3768,7 +3756,6 @@ mod tests {
                 bars: false,
                 dividers: true,
                 failed_tint: true,
-                hover: true,
             }),
             [
                 (48, 176, 16, tint),
@@ -3780,61 +3767,45 @@ mod tests {
     }
 
     #[test]
-    fn the_selected_block_and_the_one_under_the_pointer_are_tinted_whole() {
+    fn the_selected_block_is_tinted_whole_over_a_failed_one_s_tint() {
         let shown = blocks_snapshot();
         let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
         let tints = |looks: lokyr_plugin_sdk::host::BlockLooks,
-                     selected: Option<u64>,
-                     hovered: Option<u64>|
+                     selected: Option<u64>|
          -> Vec<(i32, u32, u32, Color)> {
-            block_shapes(
-                &shown,
-                0,
-                16,
-                (0, 176),
-                2.0,
-                &tokens,
-                (looks, selected, hovered),
-            )
-            .iter()
-            .map(|shape| {
-                (
-                    shape.rect.y,
-                    shape.rect.width,
-                    shape.rect.height,
-                    shape.fill,
-                )
-            })
-            .collect()
+            block_shapes(&shown, 0, 16, (0, 176), 2.0, &tokens, (looks, selected))
+                .iter()
+                .map(|shape| {
+                    (
+                        shape.rect.y,
+                        shape.rect.width,
+                        shape.rect.height,
+                        shape.fill,
+                    )
+                })
+                .collect()
         };
         let chosen = tokens.get("blocks.selected.bg").unwrap();
-        let hover = tokens.get("blocks.hover.bg").unwrap();
         let failed = tokens.get("blocks.failed").unwrap();
         let looks = lokyr_plugin_sdk::host::BlockLooks {
             failed_tint: true,
-            hover: true,
             ..lokyr_plugin_sdk::host::BlockLooks::default()
         };
-        // `ls`' three rows selected, across the pane; `seq`'s, which runs
-        // to the cursor's row, the view's last, under the pointer; `false`
-        // failed between them.
+        // `ls`' three rows selected, across the pane; `false` failed below
+        // them; `seq`'s, which runs to the cursor's row, the view's last.
         assert_eq!(
-            tints(looks, Some(1), Some(3)),
-            [
-                (0, 176, 48, chosen),
-                (48, 176, 16, failed),
-                (64, 176, 32, hover),
-            ]
+            tints(looks, Some(1)),
+            [(0, 176, 48, chosen), (48, 176, 16, failed)]
         );
-        // The failed block under the pointer, or selected, of the hover's
-        // or the selection's tint alone; the selection's over the hover's.
-        assert_eq!(tints(looks, None, Some(2)), [(48, 176, 16, hover)]);
-        assert_eq!(tints(looks, Some(2), Some(2)), [(48, 176, 16, chosen)]);
-        // No hover's tint unless asked; none of a command that the view
-        // does not show.
+        assert_eq!(
+            tints(looks, Some(3)),
+            [(48, 176, 16, failed), (64, 176, 32, chosen)]
+        );
+        // The failed block selected, of the selection's tint alone.
+        assert_eq!(tints(looks, Some(2)), [(48, 176, 16, chosen)]);
+        // None of a command that the view does not show.
         let plain = lokyr_plugin_sdk::host::BlockLooks::default();
-        assert!(tints(plain, None, Some(1)).is_empty());
-        assert!(tints(plain, Some(9), None).is_empty());
+        assert!(tints(plain, Some(9)).is_empty());
         // A block whose first rows output scrolled above the view: its rows
         // that the view shows.
         let scrolled = snapshot(
@@ -3842,15 +3813,7 @@ mod tests {
             4,
             "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\nc\r\nd\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ ",
         );
-        let shapes = block_shapes(
-            &scrolled,
-            0,
-            16,
-            (0, 176),
-            2.0,
-            &tokens,
-            (plain, Some(1), None),
-        );
+        let shapes = block_shapes(&scrolled, 0, 16, (0, 176), 2.0, &tokens, (plain, Some(1)));
         assert_eq!((shapes[0].rect.y, shapes[0].rect.height), (0, 3 * 16));
     }
 }

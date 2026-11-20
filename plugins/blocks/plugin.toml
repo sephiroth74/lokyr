@@ -18,6 +18,8 @@ clipboard-write = true
 process-read = true
 # A block's command line run again, typed at the shell's prompt.
 pty-write = true
+# A click on a block, which selects it.
+pointer-read = true
 
 [contributes]
 config-schema = "blocks.schema.json"

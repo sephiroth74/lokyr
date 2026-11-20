@@ -10,7 +10,7 @@ The terminal's everyday actions: copy and paste, select all, clear, a command's 
 
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
-| `pane.copy` | Edit › Copy | ⌘C | Copies the selection; of none, the [block that you selected](../blocks.md#select-a-block-with-the-keyboard), its command line and its output · not released yet |
+| `pane.copy` | Edit › Copy | ⌘C | Copies the selection; of none, the [block that you selected](../blocks.md#select-a-block), its command line and its output · not released yet |
 | `pane.paste` | Edit › Paste | ⌘V | Pastes the clipboard's text, asking you first when [`confirm-paste`](../CONFIGURATION.md#confirm-paste) says so |
 | `pane.select-all` | Edit › Select All | ⌘A | Selects the scrollback and the screen |
 | `pane.copy-output` | Edit › Copy Command Output | ⌥⇧⌘C | Copies the output of the last command that ended, or, from the pane's context menu, of the command under the pointer, without its prompt and its command line, its wrapped rows joined, 100 000 rows at most; of the commands that the shell marks, as [`shell-integration`](../CONFIGURATION.md#shell-integration) has it |
@@ -20,7 +20,7 @@ The terminal's everyday actions: copy and paste, select all, clear, a command's 
 | `font.smaller` | View › Smaller | ⌘- | Makes the text a point smaller |
 | `font.reset` | View › Default Size | ⌘0 | Gives the text the size of your config again |
 | `pane.scroll-line-up`, `pane.scroll-line-down` | View › Scroll Up a Line, Scroll Down a Line | ⇧⌘↑, ⇧⌘↓ | Scrolls the view a line |
-| `pane.prompt-previous`, `pane.prompt-next` | View › Jump to Previous Prompt, Jump to Next Prompt | | Scrolls the view to the prompt above its top, or below it, of the commands that the shell marks, as [`shell-integration`](../CONFIGURATION.md#shell-integration) has it; past the last, to the screen. ⌘↑ and ⌘↓ run them while [Blocks](../blocks.md#select-a-block-with-the-keyboard) is off, which takes them to select a block · not released yet |
+| `pane.prompt-previous`, `pane.prompt-next` | View › Jump to Previous Prompt, Jump to Next Prompt | | Scrolls the view to the prompt above its top, or below it, of the commands that the shell marks, as [`shell-integration`](../CONFIGURATION.md#shell-integration) has it; past the last, to the screen. ⌘↑ and ⌘↓ run them while [Blocks](../blocks.md#select-a-block) is off, which takes them to select a block · not released yet |
 | `pane.scroll-page-up`, `pane.scroll-page-down` | View › Scroll Up a Page, Scroll Down a Page | ⌘Page Up, ⇧Page Up, ⌘Page Down, ⇧Page Down | Scrolls the view a page |
 | `pane.scroll-top`, `pane.scroll-bottom` | View › Scroll to the Top, Scroll to the Bottom | ⌘Home, ⌘End | Scrolls the view to the scrollback's first row, or back to the screen |
 | `pane.send-text` | | | Sends its `text` to the program, as keys that typed it would: for your own bindings, as it needs its text |

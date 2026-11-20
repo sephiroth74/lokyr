@@ -716,10 +716,6 @@ pub struct BlockLooks {
     /// the theme's token `blocks.failed`.
     #[serde(default)]
     pub failed_tint: bool,
-    /// The rows of the block under the pointer tinted, across the pane, of
-    /// the theme's token `blocks.hover.bg`.
-    #[serde(default)]
-    pub hover: bool,
 }
 
 impl BlockLooks {
@@ -731,7 +727,6 @@ impl BlockLooks {
             bars: self.bars || other.bars,
             dividers: self.dividers || other.dividers,
             failed_tint: self.failed_tint || other.failed_tint,
-            hover: self.hover || other.hover,
         }
     }
 }

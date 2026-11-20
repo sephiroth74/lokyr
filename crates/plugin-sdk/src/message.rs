@@ -1209,7 +1209,7 @@ impl Request {
                     // them.
                     needed.push(Capability::HistoryRead);
                 }
-                if names.iter().any(|name| name == POINTER) {
+                if names.iter().any(|name| name == POINTER || name == CLICK) {
                     needed.push(Capability::PointerRead);
                 }
                 // The plugins, as their read of `packages` tells them.
@@ -1652,6 +1652,9 @@ pub enum Response {
 /// The name of [`Event::Pointer`], as plugins subscribe to it.
 pub const POINTER: &str = "pointer";
 
+/// The name of [`Event::Click`], as plugins subscribe to it.
+pub const CLICK: &str = "click";
+
 /// The name of [`Event::KeysChanged`], as a plugin subscribes to it.
 pub const KEYS_CHANGED: &str = "keys-changed";
 
@@ -1689,6 +1692,7 @@ pub fn is_event_name(name: &str) -> bool {
     WorkspaceEvent::NAMES.contains(&name)
         || [
             POINTER,
+            CLICK,
             KEYS_CHANGED,
             WINDOW_FOCUS,
             VIEWPORT_CHANGED,
@@ -1737,6 +1741,16 @@ pub enum Event {
         at: Option<(u16, i64)>,
         /// The modifiers held.
         mods: Mods,
+    },
+    /// A click of the left button on a pane's cell that the terminal kept:
+    /// one click, of no modifier, that dragged over no cell, and that no
+    /// binding nor program took, as the button went up; the cell, by its
+    /// column and its row's number, as the drawn frame showed it.
+    Click {
+        /// The pane.
+        pane: PaneId,
+        /// The cell clicked.
+        at: (u16, i64),
     },
     /// The rows of a read that the plugin asked for, to it alone: all
     /// that it asked for, of those that the pane holds, unless `complete`
@@ -1944,6 +1958,7 @@ impl Event {
         match self {
             Self::Workspace(event) => event.name(),
             Self::Pointer { .. } => POINTER,
+            Self::Click { .. } => CLICK,
             Self::Lines { .. } => "lines",
             Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",

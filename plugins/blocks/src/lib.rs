@@ -31,7 +31,7 @@ use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
 use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, Scroll, ShellCommand};
-use lokyr_plugin_sdk::message::{Data, Event};
+use lokyr_plugin_sdk::message::{CLICK, Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
     Anchor, Corner, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId,
@@ -224,6 +224,8 @@ impl Default for Blocks {
 impl Plugin for Blocks {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.headers.activate(cx)?;
+        // A click on a block selects it.
+        cx.subscribe(&[CLICK])?;
         self.looks = looks_of(&cx.config()?);
         cx.set_block_looks(self.looks)?;
         // A block: its cell's, as the context menu gives it, or, of none,
@@ -327,6 +329,10 @@ impl Plugin for Blocks {
             }
         }
         for event in events {
+            if let Event::Click { pane, at } = event {
+                select_clicked(cx, *pane, at.1)?;
+                continue;
+            }
             let Event::Lines {
                 id, pane, lines, ..
             } = event
@@ -621,9 +627,8 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
 }
 
 /// How the host draws the blocks, as `config` says: the gutter's bars along
-/// them, their dividers, `dividers`, a failed block's tint, `failed-tint`,
-/// and the tint of the block under the pointer, `hover-tint`, of the schema's
-/// defaults where it says nothing.
+/// them, their dividers, `dividers`, and a failed block's tint,
+/// `failed-tint`, of the schema's defaults where it says nothing.
 fn looks_of(config: &Data) -> BlockLooks {
     let switch = |key: &str, default: bool| match config {
         Data::Map(config) => match config.get(key) {
@@ -636,7 +641,6 @@ fn looks_of(config: &Data) -> BlockLooks {
         bars: true,
         dividers: switch("dividers", true),
         failed_tint: switch("failed-tint", false),
-        hover: switch("hover-tint", true),
     }
 }
 
@@ -949,6 +953,18 @@ fn block(
     }
     let commands = cx.shell_commands(pane, i64::MIN / 2, i64::MAX / 2)?;
     Ok(commands.into_iter().rev().find(takes))
+}
+
+/// Selects the block of `pane` whose rows hold the row numbered `row`, as a
+/// click there selects it: of a command that started, or none, as at the
+/// prompt where the user types, past an end or above the first command;
+/// none on the alternate screen, which hides the commands' rows.
+fn select_clicked(cx: &mut Cx<'_>, pane: PaneId, row: i64) -> Result<(), Error> {
+    if cx.viewport(pane)?.alternate {
+        return Ok(());
+    }
+    let command = cx.command_at(pane, row)?.filter(started);
+    cx.select_block(pane, command.map(|command| command.id))
 }
 
 /// Selects the block after the selected one, `forward`, or before it, and

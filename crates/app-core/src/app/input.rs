@@ -18,13 +18,13 @@ use lokyr_platform_core::{
 use lokyr_ui_core::pane::Preedit;
 use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
-    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow, Snapshot,
+    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow,
 };
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
 use crate::drawing::Backend;
 use crate::mouse::{Pointer, Spot};
-use crate::window::{ColumnDrag, Hover, Selecting};
+use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
 
 impl<B: Backend> App<B> {
@@ -619,10 +619,12 @@ impl<B: Backend> App<B> {
         {
             self.focus_pane(platform, window, under);
         }
-        // A click of the left button ends the selection of a block of the
-        // pane under it, as the keyboard selected it.
+        // A press of the left button that goes to the program ends the
+        // selection of a block of the pane under it; one that the terminal
+        // keeps ends it as it selects text, or tells a click as it goes up.
         if pressed
             && button == lokyr_vt_core::input::MouseButton::Left
+            && !self.keeps_click(window, mods)
             && let Some(under) = self.pane_at(platform, window, position)
             && self
                 .plugins
@@ -940,13 +942,27 @@ impl<B: Backend> App<B> {
                 .workspace
                 .focused(state.window)
                 .map_or(0, |pane| pane.grid().columns);
+            let click = selecting.plain
+                && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none();
             if self.config.cursor.click_to_move
-                && selecting.plain
-                && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none()
+                && click
                 && let Some(pane) = self.workspace.focused(state.window)
                 && pane.shell_in_front()
             {
                 pane.prompt_click(selecting.anchor.col, selecting.anchor.row);
+            }
+            // A click tells the plugins that follow them, as a block's
+            // selection takes it; a selection of text ends a block's.
+            if let Some(pane) = self.workspace.focused(state.window) {
+                let id = lokyr_kernel::plugins::host::PaneId(pane.id().get());
+                if click {
+                    self.plugins.post(plugins::Event::Click {
+                        pane: id,
+                        at: (selecting.anchor.col, selecting.anchor.row),
+                    });
+                } else if self.plugins.end_block_selections(id) {
+                    platform.request_frame(window);
+                }
             }
         }
         if self.config.clipboard.copy_on_select
@@ -1004,49 +1020,6 @@ impl<B: Backend> App<B> {
         }
     }
 
-    /// The pointer at `position` over `window`, or off its panes, as the
-    /// blocks' hover takes it: the pane under it and its drawn view's row,
-    /// of the block there, which a frame tints as it goes to another block;
-    /// none off the panes, over a pane whose program takes the mouse or
-    /// that shows the alternate screen, or while no plugin asks for the
-    /// hover's tint.
-    pub(super) fn hover_block(
-        &mut self,
-        platform: &mut dyn Platform,
-        window: WindowId,
-        position: Option<Point>,
-    ) {
-        let hover = position
-            .filter(|_| self.plugins.block_looks().hover)
-            .and_then(|position| {
-                let id = self.pane_at(platform, window, position)?;
-                let pane = self.workspace.pane(id)?;
-                let tracked = !pane.is_kept()
-                    && pane
-                        .input_modes()
-                        .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None);
-                if tracked || pane.snapshot().alternate_screen() {
-                    return None;
-                }
-                let row = self.pointer_in(platform, window, id, position)?.row;
-                Some(Hover {
-                    pane: id,
-                    row,
-                    block: block_at(pane.snapshot(), row),
-                })
-            });
-        let Some(state) = self.windows.get_mut(&window) else {
-            return;
-        };
-        let tinted =
-            |hover: Option<Hover>| hover.and_then(|hover| Some((hover.pane, hover.block?)));
-        let before = tinted(state.hover);
-        state.hover = hover;
-        if tinted(hover) != before {
-            platform.request_frame(window);
-        }
-    }
-
     /// The pointer moved over `window`: a program that asked learns of it,
     /// once a cell, or a pixel for reports in pixels, at the screen's row,
     /// and not above the screen.
@@ -1101,11 +1074,9 @@ impl<B: Backend> App<B> {
         // The plugins that follow the pointer learn that it left the panes.
         if taken {
             self.tell_pointer(platform, window, None, mods);
-            self.hover_block(platform, window, None);
             return;
         }
         self.tell_pointer(platform, window, Some(position), mods);
-        self.hover_block(platform, window, Some(position));
         if dragging {
             self.select_drag(platform, window, position);
             return;
@@ -1427,18 +1398,6 @@ fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseE
         x: pointer.x,
         y: pointer.y,
     }
-}
-
-/// The block of `snapshot`'s view whose rows hold its row `row`, by its
-/// command's id, if one: of a command that started, not the prompt where
-/// the user types.
-pub(super) fn block_at(snapshot: &Snapshot, row: u16) -> Option<u64> {
-    let row = i32::from(row);
-    snapshot
-        .blocks()
-        .iter()
-        .find(|block| block.kind.is_some() && (block.first..=block.last).contains(&row))
-        .map(|block| block.id)
 }
 
 /// The row of `pane`'s view `y`, by the numbers of the rows that it shows,

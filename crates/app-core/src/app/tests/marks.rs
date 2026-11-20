@@ -940,7 +940,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
 }
 
 #[test]
-fn the_block_under_the_pointer_is_tinted_and_a_move_within_it_asks_no_frame() {
+fn a_click_on_a_block_selects_it_and_the_prompt_or_a_drag_ends_it() {
     // The system's line of the last login, then three commands of a line
     // of output each, on the rows 1 to 6, then the prompt.
     let program = shell(concat!(
@@ -962,16 +962,25 @@ fn the_block_under_the_pointer_is_tinted_and_a_move_within_it_asks_no_frame() {
             .pane(pane)
             .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 4)
     });
-    // Three blocks, and the prompt where you type of its own divider.
     framed_until(&mut fake, &mut app, window, |app| {
         app.workspace.pane(pane).unwrap().snapshot().blocks().len() == 4
     });
+    let ids: Vec<u64> = app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)
+        .iter()
+        .map(|command| command.id)
+        .collect();
+    let host_pane = lokyr_kernel::plugins::host::PaneId(pane.get());
+    let selected = |app: &App| app.plugins.selected_block(host_pane);
     let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
-    let hover = app
+    let tint = app
         .theme
         .variant(dark)
         .tokens
-        .get("blocks.hover.bg")
+        .get("blocks.selected.bg")
         .unwrap();
     // The middle of the pane's row `row`, in points.
     let scale = fake.window(window).unwrap().size.scale;
@@ -981,56 +990,42 @@ fn the_block_under_the_pointer_is_tinted_and_a_move_within_it_asks_no_frame() {
         x: f64::from(rect.x + 40) / scale,
         y: f64::from(rect.y + row * height + height / 2) / scale,
     };
-    // Over `two`'s output: its block's two rows, from its prompt's.
-    fake.send(&mut app, window, moved(over(4), Modifiers::NONE));
+    let tap = |fake: &mut Fake, app: &mut App, at: Point| {
+        fake.send(app, window, click(true, at, Modifiers::NONE, 1));
+        fake.send(app, window, click(false, at, Modifiers::NONE, 1));
+    };
+    // A click on `two`'s output selects its block, tinted across its two
+    // rows, from its prompt's.
+    tap(&mut fake, &mut app, over(4));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[1]));
     framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).len() == 1
+        tints(app, window, tint).len() == 1
     });
-    let tinted = tints(&app, window, hover)[0];
+    let tinted = tints(&app, window, tint)[0];
     assert_eq!(
         (tinted.y, tinted.height),
         (rect.y + 3 * height, 2 * height as u32)
     );
-    // Within the same block, no frame is asked; over another, one is.
-    let asked = fake.window(window).unwrap().frames_asked;
-    fake.send(&mut app, window, moved(over(3), Modifiers::NONE));
-    assert_eq!(fake.window(window).unwrap().frames_asked, asked);
-    fake.send(&mut app, window, moved(over(1), Modifiers::NONE));
-    assert!(fake.window(window).unwrap().frames_asked > asked);
+    // On `one`'s prompt, its block; at the prompt where you type, none.
+    tap(&mut fake, &mut app, over(1));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[0]));
+    tap(&mut fake, &mut app, over(7));
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
     framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).first().map(|rect| rect.y) == Some(rect.y + height)
+        tints(app, window, tint).is_empty()
     });
-    // The prompt where you type is no block; out of the window, none.
-    fake.send(&mut app, window, moved(over(7), Modifiers::NONE));
-    framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).is_empty()
-    });
-    fake.send(&mut app, window, moved(over(5), Modifiers::NONE));
-    framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).len() == 1
-    });
-    fake.send(&mut app, window, WindowEvent::MouseExited);
-    framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).is_empty()
-    });
-    // A key typed takes it away until the pointer moves.
-    fake.send(&mut app, window, moved(over(5), Modifiers::NONE));
-    framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).len() == 1
-    });
-    fake.send(
+    // A drag that selects text ends a block's selection.
+    tap(&mut fake, &mut app, over(6));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[2]));
+    select_drag(
+        &mut fake,
         &mut app,
         window,
-        key_event(KeyCode::KeyX, "x", Modifiers::NONE, true),
+        (over(2), over(4)),
+        Modifiers::NONE,
     );
-    fake.send(
-        &mut app,
-        window,
-        key_event(KeyCode::KeyX, "x", Modifiers::NONE, false),
-    );
-    framed_until(&mut fake, &mut app, window, |app| {
-        tints(app, window, hover).is_empty()
-    });
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+    assert!(selected_text(&app, window).is_some());
 }
 
 #[test]

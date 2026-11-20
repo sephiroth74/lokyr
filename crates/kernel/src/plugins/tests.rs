@@ -919,7 +919,6 @@ fn the_blocks_looks_are_each_that_an_active_plugin_asks_for() {
                         bars: true,
                         dividers: true,
                         failed_tint: false,
-                        hover: true,
                     })
                 },
                 |_, _, _| Ok(()),
@@ -947,7 +946,6 @@ fn the_blocks_looks_are_each_that_an_active_plugin_asks_for() {
         bars: true,
         dividers: true,
         failed_tint: false,
-        hover: true,
     };
     assert_eq!(plugins.block_looks(), dividing);
     // A call that fails gives up its writes, and its plugin goes with its

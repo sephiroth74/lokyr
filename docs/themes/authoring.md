@@ -243,7 +243,6 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `hints.label.fg` | A hint's label's letters · Since 1.3 | `contrasting(hints.label.bg)` |
 | `blocks.divider` | The line at the top of each command's block, across the pane, as Blocks shows it · not released yet | `separator` |
 | `blocks.selected.bg` | The tint over the rows of the block that the keyboard selects, across the pane · not released yet | light `accent / 12%`, dark `accent / 20%` |
-| `blocks.hover.bg` | The tint over the rows of the block under the pointer, across the pane · not released yet | light `accent / 6%`, dark `accent / 8%` |
 | `blocks.failed` | The tint over the rows of a block whose command failed, as Blocks shows it where asked · not released yet | light `gutter.failed / 8%`, dark `gutter.failed / 12%` |
 
 <!-- The tokens' table's end. -->

@@ -18,11 +18,11 @@ Then this one:
 seq 1 200
 ```
 
-A red bar appears at the left of the prompt of `ls`, which failed, and a gray one at the left of the prompt of `seq`, each on its prompt's first line of text. While you read the numbers, with the line `seq 1 200` scrolled away, the command shows in a pill at the pane's top. Press ⌘↑: the view jumps up to the prompt of `seq`. Press ⌘↑ again to reach the prompt of `ls`, and ⌘↓ to come back down. With [Blocks](blocks.md#select-a-block-with-the-keyboard), ⌘↑ selects the block of `seq` too, and ↑ and ↓ move from block to block · not released yet.
+A red bar appears at the left of the prompt of `ls`, which failed, and a gray one at the left of the prompt of `seq`, each on its prompt's first line of text. While you read the numbers, with the line `seq 1 200` scrolled away, the command shows in a pill at the pane's top. Press ⌘↑: the view jumps up to the prompt of `seq`. Press ⌘↑ again to reach the prompt of `ls`, and ⌘↓ to come back down. With [Blocks](blocks.md#select-a-block), ⌘↑ selects the block of `seq` too, and ↑ and ↓ move from block to block · not released yet.
 
 ## What it gives you
 
-- **Jump between prompts**: ⌘↑ and ⌘↓ (`pane.prompt-previous`, `pane.prompt-next`), as [copy, paste and scrolling](plugins/core-actions.md) lists them. While Blocks runs, they select the [block](blocks.md#select-a-block-with-the-keyboard) of the prompt that they jump to · not released yet.
+- **Jump between prompts**: ⌘↑ and ⌘↓ (`pane.prompt-previous`, `pane.prompt-next`), as [copy, paste and scrolling](plugins/core-actions.md) lists them. While Blocks runs, they select the [block](blocks.md#select-a-block) of the prompt that they jump to · not released yet.
 - **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. With [Blocks](blocks.md#dividers-and-the-gutters-bar), the bar runs along the whole block, and a thin line divides the blocks · not released yet. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
 - **The command you're reading**: when a command's line scrolls away, the header of its [block](blocks.md) shows it at the pane's top, with an arrow to the end of its output · not released yet.
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it. Right-click a [block](blocks.md#copy-a-command-or-its-output) to copy its command line too, or to select it whole · not released yet.
