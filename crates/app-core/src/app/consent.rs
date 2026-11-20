@@ -284,7 +284,7 @@ impl<B: Backend> App<B> {
         self.decisions = permissions;
         // A replacement granted or revoked, or a replacer stopped, turns the
         // plugins that it replaced off or on again.
-        for error in self.with_plugins(platform, |plugins, context| plugins.activate(context)) {
+        for error in self.with_plugins(platform, lokyr_kernel::plugins::Plugins::activate) {
             eprintln!("lokyr: {error}");
         }
         self.after_plugins(platform);
