@@ -73,6 +73,42 @@ impl ViewRow {
     }
 }
 
+/// The rows of the list that a view shows between two rows, each of its
+/// view's row, as [`ViewMap::shown`] gives them: of no fold, a range of the
+/// rows' numbers from the view's first, as the parts of a snapshot took
+/// them before folds; of folds, the view's rows of the list's that meet
+/// them.
+pub(super) enum ShownRows<'a> {
+    /// The rows from the first to the last, the view's first numbered
+    /// `top`.
+    Plain {
+        top: i64,
+        rows: std::ops::RangeInclusive<i64>,
+    },
+    /// The view's rows `ys` of `map`, its placeholders left out.
+    Folded {
+        map: ViewMap<'a>,
+        ys: std::ops::Range<usize>,
+    },
+}
+
+impl Iterator for ShownRows<'_> {
+    type Item = (u16, i64);
+
+    fn next(&mut self) -> Option<(u16, i64)> {
+        match self {
+            // Within the view's rows, which a `u16` holds.
+            Self::Plain { top, rows } => rows.next().map(|row| ((row - *top) as u16, row)),
+            Self::Folded { map, ys } => loop {
+                let y = ys.next()?;
+                if let ViewRow::Row(index) = map.rows[y] {
+                    return Some((y as u16, map.number(index)));
+                }
+            },
+        }
+    }
+}
+
 /// A row of the view, by the numbers of the rows that it shows: a row of
 /// the list, or a fold's placeholder, of its command's id, whether it
 /// folds the whole block, and the numbers of its first row and its last.
@@ -210,30 +246,26 @@ impl<'a> ViewMap<'a> {
 
     /// The rows of the list that the view shows, from the row numbered
     /// `first` to `last`, each of its view's row: those that a fold takes
-    /// left out.
-    pub(super) fn shown(&self, first: i64, last: i64) -> impl Iterator<Item = (u16, i64)> + '_ {
+    /// left out. Of no fold, the rows between the view's first and last, as
+    /// a range of numbers.
+    pub(super) fn shown(&self, first: i64, last: i64) -> ShownRows<'a> {
+        if self.rows.is_empty() {
+            let top = self.top();
+            // The view has at most `u16::MAX` rows.
+            let bottom = top.saturating_add(self.height as i64) - 1;
+            return ShownRows::Plain {
+                top,
+                rows: first.max(top)..=last.min(bottom),
+            };
+        }
         let from = self.index(first.max(self.first)).unwrap_or(0);
         let to = self.index(last).map_or(0, |to| to + 1);
-        let (start, end) = if self.rows.is_empty() {
-            (
-                from.saturating_sub(self.top).min(self.height),
-                to.saturating_sub(self.top).min(self.height),
-            )
-        } else {
-            (
-                self.rows.partition_point(|row| row.last() < from),
-                self.rows.partition_point(|row| row.first() < to),
-            )
-        };
-        (start..end.max(start)).filter_map(move |y| {
-            let index = match self.rows.get(y) {
-                None => self.top + y,
-                Some(&ViewRow::Row(index)) => index,
-                Some(_) => return None,
-            };
-            // The view has at most `u16::MAX` rows.
-            Some((y as u16, self.number(index)))
-        })
+        let start = self.rows.partition_point(|row| row.last() < from);
+        let end = self.rows.partition_point(|row| row.first() < to);
+        ShownRows::Folded {
+            map: *self,
+            ys: start..end.max(start),
+        }
     }
 
     /// The folds that the view shows, from its top, by their rows' numbers.
