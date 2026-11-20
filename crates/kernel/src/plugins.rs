@@ -6295,6 +6295,11 @@ impl Host<'_, '_> {
             Asked::ScreenCells(pane) => {
                 Response::Cells(Some(cell_rows(self.pane(pane)?.view_cells())))
             }
+            Asked::RowCells { pane, first, count } => Response::Cells(
+                self.pane(pane)?
+                    .row_cells(first, count.min(image::MOST_ROWS))
+                    .map(cell_rows),
+            ),
             Asked::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, lokyr_plugin_sdk::image::LOOKING));

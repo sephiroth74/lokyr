@@ -923,6 +923,22 @@ impl Terminal {
             .collect()
     }
 
+    /// The cells of `count` rows of the active screen from the row numbered
+    /// `first`, whole, as [`Terminal::view_cells`] gives the view's, as many
+    /// as the screen's list holds from it; none of a first row that it does
+    /// not hold.
+    pub fn row_cells(&self, first: i64, count: usize) -> Option<Vec<RowCells>> {
+        let index = self.row_index(first)?;
+        Some(
+            self.screen()
+                .rows
+                .rows_from(index)
+                .take(count)
+                .map(|row| cells_of(row, 0..row.cols()))
+                .collect(),
+        )
+    }
+
     /// The cells of the rows that the selection takes, if there is one,
     /// `most` rows at most from its first: of each row the columns that it
     /// takes, a rectangle's alike on every row.
@@ -2023,5 +2039,26 @@ mod tests {
         assert_eq!(cells.runs, [(0, 1, Style::default())]);
         assert_eq!(cells_of(list_row, 0..1).text, "日");
         assert_eq!(cells_of(list_row, 0..1).runs, [(0, 1, Style::default())]);
+    }
+
+    #[test]
+    fn the_cells_of_a_range_of_rows_by_their_numbers() {
+        let terminal = fed(10, 3, "one\r\ntwo\r\nthree\r\nfour\r\nfive");
+        let first = terminal.row_number(0);
+        let texts = |cells: Option<Vec<RowCells>>| -> Option<Vec<String>> {
+            cells.map(|cells| cells.into_iter().map(|row| row.text).collect())
+        };
+        // From the scrollback's first row, two of them, whole.
+        assert_eq!(
+            texts(terminal.row_cells(first, 2)),
+            Some(vec!["one".to_owned(), "two".to_owned()])
+        );
+        // As many as the list holds; none of a row before it or past it.
+        assert_eq!(
+            texts(terminal.row_cells(first + 3, 10)).map(|rows| rows.len()),
+            Some(2)
+        );
+        assert_eq!(terminal.row_cells(first - 1, 2), None);
+        assert_eq!(terminal.row_cells(first + 5, 2), None);
     }
 }

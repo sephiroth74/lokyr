@@ -740,6 +740,10 @@ export type TestHost = {
     set_screen: (rows: { CellRow }) -> (),
     -- Gives the pane a selection of the cells `rows`, or none.
     set_selection: (rows: { CellRow }?) -> (),
+    -- Gives the pane the commands `commands` that its shell marked, oldest
+    -- first, as the reads of the commands tell them, their rows the
+    -- screen's from 0, as `set_screen` gives them.
+    set_commands: (commands: { ShellCommand }) -> (),
     -- The PNG on the clipboard, if the plugin put one there.
     clipboard_image: () -> string?,
     -- The saves whose panels show, in the order of their ids.

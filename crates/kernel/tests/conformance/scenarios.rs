@@ -632,6 +632,24 @@ fn cells_and_saves(world: &World) -> Scenario {
                     Request::ScreenCells(world.pane),
                     Response::Cells(Some(world.screen.clone())),
                 ),
+                // The view's first two rows, by their numbers; none of a row
+                // that the pane does not hold.
+                (
+                    Request::RowCells {
+                        pane: world.pane,
+                        first: world.viewport.top,
+                        count: 2,
+                    },
+                    Response::Cells(Some(world.screen.iter().take(2).cloned().collect())),
+                ),
+                (
+                    Request::RowCells {
+                        pane: world.pane,
+                        first: world.viewport.oldest - 1,
+                        count: 2,
+                    },
+                    Response::Cells(None),
+                ),
                 (Request::SetClipboardImage(png()), Response::Done),
                 (
                     Request::SetClipboardImage(Bytes(b"GIF89a".to_vec())),
