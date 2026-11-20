@@ -716,6 +716,13 @@ pub struct BlockLooks {
     /// the theme's token `blocks.failed`.
     #[serde(default)]
     pub failed_tint: bool,
+    /// The prompt rows of the block whose output the view's top shows, its
+    /// prompt's and its command's line, three at most, pinned over the
+    /// view's first rows while they are above it, as a sticky header, a
+    /// line of the theme's `blocks.divider` under them; a click on them
+    /// scrolls to the prompt.
+    #[serde(default)]
+    pub prompt_rows: bool,
 }
 
 impl BlockLooks {
@@ -727,6 +734,7 @@ impl BlockLooks {
             bars: self.bars || other.bars,
             dividers: self.dividers || other.dividers,
             failed_tint: self.failed_tint || other.failed_tint,
+            prompt_rows: self.prompt_rows || other.prompt_rows,
         }
     }
 }

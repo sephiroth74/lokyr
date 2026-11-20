@@ -3756,6 +3756,7 @@ mod tests {
                 bars: false,
                 dividers: true,
                 failed_tint: true,
+                prompt_rows: false,
             }),
             [
                 (48, 176, 16, tint),

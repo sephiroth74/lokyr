@@ -228,6 +228,9 @@ impl Plugin for Blocks {
         cx.subscribe(&[CLICK])?;
         self.looks = looks_of(&cx.config()?);
         cx.set_block_looks(self.looks)?;
+        // The pill of the command's line, unless the host pins the block's
+        // prompt rows in its place.
+        self.headers.set_hidden(cx, self.looks.prompt_rows)?;
         // A block: its cell's, as the context menu gives it, or, of none,
         // the last command's.
         let cell = |name: &str| Param {
@@ -326,6 +329,7 @@ impl Plugin for Blocks {
             if looks != self.looks {
                 self.looks = looks;
                 cx.set_block_looks(looks)?;
+                self.headers.set_hidden(cx, looks.prompt_rows)?;
             }
         }
         for event in events {
@@ -627,8 +631,9 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
 }
 
 /// How the host draws the blocks, as `config` says: the gutter's bars along
-/// them, their dividers, `dividers`, and a failed block's tint,
-/// `failed-tint`, of the schema's defaults where it says nothing.
+/// them, their dividers, `dividers`, a failed block's tint, `failed-tint`,
+/// and the block's prompt rows pinned at the view's top, unless `header`
+/// asks for the pill, of the schema's defaults where it says nothing.
 fn looks_of(config: &Data) -> BlockLooks {
     let switch = |key: &str, default: bool| match config {
         Data::Map(config) => match config.get(key) {
@@ -641,6 +646,10 @@ fn looks_of(config: &Data) -> BlockLooks {
         bars: true,
         dividers: switch("dividers", true),
         failed_tint: switch("failed-tint", false),
+        prompt_rows: !matches!(
+            config,
+            Data::Map(config) if matches!(config.get("header"), Some(Data::Text(header)) if header == "pill")
+        ),
     }
 }
 

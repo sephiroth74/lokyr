@@ -61,6 +61,9 @@ pub(crate) struct Headers {
     ends: bool,
     settings: Settings,
     pub(crate) panes: BTreeMap<PaneId, Followed>,
+    /// Whether no header shows, as a plugin that has the host pin the
+    /// block's prompt rows in their place asks.
+    hidden: bool,
 }
 
 /// Where a header's pill sits along its hairline.
@@ -208,7 +211,27 @@ impl Headers {
             ends,
             settings: Settings::default(),
             panes: BTreeMap::new(),
+            hidden: false,
         }
+    }
+
+    /// Shows no header while `hidden`, their panels closed, as the host
+    /// pins the blocks' prompt rows in their place; the headers that the
+    /// views want again otherwise.
+    #[allow(
+        dead_code,
+        reason = "the plain header, which shares this module, never hides"
+    )]
+    pub(crate) fn set_hidden(&mut self, cx: &mut Cx<'_>, hidden: bool) -> Result<(), Error> {
+        if self.hidden == hidden {
+            return Ok(());
+        }
+        self.hidden = hidden;
+        let panes: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane in panes {
+            self.look(cx, pane)?;
+        }
+        Ok(())
     }
 
     /// Takes the config's settings, and subscribes to the panes' views and
@@ -349,6 +372,7 @@ impl Headers {
             return Ok(());
         };
         let wanted = match &followed.viewport {
+            _ if self.hidden => None,
             Some(viewport) if !viewport.alternate => {
                 shown_at(cx, pane, viewport, followed.shown.as_ref(), self.ends)
             }

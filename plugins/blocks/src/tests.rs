@@ -40,9 +40,12 @@ fn commands() -> Vec<ShellCommand> {
 }
 
 /// A host of a pane of 100 rows and the three commands, of the end
-/// button's texts, and the plugin, activated.
+/// button's texts, and the plugin, activated, of the pill's header.
 fn host() -> (FakeHost, Blocks) {
     let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.set_config(Data::Map(
+        [("header".to_owned(), Data::Text("pill".to_owned()))].into(),
+    ));
     let pane = host.pane(PANE);
     pane.tab = TabId(1);
     pane.held = 0..100;
@@ -235,9 +238,12 @@ fn the_button_follows_the_pill_wherever_it_sits() {
     let (mut host, mut plugin) = host();
     let align = |value: &str| {
         Data::Map(
-            [("align".to_owned(), Data::Text(value.to_owned()))]
-                .into_iter()
-                .collect(),
+            [
+                ("align".to_owned(), Data::Text(value.to_owned())),
+                ("header".to_owned(), Data::Text("pill".to_owned())),
+            ]
+            .into_iter()
+            .collect(),
         )
     };
     host.set_config(align("right"));
@@ -285,7 +291,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys.len(), 13, "{keys:?}");
+    assert_eq!(keys.len(), 14, "{keys:?}");
     let example = guide
         .split_once("\n[plugins.blocks]\n")
         .and_then(|(_, rest)| rest.split_once("\n\n"))
@@ -960,13 +966,15 @@ fn a_block_does_not_run_again_while_a_command_runs_or_the_line_holds_text() {
 #[test]
 fn the_host_draws_the_blocks_as_the_config_says() {
     let (mut host, mut plugin) = host();
-    // By default, their bars along them and their dividers.
+    // By default, their bars along them and their dividers; of the pill,
+    // as `host` asks, no prompt rows.
     assert_eq!(
         host.block_looks(),
         BlockLooks {
             bars: true,
             dividers: true,
             failed_tint: false,
+            prompt_rows: false,
         }
     );
     let config = |pairs: &[(&str, bool)]| {
@@ -985,6 +993,7 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: false,
             failed_tint: true,
+            prompt_rows: true,
         }
     );
     // A change of other keys asks nothing anew.
@@ -1187,4 +1196,24 @@ fn a_click_on_a_block_selects_it_and_one_past_the_blocks_selects_none() {
     assert_eq!(click(&mut host, 5), Some(3));
     host.pane(PANE).viewport.as_mut().unwrap().alternate = true;
     assert_eq!(click(&mut host, 2), Some(3));
+}
+
+#[test]
+fn the_prompt_rows_pin_by_default_in_place_of_the_pill_which_header_brings_back() {
+    let (mut host, mut plugin) = host();
+    // Of the pill, as `host` asks: the host pins nothing, and the pill
+    // shows as the view's top shows `make`'s output.
+    assert!(!host.block_looks().prompt_rows);
+    assert!(scrolled(&mut host, &mut plugin, 6).is_some());
+    // Of the config's default, the rows: the host pins them, and the pill
+    // goes.
+    host.set_config(Data::Map(std::collections::BTreeMap::new()));
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.block_looks().prompt_rows);
+    assert!(
+        host.take_done()
+            .iter()
+            .any(|request| matches!(request, Request::ClosePanel(id) if *id == panel(PANE)))
+    );
+    assert!(scrolled(&mut host, &mut plugin, 7).is_none());
 }

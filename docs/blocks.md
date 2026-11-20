@@ -2,7 +2,7 @@
 
 <sub>macOS · zsh, bash, fish · on by default · the `lokyr/blocks` plugin · [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) · not released yet</sub>
 
-Lokyr sees each command that your shell runs as a block: its prompt, the command line you typed, and the output that the command printed. When you scroll up through a long output, the block's command line stays at the top of the pane, so that you always know what you are reading. One click takes you to the start of the block, and another to its end.
+Lokyr sees each command that your shell runs as a block: its prompt, the command line you typed, and the output that the command printed. When you scroll up through a long output, the block's prompt and command line stay at the top of the pane, so that you always know what you are reading. One click takes you back to the start of the block.
 
 ## Try it
 
@@ -12,15 +12,15 @@ Run this command:
 seq 1 500
 ```
 
-Scroll up into the numbers. A header with `seq 1 500` appears across the top of the pane, with an arrow beside it. Click the arrow: the view moves to the end of the output, with 500 on the pane's last row. Then click `seq 1 500`: the view moves up to the command's prompt, and the header goes.
+Scroll up into the numbers. The prompt and `seq 1 500` stay at the top of the pane, with a thin line under them, over the numbers that scroll. Click them: the view moves up to the command's prompt, and the pinned rows go.
 
 ## What it gives you
 
-- **The command you are reading**: while the pane's first row shows a command's output, and the command line has scrolled above the view, a pill with the command line sits on a thin line across the pane's top.
-- **The block's start**: a click on the pill scrolls the command's prompt to the top of the pane.
-- **The block's end**: while the end of the output is below the view, an arrow beside the pill scrolls to it, with the output's last row at the bottom of the pane. For a command that is still running, the arrow takes you to the bottom of the screen, which the view then follows as the output grows.
+- **The command you are reading**: while the pane's first row shows a command's output, and the command line has scrolled above the view, the block's prompt rows stay pinned at the pane's top: its prompt and its command line as your shell drew them, three rows at most, with a thin line under them · not released yet.
+- **The block's start**: a click on the pinned rows scrolls the command's prompt to the top of the pane.
+- **A pill instead**: with `header = "pill"`, the command line shows in a pill on a thin line across the pane's top, as the [command header](plugins/command-header.md) shows it. A click on the pill goes to the prompt, and an arrow beside it goes to the end of the output, with its last row at the bottom of the pane, or, for a command that is still running, to the bottom of the screen, which the view then follows as the output grows.
 - **The command as you typed it**: zsh, and fish 4 or later, report the command line itself, so a right prompt on its row, such as zsh's `RPROMPT`, stays out of the pill.
-- **Long lines stay short**: a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
+- **Long lines stay short**: in the pill, a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
 - **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 - **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
@@ -99,10 +99,18 @@ The colors are your theme's: `blocks.divider` for the line, `blocks.failed` for 
 
 ## Change the header's look
 
-The header's colors are tokens of your theme, so they follow the light and the dark appearance. Its keys in [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) name the tokens, and set the text's size and weight, the room around the text, and where the pill sits:
+By default, the header is the block's own prompt rows, in your terminal's colors, with the theme's `blocks.divider` line under them. To show the command line in a pill instead:
 
 ```toml
 [plugins.blocks]
+header = "pill"        # rows | pill
+```
+
+The pill's colors are tokens of your theme, so they follow the light and the dark appearance. Its keys in [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) name the tokens, and set the text's size and weight, the room around the text, and where the pill sits:
+
+```toml
+[plugins.blocks]
+header = "pill"
 border = "accent"      # the theme's accent color around the pill
 font-weight = "semibold"
 align = "center"       # left | center | right
@@ -125,6 +133,7 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 
 ## Settings
 
+- [`header`](CONFIGURATION.md#header): the block's prompt rows pinned at the pane's top, or a pill of its command line · not released yet.
 - [`background`, `text`, `border`, `line` and `hover`](CONFIGURATION.md#background-text-border-line-hover-1): the theme's tokens of the pill's background, its text, its border, the line across the pane, and the color under the pointer.
 - [`font-size`](CONFIGURATION.md#font-size-2) and [`font-weight`](CONFIGURATION.md#font-weight-1): the text's size and weight, in the terminal's font.
 - [`padding-x` and `padding-y`](CONFIGURATION.md#padding-x-padding-y-2): the room around the text in the pill.
@@ -156,7 +165,7 @@ The commands of the Edit menu have no default keys: bind them in [`[keys]`](CONF
 
 Your shell marks each command with OSC 133, the shell integration's sequences: where the prompt starts, where the command line starts, where the output starts, and where the command ended. Lokyr keeps the marks with the rows of the scrollback, and the Blocks plugin reads them as the view moves.
 
-Lokyr draws the dividers, the bars and the tints from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback.
+Lokyr draws the dividers, the bars and the tints from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback. It pins the prompt rows of the block at the pane's top from the same marks too, copying them again only when another block reaches the top.
 
 When a command's output starts, Lokyr notes the time and the folder that your shell reported last with OSC 7, which the shell integration sends before each prompt. When the command ends, Lokyr notes the time again. The duration is the time between the two, by the Mac's clock.
 
@@ -170,6 +179,7 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - A shell on another host, such as one that you reach over ssh, marks no commands, so its output shows no header.
 - A program's own screen, such as vim's or less's, shows no header.
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
+- The pinned rows are the prompt as your shell drew it when you ran the command: a prompt that the shell draws again as you press Return, such as a transient prompt, pins as it was drawn last. A prompt of more than three rows pins its first three · not released yet.
 - The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
 - A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
 - Run Command Again and Copy Command take the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's first row: a command that you typed over several lines, such as a loop, runs again or is copied from its first line alone. Run it again from the shell's history instead, with the Up arrow.
@@ -195,9 +205,9 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 
 ### The arrow isn't there
 
-**Why**: the arrow shows only while the end of the block is below the view. When the output's last row is on the pane, you are already at the block's end.
+**Why**: the arrow belongs to the pill, which shows only with `header = "pill"`; by default the header is the prompt's pinned rows, which have none. With the pill, the arrow shows only while the end of the block is below the view: when the output's last row is on the pane, you are already at the block's end.
 
-**Fix**: scroll up further into the output, and the arrow comes back.
+**Fix**: set `header = "pill"` in `[plugins.blocks]`, or scroll up further into the output, and the arrow comes back.
 
 ## See also
 

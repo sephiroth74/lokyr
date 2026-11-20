@@ -232,6 +232,9 @@ pub struct Pane {
     /// The view that a frame showed as it was last told, whose change
     /// tells `viewport-changed`.
     told_viewport: Option<Viewport>,
+    /// Whether its terminal pins the prompt rows of the block at the view's
+    /// top, as the app asked last.
+    sticky_prompts: bool,
     /// The command that started last, of its id, and when the workspace's
     /// look found its start, until its end.
     pub(super) command_started: Option<(u64, Instant)>,
@@ -397,6 +400,7 @@ impl Pane {
             progress: None,
             slices: 0,
             told_viewport: None,
+            sticky_prompts: false,
             command_started: None,
             commands_told: false,
             agent: None,
@@ -603,6 +607,20 @@ impl Pane {
     /// The terminal's grid.
     pub fn grid(&self) -> Grid {
         self.grid
+    }
+
+    /// Has its terminal pin, over the view's first rows, the prompt rows of
+    /// the block whose output the view's top shows, or not, as
+    /// [`Terminal::set_sticky_prompts`] does: of the terminal's lock only as
+    /// the ask changes.
+    pub fn set_sticky_prompts(&mut self, on: bool) {
+        if self.sticky_prompts == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_sticky_prompts(on);
+            self.sticky_prompts = on;
+        }
     }
 
     /// The screen, as the last frame copied it.

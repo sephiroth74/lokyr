@@ -619,6 +619,14 @@ impl<B: Backend> App<B> {
         {
             self.focus_pane(platform, window, under);
         }
+        // A press on the prompt rows of a block pinned at the view's top
+        // scrolls to the block's prompt, as a header's click does.
+        if pressed
+            && button == lokyr_vt_core::input::MouseButton::Left
+            && self.sticky_press(platform, window, position)
+        {
+            return;
+        }
         // A press of the left button that goes to the program ends the
         // selection of a block of the pane under it; one that the terminal
         // keeps ends it as it selects text, or tells a click as it goes up.
@@ -1020,6 +1028,37 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Scrolls the view of the pane under `position`, over `window`, to the
+    /// prompt of the block whose rows its snapshot pins at its top, if
+    /// `position` is over them. Whether it was.
+    fn sticky_press(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> bool {
+        let Some(id) = self.pane_at(platform, window, position) else {
+            return false;
+        };
+        let Some(pointer) = self.pointer_in(platform, window, id, position) else {
+            return false;
+        };
+        let Some(pane) = self.workspace.pane(id) else {
+            return false;
+        };
+        let snapshot = pane.snapshot();
+        let Some((_, prompt)) = snapshot
+            .sticky()
+            .filter(|sticky| pointer.row < sticky.rows())
+            .and(snapshot.sticky_prompt())
+        else {
+            return false;
+        };
+        pane.scroll(Scroll::Row(prompt));
+        platform.request_frame(window);
+        true
+    }
+
     /// The pointer moved over `window`: a program that asked learns of it,
     /// once a cell, or a pixel for reports in pixels, at the screen's row,
     /// and not above the screen.
@@ -1165,14 +1204,14 @@ impl<B: Backend> App<B> {
         let over = position.and_then(|position| {
             let pane = self.pane_under(platform, window, position)?;
             let pointer = self.pointer_in(platform, window, pane, position)?;
-            // The drawn frame's numbers, which take no lock of the pane.
-            let row = self
-                .workspace
-                .pane(pane)?
-                .snapshot()
-                .shown_row(pointer.row)?
-                .row();
-            Some((pane, Some((pointer.col, row)), command))
+            // The drawn frame's numbers, which take no lock of the pane; no
+            // cell under a block's prompt rows pinned at the view's top.
+            let snapshot = self.workspace.pane(pane)?.snapshot();
+            let pinned = snapshot
+                .sticky()
+                .is_some_and(|sticky| pointer.row < sticky.rows());
+            let row = snapshot.shown_row(pointer.row)?.row();
+            Some((pane, (!pinned).then_some((pointer.col, row)), command))
         });
         // Out of the panes, the pane that it left learns so.
         let told = over.or_else(|| self.pointer_told.map(|(pane, _, _)| (pane, None, command)));

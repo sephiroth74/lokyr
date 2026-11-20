@@ -293,7 +293,7 @@ fn the_command_s_header_spans_the_pane_s_top_takes_no_keys_lets_a_scroll_through
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -349,7 +349,7 @@ fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -405,7 +405,7 @@ fn a_long_command_s_header_keeps_within_its_pane_as_the_window_narrows() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -438,7 +438,7 @@ fn the_command_s_header_takes_the_text_s_new_size() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -487,7 +487,7 @@ fn the_block_s_button_scrolls_to_its_end_and_the_plain_header_comes_back_as_bloc
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -623,6 +623,18 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
             "{name}"
         );
     }
+}
+
+/// The app's config without padding, of the blocks' header of the pill,
+/// as the header's tests read it.
+fn pill_config() -> Config {
+    let mut config = Config::parse(
+        "[plugins.blocks]\nheader = \"pill\"\n",
+        Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    config
 }
 
 /// The frame of the part of `key` of the details' panel that shows in
@@ -1109,4 +1121,99 @@ fn a_click_and_a_drag_below_a_fold_take_the_rows_that_the_view_shows_there() {
         selected_text(&app, window).as_deref(),
         Some("$ ls\na1\na2\na3\na4\na5")
     );
+}
+
+#[test]
+fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_its_prompt() {
+    // A prompt of two rows, then 80 rows of output, more than the pane's
+    // 62, then the prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    // The view at the screen, of the output's last rows: the prompt's two
+    // rows pinned over its first.
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_some_and(|sticky| sticky.rows() == 2)
+    });
+    let pinned: Vec<String> = {
+        let sticky = app
+            .workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .unwrap();
+        (0..2)
+            .map(|y| {
+                sticky
+                    .line(y)
+                    .cells()
+                    .iter()
+                    .map(|cell| match cell.content() {
+                        lokyr_vt_core::page::Content::Char(c) if c != '\0' => c,
+                        _ => ' ',
+                    })
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect()
+    };
+    assert_eq!(pinned, ["user ~/dir", "$ seq 80"]);
+    // The frame takes the window's place under them, across the pane.
+    let rect = app.windows[&window].views[0].rect;
+    let height = i32::from(app.workspace.pane(pane).unwrap().grid().cell_height);
+    let knocked: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| shape.knockout)
+        .map(|shape| shape.rect)
+        .collect();
+    assert!(
+        knocked
+            .iter()
+            .any(|knocked| knocked.y == rect.y && knocked.height == 2 * height as u32),
+        "{knocked:?}"
+    );
+    // A click on them scrolls the view to the prompt, which then shows
+    // itself, of nothing pinned.
+    let scale = fake.window(window).unwrap().size.scale;
+    let on = Point {
+        x: f64::from(rect.x + 40) / scale,
+        y: f64::from(rect.y + height / 2) / scale,
+    };
+    fake.send(&mut app, window, click(true, on, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, on, Modifiers::NONE, 1));
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_none()
+    });
+    assert!(row(&app, window, 0).starts_with("user ~/dir"));
+    assert!(selected_text(&app, window).is_none());
 }

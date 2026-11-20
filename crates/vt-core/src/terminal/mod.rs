@@ -55,7 +55,7 @@ pub use selection::{
     WORD_SEPARATORS,
 };
 pub use session_status::SessionStatus;
-pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use snapshot::{Line, MOST_STICKY_ROWS, Snapshot, SnapshotCursor};
 pub use status::{MOST_REPORT, MOST_STATUSES, Status, StatusKind, StatusState};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;
@@ -545,6 +545,9 @@ pub struct Terminal {
     gutter: Vec<gutter::Laid>,
     /// The folds of the primary screen, in their rows' order.
     folds: Vec<folds::Fold>,
+    /// Whether the snapshot pins the prompt rows of the block whose output
+    /// the view's top shows, as an embedder asks, which RIS keeps.
+    sticky_prompts: bool,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
@@ -668,6 +671,7 @@ impl Terminal {
             decorations: Vec::new(),
             gutter: Vec::new(),
             folds: Vec::new(),
+            sticky_prompts: false,
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),
