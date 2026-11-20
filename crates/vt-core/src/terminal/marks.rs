@@ -236,6 +236,9 @@ impl Terminal {
         let (page, row) = rows.screen_row_id(y);
         let pin = rows.pin(Position { page, row, col: x });
         let commands = &mut self.commands;
+        // A prompt drawn again at its row, which its shell marks anew as it
+        // redraws it, keeps the blank row that the terminal put before it.
+        let mut carried = false;
         if mark == Mark::Prompt {
             let at = rows.row_index(page, row);
             let row_of = |rows: &PageList, marked: &Marked| {
@@ -248,6 +251,10 @@ impl Terminal {
                     break;
                 }
                 if let Some(gone) = commands.list.pop_back() {
+                    carried |= gone.spaced
+                        && gone.output.is_none()
+                        && at.is_some()
+                        && row_of(rows, &gone) == at;
                     let_go(rows, &mut self.events, &gone);
                 }
             }
@@ -271,7 +278,7 @@ impl Terminal {
             commands.last += 1;
             commands.list.push_back(Marked {
                 id: commands.last,
-                spaced,
+                spaced: spaced || carried,
                 ..Marked::default()
             });
         }

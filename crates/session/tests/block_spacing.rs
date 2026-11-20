@@ -121,8 +121,17 @@ fn spaces_its_blocks(session: &Session, top: &str) {
             ">",
         ],
     );
-    // The blank rows are no command's.
-    let terminal = session.lock();
+    // The blank rows are no command's, and the blocks keep them through the
+    // prompt that the shell drew again at the new size.
+    let mut terminal = session.lock();
+    let mut snapshot = lokyr_vt_core::terminal::Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    let rooms: Vec<(bool, bool)> = snapshot
+        .blocks()
+        .iter()
+        .map(|block| (block.room_above, block.room_below))
+        .collect();
+    assert_eq!(rooms, [(false, true), (true, true), (true, false)]);
     let commands = terminal.commands();
     let prompts: Vec<i64> = commands
         .iter()

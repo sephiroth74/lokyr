@@ -144,3 +144,33 @@ fn off_or_on_the_alternate_screen_no_blank_row_comes_and_ris_keeps_the_ask() {
     feed(&mut terminal, PROMPT);
     assert_eq!(screen(&mut terminal), ["$ ls", "a", "", "$"]);
 }
+
+#[test]
+fn a_prompt_drawn_again_at_its_row_keeps_its_blank_row() {
+    let mut terminal = spaced();
+    feed(&mut terminal, &command("ls", "a\r\n"));
+    feed(&mut terminal, PROMPT);
+    assert_eq!(
+        blocks(&mut terminal),
+        [(0, 1, false, true), (3, 3, true, false)]
+    );
+    // The shell draws its prompt again in place, as a resize or a theme's
+    // redraw has it, and marks it anew: the blank row kept, of no other.
+    feed(&mut terminal, &format!("\r\x1b[K{PROMPT}"));
+    assert_eq!(
+        blocks(&mut terminal),
+        [(0, 1, false, true), (3, 3, true, false)]
+    );
+    assert_eq!(screen(&mut terminal), ["$ ls", "a", "", "$"]);
+    // An end told twice, then the prompt's mark twice.
+    let mut twice = spaced();
+    feed(
+        &mut twice,
+        &format!("{PROMPT}ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07\x1b]133;D;0\x07"),
+    );
+    feed(&mut twice, "\x1b]133;A\x07\x1b]133;A\x07$ \x1b]133;B\x07");
+    assert_eq!(
+        blocks(&mut twice),
+        [(0, 1, false, true), (3, 3, true, false)]
+    );
+}
