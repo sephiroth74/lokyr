@@ -223,6 +223,49 @@ fn zsh_tells_each_command_s_line_with_its_output_s_mark() {
 }
 
 #[test]
+fn zsh_tells_the_line_that_runs_where_a_history_hook_leaves_the_typed_one_empty() {
+    let Some(zsh) = found(&["/bin/zsh", "/usr/bin/zsh", "/opt/homebrew/bin/zsh"]) else {
+        eprintln!("no zsh here");
+        return;
+    };
+    // A history list of its own from the first prompt, and a hook that
+    // adds each line to the history, then switches the list, as Oh My
+    // Zsh's per-directory-history does of `share_history`, which leaves
+    // preexec's first argument empty past the first command.
+    let home = home(
+        "zsh-history-hook",
+        &[(
+            ".zshrc",
+            concat!(
+                "PS1='hook> '\nHISTSIZE=100\nSAVEHIST=100\nHISTFILE=\"$HOME/history\"\n",
+                "setopt share_history\nautoload -U add-zsh-hook\n",
+                "first() { fc -p \"$HOME/other\"; add-zsh-hook -d precmd first }\n",
+                "add-zsh-hook precmd first\n",
+                "switch() {\n  print -Sr -- \"${1%%$'\\n'}\"\n  fc -AI \"$HISTFILE\"\n",
+                "  fc -AI \"$HOME/other\"\n  fc -p \"$HOME/other\"\n}\n",
+                "add-zsh-hook zshaddhistory switch\n",
+                "probe() { [[ -z $1 ]] && print -r -- first-left-empty }\n",
+                "add-zsh-hook preexec probe\n",
+            ),
+        )],
+    );
+    let mut shell = Shell::start(&zsh, &home);
+    shell.until("hook> ");
+    shell.run("true");
+    shell.until("\x1b]133;D;0");
+    shell.until("hook> ");
+    // A command of two lines, whole, as zsh writes the text that runs.
+    shell.run("for word in one two");
+    shell.run("do echo $word; done");
+    shell.until("first-left-empty");
+    shell.until(concat!(
+        "\x1b]133;C;cmdline_url=",
+        "for%20word%20in%20one%20two%0Ado%0A%09echo%20%24word%0Adone\x07",
+    ));
+    shell.until("\x1b]133;D;0");
+}
+
+#[test]
 fn bash_reads_the_user_s_files_out_of_posix_mode_and_marks_its_prompts() {
     let Some(bash) = modern_bash() else {
         eprintln!("no bash of 4 or later here");
