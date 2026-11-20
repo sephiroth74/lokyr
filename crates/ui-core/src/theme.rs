@@ -725,12 +725,13 @@ mod tests {
     }
 
     /// The tokens that came after the derivation, of their rules alone.
-    const LATE: [&str; 31] = [
+    const LATE: [&str; 32] = [
         "cursor.guide",
         "hints.label.bg",
         "hints.label.fg",
         "blocks.divider",
-        "blocks.selected",
+        "blocks.selected.bg",
+        "blocks.hover.bg",
         "blocks.failed",
         "switch.off.bg",
         "switch.on.bg",

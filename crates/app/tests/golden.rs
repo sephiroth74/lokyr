@@ -227,7 +227,7 @@ impl Drawing {
                     (0, columns + 2 * MARGIN),
                     scale,
                     &tokens,
-                    (looks, None),
+                    (looks, None, None),
                 );
                 shapes.extend(cells::gutter_marks(
                     &snapshot,
@@ -434,6 +434,7 @@ fn blocks(light: bool) -> Vec<Scene> {
                 bars: true,
                 dividers: true,
                 failed_tint: true,
+                hover: true,
             },
             light,
         )),

@@ -103,7 +103,8 @@ pub const LIGHT_TOKENS: &[TokenColor] = &[
     ("hints.label.bg", 0x0a64d8, 1.0),
     ("hints.label.fg", 0xffffff, 1.0),
     ("blocks.divider", 0x000000, 0.1),
-    ("blocks.selected", 0x0a64d8, 1.0),
+    ("blocks.selected.bg", 0x0a64d8, 0.12),
+    ("blocks.hover.bg", 0x0a64d8, 0.06),
     ("blocks.failed", 0xd63b3b, 0.08),
 ];
 
@@ -196,7 +197,8 @@ pub const DARK_TOKENS: &[TokenColor] = &[
     ("hints.label.bg", 0x4c9bff, 1.0),
     ("hints.label.fg", 0x000000, 1.0),
     ("blocks.divider", 0xffffff, 0.1),
-    ("blocks.selected", 0x4c9bff, 1.0),
+    ("blocks.selected.bg", 0x4c9bff, 0.2),
+    ("blocks.hover.bg", 0x4c9bff, 0.08),
     ("blocks.failed", 0xff5f57, 0.12),
 ];
 
@@ -277,7 +279,8 @@ pub const LIGHT_RULED: &[&str] = &[
     "hints.label.bg",
     "hints.label.fg",
     "blocks.divider",
-    "blocks.selected",
+    "blocks.selected.bg",
+    "blocks.hover.bg",
     "blocks.failed",
 ];
 
@@ -328,7 +331,8 @@ pub const DARK_RULED: &[&str] = &[
     "hints.label.bg",
     "hints.label.fg",
     "blocks.divider",
-    "blocks.selected",
+    "blocks.selected.bg",
+    "blocks.hover.bg",
     "blocks.failed",
 ];
 

@@ -64,8 +64,12 @@ impl<B: Backend> App<B> {
     }
 
     /// The user typed into `window`'s pane that has the keyboard, keys, a
-    /// text or a paste: what its agent waited for is answered.
+    /// text or a paste: what its agent waited for is answered, and the
+    /// block under the pointer shows no tint until the pointer moves.
     pub(super) fn typed_into(&mut self, window: WindowId) {
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.hover = None;
+        }
         let pane = self
             .windows
             .get(&window)

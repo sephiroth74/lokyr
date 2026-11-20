@@ -621,8 +621,9 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
 }
 
 /// How the host draws the blocks, as `config` says: the gutter's bars along
-/// them, their dividers, `dividers`, and a failed block's tint,
-/// `failed-tint`, of the schema's defaults where it says nothing.
+/// them, their dividers, `dividers`, a failed block's tint, `failed-tint`,
+/// and the tint of the block under the pointer, `hover-tint`, of the schema's
+/// defaults where it says nothing.
 fn looks_of(config: &Data) -> BlockLooks {
     let switch = |key: &str, default: bool| match config {
         Data::Map(config) => match config.get(key) {
@@ -635,6 +636,7 @@ fn looks_of(config: &Data) -> BlockLooks {
         bars: true,
         dividers: switch("dividers", true),
         failed_tint: switch("failed-tint", false),
+        hover: switch("hover-tint", true),
     }
 }
 

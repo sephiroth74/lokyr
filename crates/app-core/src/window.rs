@@ -61,6 +61,16 @@ pub(crate) enum NativeMenu {
     PopUp(u32, lokyr_kernel::plugins::view::Key),
 }
 
+/// The pointer over a pane, as the blocks' hover takes it: the pane, the
+/// row of its drawn view under the pointer, and the block that the last
+/// frame tinted there, if one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Hover {
+    pub(crate) pane: PaneId,
+    pub(crate) row: u16,
+    pub(crate) block: Option<u64>,
+}
+
 /// A drag of the edge of a window's tab bar's column: the bar's plugin,
 /// whether the column is on the left, and where the drag started, in
 /// points across the window, of the column's width then.
@@ -214,6 +224,10 @@ pub(crate) struct Window<B: Backend> {
     /// The selection that the mouse makes, or made last, which Shift's click
     /// extends.
     pub(crate) selecting: Option<Selecting>,
+    /// The pane and the row of its drawn view under the pointer, of the
+    /// block that a frame tinted there, as the block under the pointer
+    /// shows; none while the pointer is off the panes.
+    pub(crate) hover: Option<Hover>,
     /// The drag of the tab bar's column's edge under way, if one is.
     pub(crate) column_drag: Option<ColumnDrag>,
     /// The dividers of its active tab's panes, as its last frame laid them
@@ -441,6 +455,7 @@ impl<B: Backend> Window<B> {
             held_back: Vec::new(),
             taken: Vec::new(),
             selecting: None,
+            hover: None,
             column_drag: None,
             dividers: Vec::new(),
             divider_drag: None,

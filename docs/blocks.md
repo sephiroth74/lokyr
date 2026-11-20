@@ -24,7 +24,7 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 - **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
-- **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
+- **Blocks you can tell apart**: a thin line divides each block from the one before, the gutter's bar of each command runs along its whole block, and the block under the pointer is tinted · not released yet.
 - **Select a block with the keyboard**: ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · not released yet.
 
 ## Copy a command or its output
@@ -67,7 +67,7 @@ The command line goes in as a paste, so a command of several lines stays whole, 
 
 ## Select a block with the keyboard
 
-Press ⌘↑ to select the last block: an outline goes round it. Press ↑ and ↓ to select the block before or after: the view follows, with the selected block's prompt at the top. Below the last block, ↓ selects none and takes you back to the prompt where you type.
+Press ⌘↑ to select the last block: its rows are tinted, across the pane. Press ↑ and ↓ to select the block before or after: the view follows, with the selected block's prompt at the top. Below the last block, ↓ selects none and takes you back to the prompt where you type.
 
 When you have scrolled up, ⌘↑ and ⌘↓ jump to the prompt above or below the top of the view, as they do without Blocks, and select its block.
 
@@ -77,7 +77,7 @@ While a block is selected:
 - **Copy Command**, **Select Block**, **Block Details** and **Run Command Again**, from the Edit menu or the command palette, act on it;
 - **Escape**, any key that you type, or a click in the pane ends the selection.
 
-The outline's color is your theme's `blocks.selected`, the accent by default.
+The tint is your theme's `blocks.selected.bg`, a shade of the accent by default.
 
 ## Dividers and the gutter's bar
 
@@ -85,15 +85,18 @@ While Blocks runs, a thin line divides each block from the one before, at the to
 
 The gutter's bar of each command runs along its whole block, from its prompt to the end of its output: gray when the command succeeded, red when it failed, and in the accent color while it runs, as long as the output grows.
 
+The block under the pointer is tinted with a faint shade of the accent, so that you see which rows belong to one command. The tint goes while you type, and comes back as you move the pointer. A program that takes the mouse, or the whole screen, such as an editor, shows no tint.
+
 A failed block shows its red bar alone. To tint its rows too, in a faint red, turn on `failed-tint`:
 
 ```toml
 [plugins.blocks]
 dividers = true       # the line between the blocks
 failed-tint = true    # a failed block's rows tinted
+hover-tint = false    # no tint under the pointer
 ```
 
-The colors are your theme's: `blocks.divider` for the line, `blocks.failed` for the tint, and the gutter's colors for the bars. The Theme Editor shows them in its terminal's preview.
+The colors are your theme's: `blocks.divider` for the line, `blocks.failed` for a failed block, `blocks.hover.bg` for the block under the pointer, `blocks.selected.bg` for the selected one, and the gutter's colors for the bars. The Theme Editor shows them in its terminal's preview.
 
 ## Change the header's look
 
@@ -130,6 +133,7 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 - [`max-length`](CONFIGURATION.md#max-length-1): the most characters of the command line that the pill shows.
 - [`dividers`](CONFIGURATION.md#dividers): the line between the blocks · not released yet.
 - [`failed-tint`](CONFIGURATION.md#failed-tint): a failed block's rows tinted · not released yet.
+- [`hover-tint`](CONFIGURATION.md#hover-tint): the block under the pointer tinted · not released yet.
 
 ## Commands and keys
 
@@ -154,7 +158,7 @@ The commands of the Edit menu have no default keys: bind them in [`[keys]`](CONF
 
 Your shell marks each command with OSC 133, the shell integration's sequences: where the prompt starts, where the command line starts, where the output starts, and where the command ended. Lokyr keeps the marks with the rows of the scrollback, and the Blocks plugin reads them as the view moves.
 
-Lokyr draws the dividers, the bars and the tint from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback.
+Lokyr draws the dividers, the bars and the tints from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback. The tint under the pointer draws a frame only when the pointer moves onto another block, not at each move.
 
 When a command's output starts, Lokyr notes the time and the folder that your shell reported last with OSC 7, which the shell integration sends before each prompt. When the command ends, Lokyr notes the time again. The duration is the time between the two, by the Mac's clock.
 

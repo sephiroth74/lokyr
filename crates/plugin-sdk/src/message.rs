@@ -886,8 +886,8 @@ pub enum Request {
     /// each look that any plugin asks for.
     SetBlockLooks(crate::host::BlockLooks),
     /// Selects the block of a pane's command, by its id, as the keyboard
-    /// selects one, or none: the host outlines it, of the theme's
-    /// `blocks.selected`, and the keys' context holds `<namespace>.selected`
+    /// selects one, or none: the host tints its rows, of the theme's
+    /// `blocks.selected.bg`, and the keys' context holds `<namespace>.selected`
     /// while the pane has the keyboard, until the plugin selects another or
     /// none, or a key that the pane's program takes, a text typed into the
     /// pane or a click in it ends it; of a command that the pane keeps.

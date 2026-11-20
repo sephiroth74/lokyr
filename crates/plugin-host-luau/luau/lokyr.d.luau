@@ -434,6 +434,7 @@ export type BlockLooks = {
     bars: boolean?,
     dividers: boolean?,
     failed_tint: boolean?,
+    hover: boolean?,
 }
 
 export type Border = {

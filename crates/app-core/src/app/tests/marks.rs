@@ -832,7 +832,7 @@ fn framed_until(fake: &mut Fake, app: &mut App, window: WindowId, done: impl Fn(
 
 /// The outlines that `window`'s frame draws of a theme's token `color`, as
 /// a selected block's, by their rectangles.
-fn outlines(
+fn tints(
     app: &App,
     window: WindowId,
     color: lokyr_render_core::Color,
@@ -847,7 +847,7 @@ fn outlines(
             Item::Shapes(shapes) => shapes.clone(),
             _ => Vec::new(),
         })
-        .filter(|shape| shape.border > 0.0 && shape.border_color == color)
+        .filter(|shape| shape.fill == color)
         .map(|shape| shape.rect)
         .collect()
 }
@@ -893,19 +893,19 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
         super_key: true,
         ..Modifiers::NONE
     };
-    // ⌘↑ selects the last block, which the frame outlines of the theme's
-    // `blocks.selected`.
+    // ⌘↑ selects the last block, which the frame tints of the theme's
+    // `blocks.selected.bg`.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
     run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[2]));
     let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
-    let outline = app
+    let tint = app
         .theme
         .variant(dark)
         .tokens
-        .get("blocks.selected")
+        .get("blocks.selected.bg")
         .unwrap();
     framed_until(&mut fake, &mut app, window, |app| {
-        outlines(app, window, outline).len() == 1
+        tints(app, window, tint).len() == 1
     });
     // ↑ selects the one before; ⌘C, of no text selected, copies it.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", Modifiers::NONE);
@@ -914,7 +914,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     run_until(&mut fake, &mut app, |fake, _| {
         fake.clipboard_text().as_deref() == Some("two\nout two")
     });
-    // Escape ends it, and the frame draws no outline.
+    // Escape ends it, and the frame draws no tint.
     press(
         &mut fake,
         &mut app,
@@ -924,7 +924,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     );
     run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
     framed_until(&mut fake, &mut app, window, |app| {
-        outlines(app, window, outline).is_empty()
+        tints(app, window, tint).is_empty()
     });
     // So do a key typed, which goes to the program, and a click.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
@@ -937,6 +937,100 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
     fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
     run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+}
+
+#[test]
+fn the_block_under_the_pointer_is_tinted_and_a_move_within_it_asks_no_frame() {
+    // The system's line of the last login, then three commands of a line
+    // of output each, on the rows 1 to 6, then the prompt.
+    let program = shell(concat!(
+        "echo 'Last login: Thu Nov 19 on ttys001'\n",
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "echo \"out $c\"; m 'D;0'; done; m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 4)
+    });
+    // Three blocks, and the prompt where you type of its own divider.
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace.pane(pane).unwrap().snapshot().blocks().len() == 4
+    });
+    let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
+    let hover = app
+        .theme
+        .variant(dark)
+        .tokens
+        .get("blocks.hover.bg")
+        .unwrap();
+    // The middle of the pane's row `row`, in points.
+    let scale = fake.window(window).unwrap().size.scale;
+    let rect = app.windows[&window].views[0].rect;
+    let height = i32::from(app.workspace.pane(pane).unwrap().grid().cell_height);
+    let over = |row: i32| Point {
+        x: f64::from(rect.x + 40) / scale,
+        y: f64::from(rect.y + row * height + height / 2) / scale,
+    };
+    // Over `two`'s output: its block's two rows, from its prompt's.
+    fake.send(&mut app, window, moved(over(4), Modifiers::NONE));
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).len() == 1
+    });
+    let tinted = tints(&app, window, hover)[0];
+    assert_eq!(
+        (tinted.y, tinted.height),
+        (rect.y + 3 * height, 2 * height as u32)
+    );
+    // Within the same block, no frame is asked; over another, one is.
+    let asked = fake.window(window).unwrap().frames_asked;
+    fake.send(&mut app, window, moved(over(3), Modifiers::NONE));
+    assert_eq!(fake.window(window).unwrap().frames_asked, asked);
+    fake.send(&mut app, window, moved(over(1), Modifiers::NONE));
+    assert!(fake.window(window).unwrap().frames_asked > asked);
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).first().map(|rect| rect.y) == Some(rect.y + height)
+    });
+    // The prompt where you type is no block; out of the window, none.
+    fake.send(&mut app, window, moved(over(7), Modifiers::NONE));
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).is_empty()
+    });
+    fake.send(&mut app, window, moved(over(5), Modifiers::NONE));
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).len() == 1
+    });
+    fake.send(&mut app, window, WindowEvent::MouseExited);
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).is_empty()
+    });
+    // A key typed takes it away until the pointer moves.
+    fake.send(&mut app, window, moved(over(5), Modifiers::NONE));
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).len() == 1
+    });
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyX, "x", Modifiers::NONE, true),
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyX, "x", Modifiers::NONE, false),
+    );
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, hover).is_empty()
+    });
 }
 
 #[test]

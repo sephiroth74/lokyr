@@ -285,7 +285,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys.len(), 13, "{keys:?}");
+    assert_eq!(keys.len(), 14, "{keys:?}");
     let example = guide
         .split_once("\n[plugins.blocks]\n")
         .and_then(|(_, rest)| rest.split_once("\n\n"))
@@ -967,6 +967,7 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: true,
             failed_tint: false,
+            hover: true,
         }
     );
     let config = |pairs: &[(&str, bool)]| {
@@ -985,6 +986,7 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: false,
             failed_tint: true,
+            hover: true,
         }
     );
     // A change of other keys asks nothing anew.

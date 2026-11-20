@@ -1446,7 +1446,7 @@ impl<'a> Cx<'a> {
     }
 
     /// Selects the block of `pane`'s command of the id `command`, or none,
-    /// as this call returns: the host outlines it, and the keys' context
+    /// as this call returns: the host tints its rows, and the keys' context
     /// holds `<namespace>.selected` while the pane has the keyboard, until
     /// another selection, a key that the program takes, a text typed or a
     /// click in the pane. Requires `pane-view`.

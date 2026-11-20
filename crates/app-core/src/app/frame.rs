@@ -1116,7 +1116,13 @@ impl<B: Backend> App<B> {
             let selected = self
                 .plugins
                 .selected_block(lokyr_kernel::plugins::host::PaneId(pane.get()));
-            if !(looks.dividers || looks.failed_tint || selected.is_some()) {
+            // The block under the pointer, of the row that it rests on, as
+            // this frame's view has it, though the view scrolled since.
+            let hovered = state
+                .hover
+                .filter(|hover| hover.pane == pane && looks.hover)
+                .and_then(|hover| super::input::block_at(snapshot, hover.row));
+            if !(looks.dividers || looks.failed_tint || selected.is_some() || hovered.is_some()) {
                 continue;
             }
             // Within the pane and its paddings, as a selected block's
@@ -1129,7 +1135,7 @@ impl<B: Backend> App<B> {
                 across,
                 size.scale,
                 tokens,
-                (looks, selected),
+                (looks, selected, hovered),
             )
             .into_iter()
             .map(faded(dim))

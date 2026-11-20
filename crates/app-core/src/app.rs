@@ -5595,6 +5595,7 @@ impl<B: Backend> App<B> {
             }
             WindowEvent::MouseExited => {
                 self.bar_hovered(platform, window, None);
+                self.hover_block(platform, window, None);
                 self.surface_exited(platform, window);
             }
             WindowEvent::Scroll {
