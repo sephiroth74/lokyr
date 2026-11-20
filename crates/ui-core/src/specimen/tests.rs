@@ -97,9 +97,9 @@ fn the_cells_show_the_selection_matches_backgrounds_cursor_guide_and_bars() {
     assert_eq!(at(0, ROWS - 2).alpha, 0.0);
     // An underline, a curly one and a strikethrough among its lines.
     assert!(batch.lines.len() >= 3);
-    // The failed block's tint, a divider at each block's top, then the
-    // gutter's bars of the commands' states along their blocks, of the
-    // theme's tokens.
+    // The failed block's tint, a divider at each block's top, the first
+    // block's outline, of no fill, then the gutter's bars of the commands'
+    // states along their blocks, of the theme's tokens.
     let fills: Vec<Color> = bars.iter().map(|bar| bar.fill).collect();
     let token = |name: &str| tokens.get(name).unwrap();
     assert_eq!(
@@ -110,6 +110,7 @@ fn the_cells_show_the_selection_matches_backgrounds_cursor_guide_and_bars() {
             token("blocks.divider"),
             token("blocks.divider"),
             token("blocks.divider"),
+            Color::CLEAR,
             token("gutter.succeeded"),
             token("gutter.succeeded"),
             token("gutter.failed"),
@@ -120,7 +121,8 @@ fn the_cells_show_the_selection_matches_backgrounds_cursor_guide_and_bars() {
     // output's row, the colors' six, `make`'s two, and the last one's to
     // the cursor's row.
     let height = cell().height;
-    let rows: Vec<u32> = bars[5..]
+    assert_eq!(bars[5].border_color, token("blocks.selected"));
+    let rows: Vec<u32> = bars[6..]
         .iter()
         .map(|bar| bar.rect.height.div_ceil(height))
         .collect();

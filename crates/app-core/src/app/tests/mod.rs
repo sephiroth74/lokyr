@@ -3890,14 +3890,15 @@ fn a_plugin_cannot_show_or_hide_another_plugin_s_quick_window() {
 }
 
 #[test]
-fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks() {
+fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks_while_blocks_is_off() {
     // Three commands of the shell's marks, of 30 lines each, then the
     // terminal raw for the keys; the last command's prompt on the screen.
+    // Blocks, which takes the keys to select a block, off.
     let program = shell(concat!(
         "for n in 1 2 3; do printf '\\033]133;A\\007$ \\033]133;B\\007run %s\\r\\n\\033]133;C\\007' $n; ",
         "seq 1 30; printf '\\033]133;D;0\\007'; done; stty raw -echo; echo ready; cat -v"
     ));
-    let (mut fake, mut app, window) = bound("", program);
+    let (mut fake, mut app, window) = bound("[plugins.blocks]\nenabled = false\n", program);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     let first_row = |app: &App| screen(app, window)[0].clone();
     let key = |code| key_event(code, "", CMD, true);

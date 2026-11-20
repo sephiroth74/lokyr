@@ -963,16 +963,15 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
     }
     // The ids of the commands that the pane keeps, from the oldest's to the
     // last's, which a walk from one to the next goes through, past the ids
-    // of the prompts that a shell drew again, which none keeps.
-    let ends = |commands: Vec<ShellCommand>| {
-        commands
-            .first()
-            .zip(commands.last())
-            .map(|(first, last)| (first.id, last.id))
-    };
-    let oldest = ends(cx.shell_commands(pane, view.oldest, view.oldest + 1)?);
-    let newest = ends(cx.shell_commands(pane, view.screen, i64::MAX / 2)?);
-    let (Some((first, _)), Some((_, last))) = (oldest, newest) else {
+    // of the prompts that a shell drew again, which none keeps; the oldest
+    // past the rows before the first prompt, as a login's line.
+    let end = view.screen.saturating_add(i64::from(view.rows));
+    let oldest = first_from(cx, pane, view.oldest, end)?;
+    let newest = cx
+        .shell_commands(pane, view.screen, i64::MAX / 2)?
+        .last()
+        .map(|last| last.id);
+    let (Some(first), Some(last)) = (oldest.map(|oldest| oldest.id), newest) else {
         return Ok(());
     };
     let walk = |cx: &mut Cx<'_>,
@@ -1020,7 +1019,10 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
                     started(command) && first_row(command).is_some_and(|row| row > view.top)
                 })?,
                 (None, false) => None,
-                (None, true) => walk(cx, first.saturating_sub(1), &started)?,
+                // The view's top above the first prompt, as a login's line.
+                (None, true) => walk(cx, first.saturating_sub(1), &|command| {
+                    started(command) && first_row(command).is_some_and(|row| row > view.top)
+                })?,
             }
         }
     };
@@ -1038,6 +1040,30 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
             cx.scroll(pane, Scroll::Bottom)
         }
         None => Ok(()),
+    }
+}
+
+/// The first command of `pane` whose block starts at the row `from` or
+/// below it, before the row `end`, of the rows that a window of a doubling
+/// height reads, as rows of no command, as a login's line, may come before
+/// the first prompt.
+fn first_from(
+    cx: &mut Cx<'_>,
+    pane: PaneId,
+    from: i64,
+    end: i64,
+) -> Result<Option<ShellCommand>, Error> {
+    let mut height: i64 = 64;
+    loop {
+        let to = from.saturating_add(height).min(end);
+        let found = cx
+            .shell_commands(pane, from, to)?
+            .into_iter()
+            .find(|command| first_row(command).is_some_and(|row| row >= from));
+        if found.is_some() || to >= end {
+            return Ok(found);
+        }
+        height = height.saturating_mul(2);
     }
 }
 

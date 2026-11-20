@@ -853,8 +853,10 @@ fn outlines(
 
 #[test]
 fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_click_ends_it() {
-    // Three commands of a line of output each, then the prompt.
+    // The system's line of the last login, as a login shell's first, then
+    // three commands of a line of output each, then the prompt.
     let program = shell(concat!(
+        "echo 'Last login: Thu Nov 19 on ttys001'\n",
         "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
         "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
         "echo \"out $c\"; m 'D;0'; done; m A; printf '$ '; m B; sleep 30\n",

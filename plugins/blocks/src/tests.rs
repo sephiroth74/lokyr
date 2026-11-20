@@ -1122,3 +1122,39 @@ fn the_actions_of_no_cell_take_the_selected_block() {
     run(&mut host, &mut plugin, COPY_COMMAND, Args::new());
     assert_eq!(host.clipboard(), Some("sleep 60"));
 }
+
+#[test]
+fn rows_of_no_command_before_the_first_prompt_leave_the_selection_whole() {
+    let (mut host, mut plugin) = commands_host();
+    // A login's line and an empty row before `ls`' prompt, as a login
+    // shell's first rows: every command two rows down.
+    let pane = host.pane(PANE);
+    for command in &mut pane.commands {
+        for mark in [
+            &mut command.prompt,
+            &mut command.input,
+            &mut command.output,
+            &mut command.end,
+        ] {
+            *mark = mark.map(|(column, row)| (column, row + 2));
+        }
+    }
+    viewed(&mut host, 0, 0);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(3), Some(Scroll::Row(7)))
+    );
+    selected_after(&mut host, &mut plugin, SELECT_PREVIOUS);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(1), Some(Scroll::Row(2)))
+    );
+    // Of none selected, the view's top at the login's line: the first
+    // block below it.
+    host.end_block_selection(PANE);
+    viewed(&mut host, 0, 6);
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(1), Some(Scroll::Row(2)))
+    );
+}
