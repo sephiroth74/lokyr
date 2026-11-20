@@ -7163,12 +7163,13 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
     let read = term.terminal.command_line(1).unwrap();
     assert!(read.ends_with("10:32"), "{read:?}");
     // Told, as the zsh integration and fish tell it: decoded, its control
-    // characters as spaces, its characters past ASCII whole.
+    // characters as spaces but its line feeds, which part a command of
+    // several lines, its characters past ASCII whole.
     term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
-    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%0Ax%25\x07");
+    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%09%0Ax%25%0A\x07");
     assert_eq!(
         term.terminal.command_line(2).as_deref(),
-        Some("sleep 5 é x%")
+        Some("sleep 5 é \nx%")
     );
     // A bad escape, as it is; told past the output's mark, nothing.
     term.feed("\x1b]133;D;0\x07");
@@ -7181,7 +7182,7 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
     term.feed("\x1b[?1049h");
     assert_eq!(
         term.terminal.command_line(2).as_deref(),
-        Some("sleep 5 é x%")
+        Some("sleep 5 é \nx%")
     );
 }
 

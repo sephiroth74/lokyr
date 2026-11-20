@@ -427,7 +427,7 @@ fn shown_at(
         return None;
     }
     // As the shell told it, which leaves its right prompt out, or as its
-    // text reads.
+    // text reads; the lines of a command of several on one.
     let line = match before {
         Some(before) if before.command == command.id => before.line.clone(),
         _ => cx
@@ -435,6 +435,7 @@ fn shown_at(
             .ok()??
             .chars()
             .take(MOST_LINE)
+            .map(|character| if character == '\n' { ' ' } else { character })
             .collect(),
     };
     Some(Shown {

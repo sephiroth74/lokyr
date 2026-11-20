@@ -323,7 +323,8 @@ impl Terminal {
     /// Gives the last command, whose output's mark came and whose end did
     /// not, the line that the shell told of it, of `bytes`, percent-encoded,
     /// as OSC 133 `C`'s `cmdline_url` tells it: decoded, of UTF-8, 2048
-    /// bytes of it at most, its control characters as spaces, and without
+    /// bytes of it at most, its control characters as spaces but its line
+    /// feeds, which part a command of several lines, and without
     /// the spaces around it.
     pub(super) fn tell_command_line(&mut self, bytes: &[u8]) {
         if self.alternate_active {
@@ -357,7 +358,7 @@ impl Terminal {
         let line: String = String::from_utf8_lossy(&decoded)
             .chars()
             .map(|character| {
-                if character.is_control() {
+                if character.is_control() && character != '\n' {
                     ' '
                 } else {
                     character

@@ -198,6 +198,19 @@ fn a_button_beside_the_pill_scrolls_to_the_block_s_end_while_the_view_does_not_s
 }
 
 #[test]
+fn a_command_of_several_lines_heads_its_block_on_one() {
+    let (mut host, mut plugin) = host();
+    host.pane(PANE)
+        .command_lines
+        .insert(2, "for i in 1 2\ndo make\ndone".to_owned());
+    let header = scrolled(&mut host, &mut plugin, 40).expect("a header");
+    let Kind::Text(line) = &header.children[1].children[0].kind else {
+        panic!("{header:?}");
+    };
+    assert_eq!(line, "for i in 1 2 do make done");
+}
+
+#[test]
 fn a_running_command_s_end_is_the_screen_s_which_the_view_then_follows() {
     let (mut host, mut plugin) = host();
     let header = scrolled(&mut host, &mut plugin, 62).expect("a header");
@@ -878,6 +891,10 @@ fn a_block_runs_again_at_the_shell_s_prompt_of_an_empty_command_line() {
         run(&mut host, &mut plugin, RERUN, cell(0, 4)),
         [ran("true")]
     );
+    // A command of several lines, as zsh tells it, whole.
+    let lines = "for i in 1 2\ndo echo $i\ndone";
+    host.pane(PANE).command_lines.insert(1, lines.to_owned());
+    assert_eq!(run(&mut host, &mut plugin, RERUN, cell(1, 2)), [ran(lines)]);
     // Of no cell, as the Edit menu runs it: the last command that started.
     host.pane(PANE).commands[2].end = Some((0, 7));
     assert_eq!(
