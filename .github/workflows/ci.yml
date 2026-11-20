@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    # A phase's branch too, whose pushes run the Linux jobs alone: the
-    # macOS job runs on main's, as the next job tells.
-    branches: [main, f3]
+    # A release's branch and a hotfix's too, whose pushes run every job;
+    # a feature's branch runs them through its pull request, or by hand.
+    branches: [main, 'release/**', 'hotfix/**']
   pull_request:
   # Every job, the macOS one too, of any branch, as `gh workflow run CI
-  # --ref f3` asks.
+  # --ref release/1.4` asks.
   workflow_dispatch:
 
 permissions:
@@ -85,10 +85,10 @@ jobs:
   macos:
     # Only the checks that need macOS run here, because macOS runners are the
     # most expensive ones: GitHub bills a macOS runner's minute as ten of the
-    # account's. So the job runs on main's pushes, on pull requests and on
-    # the runs asked by hand, of changes beyond documents; a phase's branch,
-    # as f3, runs it by hand, `just ci` running its checks on the Mac before
-    # each push.
+    # account's. So the job runs on the pushes of main and of the release's
+    # and hotfix's branches, on pull requests and on the runs asked by hand,
+    # of changes beyond documents; `just ci` runs its checks on the Mac
+    # before each push.
     name: macos
     needs: changes
     # Of a `changes` job that failed too, which would leave the code
@@ -96,7 +96,9 @@ jobs:
     if: >-
       !cancelled()
       && (needs.changes.result != 'success' || needs.changes.outputs.code == 'true')
-      && (github.event_name != 'push' || github.ref == 'refs/heads/main')
+      && (github.event_name != 'push' || github.ref == 'refs/heads/main'
+          || startsWith(github.ref, 'refs/heads/release/')
+          || startsWith(github.ref, 'refs/heads/hotfix/'))
     # The oldest macOS that Lokyr supports, pinned so that the job does not
     # move along with macos-latest.
     runs-on: macos-26
