@@ -67,17 +67,29 @@ const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
 
 /// The caps of a shortcut, `keys`, as the platform writes it: each word of
 /// it, apart, of each of its leading modifiers' symbols a cap and the rest
-/// one, as `⇧⌘N`'s ⇧, ⌘ and N; or each of its parts written of `+`, as
-/// `Ctrl+Shift+P`'s.
+/// one, as `⇧⌘N`'s ⇧, ⌘ and N, and `⌘+`'s ⌘ and +; or each of its parts
+/// written of `+`, as `Ctrl+Shift+P`'s, the `+` key last of `Ctrl++`.
 pub fn keycaps(keys: &str) -> Vec<String> {
     let mut caps = Vec::new();
     for word in keys.split_whitespace() {
-        if word.chars().count() > 1 && word.contains('+') {
+        let symbols = word
+            .chars()
+            .next()
+            .is_some_and(|first| MODIFIERS.contains(&first));
+        if !symbols && word.chars().count() > 1 && word.contains('+') {
+            let (parts, plus) = match word.strip_suffix("++") {
+                Some(parts) => (parts, true),
+                None => (word, false),
+            };
             caps.extend(
-                word.split('+')
+                parts
+                    .split('+')
                     .filter(|part| !part.is_empty())
                     .map(str::to_owned),
             );
+            if plus {
+                caps.push("+".to_owned());
+            }
             continue;
         }
         let mut rest = word;
@@ -713,6 +725,11 @@ mod tests {
         assert_eq!(keycaps("⌘"), ["⌘"]);
         assert_eq!(keycaps("Ctrl+Shift+P"), ["Ctrl", "Shift", "P"]);
         assert_eq!(keycaps("+"), ["+"]);
+        // The `+` key a cap of its own, after macOS's modifiers or last of
+        // a shortcut written of `+`.
+        assert_eq!(keycaps("⌘+"), ["⌘", "+"]);
+        assert_eq!(keycaps("⌃⌥+"), ["⌃", "⌥", "+"]);
+        assert_eq!(keycaps("Ctrl++"), ["Ctrl", "+"]);
         assert!(keycaps("").is_empty());
         // A symbol's room, as wide as tall at least.
         assert_eq!(keycap_size((7.0, 14.0)), (16.0, 16.0));
