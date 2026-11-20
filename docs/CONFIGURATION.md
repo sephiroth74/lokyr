@@ -244,6 +244,8 @@ padding-x = 8                        # points, 0 to 40, left and right of the te
 padding-y = 1                        # points, 0 to 20, above and below it
 align = "left"                       # left | center | right: where its pill sits along the line
 max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
+dividers = true                      # true | false
+failed-tint = true                   # true | false
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
@@ -828,6 +830,7 @@ Whether each pane shows a gutter at the left of its cells, with a mark on the pr
 - The gutter takes no column of the grid: it lies in the padding at the cells' left, which widens to 4 points, at the left and the right, if [`padding-x`](#padding-x-padding-y) is narrower.
 - The marks keep their lines as output scrolls them into the scrollback and a resize reflows them, and go with them, as the scrollback's limit or a clearing takes them.
 - A program of the full screen, as an editor's, shows no prompt's mark, as its screen has no shell's prompts.
+- While Blocks runs ([`[plugins.blocks]`](#pluginsblocks)), each command's bar runs along its block, from its prompt to its output's end.
 - Plugins can lay marks of their own colors in the gutter, which show over a prompt's mark of the same row; they show only while it is on.
 - The colors are the theme's: `gutter.succeeded`, `gutter.failed` and `gutter.running`.
 
@@ -2198,7 +2201,7 @@ The most characters of the command's line that the header shows.
 
 <sub>Platforms: macOS</sub>
 
-The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.
+The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, and a failed block's rows can be tinted.
 
 `lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 
@@ -2281,6 +2284,35 @@ The most characters of the command's line that the header shows.
 - A longer line is cut at its end of an ellipsis, `…`; its tooltip, and what VoiceOver reads, keep it whole.
 - Whatever its length, the pill stays within the pane, its line cut of an ellipsis where the pane is narrower.
 - It applies at once, as you save the file, to a header that shows too.
+
+### `dividers`
+
+<sub>Platforms: macOS</sub>
+
+Whether a thin line divides each command's block from the one before.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `true` |
+
+- The line sits at the top of each block's first row, its prompt's, across the pane, the prompt where you type too.
+- Its color is the theme's `blocks.divider`, as the interface's lines by default.
+- The gutter's bar of each command runs along its block, from its prompt to its output's end, while Blocks runs, whatever this key.
+- It applies at once, as you save the file.
+
+### `failed-tint`
+
+<sub>Platforms: macOS</sub>
+
+Whether the rows of a block whose command failed are tinted, across the pane.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- A command fails of an exit status other than 0, as an interrupted command does.
+- By default a failed block shows the gutter's red bar alone; `true` tints its rows too, of the theme's `blocks.failed`, a faint red by default.
+- It applies at once, as you save the file.
 
 ## `[plugins.quick-tips]`
 

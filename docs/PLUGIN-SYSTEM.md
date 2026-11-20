@@ -931,6 +931,11 @@ type Cx = {
     set_inactive_dim: (dim: number) -> (boolean, Error?),
     -- The keyboard goes to the pane that the pointer comes over, while the plugin runs, as any plugin asks.
     set_focus_follows_mouse: (on: boolean) -> (boolean, Error?),
+    -- The commands' blocks of every pane drawn so, while the plugin runs, each look that any plugin asks: the gutter's
+    -- bar of a command along its block's rows (`bars`), a hairline at the top of each block, across the pane, of the
+    -- theme's `blocks.divider` (`dividers`), and a failed block's rows tinted of `blocks.failed` (`failed_tint`) ·
+    -- not released yet.
+    set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean? }) -> (boolean, Error?),
     -- Swaps two panes of one tab, each taking the other's room, the tab's keyboard staying with its pane.
     swap_panes: (pane: PaneId, with: PaneId) -> (boolean, Error?),
     -- The split at `path`, the parts from the layout's top, takes the first part's share `ratio`, or its panes'.

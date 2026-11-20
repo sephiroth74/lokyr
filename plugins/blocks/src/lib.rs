@@ -5,7 +5,10 @@
 //! hairline across the pane, which a click scrolls to the command's
 //! prompt; while the view does not show the block's end, a button beside
 //! the pill scrolls there. The header is `lokyr/command-header`'s, of the
-//! module that both hold, which this plugin replaces while it runs.
+//! module that both hold, which this plugin replaces while it runs. The
+//! host draws the blocks as it asks: the gutter's bar of each command along
+//! its block, a divider at each block's top, and a failed block's tint, as
+//! its config says.
 //!
 //! Its commands act on a block: the one under a cell, as the pane's
 //! context menu gives its `column` and `row`, or else the last command's.
@@ -20,7 +23,7 @@
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{LocalTime, NoticeLevel, PaneId, ShellCommand};
+use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, ShellCommand};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
@@ -104,6 +107,8 @@ pub struct Blocks {
     details: Option<Details>,
     /// The number of the last details' panel that opened.
     opened: u64,
+    /// How the host draws the blocks, as the plugin last asked.
+    looks: BlockLooks,
 }
 
 /// A block's details that a panel shows: its panel, its pane, its command,
@@ -197,6 +202,7 @@ impl Default for Blocks {
             reading: None,
             details: None,
             opened: 0,
+            looks: BlockLooks::default(),
         }
     }
 }
@@ -204,6 +210,8 @@ impl Default for Blocks {
 impl Plugin for Blocks {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.headers.activate(cx)?;
+        self.looks = looks_of(&cx.config()?);
+        cx.set_block_looks(self.looks)?;
         // A block: its cell's, as the context menu gives it, or, of none,
         // the last command's.
         let cell = |name: &str| Param {
@@ -283,6 +291,13 @@ impl Plugin for Blocks {
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         self.headers.on_event(cx, events)?;
         self.follow_details(cx, events)?;
+        if events.contains(&Event::ConfigChanged) {
+            let looks = looks_of(&cx.config()?);
+            if looks != self.looks {
+                self.looks = looks;
+                cx.set_block_looks(looks)?;
+            }
+        }
         for event in events {
             let Event::Lines {
                 id, pane, lines, ..
@@ -570,6 +585,24 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
         // The notice of a second ago, of the same why, still shows.
         Err(error) if error.code == Code::Unavailable => Ok(()),
         done => done,
+    }
+}
+
+/// How the host draws the blocks, as `config` says: the gutter's bars along
+/// them, their dividers, `dividers`, and a failed block's tint,
+/// `failed-tint`, of the schema's defaults where it says nothing.
+fn looks_of(config: &Data) -> BlockLooks {
+    let switch = |key: &str, default: bool| match config {
+        Data::Map(config) => match config.get(key) {
+            Some(Data::Boolean(on)) => *on,
+            _ => default,
+        },
+        _ => default,
+    };
+    BlockLooks {
+        bars: true,
+        dividers: switch("dividers", true),
+        failed_tint: switch("failed-tint", false),
     }
 }
 

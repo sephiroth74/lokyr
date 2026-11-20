@@ -24,6 +24,7 @@ Scroll up into the numbers. A header with `seq 1 500` appears across the top of 
 - **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
 - **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
 - **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
+- **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
 
 ## Copy a command or its output
 
@@ -63,6 +64,22 @@ It runs only while your shell waits at its prompt with an empty command line. Ot
 
 The command line goes in as a paste, so a command of several lines stays whole, and Lokyr doesn't ask you to confirm it, as it can for a paste of several lines. Edit › Run Command Again, with no click, runs the last command that started.
 
+## Dividers and the gutter's bar
+
+While Blocks runs, a thin line divides each block from the one before, at the top of its prompt, across the pane. The prompt where you type has one too, so the last command's output stays apart from what you type.
+
+The gutter's bar of each command runs along its whole block, from its prompt to the end of its output: gray when the command succeeded, red when it failed, and in the accent color while it runs, as long as the output grows.
+
+A failed block shows its red bar alone. To tint its rows too, in a faint red, turn on `failed-tint`:
+
+```toml
+[plugins.blocks]
+dividers = true       # the line between the blocks
+failed-tint = true    # a failed block's rows tinted
+```
+
+The colors are your theme's: `blocks.divider` for the line, `blocks.failed` for the tint, and the gutter's colors for the bars. The Theme Editor shows them in its terminal's preview.
+
 ## Change the header's look
 
 The header's colors are tokens of your theme, so they follow the light and the dark appearance. Its keys in [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) name the tokens, and set the text's size and weight, the room around the text, and where the pill sits:
@@ -96,6 +113,8 @@ You can also turn off Blocks on the Plugins page of the settings window. Lokyr t
 - [`padding-x` and `padding-y`](CONFIGURATION.md#padding-x-padding-y-2): the room around the text in the pill.
 - [`align`](CONFIGURATION.md#align-1): where the pill sits along the line.
 - [`max-length`](CONFIGURATION.md#max-length-1): the most characters of the command line that the pill shows.
+- [`dividers`](CONFIGURATION.md#dividers): the line between the blocks · not released yet.
+- [`failed-tint`](CONFIGURATION.md#failed-tint): a failed block's rows tinted · not released yet.
 
 ## Commands and keys
 
@@ -116,6 +135,8 @@ None of them has default keys: bind them in [`[keys]`](CONFIGURATION.md#keys), s
 ## How it works
 
 Your shell marks each command with OSC 133, the shell integration's sequences: where the prompt starts, where the command line starts, where the output starts, and where the command ended. Lokyr keeps the marks with the rows of the scrollback, and the Blocks plugin reads them as the view moves.
+
+Lokyr draws the dividers, the bars and the tint from the same marks, for the blocks that the pane shows: they cost nothing for the commands kept in the scrollback.
 
 When a command's output starts, Lokyr notes the time and the folder that your shell reported last with OSC 7, which the shell integration sends before each prompt. When the command ends, Lokyr notes the time again. The duration is the time between the two, by the Mac's clock.
 

@@ -688,6 +688,8 @@ struct State {
     /// and whether it asked that the keyboard follow the pointer.
     dim: f32,
     follows: bool,
+    /// The looks of the commands' blocks that it asked for.
+    block_looks: host::BlockLooks,
     /// Where its tab bar goes in windows of a place of their own, as a
     /// window of a single tab shows its title, which goes as the window
     /// closes.
@@ -1763,6 +1765,7 @@ impl Plugins {
                 window_places: BTreeMap::new(),
                 dim: 0.0,
                 follows: false,
+                block_looks: host::BlockLooks::default(),
                 told_tabs: BTreeMap::new(),
                 told_panes: BTreeMap::new(),
                 searches: Vec::new(),
@@ -2506,6 +2509,17 @@ impl Plugins {
             .filter(|entry| entry.state.status == Status::Active)
             .map(|entry| entry.state.dim)
             .fold(0.0, f32::max)
+    }
+
+    /// How the panes draw the commands' blocks: each look that an active
+    /// plugin asked for.
+    pub fn block_looks(&self) -> host::BlockLooks {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .fold(host::BlockLooks::default(), |looks, entry| {
+                looks.with(entry.state.block_looks)
+            })
     }
 
     /// Whether the keyboard goes to the pane that the pointer comes over, as
@@ -4881,6 +4895,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SetTabBarPlace(place) => state.bar_place = place,
             Asked::SetInactiveDim(dim) => state.dim = dim,
             Asked::SetFocusFollowsMouse(on) => state.follows = on,
+            Asked::SetBlockLooks(looks) => state.block_looks = looks,
             Asked::SetWindowTabBarPlace { window, place } => {
                 // The places of windows that closed go.
                 state

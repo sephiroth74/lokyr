@@ -199,3 +199,9 @@
 "hints.label.bg" = "accent"
 # A hint's label's letters · Since 1.3.
 "hints.label.fg" = "contrasting(hints.label.bg)"
+# The line at the top of each command's block, across the pane, as Blocks shows it · not released yet.
+"blocks.divider" = "separator"
+# The outline round the block that the keyboard selects · not released yet.
+"blocks.selected" = "accent"
+# The tint over the rows of a block whose command failed, as Blocks shows it where asked · not released yet.
+"blocks.failed" = { light = "gutter.failed / 8%", dark = "gutter.failed / 12%" }

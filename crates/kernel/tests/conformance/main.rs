@@ -1162,11 +1162,12 @@ fn kind(request: &Request) -> usize {
         Request::Now => 142,
         Request::EditedLine(_) => 143,
         Request::RunLine { .. } => 144,
+        Request::SetBlockLooks(_) => 145,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 145;
+const KINDS: usize = 146;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

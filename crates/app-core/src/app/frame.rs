@@ -1086,23 +1086,67 @@ impl<B: Backend> App<B> {
         let Some((_, tokens)) = state.chrome_tokens.as_ref() else {
             return;
         };
-        // The marks of the panes' gutters, in their paddings at the cells'
-        // left, faded as their panes' cells are.
-        if let Some(padding) = gutter {
-            let shown = std::iter::once((snapshot, (x, y), 0.0))
-                .chain(others.iter().map(|(pane, at)| (pane.snapshot(), *at, dim)));
-            let shapes: Vec<Shape> = shown
-                .flat_map(|(snapshot, at, dim)| {
-                    cells::gutter_marks(snapshot, at, (padding, cell.height), size.scale, tokens)
-                        .map(move |mut shape| {
-                            shape.fill = shape.fill.with_alpha(shape.fill.alpha * (1.0 - dim));
-                            shape
-                        })
-                })
-                .collect();
-            if !shapes.is_empty() {
-                items.push(Item::Shapes(shapes));
+        // The commands' blocks as the plugins ask: a failed one's tint and
+        // their dividers across each pane, its paddings too, then the marks
+        // of the panes' gutters, in their paddings at the cells' left, along
+        // the blocks where asked; each faded as its pane's cells are.
+        let looks = self.plugins.block_looks();
+        let faded = |dim: f32| {
+            move |mut shape: Shape| {
+                shape.fill = shape.fill.with_alpha(shape.fill.alpha * (1.0 - dim));
+                shape
             }
+        };
+        let width = |pane: PaneId| {
+            views
+                .iter()
+                .find(|view| view.pane == pane)
+                .map_or(0, |view| view.rect.width)
+        };
+        let shown = || {
+            std::iter::once((snapshot, (x, y), width(active), 0.0)).chain(
+                others
+                    .iter()
+                    .map(move |(pane, at)| (pane.snapshot(), *at, width(pane.id()), dim)),
+            )
+        };
+        let mut shapes: Vec<Shape> = Vec::new();
+        if looks.dividers || looks.failed_tint {
+            let pad = i32::try_from(bar_padding).unwrap_or(0);
+            for (snapshot, at, width, dim) in shown() {
+                let across = (at.0 - pad, width + 2 * bar_padding);
+                shapes.extend(
+                    cells::block_shapes(
+                        snapshot,
+                        at.1,
+                        cell.height,
+                        across,
+                        size.scale,
+                        tokens,
+                        looks,
+                    )
+                    .into_iter()
+                    .map(faded(dim)),
+                );
+            }
+        }
+        if let Some(padding) = gutter {
+            for (snapshot, at, _, dim) in shown() {
+                shapes.extend(
+                    cells::gutter_marks(
+                        snapshot,
+                        at,
+                        (padding, cell.height),
+                        size.scale,
+                        tokens,
+                        looks.bars,
+                    )
+                    .map(faded(dim)),
+                );
+            }
+        }
+        if !shapes.is_empty() {
+            items.push(Item::Shapes(shapes));
         }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {

@@ -565,6 +565,8 @@ pub struct FakeHost {
     /// keyboard follows the pointer, as the plugin asked.
     inactive_dim: f32,
     focus_follows_mouse: bool,
+    /// The looks of the commands' blocks that the plugin asked for.
+    block_looks: host::BlockLooks,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -706,6 +708,7 @@ impl FakeHost {
             window_bar_places: BTreeMap::new(),
             inactive_dim: 0.0,
             focus_follows_mouse: false,
+            block_looks: host::BlockLooks::default(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -1262,6 +1265,11 @@ impl FakeHost {
     /// asked for, and whether the keyboard follows the pointer.
     pub fn pane_looks(&self) -> (f32, bool) {
         (self.inactive_dim, self.focus_follows_mouse)
+    }
+
+    /// The looks of the commands' blocks that the plugin asked for.
+    pub fn block_looks(&self) -> host::BlockLooks {
+        self.block_looks
     }
 
     /// The clipboard's text.
@@ -2110,6 +2118,7 @@ impl FakeHost {
             Request::SetTabBarPlace(place) => self.bar_place = *place,
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
             Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
+            Request::SetBlockLooks(looks) => self.block_looks = *looks,
             Request::SetWindowTabBarPlace { window, place } => match place {
                 Some(place) => {
                     self.window_bar_places.insert(*window, *place);
@@ -4504,7 +4513,7 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::SetFocusFollowsMouse(_) => Response::Done,
+            Request::SetFocusFollowsMouse(_) | Request::SetBlockLooks(_) => Response::Done,
             Request::ShowMatches {
                 search, current, ..
             } => {

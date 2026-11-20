@@ -882,6 +882,9 @@ pub enum Request {
     /// Gives the keyboard to the pane of a tab that the pointer comes over,
     /// while the plugin runs, as any plugin asks it.
     SetFocusFollowsMouse(bool),
+    /// Draws the commands' blocks of every pane so, while the plugin runs:
+    /// each look that any plugin asks for.
+    SetBlockLooks(crate::host::BlockLooks),
     /// Puts the plugin's tab bar of `window` at `place`, over the place of
     /// its bar in every window, as a window of a single tab shows its title
     /// in its titlebar, [`BarPlace::Title`]; `None` gives it that place
@@ -1305,7 +1308,8 @@ impl Request {
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
-            | Self::SetFocusFollowsMouse(_) => Some(Capability::PaneView),
+            | Self::SetFocusFollowsMouse(_)
+            | Self::SetBlockLooks(_) => Some(Capability::PaneView),
             // What a plugin draws over a pane.
             Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -1463,6 +1467,7 @@ impl Request {
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
             | Self::SetFocusFollowsMouse(_)
+            | Self::SetBlockLooks(_)
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -2077,6 +2082,7 @@ impl Request {
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }
+            | Self::SetBlockLooks { .. }
             | Self::SetWindowTabBarPlace { .. }
             | Self::ActivateTab { .. }
             | Self::FocusPane { .. }

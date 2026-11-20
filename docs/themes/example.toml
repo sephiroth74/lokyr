@@ -163,8 +163,12 @@ running = "accent"
 succeeded = "#ffffff40"
 failed = "#ff5f57"
 
-# A plugin's tokens, of a section of its own name: [blocks]'s "pill" is
-# the token "blocks.pill", which the plugin's config names, as
-# [plugins.blocks] background = "blocks.pill".
+# The commands' blocks, as Blocks shows them, and a plugin's tokens, of a
+# section of its own name: [blocks]'s "pill" is the token "blocks.pill",
+# which the plugin's config names, as [plugins.blocks] background =
+# "blocks.pill".
 [blocks]
+divider = "separator"               # the line at the top of each block
+selected = "accent"                 # the outline round the selected block
+failed = "gutter.failed / 12%"      # the tint over a failed block's rows
 pill = "#2a2a2d"

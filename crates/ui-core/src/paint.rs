@@ -2646,7 +2646,9 @@ mod tests {
             (cells.columns, cells.rows),
             (crate::specimen::COLUMNS, crate::specimen::ROWS)
         );
-        assert!(matches!(&items[at + 1], Item::Shapes(bars) if bars.len() == 4));
+        // A failed block's tint, the blocks' four dividers and their four
+        // bars.
+        assert!(matches!(&items[at + 1], Item::Shapes(bars) if bars.len() == 9));
         assert!(matches!(items[at + 2], Item::PopClip));
     }
 

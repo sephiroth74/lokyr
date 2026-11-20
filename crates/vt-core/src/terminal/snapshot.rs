@@ -2,8 +2,8 @@
 //! lock, so that it can draw without the lock.
 
 use super::{
-    Colors, Cursor, CursorStyle, Decorated, GutterMark, Highlighted, InputModes, KeyboardFlags,
-    Origin, Selected, Terminal,
+    BlockMark, Colors, Cursor, CursorStyle, Decorated, GutterMark, Highlighted, InputModes,
+    KeyboardFlags, Origin, Selected, Terminal,
 };
 use crate::page::{Cell, Content, ListRow, Page, RowFlag, Style, StyleId};
 
@@ -48,6 +48,8 @@ pub struct Snapshot {
     decorations: Vec<Decorated>,
     /// The gutter's marks that the view shows.
     gutter: Vec<GutterMark>,
+    /// The commands' blocks that the view shows.
+    blocks: Vec<BlockMark>,
     /// The spans of the searches' matches that the view shows.
     highlights: Vec<Highlighted>,
     /// Whether a search shows its matches, or its current one, wherever
@@ -136,6 +138,12 @@ impl Snapshot {
     /// them, by their rows.
     pub fn gutter(&self) -> &[GutterMark] {
         &self.gutter
+    }
+
+    /// The blocks of the commands that the view shows, oldest first, as the
+    /// last update found them, of their rows and states.
+    pub fn blocks(&self) -> &[BlockMark] {
+        &self.blocks
     }
 
     /// The spans of the searches' matches that the view shows, as the last
@@ -444,7 +452,7 @@ impl Terminal {
         }
         snapshot.selection = self.selection_in_snapshot(&snapshot.changed);
         snapshot.decorations = self.decorated_view();
-        snapshot.gutter = self.gutter_view();
+        (snapshot.gutter, snapshot.blocks) = self.gutter_view();
         self.drop_rewritten_matches();
         snapshot.highlights = self.highlighted_view();
         snapshot.matches_shown = self.matches_shown();
@@ -497,6 +505,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         selection: None,
         decorations: Vec::new(),
         gutter: Vec::new(),
+        blocks: Vec::new(),
         highlights: Vec::new(),
         matches_shown: terminal.matches_shown(),
         images: Vec::new(),

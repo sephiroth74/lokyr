@@ -23,7 +23,7 @@ A red bar appears at the left of the prompt of `ls`, which failed, and a gray on
 ## What it gives you
 
 - **Jump between prompts**: ⌘↑ and ⌘↓ (`pane.prompt-previous`, `pane.prompt-next`), as [copy, paste and scrolling](plugins/core-actions.md) lists them.
-- **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
+- **A mark for each command**: a bar in the gutter at the left of its prompt's first line of text, gray when it succeeded, red when it failed, and in the accent color while it runs. With [Blocks](blocks.md#dividers-and-the-gutters-bar), the bar runs along the whole block, and a thin line divides the blocks · not released yet. [`[window] gutter`](CONFIGURATION.md#gutter) turns the gutter off.
 - **The command you're reading**: when a command's line scrolls away, the header of its [block](blocks.md) shows it at the pane's top, with an arrow to the end of its output · not released yet.
 - **Copy a command's output**: ⌥⇧⌘C (`pane.copy-output`) copies the output of the last command that ended, without its prompt; ⇧⌘A (`pane.select-output`) selects it. Right-click a [block](blocks.md#copy-a-command-or-its-output) to copy its command line too, or to select it whole · not released yet.
 - **A command's details**: right-click a [block](blocks.md#see-a-blocks-details) to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.

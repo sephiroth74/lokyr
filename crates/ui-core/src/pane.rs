@@ -1515,49 +1515,137 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
 const GUTTER_MARK: f64 = 2.0;
 
 /// The marks of `snapshot`'s gutter, of a pane whose grid's top left
-/// corner is at `origin`, in pixels, each a bar along its row, a point
-/// shorter at either end, in the middle of the padding at the cells' left,
-/// of `room`'s width, of `room`'s height of a row, on a display of
-/// `scale`: a prompt's of the theme's token of its command's state, a laid
-/// one of its color.
+/// corner is at `origin`, in pixels, each a bar in the middle of the
+/// padding at the cells' left, of `room`'s width, of `room`'s height of a
+/// row, on a display of `scale`: a laid one of its color along its row; a
+/// command's of the theme's token of its state, along its prompt's row, or,
+/// `along` the blocks, from its block's first row to its last; a bar a
+/// point shorter at either end that the view shows.
 pub fn gutter_marks<'a>(
     snapshot: &'a Snapshot,
     origin: (i32, i32),
     (padding, row_height): (u32, u32),
     scale: f64,
     tokens: &'a theme::Tokens,
+    along: bool,
 ) -> impl Iterator<Item = Shape> + 'a {
+    use lokyr_vt_core::terminal::GutterKind;
     // Casts from floats saturate.
     let width = ((GUTTER_MARK * scale).round() as u32).clamp(1, padding.max(1));
     let inset = (scale.round() as u32).min(row_height / 4);
     let x = origin.0 - i32::try_from(padding.div_ceil(2) + width / 2).unwrap_or(0);
-    snapshot.gutter().iter().filter_map(move |mark| {
-        let fill = match mark.kind {
-            lokyr_vt_core::terminal::GutterKind::Laid(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
-            lokyr_vt_core::terminal::GutterKind::Running => tokens.get("gutter.running")?,
-            lokyr_vt_core::terminal::GutterKind::Succeeded => tokens.get("gutter.succeeded")?,
-            lokyr_vt_core::terminal::GutterKind::Failed => tokens.get("gutter.failed")?,
-        };
-        let top = u32::from(mark.row) * row_height + inset;
-        Some(Shape {
-            rect: Rect {
-                x,
-                y: origin
-                    .1
-                    .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
-                width,
-                height: row_height.saturating_sub(2 * inset),
-            },
-            radius: width as f32 / 2.0,
-            fill,
-            border: 0.0,
-            border_color: Color::CLEAR,
-            shadow: None,
-            arc: None,
-            knockout: false,
-            mark: None,
-        })
-    })
+    let fill = move |kind: GutterKind| match kind {
+        GutterKind::Laid(rgb) => Some(Color::from_rgb8(rgb.r, rgb.g, rgb.b)),
+        GutterKind::Running => tokens.get("gutter.running"),
+        GutterKind::Succeeded => tokens.get("gutter.succeeded"),
+        GutterKind::Failed => tokens.get("gutter.failed"),
+    };
+    // A bar from the pixel `top` of the grid to before `bottom`.
+    let bar = move |top: u32, bottom: u32, fill: Color| Shape {
+        rect: Rect {
+            x,
+            y: origin
+                .1
+                .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
+            width,
+            height: bottom.saturating_sub(top),
+        },
+        radius: width as f32 / 2.0,
+        fill,
+        border: 0.0,
+        border_color: Color::CLEAR,
+        shadow: None,
+        arc: None,
+        knockout: false,
+        mark: None,
+    };
+    let rows = i32::from(snapshot.rows());
+    let marks = snapshot
+        .gutter()
+        .iter()
+        .filter(move |mark| !along || matches!(mark.kind, GutterKind::Laid(_)))
+        .filter_map(move |mark| {
+            let top = u32::from(mark.row) * row_height;
+            Some(bar(top + inset, top + row_height - inset, fill(mark.kind)?))
+        });
+    let blocks = snapshot
+        .blocks()
+        .iter()
+        .filter(move |_| along)
+        .filter_map(move |block| {
+            let (first, last) = (block.first.max(0), block.last.min(rows - 1));
+            if first > last {
+                return None;
+            }
+            // Its ends that the view shows a point short, the others to the
+            // view's edges.
+            let pixel = |row: i32| u32::try_from(row).unwrap_or(0) * row_height;
+            let top = pixel(first) + if block.first >= 0 { inset } else { 0 };
+            let bottom = pixel(last + 1) - if block.last < rows { inset } else { 0 };
+            Some(bar(top, bottom, fill(block.kind?)?))
+        });
+    // The blocks' bars under the laid marks, which show over them.
+    blocks.collect::<Vec<_>>().into_iter().chain(marks)
+}
+
+/// What a pane draws of the commands' blocks of `snapshot` as `looks` ask,
+/// of the theme's `tokens`, over its cells, its grid's top at `top`, in
+/// pixels, of rows of `row_height`, across `across`, the pane's left edge
+/// and its width, on a display of `scale`: a failed block's rows tinted, of
+/// `blocks.failed`, and a hairline of a point at the top of each block's
+/// first row that the view shows, of `blocks.divider`.
+pub fn block_shapes(
+    snapshot: &Snapshot,
+    top: i32,
+    row_height: u32,
+    across: (i32, u32),
+    scale: f64,
+    tokens: &theme::Tokens,
+    looks: lokyr_plugin_sdk::host::BlockLooks,
+) -> Vec<Shape> {
+    use lokyr_vt_core::terminal::GutterKind;
+    let rows = i32::from(snapshot.rows());
+    let shape = |y: i32, height: u32, fill: Color| Shape {
+        rect: Rect {
+            x: across.0,
+            y,
+            width: across.1,
+            height,
+        },
+        radius: 0.0,
+        fill,
+        border: 0.0,
+        border_color: Color::CLEAR,
+        shadow: None,
+        arc: None,
+        knockout: false,
+        mark: None,
+    };
+    let y_of = |row: i32| {
+        top.saturating_add(row.saturating_mul(i32::try_from(row_height).unwrap_or(i32::MAX)))
+    };
+    let mut shapes = Vec::new();
+    let tint = tokens.get("blocks.failed").filter(|_| looks.failed_tint);
+    if let Some(tint) = tint {
+        for block in snapshot.blocks() {
+            let (first, last) = (block.first.max(0), block.last.min(rows - 1));
+            if block.kind == Some(GutterKind::Failed) && first <= last {
+                let height = u32::try_from(last - first + 1).unwrap_or(0) * row_height;
+                shapes.push(shape(y_of(first), height, tint));
+            }
+        }
+    }
+    let divider = tokens.get("blocks.divider").filter(|_| looks.dividers);
+    if let Some(divider) = divider {
+        // Casts from floats saturate.
+        let thickness = (scale.round() as u32).clamp(1, row_height.max(1));
+        for block in snapshot.blocks() {
+            if (0..rows).contains(&block.first) {
+                shapes.push(shape(y_of(block.first), thickness, divider));
+            }
+        }
+    }
+    shapes
 }
 
 /// Faint text's color `text` at `opacity` over `under`, in the encoded
@@ -3596,6 +3684,73 @@ mod tests {
                 (3, 0, text),
                 (0, 1, rgb(4, 5, 6)),
                 (1, 1, rgb(4, 5, 6)),
+            ]
+        );
+    }
+
+    /// A snapshot of 20 columns and 6 rows of `ls`, of two rows of output,
+    /// `false`, which failed, and `seq`, which runs.
+    fn blocks_snapshot() -> Snapshot {
+        snapshot(
+            20,
+            6,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x071",
+            ),
+        )
+    }
+
+    #[test]
+    fn a_command_s_bar_runs_along_its_block_or_beside_its_prompt_alone() {
+        let snapshot = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        // Of rows of 16 pixels, a padding of 8 at the cells' left of x 8, at
+        // 1x: a bar of 2 pixels, a pixel short at each end.
+        let spans = |along: bool| -> Vec<(i32, u32)> {
+            gutter_marks(&snapshot, (8, 0), (8, 16), 1.0, &tokens, along)
+                .map(|bar| (bar.rect.y, bar.rect.height))
+                .collect()
+        };
+        assert_eq!(spans(false), [(1, 14), (49, 14), (65, 14)]);
+        // Along: `ls`' three rows, `false`'s one, and `seq`'s to the cursor.
+        assert_eq!(spans(true), [(1, 46), (49, 14), (65, 30)]);
+    }
+
+    #[test]
+    fn the_blocks_show_their_dividers_and_a_failed_one_s_tint_as_asked() {
+        let snapshot = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let shapes = |looks: lokyr_plugin_sdk::host::BlockLooks| -> Vec<(i32, u32, u32, Color)> {
+            block_shapes(&snapshot, 0, 16, (0, 176), 2.0, &tokens, looks)
+                .iter()
+                .map(|shape| {
+                    (
+                        shape.rect.y,
+                        shape.rect.width,
+                        shape.rect.height,
+                        shape.fill,
+                    )
+                })
+                .collect()
+        };
+        assert!(shapes(lokyr_plugin_sdk::host::BlockLooks::default()).is_empty());
+        let divider = tokens.get("blocks.divider").unwrap();
+        let tint = tokens.get("blocks.failed").unwrap();
+        // A divider of a point, two pixels at 2x, across, at each block's
+        // top; `false`'s row tinted under them.
+        assert_eq!(
+            shapes(lokyr_plugin_sdk::host::BlockLooks {
+                bars: false,
+                dividers: true,
+                failed_tint: true,
+            }),
+            [
+                (48, 176, 16, tint),
+                (0, 176, 2, divider),
+                (48, 176, 2, divider),
+                (64, 176, 2, divider),
             ]
         );
     }

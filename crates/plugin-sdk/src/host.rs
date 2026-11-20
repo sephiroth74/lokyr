@@ -693,6 +693,38 @@ impl ShellCommand {
     }
 }
 
+/// How the host draws the blocks of the commands that the shells mark, as
+/// a plugin of blocks asks, in every pane, while it runs: each of the
+/// commands' blocks of the view, from its prompt to its output's end.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockLooks {
+    /// The gutter's bar of a command along its block's rows, in place of
+    /// its prompt's row alone.
+    #[serde(default)]
+    pub bars: bool,
+    /// A hairline at the top of each block's first row, across the pane,
+    /// of the theme's token `blocks.divider`.
+    #[serde(default)]
+    pub dividers: bool,
+    /// The rows of a block whose command failed tinted, across the pane, of
+    /// the theme's token `blocks.failed`.
+    #[serde(default)]
+    pub failed_tint: bool,
+}
+
+impl BlockLooks {
+    /// The looks of `self` and of `other` together, as several plugins ask
+    /// for them.
+    #[must_use]
+    pub fn with(self, other: Self) -> Self {
+        Self {
+            bars: self.bars || other.bars,
+            dividers: self.dividers || other.dividers,
+            failed_tint: self.failed_tint || other.failed_tint,
+        }
+    }
+}
+
 /// The time of the system's clock and the local time zone's offset from
 /// UTC, as a read of the time gives them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -80,6 +80,9 @@ struct Scene {
     fade: Option<f32>,
     /// A search's matches that it highlights, if any.
     highlights: Option<Highlights>,
+    /// The commands' blocks that it draws, as Blocks asks the panes, in
+    /// the light variant or the dark one, if any.
+    blocks: Option<(lokyr_plugin_sdk::host::BlockLooks, bool)>,
 }
 
 /// A search's matches highlighted over a scene's cells, of the theme's
@@ -122,6 +125,15 @@ impl Drawing {
         })
     }
 
+    /// The snapshot of `scene`'s terminal, fed its text.
+    fn snapshot(&self, scene: &Scene) -> Snapshot {
+        let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
+        Parser::new().advance(&mut terminal, scene.text.as_bytes());
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        snapshot
+    }
+
     /// The cells of `scene`'s screen, from `(x, y)`, in the dark variant of
     /// the built-in theme, as a frame lays them out.
     fn batch(
@@ -130,7 +142,8 @@ impl Drawing {
         (x, y): (i32, i32),
     ) -> (CellBatch, lokyr_render_core::Color) {
         let theme = Theme::builtin();
-        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light);
+        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light)
+            || scene.blocks.is_some_and(|(_, light)| light);
         let variant = theme.variant(!light);
         let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
         terminal.set_default_colors(variant.colors.clone());
@@ -193,10 +206,42 @@ impl Drawing {
             if let Some(share) = scene.fade {
                 cells::fade(&mut batch, color, share);
             }
-            width = width.max(u32::from(scene.columns) * batch.cell_width);
-            y += u32::from(scene.rows) * batch.cell_height;
+            let (columns, cell_height) = (
+                u32::from(scene.columns) * batch.cell_width,
+                batch.cell_height,
+            );
+            width = width.max(columns);
             background.get_or_insert(color);
+            let blocks = scene.blocks.map(|(looks, light)| {
+                // The blocks across the scene and its margins, and their
+                // bars in the margin at the cells' left, as a pane's
+                // padding.
+                let tokens = Theme::builtin().variant(!light).tokens.clone();
+                let snapshot = self.snapshot(scene);
+                let scale = f64::from(self.font.scale());
+                let top = y as i32;
+                let mut shapes = cells::block_shapes(
+                    &snapshot,
+                    top,
+                    cell_height,
+                    (0, columns + 2 * MARGIN),
+                    scale,
+                    &tokens,
+                    looks,
+                );
+                shapes.extend(cells::gutter_marks(
+                    &snapshot,
+                    (MARGIN as i32, top),
+                    (MARGIN, cell_height),
+                    scale,
+                    &tokens,
+                    looks.bars,
+                ));
+                Item::Shapes(shapes)
+            });
+            y += u32::from(scene.rows) * cell_height;
             items.push(Item::Cells(batch));
+            items.extend(blocks);
         }
         let (width, height) = (width + 2 * MARGIN, y + MARGIN);
         let list = DisplayList {
@@ -233,6 +278,7 @@ fn text() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -271,6 +317,7 @@ fn colors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -293,6 +340,7 @@ fn decorations() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -317,6 +365,7 @@ fn cursors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     })
     .collect()
@@ -344,6 +393,7 @@ fn highlights(light: bool) -> Vec<Scene> {
         selection: Some(((10, 0), (12, 0))),
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: Some(Highlights {
             matches: vec![
                 ((9, 0), (14, 0)),
@@ -354,6 +404,39 @@ fn highlights(light: bool) -> Vec<Scene> {
             current: Some(((17, 1), (22, 1))),
             light,
         }),
+    }]
+}
+
+/// The commands' blocks as Blocks shows them, in the light variant or the
+/// dark one: `ls`, which succeeded, `make`, which failed, of its rows
+/// tinted, and `seq`, which runs, each of its gutter's bar along it and a
+/// divider at its top, and the prompt where the user types.
+fn blocks(light: bool) -> Vec<Scene> {
+    vec![Scene {
+        name: if light { "blocks-light" } else { "blocks-dark" },
+        columns: 32,
+        rows: 10,
+        text: concat!(
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07src  docs  README.md\r\n",
+            "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07make\r\n\x1b]133;C\x07",
+            "error: build failed\r\nmake: *** [all] Error 1\r\n",
+            "\x1b]133;D;2\x07\x1b]133;A\x07$ \x1b]133;B\x07seq 3\r\n\x1b]133;C\x071\r\n2\r\n3\r\n",
+            "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+        )
+        .to_owned(),
+        cursor: None,
+        selection: None,
+        shapes: false,
+        fade: None,
+        highlights: None,
+        blocks: Some((
+            lokyr_plugin_sdk::host::BlockLooks {
+                bars: true,
+                dividers: true,
+                failed_tint: true,
+            },
+            light,
+        )),
     }]
 }
 
@@ -369,6 +452,7 @@ fn selection() -> Vec<Scene> {
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -389,6 +473,7 @@ fn dimmed() -> Vec<Scene> {
             selection: None,
             shapes: false,
             fade,
+            blocks: None,
             highlights: None,
         })
         .collect()
@@ -416,6 +501,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        blocks: None,
         highlights: None,
     })
     .collect();
@@ -431,6 +517,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        blocks: None,
         highlights: None,
     });
     scenes
@@ -1362,6 +1449,7 @@ fn check_bars(light: bool, scale: u32) {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: Some(Highlights {
             matches: Vec::new(),
             current: None,
@@ -1466,6 +1554,15 @@ fn a_search_s_matches_draw_highlighted_as_their_golden_images() {
 }
 
 #[test]
+fn the_commands_blocks_draw_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check(&blocks(light), scale);
+        }
+    }
+}
+
+#[test]
 fn the_cursor_s_shapes_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&cursors(), scale);
@@ -1501,6 +1598,7 @@ fn inline_images_draw_under_the_text_and_over_it_as_their_golden_images() {
             selection: None,
             shapes: false,
             fade: None,
+            blocks: None,
             highlights: None,
         };
         let origin = (MARGIN as i32, MARGIN as i32);
@@ -1572,6 +1670,7 @@ fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images
             selection: None,
             shapes: false,
             fade: None,
+            blocks: None,
             highlights: None,
         };
         let origin = (MARGIN as i32, MARGIN as i32);

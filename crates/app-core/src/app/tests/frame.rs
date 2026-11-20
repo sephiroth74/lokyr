@@ -993,7 +993,7 @@ fn gutter_marks(app: &App, window: WindowId) -> Vec<(Rect, Color)> {
 }
 
 #[test]
-fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
+fn the_gutter_shows_each_command_s_bar_along_its_block_under_the_blocks_dividers() {
     // A command that succeeded, one that failed, then one that runs.
     let marks = "printf '\\033]133;A\\007$ \\033]133;B\\007ok\\r\\n\\033]133;C\\007\\033]133;D;0\\007';\
         printf '\\033]133;A\\007$ \\033]133;B\\007bad\\r\\n\\033]133;C\\007\\033]133;D;1\\007';\
@@ -1010,25 +1010,63 @@ fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
     let scale = fake.window(window).unwrap().size.scale;
     let grid = app.windows[&window].views[0].rect;
     let dark = fake.appearance() == Appearance::Dark;
-    let tokens = &app.theme.variant(dark).tokens;
+    let tokens = app.theme.variant(dark).tokens.clone();
     let token = |name: &str| tokens.get(name).unwrap();
-    // A bar of 2 points in the middle of the padding of 4, a point shorter
-    // than its row at either end, on each prompt's row.
+    // As Blocks asks: a divider of a point at the top of each block, across
+    // the pane and its paddings of 4; then a bar of 2 points in the middle
+    // of the padding at the cells' left, a point shorter than its block at
+    // either end, along each block's rows, the one that runs to the
+    // cursor's row, past `ready`.
     let padding = (4.0 * scale).round() as i32;
     let width = (2.0 * scale).round() as u32;
     let inset = scale.round() as u32;
-    let bar = |row: u32| Rect {
+    let divider = |row: u32| Rect {
+        x: grid.x - padding,
+        y: grid.y + i32::try_from(row * cell_height).unwrap(),
+        width: grid.width + 2 * padding as u32,
+        height: scale.round() as u32,
+    };
+    let bar = |first: u32, last: u32| Rect {
         x: grid.x - padding + (padding - width as i32) / 2,
-        y: grid.y + i32::try_from(row * cell_height + inset).unwrap(),
+        y: grid.y + i32::try_from(first * cell_height + inset).unwrap(),
         width,
-        height: cell_height - 2 * inset,
+        height: (last - first + 1) * cell_height - 2 * inset,
     };
     assert_eq!(
         gutter_marks(&app, window),
         [
-            (bar(0), token("gutter.succeeded")),
-            (bar(1), token("gutter.failed")),
-            (bar(2), token("gutter.running")),
+            (divider(0), token("blocks.divider")),
+            (divider(1), token("blocks.divider")),
+            (divider(2), token("blocks.divider")),
+            (bar(0, 0), token("gutter.succeeded")),
+            (bar(1, 1), token("gutter.failed")),
+            (bar(2, 4), token("gutter.running")),
+        ]
+    );
+    // Without Blocks, the bar beside each prompt's row alone, and no
+    // dividers.
+    app.apply(
+        &mut fake,
+        Config::parse(
+            "[plugins.blocks]\nenabled = false\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap(),
+    );
+    for _ in 0..200 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+        if gutter_marks(&app, window).len() == 3 {
+            break;
+        }
+        run_until(&mut fake, &mut app, |_, _| true);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        gutter_marks(&app, window),
+        [
+            (bar(0, 0), token("gutter.succeeded")),
+            (bar(1, 1), token("gutter.failed")),
+            (bar(2, 2), token("gutter.running")),
         ]
     );
 }

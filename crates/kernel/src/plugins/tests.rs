@@ -907,6 +907,55 @@ fn a_binding_that_is_not_one_fails_with_108() {
 }
 
 #[test]
+fn the_blocks_looks_are_each_that_an_active_plugin_asks_for() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "dividing",
+            scripted(
+                |cx| {
+                    cx.set_block_looks(host::BlockLooks {
+                        bars: true,
+                        dividers: true,
+                        failed_tint: false,
+                    })
+                },
+                |_, _, _| Ok(()),
+            ),
+        )
+        .unwrap();
+    plugins
+        .add(
+            "tinting",
+            scripted(
+                |cx| cx.register_command(command("tinting.go")),
+                |cx, _, _| {
+                    cx.set_block_looks(host::BlockLooks {
+                        failed_tint: true,
+                        ..host::BlockLooks::default()
+                    })?;
+                    panic!("after its looks");
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.block_looks() == host::BlockLooks::default());
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let dividing = host::BlockLooks {
+        bars: true,
+        dividers: true,
+        failed_tint: false,
+    };
+    assert_eq!(plugins.block_looks(), dividing);
+    // A call that fails gives up its writes, and its plugin goes with its
+    // looks.
+    let _ = plugins.run("tinting.go", Args::new(), &mut app.context());
+    assert_eq!(plugins.status("tinting"), Some(Status::Disabled));
+    assert_eq!(plugins.block_looks(), dividing);
+}
+
+#[test]
 fn what_changes_the_app_waits_for_the_call_to_return() {
     let mut app = App::default();
     let window = window(&mut app, "sleep 10");
@@ -2234,6 +2283,7 @@ fn a_call_is_its_own_plugin_s() {
             window_places: BTreeMap::new(),
             dim: 0.0,
             follows: false,
+            block_looks: host::BlockLooks::default(),
             told_tabs: BTreeMap::new(),
             told_panes: BTreeMap::new(),
             searches: Vec::new(),

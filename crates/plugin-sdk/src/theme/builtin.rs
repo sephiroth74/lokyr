@@ -102,6 +102,9 @@ pub const LIGHT_TOKENS: &[TokenColor] = &[
     ("cursor.guide", 0x1e1e20, 0.1),
     ("hints.label.bg", 0x0a64d8, 1.0),
     ("hints.label.fg", 0xffffff, 1.0),
+    ("blocks.divider", 0x000000, 0.1),
+    ("blocks.selected", 0x0a64d8, 1.0),
+    ("blocks.failed", 0xd63b3b, 0.08),
 ];
 
 /// The interface's colors in the dark variant.
@@ -192,6 +195,9 @@ pub const DARK_TOKENS: &[TokenColor] = &[
     ("cursor.guide", 0xe6e6e6, 0.1),
     ("hints.label.bg", 0x4c9bff, 1.0),
     ("hints.label.fg", 0x000000, 1.0),
+    ("blocks.divider", 0xffffff, 0.1),
+    ("blocks.selected", 0x4c9bff, 1.0),
+    ("blocks.failed", 0xff5f57, 0.12),
 ];
 
 /// The sixteen colors of a variant, from black to bright white.
@@ -270,6 +276,9 @@ pub const LIGHT_RULED: &[&str] = &[
     "cursor.guide",
     "hints.label.bg",
     "hints.label.fg",
+    "blocks.divider",
+    "blocks.selected",
+    "blocks.failed",
 ];
 
 /// The tokens of [`DARK_TOKENS`] that the dark theme leaves to their
@@ -318,6 +327,9 @@ pub const DARK_RULED: &[&str] = &[
     "cursor.guide",
     "hints.label.bg",
     "hints.label.fg",
+    "blocks.divider",
+    "blocks.selected",
+    "blocks.failed",
 ];
 
 /// The built-in theme of the light appearance: its own tokens, the others

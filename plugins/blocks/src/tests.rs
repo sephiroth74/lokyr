@@ -258,20 +258,21 @@ fn it_replaces_the_plain_header_of_the_same_keys() {
         "{}",
         crate::MANIFEST
     );
-    // The same keys, of the same defaults, bounds and texts.
+    // The same keys, of the same defaults, bounds and texts, then those of
+    // the blocks' own looks.
     let keys = |schema: &'static str| {
         schema
             .split_once("\n  \"properties\": {\n")
-            .and_then(|(_, rest)| rest.split_once("\n  \"x-guide\": "))
+            .and_then(|(_, rest)| rest.split_once("\n  },\n  \"x-guide\": "))
             .map(|(keys, _)| keys)
             .expect("the schema's keys")
     };
-    assert_eq!(
-        keys(include_str!("../blocks.schema.json")),
-        keys(include_str!(
-            "../../command-header/command-header.schema.json"
-        ))
-    );
+    let header = keys(include_str!(
+        "../../command-header/command-header.schema.json"
+    ));
+    let own = keys(include_str!("../blocks.schema.json"));
+    assert!(own.starts_with(&format!("{header},\n")), "{own}");
+    assert!(own.contains("\n    \"dividers\": {\n") && own.contains("\n    \"failed-tint\": {\n"));
 }
 
 #[test]
@@ -283,7 +284,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys.len(), 11, "{keys:?}");
+    assert_eq!(keys.len(), 13, "{keys:?}");
     let example = guide
         .split_once("\n[plugins.blocks]\n")
         .and_then(|(_, rest)| rest.split_once("\n\n"))
@@ -929,5 +930,51 @@ fn a_block_does_not_run_again_while_a_command_runs_or_the_line_holds_text() {
     assert_eq!(
         run(&mut host, &mut plugin, RERUN, cell(1, 2)),
         [refused("rerun-no-line")]
+    );
+}
+
+#[test]
+fn the_host_draws_the_blocks_as_the_config_says() {
+    let (mut host, mut plugin) = host();
+    // By default, their bars along them and their dividers.
+    assert_eq!(
+        host.block_looks(),
+        BlockLooks {
+            bars: true,
+            dividers: true,
+            failed_tint: false,
+        }
+    );
+    let config = |pairs: &[(&str, bool)]| {
+        Data::Map(
+            pairs
+                .iter()
+                .map(|(key, on)| ((*key).to_owned(), Data::Boolean(*on)))
+                .collect(),
+        )
+    };
+    host.set_config(config(&[("dividers", false), ("failed-tint", true)]));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        host.block_looks(),
+        BlockLooks {
+            bars: true,
+            dividers: false,
+            failed_tint: true,
+        }
+    );
+    // A change of other keys asks nothing anew.
+    host.take_done();
+    host.set_config(config(&[
+        ("dividers", false),
+        ("failed-tint", true),
+        ("x", true),
+    ]));
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        !host
+            .take_done()
+            .iter()
+            .any(|request| matches!(request, Request::SetBlockLooks(_)))
     );
 }

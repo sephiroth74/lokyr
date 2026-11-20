@@ -1445,6 +1445,13 @@ impl<'a> Cx<'a> {
         self.done(Request::SetFocusFollowsMouse(on))
     }
 
+    /// Draws the commands' blocks of every pane of `looks`, while the
+    /// plugin runs, as this call returns: their gutter's bars along them,
+    /// their dividers, a failed one's tint. Requires `pane-view`.
+    pub fn set_block_looks(&mut self, looks: crate::host::BlockLooks) -> Result<(), Error> {
+        self.done(Request::SetBlockLooks(looks))
+    }
+
     /// Puts the plugin's tab bar of `window` at `place`, over its place in
     /// every window, or at that place again with `None`, as this call
     /// returns.

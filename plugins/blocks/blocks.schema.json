@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "lokyr/blocks",
   "type": "object",
-  "description": "The commands' blocks: the command's header across the top of a pane, of the command whose output the view shows, and its button to the block's end.",
+  "description": "The commands' blocks: the command's header across the top of a pane, of the command whose output the view shows, its button to the block's end, the blocks' dividers and a failed block's tint.",
   "properties": {
     "background": {
       "description": "The theme's token of the pill's background, by its name, as \"panel.bg\" or \"accent\".",
@@ -133,7 +133,25 @@
       "x-guide": "The most characters of the command's line that the header shows.\n\n| Values | Default |\n|---|---|\n| characters, from `1` to `1000` | `80` |\n\n- A longer line is cut at its end of an ellipsis, `…`; its tooltip, and what VoiceOver reads, keep it whole.\n- Whatever its length, the pill stays within the pane, its line cut of an ellipsis where the pane is narrower.\n- It applies at once, as you save the file, to a header that shows too.",
       "x-example": "80",
       "x-example-comment": "characters, 1 to 1000, of the line, cut of … beyond them"
+    },
+    "dividers": {
+      "description": "Whether a hairline divides each command's block from the one before, at the top of its first row, across the pane.",
+      "type": "boolean",
+      "default": true,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether a thin line divides each command's block from the one before.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `true` |\n\n- The line sits at the top of each block's first row, its prompt's, across the pane, the prompt where you type too.\n- Its color is the theme's `blocks.divider`, as the interface's lines by default.\n- The gutter's bar of each command runs along its block, from its prompt to its output's end, while Blocks runs, whatever this key.\n- It applies at once, as you save the file.",
+      "x-example": "true",
+      "x-example-comment": "true | false"
+    },
+    "failed-tint": {
+      "description": "Whether the rows of a block whose command failed are tinted, across the pane, besides the gutter's red bar.",
+      "type": "boolean",
+      "default": false,
+      "x-platforms": ["macos"],
+      "x-guide": "Whether the rows of a block whose command failed are tinted, across the pane.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- A command fails of an exit status other than 0, as an interrupted command does.\n- By default a failed block shows the gutter's red bar alone; `true` tints its rows too, of the theme's `blocks.failed`, a faint red by default.\n- It applies at once, as you save the file.",
+      "x-example": "true",
+      "x-example-comment": "true | false"
     }
   },
-  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance.\n\n`lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs."
+  "x-guide": "<sub>Platforms: macOS</sub>\n\nThe commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, and a failed block's rows can be tinted.\n\n`lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs."
 }

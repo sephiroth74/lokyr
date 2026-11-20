@@ -100,6 +100,50 @@ impl CommandMarks {
     }
 }
 
+/// A command's block, of the primary screen's rows, by their numbers: its
+/// first row, its prompt's first row of text, if the list holds its
+/// prompt, its last row, and its state, none of a command whose output has
+/// not started, as the prompt where the user types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct Block {
+    pub(super) first: i64,
+    pub(super) prompt: Option<i64>,
+    pub(super) last: i64,
+    pub(super) kind: Option<GutterKind>,
+}
+
+/// The first row of `marked`'s block, by its number, as `row_of` gives a
+/// mark's, of `rows`, whose first row is numbered `first`: its prompt's,
+/// or, of none, its first mark's; of a prompt that left the list, the
+/// list's first row, but of a command whose end left it too, as every row
+/// of it did, which is none.
+fn first_row_of(
+    marked: &Marked,
+    row_of: impl Fn(Option<PinId>) -> Option<i64>,
+    first: i64,
+    rows: &PageList,
+) -> Option<i64> {
+    let marks = [marked.prompt, marked.input, marked.output, marked.end];
+    match marked.prompt {
+        Some(prompt) => {
+            if let Some(row) = row_of(Some(prompt)) {
+                return Some(row);
+            }
+        }
+        None => {
+            if let Some(row) = marks.into_iter().find_map(&row_of) {
+                return Some(row);
+            }
+        }
+    }
+    // Its first rows left the list, which its rows start at, unless its end
+    // left too, and every row of it.
+    let ended = marked
+        .end
+        .is_some_and(|pin| rows.pin_position(pin).is_none());
+    (!ended && marks.iter().any(Option::is_some)).then_some(first)
+}
+
 /// Which of a command's marks OSC 133 gives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Mark {
@@ -246,27 +290,8 @@ impl Terminal {
             let at = index(position.page, position.row)?;
             Some((position.col, first.saturating_add(at as i64)))
         };
-        let first_row = |marked: &Marked| {
-            let marks = [marked.prompt, marked.input, marked.output, marked.end];
-            match marked.prompt {
-                Some(prompt) => {
-                    if let Some((_, row)) = cell(Some(prompt)) {
-                        return Some(row);
-                    }
-                }
-                None => {
-                    if let Some((_, row)) = marks.into_iter().find_map(&cell) {
-                        return Some(row);
-                    }
-                }
-            }
-            // Its first rows left the list, which its rows start at, unless
-            // its end left too, and every row of it.
-            let ended = marked
-                .end
-                .is_some_and(|pin| rows.pin_position(pin).is_none());
-            (!ended && marks.iter().any(Option::is_some)).then_some(first)
-        };
+        let row_of = |pin: Option<PinId>| cell(pin).map(|(_, row)| row);
+        let first_row = |marked: &Marked| first_row_of(marked, row_of, first, rows);
         // The commands are in their first rows' order, those that left the
         // list first: a binary search finds the first that meets the rows.
         let list = &self.commands.list;
@@ -406,72 +431,98 @@ impl Terminal {
         (!line.is_empty()).then(|| line.to_owned())
     }
 
-    /// The prompts of the primary screen's commands that ran, on the rows
-    /// numbered from `top` to before `bottom`, oldest first, each of its
-    /// row's number and its command's state: the commands of no output's
-    /// mark have none.
-    pub(super) fn prompts_in(&self, top: i64, bottom: i64) -> Vec<(i64, GutterKind)> {
+    /// The blocks of the primary screen's commands whose rows meet the rows
+    /// numbered from `top` to before `bottom`, oldest first, as
+    /// [`Terminal::commands_meeting`] finds the commands: each of its first
+    /// row, its prompt's first row of text, its last row, and its state.
+    pub(super) fn blocks_in(&self, top: i64, bottom: i64) -> Vec<Block> {
+        if top >= bottom {
+            return Vec::new();
+        }
         let rows = &self.primary.rows;
         let first = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
         // The rows' indexes of one walk of the list's pages, for every
         // command of the call.
         let index = rows.row_indexes();
-        let index_of = |pin: Option<PinId>| {
+        let cell = |pin: Option<PinId>| {
             let position = rows.pin_position(pin?)?;
-            index(position.page, position.row)
+            let at = index(position.page, position.row)?;
+            Some((position.col, first.saturating_add(at as i64)))
         };
-        let row_of = |marked: &Marked| Some(first.saturating_add(index_of(marked.prompt)? as i64));
+        let row_of = |pin: Option<PinId>| cell(pin).map(|(_, row)| row);
+        let first_row = |marked: &Marked| first_row_of(marked, row_of, first, rows);
         // The prompt's first row of text, from its start to its input's row,
         // a few rows at most, as a theme's prompt may print an empty line
         // first, read from the start's own place on; its start's where none
         // holds text.
-        let shown_row = |marked: &Marked, row: i64| {
-            let Some(place) = marked.prompt.and_then(|pin| rows.pin_position(pin)) else {
-                return row;
-            };
-            let (Some(start), Some(input)) = (index(place.page, place.row), index_of(marked.input))
-            else {
-                return row;
+        let shown_row = |marked: &Marked| {
+            let place = marked.prompt.and_then(|pin| rows.pin_position(pin))?;
+            let start = index(place.page, place.row)?;
+            let row = first.saturating_add(start as i64);
+            let Some(input) = marked.input.and_then(|pin| {
+                let position = rows.pin_position(pin)?;
+                index(position.page, position.row)
+            }) else {
+                return Some(row);
             };
             let rows_seen = input.saturating_sub(start).min(MOST_PROMPT_ROWS) + 1;
-            (0..rows_seen)
-                .find(|&at| {
-                    // The start's page's rows, of no walk; a row past it
-                    // through the list's rows, as a prompt seldom crosses
-                    // a page.
-                    let shown = u16::try_from(at)
-                        .ok()
-                        .and_then(|at| rows.row_of(place.page, place.row.checked_add(at)?))
-                        .or_else(|| rows.rows_from(start + at).next());
-                    shown.is_some_and(holds_text)
-                })
-                .map_or(row, |at| first.saturating_add((start + at) as i64))
+            Some(
+                (0..rows_seen)
+                    .find(|&at| {
+                        // The start's page's rows, of no walk; a row past it
+                        // through the list's rows, as a prompt seldom
+                        // crosses a page.
+                        let shown = u16::try_from(at)
+                            .ok()
+                            .and_then(|at| rows.row_of(place.page, place.row.checked_add(at)?))
+                            .or_else(|| rows.rows_from(start + at).next());
+                        shown.is_some_and(holds_text)
+                    })
+                    .map_or(row, |at| first.saturating_add((start + at) as i64)),
+            )
         };
-        // The commands are in their prompts' order, those whose prompts left
-        // the list first: a binary search finds the view's first, as each
-        // row's number costs a walk of the list's pages, from a few rows
-        // above the view, as a prompt's row of text may be below its start.
-        let commands = &self.commands.list;
-        let above = top.saturating_sub(MOST_PROMPT_ROWS as i64);
-        let from = commands.partition_point(|marked| row_of(marked).is_none_or(|row| row < above));
-        commands
-            .range(from..)
-            .map_while(|marked| Some((row_of(marked).filter(|&row| row < bottom)?, marked)))
-            .map(|(row, marked)| (shown_row(marked, row), marked))
-            .filter(|&(row, _)| row >= top && row < bottom)
-            .filter_map(|(row, marked)| {
-                // A line of no command, which the shell ends at once
-                // without its output's mark, shows none.
-                marked.output?;
-                let ended = marked
-                    .end
-                    .is_some_and(|pin| rows.pin_position(pin).is_some());
-                let kind = match (ended, marked.status) {
-                    (true, Some(0) | None) => GutterKind::Succeeded,
-                    (true, Some(_)) => GutterKind::Failed,
-                    (false, _) => GutterKind::Running,
-                };
-                Some((row, kind))
+        // The cursor's row, where the output of a command that runs reaches.
+        let cursor = (rows.scrolled() as i64).saturating_add(i64::from(self.primary.cursor.y));
+        // The commands are in their first rows' order: a binary search finds
+        // the last that starts at `top` or above it, whose block the view's
+        // top row may show.
+        let list = &self.commands.list;
+        let after = list.partition_point(|marked| first_row(marked).is_none_or(|row| row <= top));
+        let begin = after
+            .checked_sub(1)
+            .filter(|&at| first_row(&list[at]).is_some())
+            .unwrap_or(after);
+        list.range(begin..)
+            .map_while(|marked| Some((first_row(marked).filter(|&row| row < bottom)?, marked)))
+            .filter_map(|(first, marked)| {
+                let end = cell(marked.end);
+                // A line of no command, which the shell ends at once without
+                // its output's mark, has no state.
+                let kind = marked.output.map(|_| match (end, marked.status) {
+                    (Some(_), Some(0) | None) => GutterKind::Succeeded,
+                    (Some(_), Some(_)) => GutterKind::Failed,
+                    (None, _) => GutterKind::Running,
+                });
+                let last = match end {
+                    // An end at a row's start, as an output's last line feed
+                    // leaves it, ends the row before.
+                    Some((column, row)) => {
+                        if column == 0 {
+                            row - 1
+                        } else {
+                            row
+                        }
+                    }
+                    None if kind.is_some() => cursor,
+                    None => first,
+                }
+                .max(first);
+                (last >= top).then(|| Block {
+                    first,
+                    prompt: shown_row(marked),
+                    last,
+                    kind,
+                })
             })
             .collect()
     }

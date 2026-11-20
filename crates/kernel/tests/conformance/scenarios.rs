@@ -1176,6 +1176,18 @@ fn tabs(world: &World) -> Scenario {
                 (Request::SetFocusFollowsMouse(true), Response::Done),
                 (Request::SetInactiveDim(0.0), Response::Done),
                 (Request::SetFocusFollowsMouse(false), Response::Done),
+                (
+                    Request::SetBlockLooks(lokyr_plugin_sdk::host::BlockLooks {
+                        bars: true,
+                        dividers: true,
+                        failed_tint: false,
+                    }),
+                    Response::Done,
+                ),
+                (
+                    Request::SetBlockLooks(lokyr_plugin_sdk::host::BlockLooks::default()),
+                    Response::Done,
+                ),
             ]),
             // A drag of its column's edge, told to it alone.
             Step {
