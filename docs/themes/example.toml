@@ -169,6 +169,6 @@ failed = "#ff5f57"
 # "blocks.pill".
 [blocks]
 divider = "separator"               # the line at the top of each block
-selected = "accent"                 # the outline round the selected block
+selected.bg = "accent / 20%"        # the tint over the selected block's rows
 failed = "gutter.failed / 12%"      # the tint over a failed block's rows
 pill = "#2a2a2d"

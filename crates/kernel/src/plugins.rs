@@ -1727,6 +1727,7 @@ impl Plugins {
             .as_ref()
             .map(|directory| state_file(directory, &namespace));
         let (granted, uses) = declared.unzip();
+        let wanted = enabled_by_default(manifest.as_ref());
         self.entries.push(Entry {
             runner,
             make: None,
@@ -1759,7 +1760,7 @@ impl Plugins {
                 config: data(&Value::Object(config)),
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
-                wanted: true,
+                wanted,
                 replaced_by: None,
                 ran: false,
                 starts: 0,
@@ -1847,7 +1848,7 @@ impl Plugins {
             written.remove(ENABLED);
             state.written = data(&Value::Object(written));
             match values.remove(ENABLED) {
-                None => state.wanted = true,
+                None => state.wanted = enabled_by_default(state.manifest.as_ref()),
                 Some(Value::Bool(enabled)) => state.wanted = enabled,
                 Some(other) => {
                     notices.push(ConfigNotice {
@@ -2426,6 +2427,15 @@ impl Plugins {
         commands
     }
 
+    /// Whether the plugin of `namespace` runs where the config says nothing
+    /// of it, as its manifest says; on, of a plugin not there.
+    pub fn enabled_by_default(&self, namespace: &str) -> bool {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.namespace == namespace)
+            .is_none_or(|entry| enabled_by_default(entry.state.manifest.as_ref()))
+    }
+
     /// The menus' items of the active plugins, in their order, each titled
     /// in `language` from its plugin's catalogs, the language's or
     /// English's, or by its own text where they lack it; `None` for the
@@ -2451,10 +2461,11 @@ impl Plugins {
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
                     ticked: item.ticked,
-                    own: state
-                        .commands
-                        .iter()
-                        .any(|command| command.name == item.command),
+                    own: (is_lokyrs_own(state) && item.submenu.is_some())
+                        || state
+                            .commands
+                            .iter()
+                            .any(|command| command.name == item.command),
                 }
             }));
         }
@@ -2704,6 +2715,9 @@ impl Plugins {
                 &state.granted,
                 &state.undecided,
                 &state.replaced_by,
+                // Whether its section turns it on, which tells a replaced
+                // plugin's state from one turned off.
+                state.wanted,
             )
                 .hash(&mut hasher);
         }
@@ -2756,6 +2770,7 @@ impl Plugins {
                     |key| values.get(key).cloned(),
                 );
                 section.replaced_by = state.replaced_by.clone();
+                section.enabled = Some(state.wanted);
                 Some(section)
             })
             .collect();
@@ -4058,7 +4073,10 @@ pub struct MenuEntry {
     pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked.
     pub ticked: bool,
-    /// Whether its command is its plugin's own, which it registered.
+    /// Whether it takes its command's place in its menu, of no arguments:
+    /// its command is its plugin's own, which it registered, or its plugin
+    /// is one of Lokyr's own and it goes into a submenu, which gathers
+    /// another's commands too, as a submenu of a block's actions.
     pub own: bool,
 }
 
@@ -4357,6 +4375,12 @@ fn start(
 
 /// Whether the plugin of `state` is one of Lokyr's own, compiled into the
 /// app, of its manifest, or of none and no grants.
+/// Whether the plugin of `manifest` runs where the config says nothing of
+/// it, as its manifest's `enabled-by-default` says: on, of none.
+fn enabled_by_default(manifest: Option<&Manifest>) -> bool {
+    manifest.is_none_or(|manifest| manifest.enabled_by_default)
+}
+
 fn is_lokyrs_own(state: &State) -> bool {
     state
         .manifest
@@ -7249,6 +7273,33 @@ impl Host<'_, '_> {
                         Code::InvalidConfig,
                         lokyr_plugin_sdk::keys::system_error(&key),
                     ));
+                }
+                // The host's key of every plugin's section, which turns its
+                // plugin on or off, as the Plugins page does: written of
+                // the plugin's own default, the plugin starting anew.
+                if let Some(plugin) = &plugin
+                    && key == ENABLED
+                {
+                    let known = self.context.plugin_settings.iter().any(|shown| {
+                        shown.name == section && shown.plugin.as_deref() == Some(plugin.as_str())
+                    });
+                    if !known {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("the plugin `{plugin}` has no section `{section}`"),
+                        ));
+                    }
+                    let Some(Data::Boolean(enabled)) = value else {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`{ENABLED}` in `[plugins.{section}]` is true or false"),
+                        ));
+                    };
+                    self.out.requests.push(Request::SetPluginEnabled {
+                        namespace: section,
+                        enabled,
+                    });
+                    return Ok(Response::Done);
                 }
                 if plugin.is_none()
                     && section == "keys"

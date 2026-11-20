@@ -9,6 +9,7 @@
 //! embedder draws along.
 
 use super::Terminal;
+use super::folds::ViewMap;
 use super::selection::CellPin;
 use crate::page::Rgb;
 
@@ -56,6 +57,12 @@ pub struct BlockMark {
     pub last: i32,
     /// Its state, as its prompt's mark shows it.
     pub kind: Option<GutterKind>,
+    /// Whether the row before its first is the blank row that the terminal
+    /// put before its prompt, as [`Terminal::set_block_spacing`] asks.
+    pub room_above: bool,
+    /// Whether the row after its last is the blank row that the terminal
+    /// put before the next command's prompt.
+    pub room_below: bool,
 }
 
 /// A mark that a terminal keeps laid.
@@ -101,17 +108,19 @@ impl Terminal {
             .collect()
     }
 
-    /// The marks of the gutter that the view shows, by their rows: the
+    /// The marks of the gutter that the view `map` shows, by their rows: the
     /// prompts of the primary screen's commands that ran, and the laid ones
     /// of the active screen, those whose rows left going, after a prompt's
     /// of their row, so that they show over it; and the blocks of the
-    /// primary screen's commands that the view shows, oldest first.
-    pub(super) fn gutter_view(&mut self) -> (Vec<GutterMark>, Vec<BlockMark>) {
-        let top = self.origin().top;
-        let bottom = top + i64::from(self.rows);
-        let row_of = |row: i64| u16::try_from(row - top).ok().filter(|_| row < bottom);
+    /// primary screen's commands that the view shows, oldest first. A mark
+    /// of a row that a fold takes shows on its placeholder's row, as a
+    /// block's end in a fold ends on it.
+    pub(super) fn gutter_view(&mut self, map: &ViewMap) -> (Vec<GutterMark>, Vec<BlockMark>) {
+        let (top, bottom) = (map.top(), map.end());
+        let row_of = |row: i64| map.showing(row);
         let of_view = |row: i64| {
-            i32::try_from(row - top).unwrap_or(if row < top { i32::MIN } else { i32::MAX })
+            let place = map.place(row);
+            i32::try_from(place).unwrap_or(if place < 0 { i32::MIN } else { i32::MAX })
         };
         let mut marks = Vec::new();
         let mut blocks = Vec::new();
@@ -125,6 +134,8 @@ impl Terminal {
                     first: of_view(block.first),
                     last: of_view(block.last),
                     kind: block.kind,
+                    room_above: block.room_above,
+                    room_below: block.room_below,
                 });
             }
         }
@@ -185,6 +196,34 @@ mod tests {
             .iter()
             .map(|block| (block.first, block.last, block.kind))
             .collect()
+    }
+
+    #[test]
+    fn a_command_of_no_end_that_another_followed_ends_its_block_there() {
+        let mut terminal = Terminal::new(20, 10, Options::default());
+        // `bash`, a nested shell, whose own commands mark their prompts,
+        // and whose end's mark never comes: the outer shell's lands on the
+        // inner one's last prompt.
+        feed(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07bash\r\n\x1b]133;C\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07pwd\r\n\x1b]133;C\x07/\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07",
+            ),
+        );
+        use GutterKind::{Running, Succeeded};
+        // `bash` to the row before `ls`' prompt, not over the blocks after.
+        assert_eq!(
+            blocks(&mut terminal),
+            [
+                (0, 0, Some(Running)),
+                (1, 2, Some(Succeeded)),
+                (3, 4, Some(Succeeded)),
+                (5, 5, None),
+            ]
+        );
     }
 
     #[test]

@@ -1660,3 +1660,37 @@ fn an_opaque_titlebar_s_tabs_go_over_it_of_their_own_opacity() {
         "{in_band:?}"
     );
 }
+
+#[test]
+fn the_find_bar_s_field_leaves_option_command_and_an_arrow_to_the_panes_move() {
+    let (mut fake, mut app, window) = reading_with_panels();
+    let first = app.windows[&window].views[0].pane;
+    let right = Args::from([("direction".to_owned(), Value::String("right".to_owned()))]);
+    app.run(&mut fake, "splits.split", right);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].views.len() == 2 && shows(app, window, "ready $")
+    });
+    frames(&mut fake, &mut app, window);
+    let focused = |app: &App| app.workspace.active_pane(app.windows[&window].window);
+    assert_ne!(focused(&app), Some(first));
+    // The find bar's field has the keyboard: Option-Command-← moves to the
+    // pane on the left, as its binding says, rather than the field's caret.
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    let option_command = Modifiers {
+        left_alt: true,
+        super_key: true,
+        ..Modifiers::NONE
+    };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowLeft, "", option_command, true),
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::ArrowLeft, "", option_command, false),
+    );
+    run_until(&mut fake, &mut app, |_, app| focused(app) == Some(first));
+}

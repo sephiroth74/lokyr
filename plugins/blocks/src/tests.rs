@@ -39,10 +39,44 @@ fn commands() -> Vec<ShellCommand> {
     ]
 }
 
+/// The commands of a command's output, as `lokyr/core-actions` registers
+/// them, which the pane's context menu's submenu of a block's actions
+/// holds.
+fn outputs() -> Vec<lokyr_plugin_sdk::command::Command> {
+    use lokyr_plugin_sdk::command::{Capability, Command, Kind, Param};
+    let cell = |name: &str| Param {
+        name: name.to_owned(),
+        kind: Kind::Integer,
+        default: Some(Value::Integer(-1)),
+    };
+    [
+        (COPY_OUTPUT, "Copy Command Output", Category::Clipboard),
+        (SELECT_OUTPUT, "Select Command Output", Category::Edit),
+    ]
+    .into_iter()
+    .map(|(name, title, category)| Command {
+        name: name.to_owned(),
+        title: title.to_owned(),
+        category,
+        capabilities: vec![Capability::HistoryRead],
+        params: vec![cell("column"), cell("row")],
+        when: Some(PANE_FOCUSED.to_owned()),
+    })
+    .collect()
+}
+
+/// The context of the commands of a command's output.
+const PANE_FOCUSED: &str = "pane.focused";
+
 /// A host of a pane of 100 rows and the three commands, of the end
-/// button's texts, and the plugin, activated.
+/// button's texts, and the plugin, activated, of the pill's header.
 fn host() -> (FakeHost, Blocks) {
-    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(outputs());
+    host.set_config(Data::Map(
+        [("header".to_owned(), Data::Text("pill".to_owned()))].into(),
+    ));
     let pane = host.pane(PANE);
     pane.tab = TabId(1);
     pane.held = 0..100;
@@ -80,6 +114,7 @@ fn scrolled(host: &mut FakeHost, plugin: &mut Blocks, top: i64) -> Option<Node> 
             oldest: 0,
             epoch: 1,
             alternate: false,
+            folds: Vec::new(),
         },
     });
     host.deliver(plugin).unwrap();
@@ -234,9 +269,12 @@ fn the_button_follows_the_pill_wherever_it_sits() {
     let (mut host, mut plugin) = host();
     let align = |value: &str| {
         Data::Map(
-            [("align".to_owned(), Data::Text(value.to_owned()))]
-                .into_iter()
-                .collect(),
+            [
+                ("align".to_owned(), Data::Text(value.to_owned())),
+                ("header".to_owned(), Data::Text("pill".to_owned())),
+            ]
+            .into_iter()
+            .collect(),
         )
     };
     host.set_config(align("right"));
@@ -284,7 +322,7 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         .filter_map(|line| line.strip_prefix("    \"")?.split_once("\": {"))
         .map(|(key, _)| key)
         .collect();
-    assert_eq!(keys.len(), 13, "{keys:?}");
+    assert_eq!(keys.len(), 15, "{keys:?}");
     let example = guide
         .split_once("\n[plugins.blocks]\n")
         .and_then(|(_, rest)| rest.split_once("\n\n"))
@@ -356,7 +394,9 @@ fn the_texts_are_in_both_languages() {
 /// runs: their prompts on the rows 0, 4 and 6, their lines as the host
 /// reads them, `$ ` and the line on each prompt's row.
 fn commands_host() -> (FakeHost, Blocks) {
-    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(outputs());
     host.focus(Some(PANE));
     let pane = host.pane(PANE);
     pane.tab = TabId(1);
@@ -463,7 +503,13 @@ fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories(
                 .iter()
                 .map(|param| param.name.as_str())
                 .collect();
-            assert_eq!(params, ["column", "row"], "{}", command.name);
+            // A copy of the selected block alone, as ⌘C asks.
+            let wanted: &[&str] = if command.name == COPY_BLOCK {
+                &["column", "row", "selected"]
+            } else {
+                &["column", "row"]
+            };
+            assert_eq!(params, wanted, "{}", command.name);
             assert_eq!(command.when.as_deref(), Some(super::PANE));
             let capabilities = command.capabilities.iter().map(ToString::to_string);
             (
@@ -562,6 +608,7 @@ fn a_block_whose_prompt_left_the_scrollback_is_its_rows_that_the_pane_holds() {
         oldest: 2,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
     assert!(!host.applies(&mut plugin, COPY_COMMAND, &cell(0, 2)));
     run(&mut host, &mut plugin, COPY_BLOCK, cell(0, 2));
@@ -582,6 +629,7 @@ fn nothing_applies_on_the_alternate_screen_nor_of_a_pane_of_no_marks() {
         oldest: 0,
         epoch: 1,
         alternate: true,
+        folds: Vec::new(),
     });
     for name in [COPY_COMMAND, COPY_BLOCK, SELECT_BLOCK, DETAILS, RERUN] {
         assert!(!host.applies(&mut plugin, name, &cell(0, 1)), "{name}");
@@ -829,6 +877,7 @@ fn a_block_s_details_open_in_place_of_others_and_of_another_day_s_date() {
         oldest: 0,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
     // A day later.
     host.set_local_time(lokyr_plugin_sdk::host::LocalTime {
@@ -956,13 +1005,16 @@ fn a_block_does_not_run_again_while_a_command_runs_or_the_line_holds_text() {
 #[test]
 fn the_host_draws_the_blocks_as_the_config_says() {
     let (mut host, mut plugin) = host();
-    // By default, their bars along them and their dividers.
+    // By default, their bars along them and their dividers; of the pill,
+    // as `host` asks, no prompt rows.
     assert_eq!(
         host.block_looks(),
         BlockLooks {
             bars: true,
             dividers: true,
             failed_tint: false,
+            prompt_rows: false,
+            spacing: false,
         }
     );
     let config = |pairs: &[(&str, bool)]| {
@@ -973,7 +1025,11 @@ fn the_host_draws_the_blocks_as_the_config_says() {
                 .collect(),
         )
     };
-    host.set_config(config(&[("dividers", false), ("failed-tint", true)]));
+    host.set_config(config(&[
+        ("dividers", false),
+        ("failed-tint", true),
+        ("spacing", true),
+    ]));
     host.deliver(&mut plugin).unwrap();
     assert_eq!(
         host.block_looks(),
@@ -981,6 +1037,8 @@ fn the_host_draws_the_blocks_as_the_config_says() {
             bars: true,
             dividers: false,
             failed_tint: true,
+            prompt_rows: true,
+            spacing: true,
         }
     );
     // A change of other keys asks nothing anew.
@@ -988,6 +1046,7 @@ fn the_host_draws_the_blocks_as_the_config_says() {
     host.set_config(config(&[
         ("dividers", false),
         ("failed-tint", true),
+        ("spacing", true),
         ("x", true),
     ]));
     host.deliver(&mut plugin).unwrap();
@@ -1025,6 +1084,7 @@ fn viewed(host: &mut FakeHost, top: i64, screen: i64) {
         oldest: 0,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     });
 }
 
@@ -1156,5 +1216,273 @@ fn rows_of_no_command_before_the_first_prompt_leave_the_selection_whole() {
     assert_eq!(
         selected_after(&mut host, &mut plugin, SELECT_NEXT),
         (Some(1), Some(Scroll::Row(2)))
+    );
+}
+
+#[test]
+fn a_click_on_a_block_selects_it_and_one_past_the_blocks_selects_none() {
+    let (mut host, mut plugin) = commands_host();
+    viewed(&mut host, 0, 0);
+    let mut click = |host: &mut FakeHost, row: i64| {
+        host.post(Event::Click {
+            pane: PANE,
+            at: (3, row),
+        });
+        host.deliver(&mut plugin).unwrap();
+        host.selected_block(PANE)
+    };
+    // `ls`' output, then `true`'s prompt; `sleep`'s, which runs, none, as
+    // a click that gives a running program the keyboard.
+    assert_eq!(click(&mut host, 2), Some(1));
+    assert_eq!(click(&mut host, 4), Some(2));
+    assert_eq!(click(&mut host, 6), None);
+    assert_eq!(click(&mut host, 5), None);
+    // Above every command, none.
+    host.pane(PANE).commands.remove(0);
+    assert_eq!(click(&mut host, 0), None);
+    // The alternate screen, which hides the commands' rows, keeps it.
+    assert_eq!(click(&mut host, 4), Some(2));
+    host.pane(PANE).viewport.as_mut().unwrap().alternate = true;
+    assert_eq!(click(&mut host, 2), Some(2));
+}
+
+#[test]
+fn the_prompt_rows_pin_by_default_in_place_of_the_pill_which_header_brings_back() {
+    let (mut host, mut plugin) = host();
+    // Of the pill, as `host` asks: the host pins nothing, and the pill
+    // shows as the view's top shows `make`'s output.
+    assert!(!host.block_looks().prompt_rows);
+    assert!(scrolled(&mut host, &mut plugin, 6).is_some());
+    // Of the config's default, the rows: the host pins them, and the pill
+    // goes.
+    host.set_config(Data::Map(std::collections::BTreeMap::new()));
+    host.deliver(&mut plugin).unwrap();
+    assert!(host.block_looks().prompt_rows);
+    assert!(
+        host.take_done()
+            .iter()
+            .any(|request| matches!(request, Request::ClosePanel(id) if *id == panel(PANE)))
+    );
+    assert!(scrolled(&mut host, &mut plugin, 7).is_none());
+}
+
+/// The items of the block's menu that shows, of `host`: each button's key,
+/// title and whether it is dimmed, and a line as `-`.
+fn menu_items(host: &mut FakeHost, plugin: &mut Blocks) -> Vec<(String, String, bool)> {
+    let tree = host
+        .render(plugin, &ViewId::Panel(PanelId::from(MENU)))
+        .expect("the block's menu");
+    tree.children
+        .iter()
+        .map(|node| match &node.kind {
+            Kind::Button(button) => (
+                node.key
+                    .as_ref()
+                    .map(|key| key.0.clone())
+                    .unwrap_or_default(),
+                button.label.clone(),
+                button.disabled,
+            ),
+            _ => ("-".to_owned(), String::new(), false),
+        })
+        .collect()
+}
+
+/// A click on the item `name` of the block's menu, its events delivered.
+fn choose(host: &mut FakeHost, plugin: &mut Blocks, name: &str) {
+    host.set_clipboard(None);
+    let event = UiEvent {
+        view: ViewId::Panel(PanelId::from(MENU)),
+        key: Key::from(name),
+        kind: UiEventKind::Click,
+    };
+    host.ui_event(plugin, &event).unwrap();
+    host.deliver(plugin).unwrap();
+}
+
+#[test]
+fn the_context_menu_holds_a_block_s_actions_in_a_submenu_of_their_own() {
+    let (host, _) = commands_host();
+    let items: Vec<(&str, Option<&str>, bool)> = host
+        .menu_items()
+        .iter()
+        .map(|item| {
+            (
+                item.command.as_str(),
+                item.submenu.as_deref(),
+                item.place == MenuPlace::PaneContext && item.args.is_empty(),
+            )
+        })
+        .collect();
+    assert_eq!(items, ACTIONS.map(|name| (name, Some(BLOCK_SUBMENU), true)));
+}
+
+#[test]
+fn a_context_click_on_the_pinned_rows_opens_the_block_s_menu_which_acts_on_its_pane() {
+    let (mut host, mut plugin) = commands_host();
+    // Another pane has the keyboard: the menu acts on its own.
+    host.focus(Some(PaneId(2)));
+    host.pane(PaneId(2)).tab = TabId(1);
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    let options = host
+        .panels()
+        .get(&PanelId::from(MENU))
+        .expect("the block's menu");
+    assert_eq!(
+        (&options.anchor, options.role),
+        (
+            &Anchor::Pointer(lokyr_plugin_sdk::host::WindowId(1)),
+            PanelRole::Menu
+        )
+    );
+    // `ls`, which ended of some output: each action, none dimmed.
+    let item = |name: &str, title: &str, dimmed: bool| (name.to_owned(), title.to_owned(), dimmed);
+    assert_eq!(
+        menu_items(&mut host, &mut plugin),
+        [
+            item(COPY_COMMAND, "Copy Command", false),
+            item(COPY_OUTPUT, "Copy Command Output", false),
+            item(COPY_BLOCK, "Copy Command and Output", false),
+            item(SELECT_OUTPUT, "Select Command Output", false),
+            item(SELECT_BLOCK, "Select Block", false),
+            ("-".to_owned(), String::new(), false),
+            item(DETAILS, "Block Details", false),
+            item(RERUN, "Run Command Again", false),
+        ]
+    );
+    choose(&mut host, &mut plugin, COPY_OUTPUT);
+    assert_eq!(host.clipboard(), Some("a.txt\nb.txt"));
+    assert!(!host.panels().contains_key(&PanelId::from(MENU)));
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    choose(&mut host, &mut plugin, COPY_COMMAND);
+    assert_eq!(host.clipboard(), Some("ls"));
+    // Its details at the pane's top.
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    choose(&mut host, &mut plugin, DETAILS);
+    let details = host
+        .panels()
+        .iter()
+        .find(|(id, _)| id.0.starts_with(DETAILS_PANEL))
+        .map(|(_, options)| options.anchor.clone());
+    assert_eq!(
+        details,
+        Some(Anchor::PaneCorner {
+            pane: PANE,
+            corner: Corner::Top
+        })
+    );
+}
+
+#[test]
+fn a_running_block_s_menu_dims_what_waits_for_its_end() {
+    let (mut host, mut plugin) = commands_host();
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 3,
+    });
+    host.deliver(&mut plugin).unwrap();
+    let dimmed: Vec<String> = menu_items(&mut host, &mut plugin)
+        .into_iter()
+        .filter(|(_, _, dimmed)| *dimmed)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        dimmed,
+        [COPY_OUTPUT, COPY_BLOCK, SELECT_OUTPUT, SELECT_BLOCK]
+    );
+}
+
+#[test]
+fn a_context_click_on_the_pill_opens_its_block_s_menu_at_the_pointer() {
+    let (mut host, mut plugin) = host();
+    // `make`'s output at the view's top: its pill.
+    assert!(scrolled(&mut host, &mut plugin, 35).is_some());
+    let event = UiEvent {
+        view: ViewId::Panel(panel(PANE)),
+        key: Key::from(PILL),
+        kind: UiEventKind::ContextMenu,
+    };
+    host.ui_event(&mut plugin, &event).unwrap();
+    let options = host
+        .panels()
+        .get(&PanelId::from(MENU))
+        .expect("the block's menu");
+    assert_eq!(
+        options.anchor,
+        Anchor::ViewPointer {
+            view: ViewId::Panel(panel(PANE))
+        }
+    );
+    assert_eq!(plugin.menu, Some((PANE, 2)));
+}
+
+#[test]
+fn a_copy_of_the_selected_block_alone_copies_nothing_of_none() {
+    let (mut host, mut plugin) = commands_host();
+    let selected = Args::from([("selected".to_owned(), Value::Boolean(true))]);
+    // None selected: nothing read, the clipboard kept.
+    assert!(run(&mut host, &mut plugin, COPY_BLOCK, selected.clone()).is_empty());
+    assert_eq!(host.clipboard(), None);
+    // `ls` selected of a click: its line and its output.
+    host.post(Event::Click {
+        pane: PANE,
+        at: (0, 1),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.selected_block(PANE), Some(1));
+    run(&mut host, &mut plugin, COPY_BLOCK, selected);
+    assert_eq!(host.clipboard(), Some("ls\na.txt\nb.txt"));
+}
+
+#[test]
+fn the_keyboard_steps_over_a_gap_of_ids_of_one_read_a_command() {
+    let (mut host, mut plugin) = commands_host();
+    viewed(&mut host, 0, 0);
+    // A program that printed billions of prompts' marks, which the
+    // terminal let go of, left gaps of ids between the commands kept: a
+    // step reads the commands kept, not each id between them.
+    let gap: u64 = 4_000_000_000;
+    let pane = host.pane(PANE);
+    for (at, command) in pane.commands.iter_mut().enumerate() {
+        command.id = 1 + gap * at as u64;
+    }
+    let ids: Vec<u64> = pane.commands.iter().map(|command| command.id).collect();
+    for (at, (_, line)) in [(1, "ls"), (2, "true"), (3, "sleep 60")]
+        .into_iter()
+        .enumerate()
+    {
+        pane.command_lines.insert(ids[at], line.to_owned());
+    }
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[2]), Some(Scroll::Row(5)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[1]), Some(Scroll::Row(4)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[0]), Some(Scroll::Row(0)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(ids[1]), Some(Scroll::Row(4)))
     );
 }

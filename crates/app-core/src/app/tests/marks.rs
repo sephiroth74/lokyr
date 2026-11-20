@@ -80,9 +80,9 @@ impl Plugin for Follower {
         let mut followed = self.0.borrow_mut();
         for event in events {
             match *event {
-                plugins::Event::ViewportChanged { pane, viewport } => {
+                plugins::Event::ViewportChanged { pane, ref viewport } => {
                     followed.pane = Some(pane);
-                    followed.viewports.push(viewport);
+                    followed.viewports.push(viewport.clone());
                 }
                 plugins::Event::CommandStarted { command, .. } => {
                     followed.commands_told.push((command, None));
@@ -218,7 +218,8 @@ fn a_plugin_follows_three_commands_and_its_pane_s_view_through_output_and_the_sc
     );
     // The view follows the screen down to the last prompt, the oldest row
     // raised past the first, as the limit took the rows above.
-    let last = |followed: &Rc<RefCell<Followed>>| *followed.borrow().viewports.last().unwrap();
+    let last =
+        |followed: &Rc<RefCell<Followed>>| followed.borrow().viewports.last().unwrap().clone();
     let shows_end = |viewport: Viewport| {
         viewport.screen <= end && end < viewport.screen + i64::from(viewport.rows)
     };
@@ -292,7 +293,7 @@ fn the_command_s_header_spans_the_pane_s_top_takes_no_keys_lets_a_scroll_through
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -348,7 +349,7 @@ fn the_command_s_header_opens_anew_in_the_window_that_its_tab_moves_to() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -404,7 +405,7 @@ fn a_long_command_s_header_keeps_within_its_pane_as_the_window_narrows() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -437,7 +438,7 @@ fn the_command_s_header_takes_the_text_s_new_size() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -486,7 +487,7 @@ fn the_block_s_button_scrolls_to_its_end_and_the_plain_header_comes_back_as_bloc
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), pill_config(), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -580,7 +581,7 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
             "printf '{prompt}ls\\r\\n{output}a.txt\\r\\nb.txt\\r\\n\\033]133;D;0\\007{prompt}'; sleep 30"
         );
         let mut fake = Fake::default();
-        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        let mut app = App::new(None, all_plugins(""), None).with_program(shell(&script));
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -624,6 +625,12 @@ fn a_block_s_parts_are_copied_and_the_block_selected_of_zsh_s_bash_s_and_fish_s_
     }
 }
 
+/// The app's config without padding, of the blocks' header of the pill,
+/// as the header's tests read it, Blocks turned on.
+fn pill_config() -> Config {
+    all_plugins("header = \"pill\"\n")
+}
+
 /// The frame of the part of `key` of the details' panel that shows in
 /// `window`, if one.
 fn details_part(app: &App, window: WindowId, key: &str) -> Option<Frame> {
@@ -652,7 +659,7 @@ fn a_block_s_details_tell_its_times_and_its_folder_each_copied_of_a_click() {
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -750,7 +757,7 @@ fn a_block_runs_again_at_the_prompt_of_zsh_s_bash_s_and_fish_s_marks_and_is_refu
              printf '{prompt}sleep\\r\\n\\033]133;C\\007'; sleep 30"
         );
         let mut fake = Fake::default();
-        let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+        let mut app = App::new(None, all_plugins(""), None).with_program(shell(&script));
         fake.start(&mut app);
         let window = fake.windows().next().unwrap();
         fake.send(&mut app, window, WindowEvent::Focused(true));
@@ -831,7 +838,7 @@ fn framed_until(fake: &mut Fake, app: &mut App, window: WindowId, done: impl Fn(
 
 /// The outlines that `window`'s frame draws of a theme's token `color`, as
 /// a selected block's, by their rectangles.
-fn outlines(
+fn tints(
     app: &App,
     window: WindowId,
     color: lokyr_render_core::Color,
@@ -846,7 +853,7 @@ fn outlines(
             Item::Shapes(shapes) => shapes.clone(),
             _ => Vec::new(),
         })
-        .filter(|shape| shape.border > 0.0 && shape.border_color == color)
+        .filter(|shape| shape.fill == color)
         .map(|shape| shape.rect)
         .collect()
 }
@@ -863,7 +870,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     ));
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
-    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
@@ -892,19 +899,19 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
         super_key: true,
         ..Modifiers::NONE
     };
-    // ⌘↑ selects the last block, which the frame outlines of the theme's
-    // `blocks.selected`.
+    // ⌘↑ selects the last block, which the frame tints of the theme's
+    // `blocks.selected.bg`.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
     run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[2]));
     let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
-    let outline = app
+    let tint = app
         .theme
         .variant(dark)
         .tokens
-        .get("blocks.selected")
+        .get("blocks.selected.bg")
         .unwrap();
     framed_until(&mut fake, &mut app, window, |app| {
-        outlines(app, window, outline).len() == 1
+        tints(app, window, tint).len() == 1
     });
     // ↑ selects the one before; ⌘C, of no text selected, copies it.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", Modifiers::NONE);
@@ -913,7 +920,7 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     run_until(&mut fake, &mut app, |fake, _| {
         fake.clipboard_text().as_deref() == Some("two\nout two")
     });
-    // Escape ends it, and the frame draws no outline.
+    // Escape ends it, and the frame draws no tint.
     press(
         &mut fake,
         &mut app,
@@ -923,8 +930,17 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     );
     run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
     framed_until(&mut fake, &mut app, window, |app| {
-        outlines(app, window, outline).is_empty()
+        tints(app, window, tint).is_empty()
     });
+    // ⌘C of no text nor block selected keeps the clipboard.
+    fake.set_clipboard_text("kept");
+    press(&mut fake, &mut app, KeyCode::KeyC, "c", cmd);
+    let mut turns = 0;
+    run_until(&mut fake, &mut app, |_, _| {
+        turns += 1;
+        turns > 40
+    });
+    assert_eq!(fake.clipboard_text().as_deref(), Some("kept"));
     // So do a key typed, which goes to the program, and a click.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
     run_until(&mut fake, &mut app, |_, app| selected(app).is_some());
@@ -936,4 +952,375 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     fake.send(&mut app, window, click(true, at, Modifiers::NONE, 1));
     fake.send(&mut app, window, click(false, at, Modifiers::NONE, 1));
     run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+}
+
+#[test]
+fn a_click_on_a_block_selects_it_and_the_prompt_or_a_drag_ends_it() {
+    // The system's line of the last login, then three commands of a line
+    // of output each, on the rows 1 to 6, then the prompt.
+    let program = shell(concat!(
+        "echo 'Last login: Thu Nov 19 on ttys001'\n",
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "for c in one two three; do m A; printf '$ '; m B; echo \"$c\"; m C; ",
+        "echo \"out $c\"; m 'D;0'; done; m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 4)
+    });
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace.pane(pane).unwrap().snapshot().blocks().len() == 4
+    });
+    let ids: Vec<u64> = app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)
+        .iter()
+        .map(|command| command.id)
+        .collect();
+    let host_pane = lokyr_kernel::plugins::host::PaneId(pane.get());
+    let selected = |app: &App| app.plugins.selected_block(host_pane);
+    let dark = fake.appearance() == lokyr_platform_core::Appearance::Dark;
+    let tint = app
+        .theme
+        .variant(dark)
+        .tokens
+        .get("blocks.selected.bg")
+        .unwrap();
+    // The middle of the pane's row `row`, in points.
+    let scale = fake.window(window).unwrap().size.scale;
+    let rect = app.windows[&window].views[0].rect;
+    let height = i32::from(app.workspace.pane(pane).unwrap().grid().cell_height);
+    let over = |row: i32| Point {
+        x: f64::from(rect.x + 40) / scale,
+        y: f64::from(rect.y + row * height + height / 2) / scale,
+    };
+    let tap = |fake: &mut Fake, app: &mut App, at: Point| {
+        fake.send(app, window, click(true, at, Modifiers::NONE, 1));
+        fake.send(app, window, click(false, at, Modifiers::NONE, 1));
+    };
+    // A click on `two`'s output selects its block, tinted across its two
+    // rows, from its prompt's.
+    tap(&mut fake, &mut app, over(4));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[1]));
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, tint).len() == 1
+    });
+    let tinted = tints(&app, window, tint)[0];
+    assert_eq!(
+        (tinted.y, tinted.height),
+        (rect.y + 3 * height, 2 * height as u32)
+    );
+    // On `one`'s prompt, its block; at the prompt where you type, none.
+    tap(&mut fake, &mut app, over(1));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[0]));
+    tap(&mut fake, &mut app, over(7));
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+    framed_until(&mut fake, &mut app, window, |app| {
+        tints(app, window, tint).is_empty()
+    });
+    // A drag that selects text ends a block's selection.
+    tap(&mut fake, &mut app, over(6));
+    run_until(&mut fake, &mut app, |_, app| selected(app) == Some(ids[2]));
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (over(2), over(4)),
+        Modifiers::NONE,
+    );
+    run_until(&mut fake, &mut app, |_, app| selected(app).is_none());
+    assert!(selected_text(&app, window).is_some());
+}
+
+#[test]
+fn a_click_and_a_drag_below_a_fold_take_the_rows_that_the_view_shows_there() {
+    // `ls` of five rows, `echo hi`, then the prompt where you type: rows 0
+    // to 8 of the screen.
+    let marks = |line: &str, output: &str| {
+        format!(
+            "\\033]133;A\\007$ \\033]133;B\\007{line}\\r\\n\\033]133;C\\007{output}\\033]133;D;0\\007"
+        )
+    };
+    let script = format!(
+        "printf '{}{}\\033]133;A\\007$ \\033]133;B\\007'; sleep 30",
+        marks("ls", "a1\\r\\na2\\r\\na3\\r\\na4\\r\\na5\\r\\n"),
+        marks("echo hi", "hi\\r\\n"),
+    );
+    let mut fake = Fake::default();
+    let mut app = App::new(None, unpadded(), None).with_program(shell(&script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 3)
+    });
+    // `ls`' output folded: the view shows `$ ls`, the placeholder, `$ echo
+    // hi`, `hi` and the prompt.
+    let ls = app
+        .workspace
+        .pane(pane)
+        .unwrap()
+        .commands_meeting(i64::MIN, i64::MAX)[0]
+        .id;
+    assert!(
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .fold(ls, false)
+    );
+    framed_until(&mut fake, &mut app, window, |app| {
+        !app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .view()
+            .is_empty()
+    });
+    assert!(row(&app, window, 2).starts_with("$ echo hi"));
+    // A right click on `hi`, the view's row 3, marks the row 7's cell.
+    right_click(&mut fake, &mut app, window, cell(1, 3), Modifiers::NONE);
+    assert_eq!(
+        app.workspace.pane(pane).unwrap().marked_cell(),
+        Some((1, 7))
+    );
+    // A drag from `$ ls` over the placeholder to `hi` selects the fold's
+    // rows too.
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (cell(0, 0), cell(2, 3)),
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        selected_text(&app, window).as_deref(),
+        Some("$ ls\na1\na2\na3\na4\na5\n$ echo hi\nhi")
+    );
+    // Its end on the placeholder, from above it: the fold's rows whole.
+    select_drag(
+        &mut fake,
+        &mut app,
+        window,
+        (cell(0, 0), cell(3, 1)),
+        Modifiers::NONE,
+    );
+    assert_eq!(
+        selected_text(&app, window).as_deref(),
+        Some("$ ls\na1\na2\na3\na4\na5")
+    );
+}
+
+#[test]
+fn a_blank_row_comes_before_a_prompt_after_a_command_as_blocks_asks() {
+    // `ls`, then, once a line comes, of no echo from the end on, the
+    // prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf '$ '; m B; echo ls; m C; echo a; stty -echo; m 'D;0'; ",
+        "IFS= read -r go; m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let config = all_plugins("spacing = true\n");
+    let mut fake = Fake::default();
+    let mut app = App::new(None, config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    let blocks = |app: &App| -> Vec<(i32, i32, bool, bool)> {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .blocks()
+            .iter()
+            .map(|block| (block.first, block.last, block.room_above, block.room_below))
+            .collect()
+    };
+    // `ls` ended, its frames having told the terminal of the blank row.
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .blocks()
+            .first()
+            .is_some_and(|block| {
+                block
+                    .kind
+                    .is_some_and(|kind| kind != lokyr_vt_core::terminal::GutterKind::Running)
+            })
+    });
+    app.workspace.pane(pane).unwrap().send_text("\r");
+    // The prompt a row below the end, the blank row of no block.
+    framed_until(&mut fake, &mut app, window, |app| blocks(app).len() == 2);
+    assert_eq!(blocks(&app), [(0, 1, false, true), (3, 3, true, false)]);
+}
+
+#[test]
+fn a_right_click_on_a_block_s_pinned_rows_opens_its_menu_which_acts_on_it() {
+    // A prompt of two rows, then 80 rows of output, more than the pane's
+    // 62, then the prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_some_and(|sticky| sticky.rows() == 2)
+    });
+    let menus = fake.context_menus().len();
+    // A right click on them: the block's menu, of its actions alone; the
+    // word under them stays unselected.
+    right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.context_menus().len() > menus
+    });
+    let (_, items, dimmed) = context_menu(&fake, window);
+    assert_eq!(
+        items,
+        [
+            "Copy Command",
+            "Copy Command Output",
+            "Copy Command and Output",
+            "Select Command Output",
+            "Select Block",
+            "-",
+            "Block Details",
+            "Run Command Again"
+        ]
+    );
+    assert!(dimmed.is_empty(), "{dimmed:?}");
+    assert_eq!(selected_text(&app, window), None);
+    let (_, _, menu) = fake.context_menus().last().unwrap();
+    let item = commands_of(&menu.items)
+        .find_map(|(title, command)| (title == "Copy Command").then(|| command.clone()))
+        .unwrap();
+    fake.send(&mut app, window, WindowEvent::ContextCommand(item));
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.clipboard_text().as_deref() == Some("seq 80")
+    });
+}
+
+#[test]
+fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_its_prompt() {
+    // A prompt of two rows, then 80 rows of output, more than the pane's
+    // 62, then the prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    // The view at the screen, of the output's last rows: the prompt's two
+    // rows pinned over its first.
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_some_and(|sticky| sticky.rows() == 2)
+    });
+    let pinned: Vec<String> = {
+        let sticky = app
+            .workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .unwrap();
+        (0..2)
+            .map(|y| {
+                sticky
+                    .line(y)
+                    .cells()
+                    .iter()
+                    .map(|cell| match cell.content() {
+                        lokyr_vt_core::page::Content::Char(c) if c != '\0' => c,
+                        _ => ' ',
+                    })
+                    .collect::<String>()
+                    .trim_end()
+                    .to_owned()
+            })
+            .collect()
+    };
+    assert_eq!(pinned, ["user ~/dir", "$ seq 80"]);
+    // The frame takes the window's place under them, across the pane.
+    let rect = app.windows[&window].views[0].rect;
+    let height = i32::from(app.workspace.pane(pane).unwrap().grid().cell_height);
+    let knocked: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| shape.knockout)
+        .map(|shape| shape.rect)
+        .collect();
+    assert!(
+        knocked
+            .iter()
+            .any(|knocked| knocked.y == rect.y && knocked.height == 2 * height as u32),
+        "{knocked:?}"
+    );
+    // A click on them scrolls the view to the prompt, which then shows
+    // itself, of nothing pinned.
+    let scale = fake.window(window).unwrap().size.scale;
+    let on = Point {
+        x: f64::from(rect.x + 40) / scale,
+        y: f64::from(rect.y + height / 2) / scale,
+    };
+    fake.send(&mut app, window, click(true, on, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, on, Modifiers::NONE, 1));
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_none()
+    });
+    assert!(row(&app, window, 0).starts_with("user ~/dir"));
+    assert!(selected_text(&app, window).is_none());
 }

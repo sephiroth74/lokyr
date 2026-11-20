@@ -104,16 +104,9 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
             "-",
-            "Copy Command",
-            "Copy Command and Output",
-            "-",
             "Select All cmd+a",
             "Clear cmd+k",
             "Select Command Output shift+cmd+a",
-            "-",
-            "Select Block",
-            "Block Details",
-            "Run Command Again",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -147,10 +140,10 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Scroll Down a Page cmd+PageDown",
             "Scroll to the Top cmd+Home",
             "Scroll to the Bottom cmd+End",
-            // The prompts' jumps of no keys, which the selection of a block
-            // takes while Blocks runs.
-            "Jump to Previous Prompt",
-            "Jump to Next Prompt",
+            // The prompts' jumps, whose keys the selection of a block takes
+            // while Blocks, off by default, runs.
+            "Jump to Previous Prompt cmd+ArrowUp",
+            "Jump to Next Prompt cmd+ArrowDown",
             "-",
             "Show Hints shift+cmd+e",
             "-",
@@ -162,10 +155,6 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "New Theme from Current…",
             "Import Themes…",
             "Open Themes Folder",
-            "-",
-            "Select Previous Block cmd+ArrowUp",
-            "Select Next Block cmd+ArrowDown",
-            "Deselect Block",
             "-",
             "Appearance",
             "-",
@@ -251,16 +240,9 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
             "-",
-            "Copy Command",
-            "Copy Command and Output",
-            "-",
             "Select All cmd+a",
             "Clear cmd+k",
             "Select Command Output shift+cmd+a",
-            "-",
-            "Select Block",
-            "Block Details",
-            "Run Command Again",
             "-",
             "Copy Mode shift+cmd+c",
             "-",
@@ -346,7 +328,10 @@ fn without_the_system_s_keymap_the_menus_keep_their_own_keys_alone() {
 
 #[test]
 fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
-    let (_, app) = started();
+    // Of every bundled plugin, those that start off too.
+    let mut fake = Fake::default();
+    let mut app = app(all_plugins(""), quiet());
+    fake.start(&mut app);
     let missing: Vec<&str> = app
         .plugins
         .bindings()
@@ -518,16 +503,9 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Incolla cmd+v",
             "Copia output del comando alt+shift+cmd+c",
             "-",
-            "Copia comando",
-            "Copia comando e output",
-            "-",
             "Seleziona tutto cmd+a",
             "Cancella cmd+k",
             "Seleziona output del comando shift+cmd+a",
-            "-",
-            "Seleziona blocco",
-            "Dettagli del blocco",
-            "Esegui di nuovo il comando",
             "-",
             "Modalità copia shift+cmd+c",
             "-",
@@ -597,26 +575,23 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
             "Copy",
             "Paste",
             "Copy Command Output",
-            "Copy Command",
-            "Copy Command and Output",
             "-",
             "Select All",
             "Clear",
             "Select Command Output",
-            "Select Block",
-            "Block Details",
-            "Run Command Again",
             "Copy Mode",
             "-",
             "Rename Tab…",
             "-",
-            "Split Right",
-            "Split Left",
-            "Split Down",
-            "Split Up",
-            "Move Pane to New Tab",
-            "Move Pane to New Window",
-            "Close Pane"
+            // The panes' items in a submenu.
+            "Pane ›",
+            "Pane › Split Right",
+            "Pane › Split Left",
+            "Pane › Split Down",
+            "Pane › Split Up",
+            "Pane › Move Pane to New Tab",
+            "Pane › Move Pane to New Window",
+            "Pane › Close Pane"
         ]
     );
     // A pane alone in its window moves nowhere, nor closes as a split.
@@ -631,17 +606,8 @@ fn a_right_click_selects_and_opens_the_context_menu_at_the_pointer() {
         "links.new-window",
         "links.new-tab",
     ];
-    // A pane whose shell marked no command has no command's output, nor
-    // block.
-    let outputs = [
-        "pane.copy-output",
-        "blocks.copy-command",
-        "blocks.copy-block",
-        "pane.select-output",
-        "blocks.select-block",
-        "blocks.details",
-        "blocks.rerun",
-    ];
+    // A pane whose shell marked no command has no command's output.
+    let outputs = ["pane.copy-output", "pane.select-output"];
     assert_eq!(dimmed[..], [&links[..], &outputs, &alone].concat());
     // Within the selection, which stays.
     select_drag(&mut fake, &mut app, window, (cell(0, 0), cell(3, 0)), none);
@@ -1249,16 +1215,8 @@ fn the_context_menu_s_link_is_its_text_s_where_output_moved_it() {
 fn context_item(fake: &Fake, window: WindowId, title: &str) -> String {
     let (over, _, menu) = fake.context_menus().last().expect("a context menu");
     assert_eq!(*over, window);
-    menu.items
-        .iter()
-        .find_map(|item| match item {
-            MenuItem::Command {
-                title: shown,
-                command,
-                ..
-            } if shown == title => Some(command.clone()),
-            _ => None,
-        })
+    commands_of(&menu.items)
+        .find_map(|(shown, command)| (shown == title).then(|| command.clone()))
         .unwrap_or_else(|| panic!("no item “{title}”"))
 }
 
@@ -1610,9 +1568,6 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
             "Copy cmd+c",
             "Paste cmd+v",
             "Copy Command Output alt+shift+cmd+c",
-            "-",
-            "Copy Command",
-            "Copy Command and Output",
             "-"
         ],
         "{edit:?}"
@@ -1871,4 +1826,59 @@ fn a_plugin_s_items_of_a_submenu_go_into_it_where_the_first_would_be() {
         .expect("its submenu");
     assert_eq!(titles(&more.items), ["Left", "Right"]);
     assert!(matches!(context.items.last(), Some(MenuItem::Submenu(_))));
+}
+
+#[test]
+fn a_block_s_submenu_acts_on_the_block_under_the_click() {
+    // `ls`, then `echo hi`, the last command, then the prompt.
+    let script = concat!(
+        "printf '\\033]133;A\\007$ \\033]133;B\\007ls\\r\\n\\033]133;C\\007a.txt\\r\\nb.txt\\r\\n\\033]133;D;0\\007';",
+        "printf '\\033]133;A\\007$ \\033]133;B\\007echo hi\\r\\n\\033]133;C\\007hi\\r\\n\\033]133;D;0\\007';",
+        "printf '\\033]133;A\\007$ \\033]133;B\\007'; sleep 30",
+    );
+    let mut fake = Fake::default();
+    let mut app = App::new(None, all_plugins(""), None).with_program(shell(script));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|pane| pane.commands_meeting(i64::MIN, i64::MAX).len() == 3)
+    });
+    // While Blocks runs, a block's actions in a submenu of their own, the
+    // commands of a command's output among them.
+    right_click(&mut fake, &mut app, window, cell(1, 1), Modifiers::NONE);
+    let (_, items, _) = context_menu(&fake, window);
+    let block: Vec<&str> = items
+        .iter()
+        .filter_map(|item| item.strip_prefix("Block › "))
+        .collect();
+    assert_eq!(
+        block,
+        [
+            "Copy Command",
+            "Copy Command Output",
+            "Copy Command and Output",
+            "Select Command Output",
+            "Select Block",
+            "Block Details",
+            "Run Command Again"
+        ]
+    );
+    assert!(!items.iter().any(|item| item == "Copy Command Output"));
+    // A right click on `a.txt`: its items take `ls`' cell, not the last
+    // command's.
+    for (title, copied) in [
+        ("Copy Command", "ls"),
+        ("Copy Command Output", "a.txt\nb.txt"),
+    ] {
+        right_click(&mut fake, &mut app, window, cell(1, 1), Modifiers::NONE);
+        let item = context_item(&fake, window, title);
+        fake.send(&mut app, window, WindowEvent::ContextCommand(item));
+        run_until(&mut fake, &mut app, |fake, _| {
+            fake.clipboard_text().as_deref() == Some(copied)
+        });
+    }
 }

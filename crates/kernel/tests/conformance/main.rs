@@ -879,7 +879,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         .zip(&world.command_lines)
         .filter_map(|(command, line)| Some((command.id, line.clone()?)))
         .collect();
-    pane.viewport = Some(world.viewport);
+    pane.viewport = Some(world.viewport.clone());
     pane.cursor = world.cursor;
     // The rows that the view shows, their texts and their styles.
     for (row, cells) in (world.viewport.top..).zip(&world.screen) {

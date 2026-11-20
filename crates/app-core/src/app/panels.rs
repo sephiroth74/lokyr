@@ -23,7 +23,7 @@ use lokyr_ui_core::panel::{self, Anchor, Corner, Dismiss, MenuEntry, Options, Ro
 
 use super::App;
 use super::chrome::{PanelPlace, SlotView, ui_event};
-use super::input::shown_top;
+use super::input::shown_number;
 use super::surfaces;
 use crate::drawing::Backend;
 use crate::window::{NativeMenu, Window};
@@ -642,8 +642,14 @@ fn anchor_of<B: Backend>(
     match &placed.options.anchor {
         PanelAnchor::Cell { pane, column, row } => pane_view(*pane)
             .and_then(|view| {
-                let top = shown_top(workspace.pane(view.pane)?);
-                Some(Anchor::Below(cell(view, *column, row - top)))
+                let pane = workspace.pane(view.pane)?;
+                // Its row in the view, a fold's placeholder's in one; of a
+                // row out of it, by the list's rows from the view's first.
+                let y = pane
+                    .snapshot()
+                    .view_y(*row)
+                    .map_or_else(|| row - shown_number(pane, 0), i64::from);
+                Some(Anchor::Below(cell(view, *column, y)))
             })
             .unwrap_or(pointer),
         PanelAnchor::Cursor(pane) => pane_view(*pane)

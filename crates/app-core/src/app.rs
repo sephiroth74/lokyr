@@ -89,7 +89,7 @@ mod theme_copies;
 mod theme_imports;
 mod tools;
 
-use input::{show_selection, shown_top};
+use input::{show_selection, shown_number};
 
 /// The command that quits.
 const QUIT: &str = "app.quit";

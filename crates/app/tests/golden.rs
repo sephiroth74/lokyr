@@ -434,6 +434,8 @@ fn blocks(light: bool) -> Vec<Scene> {
                 bars: true,
                 dividers: true,
                 failed_tint: true,
+                prompt_rows: false,
+                spacing: false,
             },
             light,
         )),

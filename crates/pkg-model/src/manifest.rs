@@ -53,6 +53,11 @@ pub struct Manifest {
     /// The plugins that it needs, by their names, with their versions'
     /// constraints.
     pub dependencies: BTreeMap<String, String>,
+    /// Whether it runs where the config says nothing of it, of its
+    /// section's `enabled`: a plugin of Lokyr's own may start off, until
+    /// the config or the Plugins page turns it on; any other runs once
+    /// installed.
+    pub enabled_by_default: bool,
 }
 
 /// What a package holds.
@@ -258,6 +263,8 @@ struct Plugin {
     platforms: Vec<String>,
     #[serde(default)]
     replaces: Vec<toml::Spanned<String>>,
+    #[serde(rename = "enabled-by-default")]
+    enabled_by_default: Option<toml::Spanned<bool>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -469,6 +476,16 @@ impl Manifest {
             }
             capabilities.push(Capability::Replaces(other.clone()));
         }
+        // A plugin that the user installs runs once installed: Lokyr's own
+        // alone may start off.
+        if let Some(enabled) = &plugin.enabled_by_default
+            && kind != Kind::Builtin
+        {
+            return Err(fail(
+                enabled.span(),
+                "`enabled-by-default` is Lokyr's own plugins' alone: a plugin that you install runs once installed".to_owned(),
+            ));
+        }
         for pattern in &file.uses.commands {
             if !is_pattern(pattern.get_ref()) {
                 return Err(fail(
@@ -556,6 +573,9 @@ impl Manifest {
                 .collect(),
             contributes,
             dependencies,
+            enabled_by_default: plugin
+                .enabled_by_default
+                .is_none_or(toml::Spanned::into_inner),
         })
     }
 
@@ -1283,6 +1303,23 @@ config-schema = "schema.json"
         // A built-in plugin contributes the app's commands.
         let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
         assert!(Manifest::parse(builtin).is_ok());
+    }
+
+    #[test]
+    fn lokyr_s_own_plugins_alone_start_off() {
+        let builtin = |more: &str| {
+            format!(
+                "[plugin]\nname = \"lokyr/blocks\"\nkind = \"builtin\"\nlicense = \"MIT\"\n{more}"
+            )
+        };
+        assert!(Manifest::parse(&builtin("")).unwrap().enabled_by_default);
+        let off = Manifest::parse(&builtin("enabled-by-default = false\n")).unwrap();
+        assert!(!off.enabled_by_default);
+        let luau = "[plugin]\nname = \"acme/hello\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\nenabled-by-default = false\n";
+        assert_eq!(
+            Manifest::parse(luau).unwrap_err().to_string(),
+            "7:22: `enabled-by-default` is Lokyr's own plugins' alone: a plugin that you install runs once installed"
+        );
     }
 
     #[test]

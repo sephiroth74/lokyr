@@ -387,14 +387,15 @@ impl Surface {
             match self.tree.kind(node) {
                 // A search field's clear button empties it, of no caret
                 // placed.
-                Some(Kind::Field(_))
-                    if self.fields.clears_at((&self.tree, &self.layout), node, at) =>
+                Some(Kind::Field(field))
+                    if !field.disabled
+                        && self.fields.clears_at((&self.tree, &self.layout), node, at) =>
                 {
                     pressed
                         .events
                         .extend(self.fields.clear(&self.tree, node).unwrap_or_default());
                 }
-                Some(Kind::Field(_)) => self.fields.press(
+                Some(Kind::Field(field)) if !field.disabled => self.fields.press(
                     (&self.tree, &self.layout),
                     node,
                     (at, clicks, shift),
@@ -884,6 +885,37 @@ mod tests {
         // A choice past its items is refused.
         let past = Node::container(vec![Node::pop_up(fonts, Some(2)).key("family")]);
         assert!(surface.update(&past).is_err());
+    }
+
+    #[test]
+    fn a_disabled_field_takes_neither_a_press_nor_the_focus() {
+        let field = |disabled: bool| {
+            let mut node = Node::field("Name").key("name");
+            if let Kind::Field(field) = &mut node.kind {
+                field.disabled = disabled;
+            }
+            node
+        };
+        let mut surface = Surface::new(1.0);
+        surface.update(&Node::container(vec![field(true)])).unwrap();
+        surface.lay_out((Some(300.0), None), &mut Fixed);
+        let name = surface.tree.by_key(&"name".into()).unwrap();
+        assert!(surface.tree.kind(name).is_some_and(Kind::disabled));
+        assert!(!surface.tree.focusable(name));
+        // A press places no caret.
+        let at = middle(&surface, "name");
+        surface.pressed(at, (Button::Primary, 1, false), &mut Fixed);
+        assert!(!surface.fields.selecting());
+        surface.released(at, (Button::Primary, 1), Instant::now());
+        // Enabled, it takes both.
+        surface
+            .update(&Node::container(vec![field(false)]))
+            .unwrap();
+        surface.lay_out((Some(300.0), None), &mut Fixed);
+        let name = surface.tree.by_key(&"name".into()).unwrap();
+        assert!(surface.tree.focusable(name));
+        surface.pressed(at, (Button::Primary, 1, false), &mut Fixed);
+        assert!(surface.fields.selecting());
     }
 
     #[test]

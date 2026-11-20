@@ -886,8 +886,8 @@ pub enum Request {
     /// each look that any plugin asks for.
     SetBlockLooks(crate::host::BlockLooks),
     /// Selects the block of a pane's command, by its id, as the keyboard
-    /// selects one, or none: the host outlines it, of the theme's
-    /// `blocks.selected`, and the keys' context holds `<namespace>.selected`
+    /// selects one, or none: the host tints its rows, of the theme's
+    /// `blocks.selected.bg`, and the keys' context holds `<namespace>.selected`
     /// while the pane has the keyboard, until the plugin selects another or
     /// none, or a key that the pane's program takes, a text typed into the
     /// pane or a click in it ends it; of a command that the pane keeps.
@@ -1209,7 +1209,10 @@ impl Request {
                     // them.
                     needed.push(Capability::HistoryRead);
                 }
-                if names.iter().any(|name| name == POINTER) {
+                if names
+                    .iter()
+                    .any(|name| name == POINTER || name == CLICK || name == PROMPT_ROWS_MENU)
+                {
                     needed.push(Capability::PointerRead);
                 }
                 // The plugins, as their read of `packages` tells them.
@@ -1652,6 +1655,12 @@ pub enum Response {
 /// The name of [`Event::Pointer`], as plugins subscribe to it.
 pub const POINTER: &str = "pointer";
 
+/// The name of [`Event::Click`], as plugins subscribe to it.
+pub const CLICK: &str = "click";
+
+/// The name of [`Event::PromptRowsMenu`], as plugins subscribe to it.
+pub const PROMPT_ROWS_MENU: &str = "prompt-rows-menu";
+
 /// The name of [`Event::KeysChanged`], as a plugin subscribes to it.
 pub const KEYS_CHANGED: &str = "keys-changed";
 
@@ -1689,6 +1698,8 @@ pub fn is_event_name(name: &str) -> bool {
     WorkspaceEvent::NAMES.contains(&name)
         || [
             POINTER,
+            CLICK,
+            PROMPT_ROWS_MENU,
             KEYS_CHANGED,
             WINDOW_FOCUS,
             VIEWPORT_CHANGED,
@@ -1737,6 +1748,30 @@ pub enum Event {
         at: Option<(u16, i64)>,
         /// The modifiers held.
         mods: Mods,
+    },
+    /// A click of the left button on a pane's cell that the terminal kept:
+    /// one click, of no modifier, that dragged over no cell, and that no
+    /// binding nor program took, as the button went up; the cell, by its
+    /// column and its row's number, as the drawn frame showed it.
+    Click {
+        /// The pane.
+        pane: PaneId,
+        /// The cell clicked.
+        at: (u16, i64),
+    },
+    /// The secondary button pressed over the prompt rows of a block that
+    /// the host pins at a pane's top, as a plugin's block looks ask, or
+    /// the primary one with Control, which opens a context menu: the
+    /// command of the rows, and the window, at whose pointer the plugin's
+    /// menu opens; the press goes no further, neither to the terminal nor
+    /// to the program.
+    PromptRowsMenu {
+        /// The pane.
+        pane: PaneId,
+        /// Its window.
+        window: WindowId,
+        /// The command of the pinned rows, by its id.
+        command: u64,
     },
     /// The rows of a read that the plugin asked for, to it alone: all
     /// that it asked for, of those that the pane holds, unless `complete`
@@ -1944,6 +1979,8 @@ impl Event {
         match self {
             Self::Workspace(event) => event.name(),
             Self::Pointer { .. } => POINTER,
+            Self::Click { .. } => CLICK,
+            Self::PromptRowsMenu { .. } => PROMPT_ROWS_MENU,
             Self::Lines { .. } => "lines",
             Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",

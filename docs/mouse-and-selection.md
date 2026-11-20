@@ -77,7 +77,7 @@ A right click, or a ⌃-click, opens a menu at the pointer:
 - **Look Up** shows the selection's definition in macOS's dictionary, and **Search the Web** searches for it, as [`search-engine`](CONFIGURATION.md#search-engine) says.
 - **Copy**, **Copy Command Output**, **Paste**, **Select All**, **Select Command Output** and **Clear**.
 
-The menu also lists the bundled plugins' items, such as the splits', and dims an item that would do nothing. A click on a selection keeps it for the menu; a click elsewhere selects the word under the pointer.
+The menu also lists the bundled plugins' items, and dims an item that would do nothing: **Pane**, a submenu that splits the pane right, left, down or up, moves it to a tab or a window of its own, or closes it, and, while [Blocks](blocks.md) is on, **Block**, a submenu of the actions on the block under the pointer, which takes Copy Command Output and Select Command Output in. A click on a selection keeps it for the menu; a click elsewhere selects the word under the pointer.
 
 **Try it**: run `echo grep`, right-click the word `grep`, and choose Open man Page for “grep”: a window of `grep`'s manual opens.
 

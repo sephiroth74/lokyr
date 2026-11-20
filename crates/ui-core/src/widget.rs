@@ -67,17 +67,29 @@ const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
 
 /// The caps of a shortcut, `keys`, as the platform writes it: each word of
 /// it, apart, of each of its leading modifiers' symbols a cap and the rest
-/// one, as `⇧⌘N`'s ⇧, ⌘ and N; or each of its parts written of `+`, as
-/// `Ctrl+Shift+P`'s.
+/// one, as `⇧⌘N`'s ⇧, ⌘ and N, and `⌘+`'s ⌘ and +; or each of its parts
+/// written of `+`, as `Ctrl+Shift+P`'s, the `+` key last of `Ctrl++`.
 pub fn keycaps(keys: &str) -> Vec<String> {
     let mut caps = Vec::new();
     for word in keys.split_whitespace() {
-        if word.chars().count() > 1 && word.contains('+') {
+        let symbols = word
+            .chars()
+            .next()
+            .is_some_and(|first| MODIFIERS.contains(&first));
+        if !symbols && word.chars().count() > 1 && word.contains('+') {
+            let (parts, plus) = match word.strip_suffix("++") {
+                Some(parts) => (parts, true),
+                None => (word, false),
+            };
             caps.extend(
-                word.split('+')
+                parts
+                    .split('+')
                     .filter(|part| !part.is_empty())
                     .map(str::to_owned),
             );
+            if plus {
+                caps.push("+".to_owned());
+            }
             continue;
         }
         let mut rest = word;
@@ -322,7 +334,9 @@ pub fn pops_up(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<bool> {
 /// default button takes it: it presses the tree's first default button
 /// that is not disabled, but from a list, which takes Return itself, as a
 /// field does before; `None` of another key, or of a tree of no default
-/// button. A release or a repeat of it takes nothing.
+/// button. A part of the tree drawn in a theme of its own, as a theme's
+/// preview of real controls, holds none. A release or a repeat of it takes
+/// nothing.
 pub fn default_key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<NodeEvent>> {
     let returns = matches!(key.key, Key::Enter | Key::Keypad(Keypad::Enter)) && plain(key);
     if !returns || matches!(tree.kind(node), Some(Kind::List(_) | Kind::Field(_))) {
@@ -342,10 +356,14 @@ pub fn default_key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<
 }
 
 /// The first node of `id`'s subtree in `tree`, in its order, of a kind that
-/// `wanted` takes.
+/// `wanted` takes, outside the parts drawn in a theme of their own, which
+/// are previews.
 fn first(tree: &Tree, id: NodeId, wanted: &dyn Fn(&Kind) -> bool) -> Option<NodeId> {
     if tree.kind(id).is_some_and(wanted) {
         return Some(id);
+    }
+    if matches!(tree.kind(id), Some(Kind::Themed(_))) {
+        return None;
     }
     tree.children(id)
         .iter()
@@ -641,6 +659,26 @@ mod tests {
             typed(&held, cancel, Key::Enter),
             Some(vec![("cancel".to_owned(), UiEventKind::Click)])
         );
+        // A default button of a themed preview presses nothing.
+        let mut previewed = Tree::new();
+        previewed
+            .update(&Node::container(vec![
+                Node::toggle("regex", false).key("regex"),
+                Node::themed(
+                    "Lokyr Dark",
+                    vec![button("Back Up", ButtonVariant::Default, false).key("sample")],
+                ),
+            ]))
+            .unwrap();
+        let regex = previewed.by_key(&"regex".into()).unwrap();
+        assert_eq!(
+            default_key(
+                &previewed,
+                regex,
+                &pressed_key(Key::Enter, KeyAction::Press, Mods::NONE)
+            ),
+            None
+        );
         // A modifier, a release: nothing, and nothing told.
         let shifted = pressed_key(
             Key::Enter,
@@ -713,6 +751,11 @@ mod tests {
         assert_eq!(keycaps("⌘"), ["⌘"]);
         assert_eq!(keycaps("Ctrl+Shift+P"), ["Ctrl", "Shift", "P"]);
         assert_eq!(keycaps("+"), ["+"]);
+        // The `+` key a cap of its own, after macOS's modifiers or last of
+        // a shortcut written of `+`.
+        assert_eq!(keycaps("⌘+"), ["⌘", "+"]);
+        assert_eq!(keycaps("⌃⌥+"), ["⌃", "⌥", "+"]);
+        assert_eq!(keycaps("Ctrl++"), ["Ctrl", "+"]);
         assert!(keycaps("").is_empty());
         // A symbol's room, as wide as tall at least.
         assert_eq!(keycap_size((7.0, 14.0)), (16.0, 16.0));

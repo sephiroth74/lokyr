@@ -730,7 +730,7 @@ mod tests {
         "hints.label.bg",
         "hints.label.fg",
         "blocks.divider",
-        "blocks.selected",
+        "blocks.selected.bg",
         "blocks.failed",
         "switch.off.bg",
         "switch.on.bg",

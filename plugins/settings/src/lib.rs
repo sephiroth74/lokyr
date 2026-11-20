@@ -173,6 +173,11 @@ const KEYS: &str = "keys";
 /// The prefix of the key of a key's link to its text in the guide.
 const GUIDE: &str = "guide:";
 
+/// The prefix of the switch that turns a plugin's section's plugin on or
+/// off, of the section's name, and of the reason why its last write was
+/// refused.
+const PLUGIN_ON: &str = "plugin-on:";
+
 /// The prefix of the key of a key's link to the documentation's page of its
 /// topic.
 const DOCS: &str = "docs:";
@@ -721,6 +726,23 @@ impl Plugin for SettingsPage {
         };
         if matches!(event.view, ViewId::Panel(_)) {
             return Ok(());
+        }
+        // A plugin turned on or off, as its section's `enabled` says.
+        if let (UiEventKind::Toggle { on }, Some(name)) = (&event.kind, key.strip_prefix(PLUGIN_ON))
+        {
+            let Some(section) = part
+                .sections()
+                .find(|section| section.name == name && section.plugin.is_some())
+            else {
+                return Ok(());
+            };
+            let written = cx.set_setting(
+                &section.name,
+                section.plugin.as_deref(),
+                "enabled",
+                Some(Data::Boolean(*on)),
+            );
+            return self.told(cx, key, written);
         }
         // A map's entry taken away, changed, renamed or added.
         if key.starts_with(ENTRY_REMOVE)
@@ -2261,6 +2283,11 @@ fn section_part(
         let text = message(cx, "settings-replaced", &[("plugin", replacer.clone())]);
         part.push(callout(Tone::Info, &text, "replaced"));
     }
+    // The switch of its plugin, whose keys dim while it is off.
+    if let Some(switch) = plugin_switch(cx, section, refused) {
+        part.push(switch);
+    }
+    let off = section.enabled == Some(false);
     // The keys that the search's words show, every one of none.
     let keys: Vec<&SettingKey> = section
         .keys
@@ -2270,11 +2297,12 @@ fn section_part(
     let rows: Vec<Node> = keys
         .into_iter()
         .map(|key| {
-            key_row(
+            let row = key_row(
                 cx,
                 (section, key),
                 (refused.get(&key.name), typed, new_entries),
-            )
+            );
+            if off { dimmed(row) } else { row }
         })
         .collect();
     // Of none that the search shows, no group, as the joined sections'
@@ -2333,14 +2361,19 @@ fn section_part(
                     .layout(wrapped()),
             );
         }
+        if let Some(switch) = plugin_switch(cx, joined, refused) {
+            part.push(switch);
+        }
+        let off = joined.enabled == Some(false);
         let rows = keys
             .into_iter()
             .map(|key| {
-                key_row(
+                let row = key_row(
                     cx,
                     (joined, key),
                     (refused.get(&key.name), typed, new_entries),
-                )
+                );
+                if off { dimmed(row) } else { row }
             })
             .collect();
         part.push(group(rows, &at("keys")));
@@ -2483,6 +2516,93 @@ fn key_row(
             },
             ..Layout::default()
         })
+}
+
+/// The group of the switch that turns the plugin of `section` on or off,
+/// as its section's `enabled` does, of what it does and why its last write
+/// was refused, of `refused`; none of an app's section.
+fn plugin_switch(
+    cx: &mut Cx<'_>,
+    section: &SettingsSection,
+    refused: &BTreeMap<String, String>,
+) -> Option<Node> {
+    let on = section.enabled?;
+    section.plugin.as_ref()?;
+    let id = format!("{PLUGIN_ON}{}", section.name);
+    let name = title(cx, section);
+    let mut about = vec![
+        Node::text(message(cx, "settings-plugin-on", &[])).style(Style {
+            font_weight: Some(FontWeight::Semibold),
+            ..Style::default()
+        }),
+        Node::text(message(
+            cx,
+            "settings-plugin-on-about",
+            &[("plugin", name.clone())],
+        ))
+        .key(format!("{id}:about").as_str())
+        .style(small())
+        .layout(wrapped()),
+    ];
+    if let Some(why) = refused.get(&id) {
+        about.push(refusal(why, &format!("{id}:refused")));
+    }
+    let about = Node::container(about).layout(Layout {
+        direction: Direction::Column,
+        gap: 3.0,
+        grow: 1.0,
+        min_width: Length::Points(0.0),
+        ..Layout::default()
+    });
+    let mut switch = Node::switch("", on).key(id.as_str()).label(name);
+    if let Kind::Switch(own) = &mut switch.kind {
+        own.size = ControlSize::Small;
+    }
+    let row = Node::container(vec![about, switch])
+        .role(Role::Group)
+        .layout(Layout {
+            direction: Direction::Row,
+            gap: 12.0,
+            align: Align::Start,
+            width: Length::Fraction(1.0),
+            padding: Edges {
+                top: 10.0,
+                right: 12.0,
+                bottom: 10.0,
+                left: 12.0,
+            },
+            ..Layout::default()
+        });
+    Some(group(vec![row], &format!("{id}:group")))
+}
+
+/// `row`, a key's row of a plugin that is off: its controls disabled, so
+/// that nothing changes its value, and its texts dimmed, its links to the
+/// guide and to the documentation kept.
+fn dimmed(mut row: Node) -> Node {
+    fn walk(node: &mut Node) {
+        let link = node
+            .key
+            .as_ref()
+            .is_some_and(|key| key.0.starts_with(GUIDE) || key.0.starts_with(DOCS));
+        match &mut node.kind {
+            _ if link => {}
+            Kind::Button(button) => button.disabled = true,
+            Kind::Toggle(toggle) => toggle.disabled = true,
+            Kind::Switch(switch) => switch.disabled = true,
+            Kind::Checkbox(checkbox) => checkbox.disabled = true,
+            Kind::Radios(radios) => radios.disabled = true,
+            Kind::PopUp(pop_up) => pop_up.disabled = true,
+            Kind::Field(field) => field.disabled = true,
+            Kind::Text(_) => node.style.color = Some(Token::from("text.disabled")),
+            _ => {}
+        }
+        for child in &mut node.children {
+            walk(child);
+        }
+    }
+    walk(&mut row);
+    row
 }
 
 /// Whether the page writes a key of `kind`: a boolean, a value of its

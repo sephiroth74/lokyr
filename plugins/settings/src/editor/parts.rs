@@ -54,7 +54,7 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
             "gutter.succeeded",
             "gutter.failed",
             "blocks.divider",
-            "blocks.selected",
+            "blocks.selected.bg",
             "blocks.failed",
             "search.match",
             "search.match.current",

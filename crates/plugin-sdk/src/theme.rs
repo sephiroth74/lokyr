@@ -127,7 +127,7 @@ pub const TOKENS: [&str; 91] = [
     "hints.label.bg",
     "hints.label.fg",
     "blocks.divider",
-    "blocks.selected",
+    "blocks.selected.bg",
     "blocks.failed",
 ];
 

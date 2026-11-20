@@ -39,7 +39,7 @@ pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Label, Look, MOST_DECORATIONS};
-pub use folds::{FoldMark, MOST_FOLDS, ViewRow};
+pub use folds::{FoldMark, MOST_FOLDS, ShownRow, ViewRow};
 pub use gutter::{BlockMark, GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
     IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
@@ -51,10 +51,11 @@ pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use prompt_click::{PromptClick, PromptClicks};
 pub use selection::{
-    CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
+    CellPin, RowCells, RowText, Selected, SelectedCells, SelectionShape, SelectionUnit,
+    WORD_SEPARATORS,
 };
 pub use session_status::SessionStatus;
-pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use snapshot::{Line, MOST_STICKY_ROWS, Snapshot, SnapshotCursor};
 pub use status::{MOST_REPORT, MOST_STATUSES, Status, StatusKind, StatusState};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;
@@ -544,6 +545,12 @@ pub struct Terminal {
     gutter: Vec<gutter::Laid>,
     /// The folds of the primary screen, in their rows' order.
     folds: Vec<folds::Fold>,
+    /// Whether the snapshot pins the prompt rows of the block whose output
+    /// the view's top shows, as an embedder asks, which RIS keeps.
+    sticky_prompts: bool,
+    /// Whether a blank row comes before each prompt that follows a command
+    /// that ended, as an embedder asks, which RIS keeps.
+    block_spacing: bool,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
@@ -667,6 +674,8 @@ impl Terminal {
             decorations: Vec::new(),
             gutter: Vec::new(),
             folds: Vec::new(),
+            sticky_prompts: false,
+            block_spacing: false,
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),

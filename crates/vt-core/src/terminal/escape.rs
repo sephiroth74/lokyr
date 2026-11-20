@@ -199,6 +199,8 @@ impl Terminal {
         );
         let (window, display_size) = (self.window, self.display_size);
         let given_cols = self.given_cols;
+        let sticky_prompts = self.sticky_prompts;
+        let block_spacing = self.block_spacing;
         let working_directory = self.working_directory.take();
         // The commands go, and the next one's id follows the last's.
         let last_command = self.forget_commands();
@@ -230,6 +232,8 @@ impl Terminal {
             (bells, replies, reply_bytes, cell_size);
         (self.window, self.display_size) = (window, display_size);
         self.given_cols = given_cols;
+        self.sticky_prompts = sticky_prompts;
+        self.block_spacing = block_spacing;
         self.synchronized_updates = updates;
         self.working_directory = working_directory;
         self.commands.last = last_command;

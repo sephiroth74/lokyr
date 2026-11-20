@@ -631,6 +631,15 @@ impl<B: Backend> App<B> {
         // asked for one.
         let asked = platform.accessibility_asked(window);
         let mut cursors = Vec::new();
+        // The block's prompt rows pinned at each view's top, as a plugin
+        // asks, and a blank row before the prompts of every pane, those
+        // that no window shows too, so that their commands' blocks have it
+        // as they show.
+        let looks = self.plugins.block_looks();
+        let sticky = looks.prompt_rows;
+        for pane in self.workspace.panes_mut() {
+            pane.set_block_spacing(looks.spacing);
+        }
         for view in &views {
             let Some(pane) = self.workspace.pane_mut(view.pane) else {
                 continue;
@@ -647,6 +656,7 @@ impl<B: Backend> App<B> {
                 (due, told) => due.or(told),
             };
             if view.pane != active {
+                pane.set_sticky_prompts(sticky);
                 let updated = pane.update();
                 viewports.extend(pane.viewport_changed().map(|now| (view.pane, now)));
                 others |= updated;
@@ -669,6 +679,7 @@ impl<B: Backend> App<B> {
             state.size_label = Some(now + size_label::HOLD);
         }
         // Output starts the cursor blinking again, on, as a key does.
+        pane.set_sticky_prompts(sticky);
         let output = pane.update();
         viewports.extend(pane.viewport_changed().map(|now| (active, now)));
         if tells_viewports {
@@ -1163,6 +1174,60 @@ impl<B: Backend> App<B> {
         }
         if !shapes.is_empty() {
             items.push(Item::Shapes(shapes));
+        }
+        // The prompt rows of the block at each view's top, pinned over its
+        // first rows, their tints and their bars: a background that takes
+        // the window's place under them, of its opacity, their cells, the
+        // selected block's tint, and a line under them.
+        for (pane, snapshot, at, width, dim) in shown() {
+            let Some(sticky) = snapshot.sticky() else {
+                continue;
+            };
+            let across = (at.0 - pad, width + 2 * bar_padding);
+            let height = u32::from(sticky.rows()) * cell.height;
+            let band = |y: i32, height: u32, fill: Color, knockout: bool| Shape {
+                rect: Rect {
+                    x: across.0,
+                    y,
+                    width: across.1,
+                    height,
+                },
+                radius: 0.0,
+                fill,
+                border: 0.0,
+                border_color: Color::CLEAR,
+                shadow: None,
+                arc: None,
+                knockout,
+                mark: None,
+            };
+            let background = cells::background(snapshot);
+            items.push(Item::Shapes(vec![band(
+                at.1,
+                height,
+                background.with_alpha(opacity),
+                true,
+            )]));
+            let mut batch = cells::cells_with(sticky, &cell, at, None, None, look, font);
+            cells::fade(&mut batch, background, dim);
+            items.push(Item::Cells(batch));
+            let mut over = Vec::new();
+            let selected = self
+                .plugins
+                .selected_block(lokyr_kernel::plugins::host::PaneId(pane.get()));
+            if let (Some(tint), Some((command, _))) =
+                (tokens.get("blocks.selected.bg"), snapshot.sticky_prompt())
+                && selected == Some(command)
+            {
+                over.push(faded(dim)(band(at.1, height, tint, false)));
+            }
+            if let Some(line) = tokens.get("blocks.divider") {
+                // Casts from floats saturate.
+                let thickness = (size.scale.round() as u32).clamp(1, cell.height);
+                let below = at.1 + i32::try_from(height).unwrap_or(i32::MAX);
+                over.push(faded(dim)(band(below, thickness, line, false)));
+            }
+            items.push(Item::Shapes(over));
         }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {
@@ -2459,7 +2524,5 @@ fn text_changed_under(told: Option<PointerTold>, id: PaneId, pane: &Pane) -> boo
     if snapshot.scrolled() != 0 {
         return true;
     }
-    snapshot.origin().is_some_and(|origin| {
-        u16::try_from(row - origin.top).is_ok_and(|y| y < snapshot.rows() && snapshot.changed(y))
-    })
+    snapshot.view_y(row).is_some_and(|y| snapshot.changed(y))
 }

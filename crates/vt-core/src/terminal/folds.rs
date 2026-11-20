@@ -30,7 +30,7 @@ pub(super) struct Fold {
 
 /// A row of the view: a row of the active screen's list, by its index, or
 /// the placeholder of a fold, of its command's id, whether it folds the
-/// whole block, and how many rows it folds.
+/// whole block, the index of its first row, and how many rows it folds.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewRow {
     /// A row of the list.
@@ -42,12 +42,277 @@ pub enum ViewRow {
         /// Whether it folds the whole block, the command's prompt and line
         /// too, as a block hidden.
         whole: bool,
+        /// The index of its first row in the list.
+        first: usize,
         /// How many rows it folds.
         rows: usize,
     },
     /// An empty row past the list's last, as a view of folds whose list's
     /// rows are fewer than its own ends.
     Past,
+}
+
+impl ViewRow {
+    /// The index of the list's first row that it shows, past every row of
+    /// the list of [`ViewRow::Past`].
+    fn first(self) -> usize {
+        match self {
+            Self::Row(index) | Self::Folded { first: index, .. } => index,
+            Self::Past => usize::MAX,
+        }
+    }
+
+    /// The index of the list's last row that it shows, past every row of
+    /// the list of [`ViewRow::Past`].
+    fn last(self) -> usize {
+        match self {
+            Self::Row(index) => index,
+            Self::Folded { first, rows, .. } => first + rows - 1,
+            Self::Past => usize::MAX,
+        }
+    }
+}
+
+/// The rows of the list that a view shows between two rows, each of its
+/// view's row, as [`ViewMap::shown`] gives them: of no fold, a range of the
+/// rows' numbers from the view's first, as the parts of a snapshot took
+/// them before folds; of folds, the view's rows of the list's that meet
+/// them.
+pub(super) enum ShownRows<'a> {
+    /// The rows from the first to the last, the view's first numbered
+    /// `top`.
+    Plain {
+        top: i64,
+        rows: std::ops::RangeInclusive<i64>,
+    },
+    /// The view's rows `ys` of `map`, its placeholders left out.
+    Folded {
+        map: ViewMap<'a>,
+        ys: std::ops::Range<usize>,
+    },
+}
+
+impl Iterator for ShownRows<'_> {
+    type Item = (u16, i64);
+
+    fn next(&mut self) -> Option<(u16, i64)> {
+        match self {
+            // Within the view's rows, which a `u16` holds.
+            Self::Plain { top, rows } => rows.next().map(|row| ((row - *top) as u16, row)),
+            Self::Folded { map, ys } => loop {
+                let y = ys.next()?;
+                if let ViewRow::Row(index) = map.rows[y] {
+                    return Some((y as u16, map.number(index)));
+                }
+            },
+        }
+    }
+}
+
+/// A row of the view, by the numbers of the rows that it shows: a row of
+/// the list, or a fold's placeholder, of its command's id, whether it
+/// folds the whole block, and the numbers of its first row and its last.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShownRow {
+    /// A row of the list, by its number.
+    Row(i64),
+    /// A fold's placeholder.
+    Folded {
+        /// The command's id.
+        command: u64,
+        /// Whether it folds the whole block.
+        whole: bool,
+        /// Its first row's number.
+        first: i64,
+        /// Its last row's number.
+        last: i64,
+    },
+}
+
+impl ShownRow {
+    /// The number of the row that it shows, a fold's first.
+    pub fn row(self) -> i64 {
+        match self {
+            Self::Row(row) | Self::Folded { first: row, .. } => row,
+        }
+    }
+}
+
+/// Where the view's rows are in the active screen's list, by the rows'
+/// numbers: the number of the list's first row, the index of the view's
+/// first, its height, and, of folds, its rows; of none, the list's rows
+/// from its first, each at its place, of no cost.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ViewMap<'a> {
+    first: i64,
+    top: usize,
+    height: usize,
+    rows: &'a [ViewRow],
+}
+
+impl<'a> ViewMap<'a> {
+    /// The view whose first row is the list's at `top`, of `height` rows,
+    /// over a list whose first row is numbered `first`; `rows` its rows, of
+    /// folds, or none.
+    pub(super) fn new(first: i64, top: usize, height: usize, rows: &'a [ViewRow]) -> Self {
+        Self {
+            first,
+            top,
+            height,
+            rows,
+        }
+    }
+
+    /// The index in the list of the row numbered `row`, if it is one.
+    fn index(&self, row: i64) -> Option<usize> {
+        usize::try_from(row.checked_sub(self.first)?).ok()
+    }
+
+    /// The number of the list's row at `index`.
+    fn number(&self, index: usize) -> i64 {
+        // Fewer rows than an `i64` holds.
+        self.first.saturating_add(index as i64)
+    }
+
+    /// The number of the view's first row.
+    pub(super) fn top(&self) -> i64 {
+        self.number(self.top)
+    }
+
+    /// The number past the last row of the list that the view shows, of a
+    /// fold's too.
+    pub(super) fn end(&self) -> i64 {
+        let past = if self.rows.is_empty() {
+            self.top + self.height
+        } else {
+            self.rows
+                .iter()
+                .rev()
+                .find(|row| **row != ViewRow::Past)
+                .map_or(self.top, |row| row.last() + 1)
+        };
+        self.number(past)
+    }
+
+    /// The view's row that shows the row numbered `row`: its own, or its
+    /// fold's placeholder; none of a row that the view does not show.
+    pub(super) fn showing(&self, row: i64) -> Option<u16> {
+        self.showing_index(self.index(row)?)
+    }
+
+    /// The view's row that shows the list's row at `index`, as
+    /// [`ViewMap::showing`] finds it.
+    fn showing_index(&self, index: usize) -> Option<u16> {
+        let y = if self.rows.is_empty() {
+            index.checked_sub(self.top).filter(|&y| y < self.height)?
+        } else {
+            let y = self
+                .rows
+                .partition_point(|row| row.first() <= index)
+                .checked_sub(1)?;
+            (index <= self.rows[y].last()).then_some(y)?
+        };
+        // The view has at most `u16::MAX` rows.
+        Some(y as u16)
+    }
+
+    /// The view's row of the row numbered `row` itself, none of a row that
+    /// a fold takes or that the view does not show.
+    pub(super) fn own(&self, row: i64) -> Option<u16> {
+        self.own_index(self.index(row)?)
+    }
+
+    /// The view's row of the list's row at `index` itself, as
+    /// [`ViewMap::own`] finds it.
+    pub(super) fn own_index(&self, index: usize) -> Option<u16> {
+        let y = self.showing_index(index)?;
+        matches!(self.rows.get(usize::from(y)), None | Some(ViewRow::Row(_))).then_some(y)
+    }
+
+    /// The view's row of the row numbered `row`, as the end of a span takes
+    /// it: its own or its fold's placeholder's, negative above the view and
+    /// past its last below it, by the list's rows between it and the view.
+    pub(super) fn place(&self, row: i64) -> i64 {
+        if let Some(y) = self.showing(row) {
+            return i64::from(y);
+        }
+        let top = self.top();
+        if row < top {
+            return row - top;
+        }
+        let height = self.height as i64;
+        row.saturating_sub(self.end()).saturating_add(height)
+    }
+
+    /// The rows of the list that the view shows, from the row numbered
+    /// `first` to `last`, each of its view's row: those that a fold takes
+    /// left out. Of no fold, the rows between the view's first and last, as
+    /// a range of numbers.
+    pub(super) fn shown(&self, first: i64, last: i64) -> ShownRows<'a> {
+        if self.rows.is_empty() {
+            let top = self.top();
+            // The view has at most `u16::MAX` rows.
+            let bottom = top.saturating_add(self.height as i64) - 1;
+            return ShownRows::Plain {
+                top,
+                rows: first.max(top)..=last.min(bottom),
+            };
+        }
+        let from = self.index(first.max(self.first)).unwrap_or(0);
+        let to = self.index(last).map_or(0, |to| to + 1);
+        let start = self.rows.partition_point(|row| row.last() < from);
+        let end = self.rows.partition_point(|row| row.first() < to);
+        ShownRows::Folded {
+            map: *self,
+            ys: start..end.max(start),
+        }
+    }
+
+    /// The folds that the view shows, from its top, by their rows' numbers.
+    pub(super) fn folds(&self) -> Vec<FoldMark> {
+        self.rows
+            .iter()
+            .filter_map(|&row| match row {
+                ViewRow::Folded {
+                    command,
+                    whole,
+                    first,
+                    rows,
+                } => Some(FoldMark {
+                    command,
+                    whole,
+                    first: self.number(first),
+                    last: self.number(first + rows - 1),
+                }),
+                ViewRow::Row(_) | ViewRow::Past => None,
+            })
+            .collect()
+    }
+
+    /// The view's row `y`, by the numbers of the rows that it shows; none
+    /// past the list's last or the view's.
+    pub(super) fn at(&self, y: u16) -> Option<ShownRow> {
+        let y = usize::from(y);
+        if y >= self.height {
+            return None;
+        }
+        match self.rows.get(y) {
+            None => Some(ShownRow::Row(self.number(self.top + y))),
+            Some(&ViewRow::Row(index)) => Some(ShownRow::Row(self.number(index))),
+            Some(&ViewRow::Folded {
+                command,
+                whole,
+                first,
+                rows,
+            }) => Some(ShownRow::Folded {
+                command,
+                whole,
+                first: self.number(first),
+                last: self.number(first + rows - 1),
+            }),
+            Some(ViewRow::Past) => None,
+        }
+    }
 }
 
 /// A fold, as a terminal keeps it: its command's id, whether it folds the
@@ -189,6 +454,31 @@ impl Terminal {
         self.primary.rows.unpin(fold.first);
         self.primary.rows.unpin(fold.last);
         true
+    }
+
+    /// Takes away the folds that take a row from the row numbered `first`
+    /// to `last`, as a search's current match there shows its rows. Whether
+    /// it took one.
+    pub fn unfold_rows(&mut self, first: i64, last: i64) -> bool {
+        if self.folds.is_empty() || self.alternate_active {
+            return false;
+        }
+        let (Some(from), Some(to)) = (
+            self.row_index(first.max(self.row_number(0))),
+            self.row_index(last.min(self.row_number(self.primary.rows.total_rows() - 1))),
+        ) else {
+            return false;
+        };
+        let met: Vec<u64> = self
+            .fold_spans()
+            .into_iter()
+            .filter(|span| span.first <= to && from <= span.last)
+            .map(|span| span.command)
+            .collect();
+        for command in &met {
+            self.unfold(*command);
+        }
+        !met.is_empty()
     }
 
     /// The folds that the terminal keeps, in their rows' order, but those
@@ -365,6 +655,33 @@ impl Terminal {
     }
 }
 
+impl Terminal {
+    /// The index of the view's first row in the active screen's list and,
+    /// of folds, the view's rows, which [`Terminal::view_map`] maps.
+    pub(super) fn view_rows(&self) -> (usize, Vec<ViewRow>) {
+        match self.folded_view() {
+            Some(view) => (view.top, view.rows),
+            None => (self.view_top(), Vec::new()),
+        }
+    }
+
+    /// The folds that the view shows now, from its top, by their rows'
+    /// numbers; none of no fold.
+    pub fn shown_folds(&self) -> Vec<FoldMark> {
+        if self.folds.is_empty() {
+            return Vec::new();
+        }
+        let (top, rows) = self.view_rows();
+        self.view_map(top, &rows).folds()
+    }
+
+    /// The map of the view whose first row is the list's at `top`, of the
+    /// view's rows `rows`, as [`Terminal::view_rows`] gives them.
+    pub(super) fn view_map<'a>(&self, top: usize, rows: &'a [ViewRow]) -> ViewMap<'a> {
+        ViewMap::new(self.row_number(0), top, usize::from(self.rows), rows)
+    }
+}
+
 /// Whether the command `command` is the last that `terminal` keeps, the
 /// prompt in force's, which no fold takes.
 fn last_command_is(terminal: &Terminal, command: u64) -> bool {
@@ -375,12 +692,26 @@ fn last_command_is(terminal: &Terminal, command: u64) -> bool {
 
 /// The index of the first row that a view from `index` shows: the first of
 /// the fold of `spans` that holds it, or its own.
-fn starting(spans: &[Span], index: usize) -> usize {
+pub(super) fn starting(spans: &[Span], index: usize) -> usize {
     let at = spans.partition_point(|span| span.last < index);
     spans
         .get(at)
         .filter(|span| span.first <= index)
         .map_or(index, |span| span.first)
+}
+
+/// The index in the list of the row at `place` of the view's rows from the
+/// list's first, each fold of `spans` one row: a placeholder's, a row of
+/// its fold.
+pub(super) fn shown_index(spans: &[Span], place: usize) -> usize {
+    let mut index = place;
+    for span in spans {
+        if span.first > index {
+            break;
+        }
+        index = index.saturating_add(span.rows() - 1);
+    }
+    index
 }
 
 /// The view's rows from the row at `top`, `height` at most, before the
@@ -395,6 +726,7 @@ fn down_from(top: usize, spans: &[Span], total: usize, height: usize) -> (Vec<Vi
                 rows.push(ViewRow::Folded {
                     command: span.command,
                     whole: span.whole,
+                    first: span.first,
                     rows: span.rows(),
                 });
                 at = span.last + 1;
@@ -426,6 +758,7 @@ fn up_from(spans: &[Span], total: usize, height: usize) -> (usize, Vec<ViewRow>)
                 rows.push(ViewRow::Folded {
                     command: span.command,
                     whole: span.whole,
+                    first: span.first,
                     rows: span.rows(),
                 });
                 at = span.first;

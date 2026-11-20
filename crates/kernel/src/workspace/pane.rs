@@ -12,12 +12,12 @@ use lokyr_vt_core::page::Style;
 use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, RowCells, Scroll,
-    Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, FoldMark, InputModes, KeyboardFlags, Look, Origin, RowCells,
+    Scroll, Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
-use lokyr_plugin_sdk::host::{ShellCommand, Viewport};
+use lokyr_plugin_sdk::host::{ShellCommand, ViewFold, Viewport};
 
 use super::PaneId;
 use super::agent::{Agent, Told};
@@ -232,6 +232,12 @@ pub struct Pane {
     /// The view that a frame showed as it was last told, whose change
     /// tells `viewport-changed`.
     told_viewport: Option<Viewport>,
+    /// Whether its terminal pins the prompt rows of the block at the view's
+    /// top, as the app asked last.
+    sticky_prompts: bool,
+    /// Whether its terminal puts a blank row before each prompt that
+    /// follows a command that ended, as the last ask said.
+    block_spacing: bool,
     /// The command that started last, of its id, and when the workspace's
     /// look found its start, until its end.
     pub(super) command_started: Option<(u64, Instant)>,
@@ -260,13 +266,13 @@ impl std::fmt::Debug for Pane {
 
 /// A view of the first row `origin`, of `rows` rows, `offset` rows above
 /// the screen, over a scrollback of `scrollback` rows, of the alternate
-/// screen or not.
+/// screen or not, of the folds `folds`.
 fn viewport(
     origin: Origin,
     rows: u16,
-    offset: usize,
-    scrollback: usize,
+    (offset, scrollback): (usize, usize),
     alternate: bool,
+    folds: Vec<FoldMark>,
 ) -> Viewport {
     // Fewer rows than an `i64` holds.
     let screen = origin.top.saturating_add(offset as i64);
@@ -277,6 +283,15 @@ fn viewport(
         oldest: screen.saturating_sub(scrollback as i64),
         epoch: origin.epoch,
         alternate,
+        folds: folds
+            .into_iter()
+            .map(|fold| ViewFold {
+                command: fold.command,
+                whole: fold.whole,
+                first: fold.first,
+                last: fold.last,
+            })
+            .collect(),
     }
 }
 
@@ -388,6 +403,8 @@ impl Pane {
             progress: None,
             slices: 0,
             told_viewport: None,
+            sticky_prompts: false,
+            block_spacing: false,
             command_started: None,
             commands_told: false,
             agent: None,
@@ -594,6 +611,33 @@ impl Pane {
     /// The terminal's grid.
     pub fn grid(&self) -> Grid {
         self.grid
+    }
+
+    /// Has its terminal pin, over the view's first rows, the prompt rows of
+    /// the block whose output the view's top shows, or not, as
+    /// [`Terminal::set_sticky_prompts`] does: of the terminal's lock only as
+    /// the ask changes.
+    pub fn set_sticky_prompts(&mut self, on: bool) {
+        if self.sticky_prompts == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_sticky_prompts(on);
+            self.sticky_prompts = on;
+        }
+    }
+
+    /// Has its terminal put a blank row before each prompt that follows a
+    /// command that ended, or not, as [`Terminal::set_block_spacing`] does:
+    /// of the terminal's lock only as the ask changes.
+    pub fn set_block_spacing(&mut self, on: bool) {
+        if self.block_spacing == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_block_spacing(on);
+            self.block_spacing = on;
+        }
     }
 
     /// The screen, as the last frame copied it.
@@ -842,24 +886,20 @@ impl Pane {
         }
     }
 
+    /// The row of the view `y` now, by the numbers of the rows that it
+    /// shows, as [`Terminal::shown_row`] gives it; none for a pane whose
+    /// program did not start.
+    pub fn shown_row_now(&self, y: u16) -> Option<terminal::ShownRow> {
+        self.session.as_ref()?.lock().shown_row(y)
+    }
+
     /// Scrolls the view, through the scrollback, so that the row numbered
     /// `row` shows: at the view's edge that it comes past, as it does
-    /// already, or not at all, of a row that the list does not hold.
+    /// already, its fold's placeholder for a row of a fold, or not at all,
+    /// of a row that the list does not hold.
     pub fn show_row(&self, row: i64) {
-        let Some(session) = &self.session else {
-            return;
-        };
-        let mut terminal = session.lock();
-        if terminal.row_index(row).is_none() {
-            return;
-        }
-        let top = terminal.origin().top;
-        let bottom = top.saturating_add(i64::from(terminal.rows()));
-        let rows = |n: i64| usize::try_from(n).unwrap_or(usize::MAX);
-        if row < top {
-            terminal.scroll_viewport(Scroll::Up(rows(top - row)));
-        } else if row >= bottom {
-            terminal.scroll_viewport(Scroll::Down(rows(row - bottom + 1)));
+        if let Some(session) = &self.session {
+            session.lock().show_row(row);
         }
     }
 
@@ -904,18 +944,18 @@ impl Pane {
             return Some(viewport(
                 origin,
                 snapshot.rows(),
-                snapshot.offset(),
-                snapshot.scrollback(),
+                (snapshot.offset(), snapshot.scrollback()),
                 snapshot.alternate_screen(),
+                snapshot.shown_folds(),
             ));
         }
         let terminal = self.session.as_ref()?.lock();
         Some(viewport(
             terminal.origin(),
             terminal.rows(),
-            terminal.viewport_offset(),
-            terminal.scrollback_rows(),
+            (terminal.viewport_offset(), terminal.scrollback_rows()),
             terminal.is_alternate_screen(),
+            terminal.shown_folds(),
         ))
     }
 
@@ -925,7 +965,7 @@ impl Pane {
     pub fn viewport_changed(&mut self) -> Option<Viewport> {
         self.snapshot.origin()?;
         let now = self.viewport()?;
-        (self.told_viewport.replace(now) != Some(now)).then_some(now)
+        (self.told_viewport.replace(now.clone()).as_ref() != Some(&now)).then_some(now)
     }
 
     /// Forgets the view that [`Pane::viewport_changed`] told, so that the

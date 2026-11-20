@@ -512,7 +512,7 @@ impl CopyMode {
             }
         }
         let at = clamped(at, bounds, last_column);
-        self.place(cx, at, scroll, viewport)
+        self.place(cx, at, scroll, &viewport)
     }
 
     /// Puts the cursor at `at`, the view first at the row `scroll` at its
@@ -523,7 +523,7 @@ impl CopyMode {
         cx: &mut Cx<'_>,
         at: (u16, i64),
         scroll: Option<i64>,
-        viewport: Viewport,
+        viewport: &Viewport,
     ) -> Result<(), Error> {
         let Some(copying) = self.copying.as_mut() else {
             return Ok(());
@@ -626,7 +626,7 @@ impl CopyMode {
         };
         let at = std::mem::replace(&mut selection.anchor, copying.at);
         let viewport = cx.viewport(copying.pane)?;
-        self.place(cx, at, None, viewport)
+        self.place(cx, at, None, &viewport)
     }
 
     /// Takes the selection away, or the count, or ends without either.

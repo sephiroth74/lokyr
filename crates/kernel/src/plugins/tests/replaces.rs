@@ -116,14 +116,26 @@ fn a_plugin_that_an_enabled_one_replaces_is_off_and_on_again_as_that_one_goes() 
     assert_eq!(plugins.status("lokyr/header"), Some(Status::Active));
     assert_eq!(HEADERS.load(Ordering::Relaxed), made + 1);
     // A replaced plugin turned off by its own section is off, not
-    // replaced; its keys, while it is replaced, tell nothing of it, as the
-    // settings show its section's replacer.
+    // replaced, the list told anew though its status stays off; its keys,
+    // while it is replaced, tell nothing of it, as the settings show its
+    // section's replacer.
+    assert!(applied(&mut plugins, &mut app, "").is_empty());
+    assert_eq!(
+        told(&mut plugins, "lokyr/header").0,
+        host::PluginState::Replaced
+    );
     let both = "[plugins.header]\nenabled = false\n";
     assert!(applied(&mut plugins, &mut app, both).is_empty());
     assert_eq!(
         told(&mut plugins, "lokyr/header"),
         (host::PluginState::Off, Some("lokyr/blocks".to_owned()))
     );
+    assert!(applied(&mut plugins, &mut app, "").is_empty());
+    assert_eq!(
+        told(&mut plugins, "lokyr/header").0,
+        host::PluginState::Replaced
+    );
+    assert!(applied(&mut plugins, &mut app, both).is_empty());
     let keyed = applied(&mut plugins, &mut app, "[plugins.header]\nsize = 2\n");
     assert!(
         keyed.iter().all(|notice| !notice.contains("lokyr/blocks")),

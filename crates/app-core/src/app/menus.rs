@@ -25,7 +25,7 @@ use super::{
     FLOAT_ON_TOP, IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE,
     MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT,
     NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB,
-    SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_top,
+    SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_number,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -62,14 +62,14 @@ impl<B: Backend> App<B> {
         };
         // Pinned, so that output that scrolls while the menu is open leaves
         // its commands on the clicked text.
-        let top = shown_top(pane);
-        pane.mark_cell((pointer.col, top + i64::from(pointer.row)));
+        let row = shown_number(pane, pointer.row);
+        pane.mark_cell((pointer.col, row));
         let within = pane
             .selection()
             .is_some_and(|selected| selected.contains(pointer.col, pointer.row));
         if !within {
             let grid = pane.grid();
-            let spot = mouse::spot(pointer, top, grid.cell_width, grid.columns);
+            let spot = mouse::spot(pointer, row, grid.cell_width, grid.columns);
             pane.anchor_selection((spot.col, spot.row));
             let mut selecting = Selecting {
                 anchor: spot,
@@ -92,7 +92,7 @@ impl<B: Backend> App<B> {
         }
         let context = context(Some(pane));
         // The cell by its row's number, as the marked cell's run takes it.
-        let (column, row) = (pointer.col, top + i64::from(pointer.row));
+        let column = pointer.col;
         // Each item: its id, its command, and the arguments that it runs
         // with.
         let of = |command: &Command| {
@@ -154,8 +154,15 @@ impl<B: Backend> App<B> {
                 groups.push(Vec::new());
             }
             last = Some(space);
+            // An item of a command of a cell, of no arguments of its own,
+            // takes the cell too, as the command's own item would.
+            let args = if of_cell(command) && entry.invocation.args.is_empty() {
+                cell_args(column, row)
+            } else {
+                entry.invocation.args.clone()
+            };
             if let Some(group) = groups.last_mut() {
-                group.push((item_id(at), command.clone(), entry.invocation.args.clone()));
+                group.push((item_id(at), command.clone(), args));
             }
         }
         self.acting = Some(window);
@@ -428,7 +435,17 @@ impl<B: Backend> App<B> {
             .filter(|_| self.context_window == Some(window))
             .and_then(Pane::marked_cell);
         let invocation = match self.menu_item(name) {
-            Some(invocation) => Some(invocation),
+            // A plugin's item of a command of a cell, of no arguments of its
+            // own, takes the cell, as the command's own item does.
+            Some(invocation) => match self.commands.get(&invocation.command) {
+                Some(command) if of_cell(command) && invocation.args.is_empty() => {
+                    marked.map(|(column, row)| Invocation {
+                        command: invocation.command.clone(),
+                        args: cell_args(column, row),
+                    })
+                }
+                _ => Some(invocation),
+            },
             None => match self.commands.get(name) {
                 Some(command) if of_cell(command) => marked.map(|(column, row)| Invocation {
                     command: name.to_owned(),

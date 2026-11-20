@@ -20,3 +20,4 @@ menu-select-left = Seleziona pannello a sinistra
 menu-select-right = Seleziona pannello a destra
 menu-select-up = Seleziona pannello sopra
 menu-select-down = Seleziona pannello sotto
+menu-pane = Pannello

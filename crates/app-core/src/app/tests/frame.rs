@@ -1000,7 +1000,12 @@ fn the_gutter_shows_each_command_s_bar_along_its_block_under_the_blocks_dividers
         printf '\\033]133;A\\007$ \\033]133;B\\007run\\r\\n\\033]133;C\\007'; echo ready; sleep 30";
     let mut fake = Fake::default();
     let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
-    let mut app = App::new(Some(drawing), Config::default(), None).with_program(shell(marks));
+    let config = Config::parse(
+        "[plugins.blocks]\nenabled = true\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    let mut app = App::new(Some(drawing), config, None).with_program(shell(marks));
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());

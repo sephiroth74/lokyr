@@ -9,7 +9,7 @@ A tip as Lokyr starts, once a week at most, or as often as [`every`](#config) sa
 - **It shows** two seconds after the start, in the focused window, so that the window and its prompt come first, and only while no notice of Lokyr's shows, as an error in the config.
 - **It tells one tip**, under a lightbulb and "Did you know?": each tip shows once before any shows again, and the round starts over once all have shown.
 - **Its text takes two lines**; a longer one ends in an ellipsis, and a More button beside Dismiss shows it whole, as a click anywhere on the card does, the card growing upwards to hold it.
-- **A shortcut's tip** names the keys that run the command now, your own `[keys]` with them, and shows only while a key is bound to it; a tip of a plugin's command shows only while the plugin runs.
+- **A shortcut's tip** names the keys that run the command now, your own `[keys]` with them, and shows only while a key is bound to it; a tip of a plugin's command, or of a bundled plugin that starts off, as Blocks, shows only while the plugin runs.
 - **A command of an installed plugin** has a tip too: its keys, or, of none, the command palette's, to run it by its name.
 - **It goes** after 12 seconds, held while the pointer rests on it, at the first key that you type into a pane, which still goes to the program, or by its Dismiss button.
 - **Don't show again** stops the tips for good; the plugin keeps your choice in its state, `plugins/quick-tips.json` in the state's folder.
@@ -19,7 +19,7 @@ A tip as Lokyr starts, once a week at most, or as often as [`every`](#config) sa
 Each action, feature or shortcut that Lokyr gains has its tip, in the same change:
 
 1. Its text in [`locales/en/quick-tips.ftl`](../../plugins/quick-tips/locales/en/quick-tips.ftl), the source, and in each other language's catalog: a message `tip-<name>`, of `{ $keys }` where it names a command's keys, one or two sentences, as two lines of the card show them before More.
-2. Its entry in `CURATED`, in [`src/lib.rs`](../../plugins/quick-tips/src/lib.rs), the most useful first: `command(id, message, command, argument)` for a command's keys, which shows only while a key is bound to it, or `plain(id, message)` for a feature that needs no keys; the id, which the plugin's state keeps, never reused.
+2. Its entry in `CURATED`, in [`src/lib.rs`](../../plugins/quick-tips/src/lib.rs), the most useful first: `command(id, message, command, argument)` for a command's keys, which shows only while a key is bound to it, or `plain(id, message)` for a feature that needs no keys, and `needing(command, tip)` around either for a feature of a plugin that may be off, as Blocks, which starts off: the tip shows only while that command is there; the id, which the plugin's state keeps, never reused.
 3. The plugin's tests check that every tip has its message in every catalog and that the ids are unique.
 
 A plugin's own commands of no parameters have their tips by themselves, of their titles.

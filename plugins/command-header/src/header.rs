@@ -61,6 +61,9 @@ pub(crate) struct Headers {
     ends: bool,
     settings: Settings,
     pub(crate) panes: BTreeMap<PaneId, Followed>,
+    /// Whether no header shows, as a plugin that has the host pin the
+    /// block's prompt rows in their place asks.
+    hidden: bool,
 }
 
 /// Where a header's pill sits along its hairline.
@@ -208,7 +211,27 @@ impl Headers {
             ends,
             settings: Settings::default(),
             panes: BTreeMap::new(),
+            hidden: false,
         }
+    }
+
+    /// Shows no header while `hidden`, their panels closed, as the host
+    /// pins the blocks' prompt rows in their place; the headers that the
+    /// views want again otherwise.
+    #[allow(
+        dead_code,
+        reason = "the plain header, which shares this module, never hides"
+    )]
+    pub(crate) fn set_hidden(&mut self, cx: &mut Cx<'_>, hidden: bool) -> Result<(), Error> {
+        if self.hidden == hidden {
+            return Ok(());
+        }
+        self.hidden = hidden;
+        let panes: Vec<PaneId> = self.panes.keys().copied().collect();
+        for pane in panes {
+            self.look(cx, pane)?;
+        }
+        Ok(())
     }
 
     /// Takes the config's settings, and subscribes to the panes' views and
@@ -244,8 +267,8 @@ impl Headers {
                         }
                     }
                 }
-                Event::ViewportChanged { pane, viewport } => {
-                    self.panes.entry(pane).or_default().viewport = Some(viewport);
+                Event::ViewportChanged { pane, ref viewport } => {
+                    self.panes.entry(pane).or_default().viewport = Some(viewport.clone());
                     looked.insert(pane);
                 }
                 Event::CommandStarted { pane, .. } | Event::CommandEnded { pane, .. } => {
@@ -348,7 +371,8 @@ impl Headers {
         let Some(followed) = self.panes.get(&pane) else {
             return Ok(());
         };
-        let wanted = match followed.viewport {
+        let wanted = match &followed.viewport {
+            _ if self.hidden => None,
             Some(viewport) if !viewport.alternate => {
                 shown_at(cx, pane, viewport, followed.shown.as_ref(), self.ends)
             }
@@ -397,6 +421,18 @@ impl Headers {
     fn pane_of(&self, panel: &PanelId) -> Option<PaneId> {
         panel.0.strip_prefix(self.prefix)?.parse().ok().map(PaneId)
     }
+
+    /// The pane and the command, by its id, of the header of the panel
+    /// `panel`, while it shows.
+    #[allow(
+        dead_code,
+        reason = "the plain header, which shares this module, has no block's menu"
+    )]
+    pub(crate) fn shown_command(&self, panel: &PanelId) -> Option<(PaneId, u64)> {
+        let pane = self.pane_of(panel)?;
+        let shown = self.panes.get(&pane)?.shown.as_ref()?;
+        Some((pane, shown.command))
+    }
 }
 
 /// The header of `pane`, of `viewport`, if one shows: of the command whose
@@ -406,7 +442,7 @@ impl Headers {
 fn shown_at(
     cx: &mut Cx<'_>,
     pane: PaneId,
-    viewport: Viewport,
+    viewport: &Viewport,
     before: Option<&Shown>,
     ends: bool,
 ) -> Option<Shown> {
@@ -454,16 +490,17 @@ fn shown_at(
 /// `viewport`, if the view does not show it: the block's last row at the
 /// view's bottom; the screen's, which the view then follows, of a command
 /// that has not ended.
-fn to_end(end: Option<(u16, i64)>, viewport: Viewport) -> Option<Scroll> {
+fn to_end(end: Option<(u16, i64)>, viewport: &Viewport) -> Option<Scroll> {
     let rows = i64::from(viewport.rows);
     match end {
         Some((column, row)) => {
             // An end at a row's start, as an output's last new line leaves
             // it, follows the block's last row.
             let last = if column == 0 { row - 1 } else { row };
-            (last >= viewport.top + rows).then_some(Scroll::Row(last + 1 - rows))
+            (last >= viewport.top && viewport.view_row(last).is_none())
+                .then_some(Scroll::Row(last + 1 - rows))
         }
-        None => (viewport.top < viewport.screen).then_some(Scroll::Bottom),
+        None => (!viewport.at_screen()).then_some(Scroll::Bottom),
     }
 }
 

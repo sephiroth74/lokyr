@@ -9,6 +9,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 
 use super::Terminal;
+use super::folds::{ViewMap, ViewRow};
 use crate::page::{
     Color, Content, ListRow, PageList, PinId, Position, RowFlag, Style, StyleId, Width,
 };
@@ -61,7 +62,7 @@ pub struct RowText {
 /// gives it, without the spaces that end it, and the styles of its cells,
 /// as runs of their columns from the first that the read takes, a
 /// background that an erase left of no style among them.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RowCells {
     /// Its text: a cell without a character a space, a cluster whole, a
     /// wide character once.
@@ -71,6 +72,10 @@ pub struct RowCells {
     pub runs: Vec<(u16, u16, Style)>,
 }
 
+/// A selection's shape, and its first and last cells, each of its column
+/// and its row's number.
+pub type SelectedCells = (SelectionShape, (u16, i64), (u16, i64));
+
 /// The selection, as a renderer shows it: its first and last cells, each
 /// by its column and its row from the view's first, which can be above the
 /// view or below it, and its shape. A rectangle's first cell is its top left
@@ -79,7 +84,9 @@ pub struct RowCells {
 pub struct Selected {
     /// How it takes its cells.
     pub shape: SelectionShape,
-    /// Its first cell: the column, and the row from the view's first.
+    /// Its first cell: the column, and the row from the view's first, a
+    /// fold's placeholder's in one, negative above the view and past its
+    /// last below it.
     pub start: (u16, i64),
     /// Its last cell.
     pub end: (u16, i64),
@@ -207,7 +214,7 @@ impl Selection {
         &mut self,
         rows: &PageList,
         bounds: (At, At),
-        copied: Option<(usize, &[bool])>,
+        copied: Option<(&ViewMap, &[bool])>,
     ) -> bool {
         let (start, end) = bounds;
         if end.0 - start.0 + 1 != self.rows {
@@ -235,10 +242,9 @@ impl Selection {
         (first..=end.0)
             .zip(rows.rows_from(first))
             .all(|(index, row)| {
-                let looked_at = copied.is_none_or(|(top, copied)| {
-                    index
-                        .checked_sub(top)
-                        .and_then(|y| copied.get(y))
+                let looked_at = copied.is_none_or(|(map, copied)| {
+                    map.own_index(index)
+                        .and_then(|y| copied.get(usize::from(y)))
                         .is_some_and(|&copied| copied)
                 });
                 // The rows that came from the scrollback since the hashes,
@@ -756,10 +762,11 @@ impl Terminal {
         self.pinned_cell(self.held_cursor.as_ref()?)
     }
 
-    /// Where the held cursor shows in the view, as the snapshot takes it:
-    /// `None` without one, or of the other screen's, whose program has its
-    /// own cursor; `Some(None)` of one whose row the view does not show.
-    pub(super) fn held_cursor_in_view(&self) -> Option<Option<(u16, u16)>> {
+    /// Where the held cursor shows in the view `map`, as the snapshot takes
+    /// it: `None` without one, or of the other screen's, whose program has
+    /// its own cursor; `Some(None)` of one whose row the view does not
+    /// show, a fold's too.
+    pub(super) fn held_cursor_in_view(&self, map: &ViewMap) -> Option<Option<(u16, u16)>> {
         let held = self
             .held_cursor
             .as_ref()
@@ -767,8 +774,7 @@ impl Terminal {
         let place = self.pin_place(held).and_then(|position| {
             let rows = &self.screen().rows;
             let index = rows.row_index(position.page, position.row)?;
-            let y = index.checked_sub(self.view_top())?;
-            (y < usize::from(self.rows)).then_some((position.col, y as u16))
+            Some((position.col, map.own_index(index)?))
         });
         Some(place)
     }
@@ -895,12 +901,25 @@ impl Terminal {
     }
 
     /// The cells of the rows that the view shows, from its top, as the
-    /// screen draws them.
+    /// screen draws them: a fold's placeholder's, or a row's past the
+    /// list's last, of none.
     pub fn view_cells(&self) -> Vec<RowCells> {
         let rows = &self.screen().rows;
-        rows.rows_from(self.view_top())
-            .take(usize::from(self.rows))
-            .map(|row| cells_of(row, 0..row.cols()))
+        let (top, view) = self.view_rows();
+        if view.is_empty() {
+            return rows
+                .rows_from(top)
+                .take(usize::from(self.rows))
+                .map(|row| cells_of(row, 0..row.cols()))
+                .collect();
+        }
+        view.iter()
+            .map(|&shown| match shown {
+                ViewRow::Row(index) => row_at(rows, index)
+                    .map(|row| cells_of(row, 0..row.cols()))
+                    .unwrap_or_default(),
+                ViewRow::Folded { .. } | ViewRow::Past => RowCells::default(),
+            })
             .collect()
     }
 
@@ -981,9 +1000,9 @@ impl Terminal {
     /// dropped or brought in some, its first or last cell left the list, or
     /// the other screen became the active one.
     ///
-    /// With `copied`, the rows that a snapshot copied of the view whose
-    /// first row is at that index of the list, only those are looked at.
-    fn settle_selection(&mut self, copied: Option<(usize, &[bool])>) -> Option<(At, At)> {
+    /// With `copied`, the rows that a snapshot copied of the view that the
+    /// map maps, only those are looked at.
+    fn settle_selection(&mut self, copied: Option<(&ViewMap, &[bool])>) -> Option<(At, At)> {
         let alternate = self.alternate_active;
         let rows = if alternate {
             &self.alternate.rows
@@ -1029,23 +1048,43 @@ impl Terminal {
         }
     }
 
-    /// The selection, as the view shows it, if there is one.
+    /// The selection, as the view shows it, if there is one: its ends at
+    /// their rows of the view, a fold's placeholder's in one, negative above
+    /// the view and past its last below it.
     pub fn selection(&mut self) -> Option<Selected> {
-        self.selected(None)
+        let (top, rows) = self.view_rows();
+        let (start, end) = self.settle_selection(None)?;
+        let map = self.view_map(top, &rows);
+        self.selected_in(&map, start, end)
     }
 
-    /// The selection, as the view shows it, once the rows of the view that
-    /// a snapshot copied, `copied`, are looked at.
-    pub(super) fn selection_in_snapshot(&mut self, copied: &[bool]) -> Option<Selected> {
-        let top = self.view_top();
-        self.selected(Some((top, copied)))
-    }
-
-    fn selected(&mut self, copied: Option<(usize, &[bool])>) -> Option<Selected> {
-        let (start, end) = self.settle_selection(copied)?;
+    /// The selection, by its first cell and its last, each of its column
+    /// and its row's number, if there is one, and its shape.
+    pub fn selected_cells(&mut self) -> Option<SelectedCells> {
+        let (start, end) = self.settle_selection(None)?;
         let shape = self.selection.as_ref()?.shape;
-        let top = self.view_top() as i64;
-        let row = |index: usize| index as i64 - top;
+        Some((
+            shape,
+            (start.1, self.row_number(start.0)),
+            (end.1, self.row_number(end.0)),
+        ))
+    }
+
+    /// The selection, as the view `map` shows it, once the rows of the view
+    /// that a snapshot copied, `copied`, are looked at.
+    pub(super) fn selection_in_snapshot(
+        &mut self,
+        map: &ViewMap,
+        copied: &[bool],
+    ) -> Option<Selected> {
+        let (start, end) = self.settle_selection(Some((map, copied)))?;
+        self.selected_in(map, start, end)
+    }
+
+    /// The selection from `start` to `end`, as the view `map` shows it.
+    fn selected_in(&self, map: &ViewMap, start: At, end: At) -> Option<Selected> {
+        let shape = self.selection.as_ref()?.shape;
+        let row = |index: usize| map.place(self.row_number(index));
         Some(Selected {
             shape,
             start: (start.1, row(start.0)),

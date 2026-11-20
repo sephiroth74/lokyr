@@ -246,6 +246,8 @@ align = "left"                       # left | center | right: where its pill sit
 max-length = 80                      # characters, 1 to 1000, of the line, cut of … beyond them
 dividers = true                      # true | false
 failed-tint = true                   # true | false
+header = "pill"                      # rows | pill: the prompt's rows pinned, or a pill of the command line
+spacing = true                       # true | false
 
 [plugins.quick-tips]
 every = 7                            # days, 0 to 365, between two tips as Lokyr starts; 0 for every start
@@ -1708,7 +1710,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `shift+cmd+down` | `pane.scroll-line-down` | Scrolls the view a line down |
 | `cmd+up` | `pane.prompt-previous` | Scrolls the view to the prompt above its top, of the commands that the shell marks, as [`shell-integration`](#shell-integration) has it, the prompt at the view's top |
 | `cmd+down` | `pane.prompt-next` | Scrolls the view to the prompt below its top, or to the screen past the last |
-| `cmd+up` | `blocks.select-previous` | While Blocks runs, in place of `pane.prompt-previous`: jumps to the prompt above the view's top and selects its block, which an outline shows; with a block selected, selects the one before · not released yet |
+| `cmd+up` | `blocks.select-previous` | While Blocks runs, in place of `pane.prompt-previous`: jumps to the prompt above the view's top and selects its block, which a tint shows; with a block selected, selects the one before · not released yet |
 | `cmd+down` | `blocks.select-next` | While Blocks runs, in place of `pane.prompt-next`: jumps to the prompt below the view's top and selects its block; with a block selected, selects the one after, or, past the last, none, back to the screen · not released yet |
 | `up` | `blocks.select-previous` | While a block is selected: selects the block before, the view at its top · not released yet |
 | `down` | `blocks.select-next` | While a block is selected: selects the block after, or, past the last, none, back to the screen · not released yet |
@@ -1781,13 +1783,13 @@ Whether the plugin runs: `false` turns it off, any plugin, the built-in ones too
 
 | Value | Meaning |
 |---|---|
-| `true` | The plugin runs, as by default |
+| `true` | The plugin runs, as by default, but of a plugin that starts off, as Blocks |
 | `false` | The plugin is off: its commands, its keys, its bars and its panels go, and the program's text loses its marks |
 
-Default: `true`.
+Default: `true`; `false` of a built-in plugin that starts off, `[plugins.blocks]` of Blocks.
 
 - It applies as you save the file: a plugin turned off stops at once, and one turned on again starts anew.
-- Lokyr › Plugins… writes it too: Disable writes `enabled = false`, keeping the rest of the file and its comments; Enable takes the key away, as `true` is its default, and the section with it if nothing else is left of it; a plugin removed there takes its key away the same way, once Lokyr no longer runs it.
+- Lokyr › Plugins… writes it too: Disable writes `enabled = false`, keeping the rest of the file and its comments; Enable takes the key away, as `true` is its default, and the section with it if nothing else is left of it; a plugin removed there takes its key away the same way, once Lokyr no longer runs it. Of a plugin that starts off, as Blocks, Enable writes `enabled = true` and Disable takes the key away.
 - The plugin's other keys are not checked while it is off.
 - `[plugins.core-actions] enabled = false` takes away the terminal's own actions, as copy, paste, select all and the text's size, with their keys.
 - `[plugins.keymap-macos] enabled = false` takes away the default shortcuts, as [`[keys]`](#keys) says, the menus keeping the system's own keys alone.
@@ -2206,7 +2208,7 @@ The most characters of the command's line that the header shows.
 
 <sub>Platforms: macOS</sub>
 
-The commands' blocks of the built-in plugin `lokyr/blocks`: each command that the shell marks, its prompt, its line and its output, is a block. While a pane's first row shows a command's output and the command's line is above the view, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, and a failed block's rows can be tinted.
+The commands' blocks of the built-in plugin `lokyr/blocks`, off by default: `enabled = true`, or Enable on the Plugins page, turns it on. Each command that the shell marks, its prompt, its line and its output, is a block. As soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, which a click scrolls to the command's prompt, or, of `header = "pill"`, a pill of the command as you typed it, in the terminal's font, sits on a thin line across the pane's top, over its first row, which a click scrolls to the command's prompt; while the view does not show the block's end, an arrow beside the pill scrolls there, the output's last row at the view's bottom, or the screen of a command that still runs. Its colors are the theme's, of the tokens that its keys name, so that they follow the light and the dark appearance. A thin line divides the blocks, the gutter's bar of each command runs along its block, the block that a click or the keyboard selects is tinted, and a failed block's rows can be tinted. A blank row before each prompt can make room between the blocks.
 
 `lokyr/blocks` replaces `lokyr/command-header`, the plain header, of the same keys, which comes back while `lokyr/blocks` is off: keys of `[plugins.command-header]` apply then, and the settings window notes it above them while `lokyr/blocks` runs.
 
@@ -2318,6 +2320,35 @@ Whether the rows of a block whose command failed are tinted, across the pane.
 - A command fails of an exit status other than 0, as an interrupted command does.
 - By default a failed block shows the gutter's red bar alone; `true` tints its rows too, of the theme's `blocks.failed`, a faint red by default.
 - It applies at once, as you save the file.
+
+### `header`
+
+<sub>Platforms: macOS</sub>
+
+How the header of the block whose output the pane's top shows looks.
+
+| Values | Default |
+|---|---|
+| `rows`, `pill` | `rows` |
+
+- `rows` pins the block's own prompt rows at the pane's top as soon as the prompt's first row scrolls above it, its prompt and its command line as your shell drew them, three rows at most, over the rows that scroll under them, with a line under them; a click on them scrolls to the prompt.
+- `pill` shows the command line in a pill on a line across the pane, of the keys above, with an arrow to the block's end.
+- It applies at once, as you save the file.
+
+### `spacing`
+
+<sub>Platforms: macOS</sub>
+
+Whether a blank row comes before each prompt that follows a command, as room between the blocks.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- Lokyr puts the blank row there itself as the prompt starts, in any shell that marks its prompts, so your shell's config needs nothing.
+- The divider between the blocks runs through the middle of the blank row, and a selected block's tint reaches it.
+- No blank row comes before the first prompt, after an empty line, or at the top of a cleared screen.
+- It applies at once, from the next prompt, as you save the file; the blank rows already there stay when you turn it off.
 
 ## `[plugins.quick-tips]`
 

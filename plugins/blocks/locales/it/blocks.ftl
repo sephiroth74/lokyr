@@ -14,6 +14,10 @@ command-blocks-select-previous = Seleziona il blocco precedente
 command-blocks-select-next = Seleziona il blocco successivo
 command-blocks-deselect = Deseleziona il blocco
 
+menu-block = Blocco
+menu-copy-output = Copia output del comando
+menu-select-output = Seleziona output del comando
+
 # I dettagli di un blocco.
 details-label = Dettagli di { $line }
 details-line = Comando

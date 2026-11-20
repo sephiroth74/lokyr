@@ -121,9 +121,14 @@ pub(super) fn settle<B: Backend>(
             continue;
         }
         let count = |rows: i64| u64::try_from(rows).unwrap_or(0);
+        // The view's rows, each fold's placeholder one.
+        let (folded, above) = workspace
+            .pane(view.pane)
+            .map_or((0, 0), |pane| pane.snapshot().folded());
         let rows = Rows {
-            total: count(viewport.screen - viewport.oldest) + u64::from(viewport.rows),
-            top: count(viewport.top - viewport.oldest),
+            total: (count(viewport.screen - viewport.oldest) + u64::from(viewport.rows))
+                .saturating_sub(folded as u64),
+            top: count(viewport.top - viewport.oldest).saturating_sub(above as u64),
             shown: u64::from(viewport.rows),
         };
         if !rows.scrolls() {
@@ -214,15 +219,13 @@ fn holds(area: Rect, position: Point, scale: f64) -> bool {
 }
 
 /// The scroll that puts the view's first row at `top`, from the oldest, of
-/// `bar`'s rows: to the screen, which the view then follows, at the last.
+/// `bar`'s rows, each fold's placeholder one: to the screen, which the view
+/// then follows, at the last.
 fn scroll_to(bar: &Bar, top: u64) -> Scroll {
     if top >= bar.rows.total.saturating_sub(bar.rows.shown) {
         Scroll::Bottom
     } else {
-        Scroll::Row(
-            bar.oldest
-                .saturating_add(i64::try_from(top).unwrap_or(i64::MAX)),
-        )
+        Scroll::Shown(usize::try_from(top).unwrap_or(usize::MAX))
     }
 }
 

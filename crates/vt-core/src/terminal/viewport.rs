@@ -11,6 +11,7 @@
 //! starts an epoch of other numbers; a pin keeps its cell through it.
 
 use super::Terminal;
+use super::folds::{ShownRow, shown_index, starting};
 use crate::page::Position;
 
 /// How the view scrolls.
@@ -38,6 +39,10 @@ pub enum Scroll {
     /// scrollback's first row and the screen let it: a row that the list
     /// does not hold, to its nearer end.
     Row(i64),
+    /// To the view's row of this place from the list's first, each fold's
+    /// placeholder one row, at the view's top, as a scroll bar's thumb puts
+    /// it: the list's row of this index of no fold.
+    Shown(usize),
 }
 
 /// Where the active screen's rows are, at a moment: the epoch of their
@@ -144,6 +149,60 @@ impl Terminal {
         offset
     }
 
+    /// The row of the view `y` now, by the numbers of the rows that it
+    /// shows: the list's row, or a fold's placeholder; none past the list's
+    /// last or the view's.
+    pub fn shown_row(&self, y: u16) -> Option<ShownRow> {
+        let (top, rows) = self.view_rows();
+        self.view_map(top, &rows).at(y)
+    }
+
+    /// The row of the view now that shows the row numbered `row`: its own,
+    /// or its fold's placeholder; none of a row that the view does not
+    /// show.
+    pub fn view_y(&self, row: i64) -> Option<u16> {
+        let (top, rows) = self.view_rows();
+        self.view_map(top, &rows).showing(row)
+    }
+
+    /// Scrolls the view, through the scrollback, so that the row numbered
+    /// `row` shows: at the view's edge that it comes past, as it does
+    /// already, its fold's placeholder for a row of a fold, or not at all,
+    /// of a row that the list does not hold.
+    pub fn show_row(&mut self, row: i64) {
+        let Some(index) = self.row_index(row) else {
+            return;
+        };
+        if let Some(view) = self.settle_folded() {
+            if self.view_map(view.top, &view.rows).showing(row).is_some() {
+                return;
+            }
+            let top = if index < view.top {
+                index
+            } else {
+                // The view whose last row shows it.
+                let mut at = starting(&view.spans, index);
+                for _ in 1..self.rows {
+                    let Some(before) = at.checked_sub(1) else {
+                        break;
+                    };
+                    at = starting(&view.spans, before);
+                }
+                at
+            };
+            self.scroll_folded(Scroll::Row(self.row_number(top)), &view);
+            return;
+        }
+        let top = self.origin().top;
+        let bottom = top.saturating_add(i64::from(self.rows));
+        let rows = |n: i64| usize::try_from(n).unwrap_or(usize::MAX);
+        if row < top {
+            self.scroll_viewport(Scroll::Up(rows(top - row)));
+        } else if row >= bottom {
+            self.scroll_viewport(Scroll::Down(rows(row - bottom + 1)));
+        }
+    }
+
     /// Pins the view by its first row where it is, at the screen too, so
     /// that output scrolls the screen under it rather than taking it along.
     pub(super) fn pin_viewport(&mut self) {
@@ -179,6 +238,7 @@ impl Terminal {
                 let scrollback = self.primary.rows.scrollback_rows();
                 scrollback.saturating_sub(self.nearest_index(row))
             }
+            Scroll::Shown(index) => self.primary.rows.scrollback_rows().saturating_sub(index),
             Scroll::PreviousPrompt | Scroll::NextPrompt => {
                 let scrollback = self.primary.rows.scrollback_rows();
                 let top = scrollback - offset;
@@ -237,6 +297,7 @@ impl Terminal {
             Scroll::Top => self.folded_top_at(view, 0),
             Scroll::Bottom => None,
             Scroll::Row(row) => self.folded_top_at(view, self.nearest_index(row)),
+            Scroll::Shown(place) => self.folded_top_at(view, shown_index(&view.spans, place)),
             Scroll::PreviousPrompt | Scroll::NextPrompt => {
                 let prompts = self.folded_prompts(view);
                 let found = if scroll == Scroll::PreviousPrompt {

@@ -37,11 +37,12 @@ tip-links = Hold ⌘ over a link to underline it, then click to open it.
 tip-prompt-click = Click in the command line to move the cursor there, in zsh, bash and fish; select part of it and press Backspace, or type, to replace it.
 tip-copy-output = Press { $keys } to copy the output of the last command, without its prompt; its context menu copies any command's.
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
-tip-block-header = Scrolled up through a long output? Click the command's header at the pane's top to go to its prompt, or its arrow to go to the output's end.
-tip-block-copy = Right-click a command's output to copy the command, or the command and its output, or to select its whole block.
-tip-block-details = Right-click a command's output and choose Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
-tip-select-block = Press { $keys } to select the last command's block: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
-tip-block-rerun = Right-click a command's output and choose Run Command Again to run it once more at the prompt.
+tip-block-header = Scrolled up through a long output? The command's prompt stays at the pane's top: click it to go back to the command.
+tip-block-copy = Right-click a command's output and open Block to copy the command, its output or both, or to select its output or its whole block. Right-click its pinned rows at the top for the same menu.
+tip-block-details = Right-click a command's output and choose Block › Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
+tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
+tip-block-rerun = Right-click a command's output and choose Block › Run Command Again to run it once more at the prompt.
+tip-block-spacing = Want room between your commands? Set spacing = true in [plugins.blocks] for a blank row before each prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.
@@ -64,6 +65,7 @@ tip-settings-keys = On the settings window's Keys page, type in its filter to fi
 tip-settings-themes = The settings window's Themes page shows every theme of a preview of its colors: a click uses it.
 tip-theme-editor = Editor, on the settings window's Themes page, shows every color of a theme and where it comes from, and edits your own: click a color's row to type its value, or its swatch to pick it in the color panel. Edit, in a theme card's context menu, shows that theme in it.
 tip-settings-search = In the settings window, type in the search field at the sidebar's top to find a setting by its name, what it does, or a shortcut's keys.
+tip-settings-plugin-on = Turn a bundled plugin, such as Blocks, on or off with the Enabled switch at the top of its section in Settings.
 tip-plugins = Lokyr › Plugins… lists every plugin, its state and what it may do, disables, updates or removes one, and installs those of the registry.
 
 # The tips of an installed plugin's command, `$title`: of its keys, or of

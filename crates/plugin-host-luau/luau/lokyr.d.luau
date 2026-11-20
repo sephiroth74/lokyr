@@ -186,6 +186,8 @@ export type Event =
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
+    | { kind: "click", pane: PaneId, at: { number } }
+    | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     | { kind: "panel-closed", id: PanelId }
@@ -434,6 +436,8 @@ export type BlockLooks = {
     bars: boolean?,
     dividers: boolean?,
     failed_tint: boolean?,
+    prompt_rows: boolean?,
+    spacing: boolean?,
 }
 
 export type Border = {
@@ -933,6 +937,7 @@ export type SettingsSection = {
     name: string,
     plugin: string?,
     replaced_by: string?,
+    enabled: boolean?,
     description: string?,
     keys: { SettingKey },
 }
@@ -1118,6 +1123,13 @@ export type Underline =
     | "dotted"
     | "dashed"
 
+export type ViewFold = {
+    command: number,
+    whole: boolean,
+    first: number,
+    last: number,
+}
+
 export type ViewId =
     | { tab_bar: WindowId }
     | { window_strip: WindowId }
@@ -1134,6 +1146,7 @@ export type Viewport = {
     oldest: number,
     epoch: number,
     alternate: boolean,
+    folds: { ViewFold }?,
 }
 
 export type WindowId = number

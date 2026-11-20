@@ -108,8 +108,6 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
-| `blocks.copy-block` | Copy Command and Output | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
-| `blocks.copy-command` | Copy Command | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
 | [`links.copy`](plugins/links.md) | Copy Link Address | `column`, whole number; `row`, whole number |  |
 | [`pane.copy`](plugins/core-actions.md) | Copy |  | ⌘C (`cmd+c`) |
 | [`pane.copy-output`](plugins/core-actions.md) | Copy Command Output | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | ⌥⇧⌘C (`cmd+alt+shift+c`) |
@@ -119,9 +117,6 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
-| `blocks.details` | Block Details | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
-| `blocks.rerun` | Run Command Again | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
-| `blocks.select-block` | Select Block | `column`, whole number, `-1` by default; `row`, whole number, `-1` by default | · not released yet |
 | [`copy-mode.act`](plugins/copy-mode.md) | Act in Copy Mode | `action`, text | `o`, `action = "swap"`, while `copy-mode.open && pane.focused`; `y`, `action = "copy"`, while `copy-mode.open && pane.focused`; Return (`enter`), `action = "copy"`, while `copy-mode.open && pane.focused`; `Y` (`shift+y`), `action = "copy-line"`, while `copy-mode.open && pane.focused`; Escape (`escape`), `action = "back"`, while `copy-mode.open && pane.focused`; `q`, `action = "exit"`, while `copy-mode.open && pane.focused`; ⌃C (`ctrl+c`), `action = "exit"`, while `copy-mode.open && pane.focused` |
 | [`copy-mode.count`](plugins/copy-mode.md) | Count in Copy Mode | `digit`, whole number | `0` to `9`, `digit` 0 to 9, while `copy-mode.open && pane.focused` |
 | [`copy-mode.move`](plugins/copy-mode.md) | Move in Copy Mode | `to`, text | `h`, `to = "left"`, while `copy-mode.open && pane.focused`; ← (`left`), `to = "left"`, while `copy-mode.open && pane.focused`; `l`, `to = "right"`, while `copy-mode.open && pane.focused`; → (`right`), `to = "right"`, while `copy-mode.open && pane.focused`; `k`, `to = "up"`, while `copy-mode.open && pane.focused`; ↑ (`up`), `to = "up"`, while `copy-mode.open && pane.focused`; `j`, `to = "down"`, while `copy-mode.open && pane.focused`; ↓ (`down`), `to = "down"`, while `copy-mode.open && pane.focused`; `w`, `to = "word-next"`, while `copy-mode.open && pane.focused`; `b`, `to = "word-previous"`, while `copy-mode.open && pane.focused`; `e`, `to = "word-end"`, while `copy-mode.open && pane.focused`; `W` (`shift+w`), `to = "big-word-next"`, while `copy-mode.open && pane.focused`; `B` (`shift+b`), `to = "big-word-previous"`, while `copy-mode.open && pane.focused`; `E` (`shift+e`), `to = "big-word-end"`, while `copy-mode.open && pane.focused`; Home (`home`), `to = "line-start"`, while `copy-mode.open && pane.focused`; ⇧6 (`shift+6`), `to = "line-first"`, while `copy-mode.open && pane.focused`; ⇧4 (`shift+4`), `to = "line-end"`, while `copy-mode.open && pane.focused`; End (`end`), `to = "line-end"`, while `copy-mode.open && pane.focused`; `g` `g` (`g>g`), `to = "top"`, while `copy-mode.open && pane.focused`; `G` (`shift+g`), `to = "bottom"`, while `copy-mode.open && pane.focused`; `H` (`shift+h`), `to = "view-top"`, while `copy-mode.open && pane.focused`; `M` (`shift+m`), `to = "view-middle"`, while `copy-mode.open && pane.focused`; `L` (`shift+l`), `to = "view-bottom"`, while `copy-mode.open && pane.focused`; ⌃U (`ctrl+u`), `to = "half-page-up"`, while `copy-mode.open && pane.focused`; ⌃D (`ctrl+d`), `to = "half-page-down"`, while `copy-mode.open && pane.focused`; ⌃B (`ctrl+b`), `to = "page-up"`, while `copy-mode.open && pane.focused`; Page Up (`pageup`), `to = "page-up"`, while `copy-mode.open && pane.focused`; ⌃F (`ctrl+f`), `to = "page-down"`, while `copy-mode.open && pane.focused`; Page Down (`pagedown`), `to = "page-down"`, while `copy-mode.open && pane.focused`; ⇧[ (`shift+[`), `to = "paragraph-previous"`, while `copy-mode.open && pane.focused`; ⇧] (`shift+]`), `to = "paragraph-next"`, while `copy-mode.open && pane.focused` |
@@ -152,9 +147,6 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `app.new-theme` | New Theme from Current… | `theme`, text, `""` by default; `variant`, text, `""` by default |  |
 | `app.open-themes-folder` | Open Themes Folder |  |  |
 | `app.performance` | Show Performance |  |  |
-| `blocks.deselect` | Deselect Block |  | Escape (`escape`), while `blocks.selected && pane.focused` · not released yet |
-| `blocks.select-next` | Select Next Block |  | ⌘↓ (`cmd+down`); ↓ (`down`), while `blocks.selected && pane.focused` · not released yet |
-| `blocks.select-previous` | Select Previous Block |  | ⌘↑ (`cmd+up`); ↑ (`up`), while `blocks.selected && pane.focused` · not released yet |
 | [`command-palette.move`](plugins/command-palette.md) | Move in the Command Palette | `delta`, whole number | ↑ (`up`), `delta = -1`, while `command-palette.focused`; ↓ (`down`), `delta = 1`, while `command-palette.focused` |
 | [`command-palette.open`](plugins/command-palette.md) | Command Palette… |  | ⇧⌘P (`cmd+shift+p`) |
 | [`command-palette.theme`](plugins/command-palette.md) | Choose Theme… |  |  |
@@ -164,8 +156,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | [`links.hints`](plugins/links.md) | Show Hints | `action`, text, `"open"` by default | ⇧⌘E (`cmd+shift+e`) |
 | [`links.hints-action`](plugins/links.md) | Next Hint Action | `delta`, whole number | Tab (`tab`), `delta = 1`, while `links.focused`; ⇧Tab (`shift+tab`), `delta = -1`, while `links.focused` |
 | [`links.open`](plugins/links.md) | Open Link | `column`, whole number; `row`, whole number | ⌘-click (`cmd+click`) |
-| [`pane.prompt-next`](plugins/core-actions.md) | Jump to Next Prompt |  |  |
-| [`pane.prompt-previous`](plugins/core-actions.md) | Jump to Previous Prompt |  |  |
+| [`pane.prompt-next`](plugins/core-actions.md) | Jump to Next Prompt |  | ⌘↓ (`cmd+down`) |
+| [`pane.prompt-previous`](plugins/core-actions.md) | Jump to Previous Prompt |  | ⌘↑ (`cmd+up`) |
 | [`pane.scroll-bottom`](plugins/core-actions.md) | Scroll to the Bottom |  | ⌘End (`cmd+end`) |
 | [`pane.scroll-line-down`](plugins/core-actions.md) | Scroll Down a Line |  | ⇧⌘↓ (`cmd+shift+down`) |
 | [`pane.scroll-line-up`](plugins/core-actions.md) | Scroll Up a Line |  | ⇧⌘↑ (`cmd+shift+up`) |

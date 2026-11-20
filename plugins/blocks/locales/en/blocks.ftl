@@ -20,6 +20,13 @@ command-blocks-select-previous = Select Previous Block
 command-blocks-select-next = Select Next Block
 command-blocks-deselect = Deselect Block
 
+# The block's menu, of its header's context click, and the pane's context
+# menu's submenu of its actions: its title, and the titles of the commands
+# of a command's output, which Lokyr's own actions give.
+menu-block = Block
+menu-copy-output = Copy Command Output
+menu-select-output = Select Command Output
+
 # A block's details: what an accessibility client calls the panel, of the
 # command's whole line, and the names of its parts.
 details-label = Details of { $line }

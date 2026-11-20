@@ -32,11 +32,12 @@ tip-links = Tieni premuto ⌘ su un link per sottolinearlo, poi fai clic per apr
 tip-prompt-click = Fai clic nella riga di comando per spostarci il cursore, in zsh, bash e fish; selezionane una parte e premi Backspace, o scrivi, per sostituirla.
 tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senza il prompt; il menu contestuale copia quello di qualsiasi comando.
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
-tip-block-header = Sei risalito in un output lungo? Fai clic sull'intestazione del comando in cima al pannello per andare al suo prompt, o sulla sua freccia per andare alla fine dell'output.
-tip-block-copy = Fai clic destro sull'output di un comando per copiare il comando, o il comando e il suo output, o per selezionare tutto il blocco.
-tip-block-details = Fai clic destro sull'output di un comando e scegli Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
-tip-select-block = Premi { $keys } per selezionare il blocco dell'ultimo comando: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
-tip-block-rerun = Fai clic destro sull'output di un comando e scegli Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
+tip-block-header = Sei risalito in un output lungo? Il prompt del comando resta in cima al pannello: fai clic per tornare al comando.
+tip-block-copy = Fai clic destro sull'output di un comando e apri Blocco per copiare il comando, il suo output o entrambi, o per selezionarne l'output o tutto il blocco. Lo stesso menu si apre col clic destro sulle righe fissate in cima.
+tip-block-details = Fai clic destro sull'output di un comando e scegli Blocco › Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
+tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
+tip-block-rerun = Fai clic destro sull'output di un comando e scegli Blocco › Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
+tip-block-spacing = Vuoi più spazio fra i comandi? Imposta spacing = true in [plugins.blocks] per una riga vuota prima di ogni prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
 tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.
@@ -59,6 +60,7 @@ tip-settings-keys = Nella pagina Tasti della finestra delle impostazioni, scrivi
 tip-settings-themes = La pagina Temi della finestra delle impostazioni mostra ogni tema con un'anteprima dei suoi colori: un clic lo usa.
 tip-theme-editor = Editor, nella pagina Temi della finestra delle impostazioni, mostra ogni colore di un tema e da dove viene, e modifica i tuoi: fai clic sulla riga di un colore per scriverne il valore, o sul suo campione per sceglierlo nel pannello dei colori. Modifica, nel menu contestuale della scheda di un tema, mostra quel tema lì.
 tip-settings-search = Nella finestra delle impostazioni, scrivi nel campo di ricerca in cima alla barra laterale per trovare un'impostazione per nome, per cosa fa o per i tasti di una scorciatoia.
+tip-settings-plugin-on = Attiva o disattiva un plugin incluso, come Blocks, con l'interruttore Attivo in cima alla sua sezione nelle Impostazioni.
 tip-plugins = Lokyr › Plugin… elenca ogni plugin, il suo stato e cosa può fare, lo disattiva, lo aggiorna o lo rimuove, e installa quelli del registro.
 
 tip-plugin-keys = Premi { $keys } per «{ $title }», un comando di un plugin installato.

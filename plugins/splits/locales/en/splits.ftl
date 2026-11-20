@@ -22,3 +22,5 @@ menu-select-left = Select Pane Left
 menu-select-right = Select Pane Right
 menu-select-up = Select Pane Above
 menu-select-down = Select Pane Below
+# The title of the context menu's submenu of the panes' items.
+menu-pane = Pane

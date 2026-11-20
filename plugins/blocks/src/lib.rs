@@ -23,15 +23,21 @@
 //! show its details in a panel: its line, its exit status, its start, its
 //! duration and its folder, each copied of a click, or run its line again
 //! at the shell's prompt, while the shell waits there of an empty command
-//! line. Like every built-in plugin, it depends only on the plugin SDK.
+//! line. The pane's context menu holds them in a submenu of their own,
+//! with the commands of a command's output, and a context click on a
+//! block's header, its prompt rows that the host pins or its pill, opens a
+//! menu of them that acts on that block. Like every built-in plugin, it
+//! depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, Scroll, ShellCommand};
-use lokyr_plugin_sdk::message::{Data, Event};
+use lokyr_plugin_sdk::host::{
+    BlockLooks, LocalTime, MenuItem, MenuPlace, NoticeLevel, PaneId, Scroll, ShellCommand,
+};
+use lokyr_plugin_sdk::message::{CLICK, Data, Event, PROMPT_ROWS_MENU};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
     Anchor, Corner, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId,
@@ -63,6 +69,10 @@ static CATALOGS: [(&str, &str); 2] = [
 
 /// The prefix of a header's panel's id, of its pane's id.
 const PANEL: &str = "block-header-";
+
+/// The argument of a copy of the selected block alone, `true`, of none
+/// selected nothing.
+const SELECTED: &str = "selected";
 
 /// Copy a block's command line; copy its command line and its output;
 /// select it whole, from its prompt to its output's end. Each of the block
@@ -104,6 +114,31 @@ const LINE_LINES: u16 = 3;
 /// The context of the commands: a focused pane.
 const PANE: &str = "pane.focused";
 
+/// Copy or select a command's output, of `lokyr/core-actions`, of the cell
+/// of its `column` and `row`.
+const COPY_OUTPUT: &str = "pane.copy-output";
+const SELECT_OUTPUT: &str = "pane.select-output";
+
+/// A block's actions, in their order, in the pane's context menu's submenu
+/// and in the block's menu, of its header's context click; a line before
+/// those that do not copy nor select.
+const ACTIONS: [&str; 7] = [
+    COPY_COMMAND,
+    COPY_OUTPUT,
+    COPY_BLOCK,
+    SELECT_OUTPUT,
+    SELECT_BLOCK,
+    DETAILS,
+    RERUN,
+];
+
+/// The message of the title of the context menu's submenu of a block's
+/// actions.
+const BLOCK_SUBMENU: &str = "menu-block";
+
+/// The panel of a block's menu.
+const MENU: &str = "block-menu";
+
 /// The rows that a copy of an output reads at most, as a read of rows
 /// takes them.
 const MOST_OUTPUT_ROWS: usize = lokyr_plugin_sdk::host::MOST_LINES;
@@ -123,6 +158,8 @@ pub struct Blocks {
     opened: u64,
     /// How the host draws the blocks, as the plugin last asked.
     looks: BlockLooks,
+    /// The pane and the command of the block whose menu shows.
+    menu: Option<(PaneId, u64)>,
 }
 
 /// A block's details that a panel shows: its panel, its pane, its command,
@@ -217,6 +254,7 @@ impl Default for Blocks {
             details: None,
             opened: 0,
             looks: BlockLooks::default(),
+            menu: None,
         }
     }
 }
@@ -224,8 +262,14 @@ impl Default for Blocks {
 impl Plugin for Blocks {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.headers.activate(cx)?;
+        // A click on a block selects it; a context click on its prompt
+        // rows pinned at the pane's top opens its menu.
+        cx.subscribe(&[CLICK, PROMPT_ROWS_MENU])?;
         self.looks = looks_of(&cx.config()?);
         cx.set_block_looks(self.looks)?;
+        // The pill of the command's line, unless the host pins the block's
+        // prompt rows in its place.
+        self.headers.set_hidden(cx, self.looks.prompt_rows)?;
         // A block: its cell's, as the context menu gives it, or, of none,
         // the last command's.
         let cell = |name: &str| Param {
@@ -280,12 +324,22 @@ impl Plugin for Blocks {
             ),
         ]);
         for (name, title, category, capabilities) in commands {
+            let mut params = vec![cell("column"), cell("row")];
+            // A copy of the selected block alone, as ⌘C asks of no text
+            // selected, which copies nothing of none.
+            if name == COPY_BLOCK {
+                params.push(Param {
+                    name: SELECTED.to_owned(),
+                    kind: Kind::Boolean,
+                    default: Some(Value::Boolean(false)),
+                });
+            }
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category,
                 capabilities,
-                params: vec![cell("column"), cell("row")],
+                params,
                 when: Some(PANE.to_owned()),
             })?;
         }
@@ -301,6 +355,18 @@ impl Plugin for Blocks {
                 capabilities: vec![Capability::HistoryRead, Capability::PaneView],
                 params: Vec::new(),
                 when: Some(PANE.to_owned()),
+            })?;
+        }
+        // The pane's context menu: a block's actions in a submenu of their
+        // own, of the cell that the menu opened on.
+        for name in ACTIONS {
+            cx.add_menu_item(MenuItem {
+                place: MenuPlace::PaneContext,
+                command: name.to_owned(),
+                args: Args::new(),
+                title: None,
+                submenu: Some(BLOCK_SUBMENU.to_owned()),
+                ticked: false,
             })?;
         }
         Ok(())
@@ -324,9 +390,23 @@ impl Plugin for Blocks {
             if looks != self.looks {
                 self.looks = looks;
                 cx.set_block_looks(looks)?;
+                self.headers.set_hidden(cx, looks.prompt_rows)?;
             }
         }
         for event in events {
+            if let Event::Click { pane, at } = event {
+                select_clicked(cx, *pane, at.1)?;
+                continue;
+            }
+            if let Event::PromptRowsMenu {
+                pane,
+                window,
+                command,
+            } = event
+            {
+                self.open_menu(cx, *pane, *command, Anchor::Pointer(*window))?;
+                continue;
+            }
             let Event::Lines {
                 id, pane, lines, ..
             } = event
@@ -358,6 +438,9 @@ impl Plugin for Blocks {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view == ViewId::Panel(PanelId::from(MENU)) {
+            return Some(self.menu_tree(cx));
+        }
         match &self.details {
             Some(details) if *view == ViewId::Panel(details.panel.clone()) => {
                 let rows = rows(cx, details);
@@ -373,6 +456,31 @@ impl Plugin for Blocks {
 
     /// A click on a row of the details, or on its button, copies its part.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        // A block's menu's item chosen; the pointer's moves over the
+        // platform's menu tell hovers, which choose nothing.
+        if event.view == ViewId::Panel(PanelId::from(MENU)) {
+            if event.kind != UiEventKind::Click {
+                return Ok(());
+            }
+            let Some((pane, command)) = self.menu else {
+                return Ok(());
+            };
+            let Some(&name) = ACTIONS.iter().find(|&&name| name == event.key.0) else {
+                return Ok(());
+            };
+            let _ = cx.close_panel(PanelId::from(MENU));
+            return self.act_on_block(cx, pane, command, name);
+        }
+        // A context click on a header's pill opens its block's menu.
+        if event.kind == UiEventKind::ContextMenu
+            && let ViewId::Panel(id) = &event.view
+            && let Some((pane, command)) = self.headers.shown_command(id)
+        {
+            let anchor = Anchor::ViewPointer {
+                view: event.view.clone(),
+            };
+            return self.open_menu(cx, pane, command, anchor);
+        }
         let Some(details) = &self.details else {
             return self.headers.on_ui_event(cx, event);
         };
@@ -400,29 +508,26 @@ impl Plugin for Blocks {
     /// A command applies where its block has what it takes: a line to
     /// copy, or a command that ended.
     fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
-        let Some(pane) = cx.focused_pane() else {
-            return false;
-        };
-        match name {
-            COPY_COMMAND => block(cx, pane, args, false)
-                .ok()
-                .flatten()
-                .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
-                .is_some(),
-            COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
-            DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
-            DESELECT => cx.selected_block(pane).ok().flatten().is_some(),
-            _ => true,
-        }
+        cx.focused_pane()
+            .is_some_and(|pane| applies_in(cx, pane, name, args))
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
+        self.act(cx, pane, name, &args)
+    }
+}
+
+impl Blocks {
+    /// Runs the command `name` of `args` in `pane`, as its call does in the
+    /// focused pane; the commands of a command's output too, as the block's
+    /// menu runs them in its own pane.
+    fn act(&mut self, cx: &mut Cx<'_>, pane: PaneId, name: &str, args: &Args) -> Result<(), Error> {
         match name {
             COPY_COMMAND => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
                 if let Some(line) = cx.command_line(pane, command.id)? {
@@ -431,7 +536,11 @@ impl Plugin for Blocks {
                 Ok(())
             }
             COPY_BLOCK => {
-                let Some(command) = block(cx, pane, &args, true)? else {
+                let selected = matches!(args.get(SELECTED), Some(Value::Boolean(true)));
+                if selected && cx.selected_block(pane)?.is_none() {
+                    return Ok(());
+                }
+                let Some(command) = block(cx, pane, args, true)? else {
                     return Ok(());
                 };
                 let line = cx.command_line(pane, command.id)?;
@@ -466,7 +575,7 @@ impl Plugin for Blocks {
                 Ok(())
             }
             SELECT_BLOCK => {
-                let Some(command) = block(cx, pane, &args, true)? else {
+                let Some(command) = block(cx, pane, args, true)? else {
                     return Ok(());
                 };
                 let (columns, _) = cx.pane_grid(pane)?;
@@ -485,16 +594,39 @@ impl Plugin for Blocks {
                 Ok(())
             }
             DETAILS => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
-                self.open_details(cx, pane, command, &args)
+                self.open_details(cx, pane, command, args)
             }
             RERUN => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
                 rerun(cx, pane, &command)
+            }
+            COPY_OUTPUT | SELECT_OUTPUT => {
+                let Some(command) = block(cx, pane, args, true)? else {
+                    return Ok(());
+                };
+                let (columns, _) = cx.pane_grid(pane)?;
+                let Some(output) = output_span(&command, columns) else {
+                    return Ok(());
+                };
+                let ((_, first), (_, last)) = output;
+                // A selection reads its last row alone, whose end may hold
+                // a shell's mark of a missing newline.
+                let (from, rows, to) = if name == SELECT_OUTPUT {
+                    (last, 1, Destination::Select { block: output })
+                } else {
+                    let rows = usize::try_from(last - first + 1)
+                        .unwrap_or(0)
+                        .min(MOST_OUTPUT_ROWS);
+                    (first, rows, Destination::Copy { line: None, output })
+                };
+                let id = cx.read_lines(pane, from, rows)?;
+                self.reading = Some(Reading { id, pane, to });
+                Ok(())
             }
             SELECT_PREVIOUS => select_step(cx, pane, false),
             SELECT_NEXT => select_step(cx, pane, true),
@@ -505,9 +637,97 @@ impl Plugin for Blocks {
             )),
         }
     }
-}
 
-impl Blocks {
+    /// Opens the menu of the block of `command`, of `pane`, at `anchor`, of
+    /// its actions, in place of a menu that shows.
+    fn open_menu(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: u64,
+        anchor: Anchor,
+    ) -> Result<(), Error> {
+        self.menu = Some((pane, command));
+        let _ = cx.close_panel(PanelId::from(MENU));
+        cx.open_panel(
+            PanelId::from(MENU),
+            PanelOptions {
+                anchor,
+                role: PanelRole::Menu,
+                close_outside: true,
+                close_escape: true,
+                takes_keys: false,
+                close_typing: false,
+            },
+        )
+    }
+
+    /// The block's menu: its actions, each dimmed where it would do
+    /// nothing to the block, of its command's titles.
+    fn menu_tree(&self, cx: &mut Cx<'_>) -> Node {
+        let args = self
+            .menu
+            .and_then(|(pane, command)| Some((pane, block_cell(cx, pane, command)?)));
+        let mut items = Vec::new();
+        for name in ACTIONS {
+            if name == DETAILS {
+                items.push(Node::separator());
+            }
+            let (message, english) = match name {
+                COPY_OUTPUT => ("menu-copy-output".to_owned(), "Copy Command Output"),
+                SELECT_OUTPUT => ("menu-select-output".to_owned(), "Select Command Output"),
+                COPY_COMMAND => (title_message(name), "Copy Command"),
+                COPY_BLOCK => (title_message(name), "Copy Command and Output"),
+                SELECT_BLOCK => (title_message(name), "Select Block"),
+                DETAILS => (title_message(name), "Block Details"),
+                _ => (title_message(name), "Run Command Again"),
+            };
+            // The catalogs' title, or English's where they lack it.
+            let title = cx
+                .message(&message, &[])
+                .ok()
+                .filter(|text| !text.is_empty() && *text != message)
+                .unwrap_or_else(|| english.to_owned());
+            let applies = args
+                .as_ref()
+                .is_some_and(|(pane, args)| applies_in(cx, *pane, name, args));
+            items.push(
+                Node::new(NodeKind::Button(Button {
+                    label: title,
+                    disabled: !applies,
+                    ..Button::default()
+                }))
+                .key(name),
+            );
+        }
+        Node::container(items)
+    }
+
+    /// Runs `name` on the block of `command`, of `pane`, as its menu
+    /// chose it: of the block's cell, its details at the pane's top.
+    fn act_on_block(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: u64,
+        name: &str,
+    ) -> Result<(), Error> {
+        let Some(args) = block_cell(cx, pane, command) else {
+            return Ok(());
+        };
+        if name == DETAILS {
+            let Some(shown) = block(cx, pane, &args, false)? else {
+                return Ok(());
+            };
+            let anchor = Anchor::PaneCorner {
+                pane,
+                corner: Corner::Top,
+            };
+            return self.open_details_at(cx, pane, shown, anchor);
+        }
+        self.act(cx, pane, name, &args)
+    }
+
     /// Opens the details of `command`, of `pane`, in a panel below the cell
     /// of `args`, or, of none, below the cursor while the view shows the
     /// screen, at the pane's top otherwise; in place of the details that
@@ -519,13 +739,11 @@ impl Blocks {
         command: ShellCommand,
         args: &Args,
     ) -> Result<(), Error> {
-        let line = cx.command_line(pane, command.id)?;
-        let now = cx.now()?;
         let anchor = match cell_of(args) {
             Some((column, row)) => Anchor::Cell { pane, column, row },
             None => {
                 let view = cx.viewport(pane)?;
-                if view.top == view.screen {
+                if view.at_screen() {
                     Anchor::Cursor(pane)
                 } else {
                     Anchor::PaneCorner {
@@ -535,6 +753,20 @@ impl Blocks {
                 }
             }
         };
+        self.open_details_at(cx, pane, command, anchor)
+    }
+
+    /// Opens the details of `command`, of `pane`, in a panel at `anchor`,
+    /// in place of the details that show.
+    fn open_details_at(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: ShellCommand,
+        anchor: Anchor,
+    ) -> Result<(), Error> {
+        let line = cx.command_line(pane, command.id)?;
+        let now = cx.now()?;
         if let Some(shown) = self.details.take() {
             cx.close_panel(shown.panel)?;
         }
@@ -621,8 +853,10 @@ fn rerun(cx: &mut Cx<'_>, pane: PaneId, command: &ShellCommand) -> Result<(), Er
 }
 
 /// How the host draws the blocks, as `config` says: the gutter's bars along
-/// them, their dividers, `dividers`, and a failed block's tint,
-/// `failed-tint`, of the schema's defaults where it says nothing.
+/// them, their dividers, `dividers`, a failed block's tint, `failed-tint`,
+/// the block's prompt rows pinned at the view's top, unless `header` asks
+/// for the pill, and a blank row before each prompt, `spacing`, of the
+/// schema's defaults where it says nothing.
 fn looks_of(config: &Data) -> BlockLooks {
     let switch = |key: &str, default: bool| match config {
         Data::Map(config) => match config.get(key) {
@@ -635,6 +869,11 @@ fn looks_of(config: &Data) -> BlockLooks {
         bars: true,
         dividers: switch("dividers", true),
         failed_tint: switch("failed-tint", false),
+        prompt_rows: !matches!(
+            config,
+            Data::Map(config) if matches!(config.get("header"), Some(Data::Text(header)) if header == "pill")
+        ),
+        spacing: switch("spacing", false),
     }
 }
 
@@ -914,6 +1153,48 @@ fn details_tree(rows: &[Row], copied: Option<Part>, label: &str) -> Node {
         })
 }
 
+/// Whether the command `name` of `args` would do something in `pane`:
+/// its block has what it takes, a line to copy, a command that ended, or
+/// an output of some rows.
+fn applies_in(cx: &mut Cx<'_>, pane: PaneId, name: &str, args: &Args) -> bool {
+    match name {
+        COPY_COMMAND => block(cx, pane, args, false)
+            .ok()
+            .flatten()
+            .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
+            .is_some(),
+        COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
+        COPY_OUTPUT | SELECT_OUTPUT => {
+            let Ok((columns, _)) = cx.pane_grid(pane) else {
+                return false;
+            };
+            block(cx, pane, args, true)
+                .ok()
+                .flatten()
+                .is_some_and(|command| output_span(&command, columns).is_some())
+        }
+        DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
+        DESELECT => cx.selected_block(pane).ok().flatten().is_some(),
+        _ => true,
+    }
+}
+
+/// The message of the plugin's catalogs that titles its command `name`.
+fn title_message(name: &str) -> String {
+    format!("command-{}", name.replace('.', "-"))
+}
+
+/// The arguments of a cell of the block of `command`, of `pane`, its
+/// prompt's or, of none, its first mark's, if the pane keeps it.
+fn block_cell(cx: &mut Cx<'_>, pane: PaneId, command: u64) -> Option<Args> {
+    let shown = cx.shell_command(pane, command).ok().flatten()?;
+    let (_, row) = shown.prompt.or(shown.input).or(shown.output)?;
+    Some(Args::from([
+        ("column".to_owned(), Value::Integer(0)),
+        ("row".to_owned(), Value::Integer(row)),
+    ]))
+}
+
 /// The block that `args` names in `pane`: of the command whose block holds
 /// the cell of its `column` and `row`, or, of none, the last command's,
 /// each of an output's mark, as a command that started, and of an end too
@@ -949,6 +1230,21 @@ fn block(
     Ok(commands.into_iter().rev().find(takes))
 }
 
+/// Selects the block of `pane` whose rows hold the row numbered `row`, as a
+/// click there selects it: of a command that ended, or none, as at the
+/// prompt where one types, in a command that runs, as a click that gives a
+/// remote shell or a REPL the keyboard, past an end or above the first
+/// command; none on the alternate screen, which hides the commands' rows.
+fn select_clicked(cx: &mut Cx<'_>, pane: PaneId, row: i64) -> Result<(), Error> {
+    if cx.viewport(pane)?.alternate {
+        return Ok(());
+    }
+    let command = cx
+        .command_at(pane, row)?
+        .filter(|command| started(command) && command.end.is_some());
+    cx.select_block(pane, command.map(|command| command.id))
+}
+
 /// Selects the block after the selected one, `forward`, or before it, and
 /// takes the view to its first row; past the last, none, and the view to
 /// the screen. Of none selected: before, the last block while the view
@@ -961,45 +1257,42 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
     if view.alternate {
         return Ok(());
     }
-    // The ids of the commands that the pane keeps, from the oldest's to the
-    // last's, which a walk from one to the next goes through, past the ids
-    // of the prompts that a shell drew again, which none keeps; the oldest
-    // past the rows before the first prompt, as a login's line.
-    let end = view.screen.saturating_add(i64::from(view.rows));
-    let oldest = first_from(cx, pane, view.oldest, end)?;
-    let newest = cx
+    // The newest command, whose first row bounds a walk forward.
+    let Some(newest) = cx
         .shell_commands(pane, view.screen, i64::MAX / 2)?
         .last()
-        .map(|last| last.id);
-    let (Some(first), Some(last)) = (oldest.map(|oldest| oldest.id), newest) else {
+        .and_then(first_row)
+    else {
         return Ok(());
     };
+    // From the command `from`, whose block starts at `row`, or of none from
+    // the row, to the next command that the pane keeps that `takes` takes:
+    // one read a command, past the lines of no command, whatever the ids
+    // between them, which every prompt drawn again takes.
     let walk = |cx: &mut Cx<'_>,
-                from: u64,
+                from: Option<&ShellCommand>,
+                row: i64,
                 takes: &dyn Fn(&ShellCommand) -> bool|
      -> Result<Option<ShellCommand>, Error> {
-        let mut id = from;
+        let (mut from, mut row) = (from.map(|command| command.id), row);
         loop {
-            id = if forward {
-                match id.checked_add(1).filter(|&next| next <= last) {
-                    Some(next) => next,
-                    None => return Ok(None),
-                }
-            } else {
-                match id.checked_sub(1).filter(|&before| before >= first) {
-                    Some(before) => before,
-                    None => return Ok(None),
-                }
+            let Some(command) = neighbor(cx, pane, (from, row), forward, newest)? else {
+                return Ok(None);
             };
-            if let Some(command) = cx.shell_command(pane, id)?
-                && takes(&command)
-            {
+            if takes(&command) {
                 return Ok(Some(command));
             }
+            let Some(next) = first_row(&command) else {
+                return Ok(None);
+            };
+            (from, row) = (Some(command.id), next);
         }
     };
     let found = match cx.selected_block(pane)? {
-        Some(selected) => walk(cx, selected.id, &started)?,
+        Some(selected) => {
+            let row = first_row(&selected).unwrap_or(view.oldest);
+            walk(cx, Some(&selected), row, &started)?
+        }
         None => {
             // The command whose block holds the view's top row: before it,
             // its own if its prompt is above the top; after it, the next.
@@ -1007,21 +1300,27 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
             let at = top.first().cloned();
             let above =
                 |command: &ShellCommand| first_row(command).is_some_and(|row| row < view.top);
+            let below =
+                |command: &ShellCommand| first_row(command).is_some_and(|row| row > view.top);
             match (at, forward) {
-                (_, false) if view.top >= view.screen => {
-                    walk(cx, last.saturating_add(1), &started)?
-                }
+                (_, false) if view.at_screen() => walk(cx, None, i64::MAX / 2, &started)?,
                 (Some(at), false) if above(&at) && started(&at) => Some(at),
                 (Some(at), false) => {
-                    walk(cx, at.id, &|command| started(command) && above(command))?
+                    let row = first_row(&at).unwrap_or(view.top);
+                    walk(cx, Some(&at), row, &|command| {
+                        started(command) && above(command)
+                    })?
                 }
-                (Some(at), true) => walk(cx, at.id, &|command| {
-                    started(command) && first_row(command).is_some_and(|row| row > view.top)
-                })?,
+                (Some(at), true) => {
+                    let row = first_row(&at).unwrap_or(view.top);
+                    walk(cx, Some(&at), row, &|command| {
+                        started(command) && below(command)
+                    })?
+                }
                 (None, false) => None,
                 // The view's top above the first prompt, as a login's line.
-                (None, true) => walk(cx, first.saturating_sub(1), &|command| {
-                    started(command) && first_row(command).is_some_and(|row| row > view.top)
+                (None, true) => walk(cx, None, view.top, &|command| {
+                    started(command) && below(command)
                 })?,
             }
         }
@@ -1043,24 +1342,37 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
     }
 }
 
-/// The first command of `pane` whose block starts at the row `from` or
-/// below it, before the row `end`, of the rows that a window of a doubling
-/// height reads, as rows of no command, as a login's line, may come before
-/// the first prompt.
-fn first_from(
+/// The command that `pane` keeps right before or after, `forward`, the
+/// command of the id `from`, whose block starts at the row `row`, or, of
+/// none, before or after that row, by their first rows: before, of a read
+/// of the commands that meet the row before it, the last whose first row
+/// is at it or above; after, of reads of a window that doubles from the
+/// row up to the newest command's first row, `newest`.
+fn neighbor(
     cx: &mut Cx<'_>,
     pane: PaneId,
-    from: i64,
-    end: i64,
+    (from, row): (Option<u64>, i64),
+    forward: bool,
+    newest: i64,
 ) -> Result<Option<ShellCommand>, Error> {
+    if !forward {
+        let found = cx.shell_commands(pane, row.saturating_sub(1), row)?;
+        return Ok(found
+            .into_iter()
+            .rev()
+            .find(|command| from.is_none_or(|id| command.id < id)));
+    }
     let mut height: i64 = 64;
     loop {
-        let to = from.saturating_add(height).min(end);
+        let to = row.saturating_add(height);
         let found = cx
-            .shell_commands(pane, from, to)?
+            .shell_commands(pane, row, to)?
             .into_iter()
-            .find(|command| first_row(command).is_some_and(|row| row >= from));
-        if found.is_some() || to >= end {
+            .find(|command| match from {
+                Some(id) => command.id > id,
+                None => first_row(command).is_some_and(|first| first > row),
+            });
+        if found.is_some() || to > newest {
             return Ok(found);
         }
         height = height.saturating_mul(2);

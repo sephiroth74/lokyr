@@ -55,6 +55,18 @@ pub(crate) fn on_screen(pointer: Pointer, offset: usize, cell_height: u16) -> Op
     })
 }
 
+/// `pointer` moved to the row `row`, of cells `cell_height` pixels high, its
+/// column and its place in its cell kept: `None` above the first row.
+pub(crate) fn onto_row(pointer: Pointer, row: u16, cell_height: u16) -> Option<Pointer> {
+    let rows = i64::from(row) - i64::from(pointer.row);
+    let y = i64::from(pointer.y) + rows * i64::from(cell_height);
+    Some(Pointer {
+        row,
+        y: u32::try_from(y).ok()?,
+        ..pointer
+    })
+}
+
 /// `pointer` at the screen's top row, where an event that must reach the
 /// program goes from above the screen.
 pub(crate) fn at_top(pointer: Pointer) -> Pointer {
@@ -77,14 +89,14 @@ pub(crate) struct Spot {
     pub(crate) boundary: u16,
 }
 
-/// The spot of `pointer`, over a view whose first row is numbered `top`,
-/// in cells `cell_width` pixels wide, of a grid of `columns`.
-pub(crate) fn spot(pointer: Pointer, top: i64, cell_width: u16, columns: u16) -> Spot {
+/// The spot of `pointer`, over the row numbered `row`, in cells
+/// `cell_width` pixels wide, of a grid of `columns`.
+pub(crate) fn spot(pointer: Pointer, row: i64, cell_width: u16, columns: u16) -> Spot {
     let width = u32::from(cell_width.max(1));
     // Within the grid's columns, which a `u16` holds.
     let boundary = ((pointer.x + width / 2) / width).min(u32::from(columns)) as u16;
     Spot {
-        row: top.saturating_add(i64::from(pointer.row)),
+        row,
         col: pointer.col,
         boundary,
     }
@@ -352,11 +364,11 @@ mod tests {
     fn a_spot_takes_the_nearest_boundary_and_its_row_s_number() {
         let pointer = |col: u16, x: u32, row: u16| Pointer { col, row, x, y: 0 };
         // Cells of 16 pixels: the boundary after the first cell from 8.
-        assert_eq!(spot(pointer(0, 7, 3), 0, 16, 80), at(3, 0, 0));
-        assert_eq!(spot(pointer(0, 8, 3), 0, 16, 80), at(3, 0, 1));
+        assert_eq!(spot(pointer(0, 7, 3), 3, 16, 80), at(3, 0, 0));
+        assert_eq!(spot(pointer(0, 8, 3), 3, 16, 80), at(3, 0, 1));
         assert_eq!(spot(pointer(79, 80 * 16 - 1, 0), 0, 16, 80), at(0, 79, 80));
-        // A view whose first row is numbered 40: its second row's.
-        assert_eq!(spot(pointer(5, 80, 1), 40, 16, 80).row, 41);
+        // The row's number that it is given, whatever the view's row.
+        assert_eq!(spot(pointer(5, 80, 1), 41, 16, 80).row, 41);
     }
 
     #[test]
@@ -429,6 +441,9 @@ mod tests {
         // A view on the screen leaves it as it is.
         assert_eq!(on_screen(at(1, 40), 0, 32), Some(at(1, 40)));
         assert_eq!(on_screen(at(1, 40), usize::MAX, 32), None);
+        // Moved to another row, as a view of folds shows the screen's rows.
+        assert_eq!(onto_row(at(2, 2 * 32 + 5), 6, 32), Some(at(6, 6 * 32 + 5)));
+        assert_eq!(onto_row(at(6, 6 * 32 + 5), 2, 32), Some(at(2, 2 * 32 + 5)));
     }
 
     #[test]
