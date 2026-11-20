@@ -2895,6 +2895,18 @@ fn osc_7_gives_the_working_directory() {
     // RIS keeps the directory, which is the shell's.
     term.feed("\x1bc");
     assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/%+41");
+    // A path past 4096 bytes, or a host past 255, is none, of no event, so
+    // that the commands keep bounded folders; the bounds themselves taken.
+    term.terminal.take_events();
+    let long = format!("/{}", "a".repeat(4095));
+    term.feed(format!("\x1b]7;file://{long}\x07"));
+    assert_eq!(term.terminal.working_directory().unwrap().path, long);
+    term.terminal.take_events();
+    term.feed(format!("\x1b]7;file://{long}b\x07"));
+    assert_eq!(term.terminal.working_directory(), None);
+    assert_eq!(term.terminal.take_events(), []);
+    term.feed(format!("\x1b]7;file://{}/tmp\x07", "h".repeat(256)));
+    assert_eq!(term.terminal.working_directory(), None);
 }
 
 #[test]

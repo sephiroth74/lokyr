@@ -16,6 +16,13 @@ const KEPT_BYTES: usize = 4 * 1024;
 const MAX_URI: usize = 2083;
 const MAX_LINK_ID: usize = 250;
 
+/// The longest folder's path, and its host's name, that OSC 7 tells, in
+/// bytes: past `PATH_MAX`'s 1024 of macOS and Linux's 4096, and a DNS
+/// name's 253, so that each command, which keeps the folder where it
+/// started, keeps a bounded one.
+const MOST_FOLDER: usize = 4096;
+const MOST_HOST: usize = 255;
+
 /// The link that OSC 8 opened, with no URI while none is open. Its buffers
 /// stay from one link to the next.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -345,7 +352,8 @@ impl Terminal {
         self.events.push(Event::TitleChanged);
     }
 
-    /// OSC 7: the working directory, as a `file:` URL.
+    /// OSC 7: the working directory, as a `file:` URL, of a path of
+    /// [`MOST_FOLDER`] bytes at most and a host of [`MOST_HOST`].
     fn set_working_directory(&mut self, url: &[u8]) {
         let Some(rest) = url.strip_prefix(b"file://") else {
             return;
@@ -362,6 +370,12 @@ impl Terminal {
             host: text(&percent_decoded(host)),
             path: text(&percent_decoded(path)),
         };
+        // A folder past the bounds, which no system's paths reach, is none,
+        // as each command keeps the folder where it started.
+        if directory.path.len() > MOST_FOLDER || directory.host.len() > MOST_HOST {
+            self.working_directory = None;
+            return;
+        }
         self.working_directory = Some(std::sync::Arc::new(directory.clone()));
         self.events.push(Event::WorkingDirectory(directory));
     }
