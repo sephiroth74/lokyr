@@ -1449,3 +1449,40 @@ fn a_copy_of_the_selected_block_alone_copies_nothing_of_none() {
     run(&mut host, &mut plugin, COPY_BLOCK, selected);
     assert_eq!(host.clipboard(), Some("ls\na.txt\nb.txt"));
 }
+
+#[test]
+fn the_keyboard_steps_over_a_gap_of_ids_of_one_read_a_command() {
+    let (mut host, mut plugin) = commands_host();
+    viewed(&mut host, 0, 0);
+    // A program that printed billions of prompts' marks, which the
+    // terminal let go of, left gaps of ids between the commands kept: a
+    // step reads the commands kept, not each id between them.
+    let gap: u64 = 4_000_000_000;
+    let pane = host.pane(PANE);
+    for (at, command) in pane.commands.iter_mut().enumerate() {
+        command.id = 1 + gap * at as u64;
+    }
+    let ids: Vec<u64> = pane.commands.iter().map(|command| command.id).collect();
+    for (at, (_, line)) in [(1, "ls"), (2, "true"), (3, "sleep 60")]
+        .into_iter()
+        .enumerate()
+    {
+        pane.command_lines.insert(ids[at], line.to_owned());
+    }
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[2]), Some(Scroll::Row(5)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[1]), Some(Scroll::Row(4)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_PREVIOUS),
+        (Some(ids[0]), Some(Scroll::Row(0)))
+    );
+    assert_eq!(
+        selected_after(&mut host, &mut plugin, SELECT_NEXT),
+        (Some(ids[1]), Some(Scroll::Row(4)))
+    );
+}

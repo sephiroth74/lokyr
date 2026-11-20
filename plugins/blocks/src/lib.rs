@@ -1257,45 +1257,42 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
     if view.alternate {
         return Ok(());
     }
-    // The ids of the commands that the pane keeps, from the oldest's to the
-    // last's, which a walk from one to the next goes through, past the ids
-    // of the prompts that a shell drew again, which none keeps; the oldest
-    // past the rows before the first prompt, as a login's line.
-    let end = view.screen.saturating_add(i64::from(view.rows));
-    let oldest = first_from(cx, pane, view.oldest, end)?;
-    let newest = cx
+    // The newest command, whose first row bounds a walk forward.
+    let Some(newest) = cx
         .shell_commands(pane, view.screen, i64::MAX / 2)?
         .last()
-        .map(|last| last.id);
-    let (Some(first), Some(last)) = (oldest.map(|oldest| oldest.id), newest) else {
+        .and_then(first_row)
+    else {
         return Ok(());
     };
+    // From the command `from`, whose block starts at `row`, or of none from
+    // the row, to the next command that the pane keeps that `takes` takes:
+    // one read a command, past the lines of no command, whatever the ids
+    // between them, which every prompt drawn again takes.
     let walk = |cx: &mut Cx<'_>,
-                from: u64,
+                from: Option<&ShellCommand>,
+                row: i64,
                 takes: &dyn Fn(&ShellCommand) -> bool|
      -> Result<Option<ShellCommand>, Error> {
-        let mut id = from;
+        let (mut from, mut row) = (from.map(|command| command.id), row);
         loop {
-            id = if forward {
-                match id.checked_add(1).filter(|&next| next <= last) {
-                    Some(next) => next,
-                    None => return Ok(None),
-                }
-            } else {
-                match id.checked_sub(1).filter(|&before| before >= first) {
-                    Some(before) => before,
-                    None => return Ok(None),
-                }
+            let Some(command) = neighbor(cx, pane, (from, row), forward, newest)? else {
+                return Ok(None);
             };
-            if let Some(command) = cx.shell_command(pane, id)?
-                && takes(&command)
-            {
+            if takes(&command) {
                 return Ok(Some(command));
             }
+            let Some(next) = first_row(&command) else {
+                return Ok(None);
+            };
+            (from, row) = (Some(command.id), next);
         }
     };
     let found = match cx.selected_block(pane)? {
-        Some(selected) => walk(cx, selected.id, &started)?,
+        Some(selected) => {
+            let row = first_row(&selected).unwrap_or(view.oldest);
+            walk(cx, Some(&selected), row, &started)?
+        }
         None => {
             // The command whose block holds the view's top row: before it,
             // its own if its prompt is above the top; after it, the next.
@@ -1303,19 +1300,27 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
             let at = top.first().cloned();
             let above =
                 |command: &ShellCommand| first_row(command).is_some_and(|row| row < view.top);
+            let below =
+                |command: &ShellCommand| first_row(command).is_some_and(|row| row > view.top);
             match (at, forward) {
-                (_, false) if view.at_screen() => walk(cx, last.saturating_add(1), &started)?,
+                (_, false) if view.at_screen() => walk(cx, None, i64::MAX / 2, &started)?,
                 (Some(at), false) if above(&at) && started(&at) => Some(at),
                 (Some(at), false) => {
-                    walk(cx, at.id, &|command| started(command) && above(command))?
+                    let row = first_row(&at).unwrap_or(view.top);
+                    walk(cx, Some(&at), row, &|command| {
+                        started(command) && above(command)
+                    })?
                 }
-                (Some(at), true) => walk(cx, at.id, &|command| {
-                    started(command) && first_row(command).is_some_and(|row| row > view.top)
-                })?,
+                (Some(at), true) => {
+                    let row = first_row(&at).unwrap_or(view.top);
+                    walk(cx, Some(&at), row, &|command| {
+                        started(command) && below(command)
+                    })?
+                }
                 (None, false) => None,
                 // The view's top above the first prompt, as a login's line.
-                (None, true) => walk(cx, first.saturating_sub(1), &|command| {
-                    started(command) && first_row(command).is_some_and(|row| row > view.top)
+                (None, true) => walk(cx, None, view.top, &|command| {
+                    started(command) && below(command)
                 })?,
             }
         }
@@ -1337,24 +1342,37 @@ fn select_step(cx: &mut Cx<'_>, pane: PaneId, forward: bool) -> Result<(), Error
     }
 }
 
-/// The first command of `pane` whose block starts at the row `from` or
-/// below it, before the row `end`, of the rows that a window of a doubling
-/// height reads, as rows of no command, as a login's line, may come before
-/// the first prompt.
-fn first_from(
+/// The command that `pane` keeps right before or after, `forward`, the
+/// command of the id `from`, whose block starts at the row `row`, or, of
+/// none, before or after that row, by their first rows: before, of a read
+/// of the commands that meet the row before it, the last whose first row
+/// is at it or above; after, of reads of a window that doubles from the
+/// row up to the newest command's first row, `newest`.
+fn neighbor(
     cx: &mut Cx<'_>,
     pane: PaneId,
-    from: i64,
-    end: i64,
+    (from, row): (Option<u64>, i64),
+    forward: bool,
+    newest: i64,
 ) -> Result<Option<ShellCommand>, Error> {
+    if !forward {
+        let found = cx.shell_commands(pane, row.saturating_sub(1), row)?;
+        return Ok(found
+            .into_iter()
+            .rev()
+            .find(|command| from.is_none_or(|id| command.id < id)));
+    }
     let mut height: i64 = 64;
     loop {
-        let to = from.saturating_add(height).min(end);
+        let to = row.saturating_add(height);
         let found = cx
-            .shell_commands(pane, from, to)?
+            .shell_commands(pane, row, to)?
             .into_iter()
-            .find(|command| first_row(command).is_some_and(|row| row >= from));
-        if found.is_some() || to >= end {
+            .find(|command| match from {
+                Some(id) => command.id > id,
+                None => first_row(command).is_some_and(|first| first > row),
+            });
+        if found.is_some() || to > newest {
             return Ok(found);
         }
         height = height.saturating_mul(2);
