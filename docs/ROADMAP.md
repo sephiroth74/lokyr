@@ -14,9 +14,9 @@ Each phase is broken into tasks of one day or less. A phase's breakdown is writt
 | F3 **macOS MVP** | Full kernel, native SDK, `ui-core` with the plugins' widgets and floating panels, `tabs`, `splits`, `search` plugins, iTerm2 themes, palette, the agents' state on the tabs; copy mode, the scrollbar, shell integration with prompt jumping and notifications, the command's sticky header, the programs' progress, windows restored with their directories, the Finder's service; a DMG, updates through Sparkle; after F4, the first public release, 1.0.0 | Every must-have requirement in place |
 | F4 Plugin ecosystem | Before 1.0.0: Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 |
 | F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes made, duplicated and imported in the app | The settings window edits the config and the keys' bindings; a theme made and imported in the app |
-| F5a The programs' status, the prompt, the tabs and blocks | As 1.3 and 1.4: the programs' and the agents' status of OSC 7501, a click at the prompt, the tabs' management and groups, hints; Warp-style blocks, ssh integration | Every agent that tells its state shown exactly; blocks verified in zsh, bash and fish, including over ssh |
+| F5a The programs' status, the prompt, the tabs and blocks | As 1.3 and 1.4: the programs' and the agents' status of OSC 7501, a click at the prompt, the tabs' management and groups, hints; Warp-style blocks, smooth scrolling | Every agent that tells its state shown exactly; blocks verified in zsh, bash and fish; smooth scrolling of no frame at rest |
 | F5b Sessions and iTerm2 power features | As 1.5 and 1.6: the scrollback restored, named sessions and layouts, broadcast, floating panes; tmux -CC, triggers, profiles, Shortcuts and AppleScript | A session restored and switched; tmux -CC workflows on par with iTerm2 |
-| F5c Graphics and feel | As 1.7: all of kitty's graphics and sixel, smooth scrolling, the cursor's trail, kitty's drag and drop | `kitten icat`, `imgcat` and `chafa` work, inside tmux too |
+| F5c Graphics and feel | As 1.7: all of kitty's graphics and sixel, the cursor's trail, kitty's drag and drop | `kitten icat`, `imgcat` and `chafa` work, inside tmux too |
 | F6 Plugin API 1.0 and hardening | Hardening, docs, stable plugin API 1.0 | The plugin API 1.0's criteria (see [Versions](#versions)) |
 | F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — |
 
@@ -181,16 +181,20 @@ Ordered by what people ask of terminals, as the trackers of fifteen terminals an
 - **Hints**, in the `links` plugin: the links, paths, hashes and patterns of the screen picked by the keyboard, to open or copy, moved up from F5c.
 - **Small asks**: the window's opacity toggled by a key, and the quick terminal of a double-tapped modifier.
 
-**1.4, blocks and ssh**:
+**1.4, blocks and smooth scrolling**:
 - **Warp-style blocks**, on OSC 133's marks, of the shell's own line editor:
   - command and output grouped together, past F3's sticky header;
   - actions: copy, select, the command's details, rerun, from the sticky header's menu and the context menu, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
   - the look: the selected block and the one under the pointer tinted, a sticky header of the block's own prompt rows, and a blank row between blocks as an option;
   - a block shared as an image, `snap`'s.
-- **ssh integration**: installs the terminfo on the remote host, or falls back to `xterm-256color` automatically, and the shell's integration remote.
+- **Smooth scrolling**, off by default: the trackpad and the Magic Mouse move the view by pixels, with macOS's momentum; a mouse wheel's step glides over its rows; the scroll bar's knob moves by pixels. The keys' scrolls stay whole rows, and the view stops at the scrollback's top and at the screen. While you scroll, a frame for each scroll event; none at rest.
 - **Two plugins of the registry**, published by the project as examples for authors: the scrollback, or a command's output, opened in the editor; a status bar of the folder, the branch and the clock.
 - **The controls polished**: a switch for the settings' on and off, the controls' sizes, focus ring and states made alike, of macOS's look, and the controls that the settings' pages lack.
 - **A plugin that replaces another** in the same place, as the blocks replace the plain sticky header: the other plugin off while it is on, and back as it goes, of nothing written to the config.
+
+#### Put off: ssh integration
+
+Of no version, planned for 1.4 before: `ssh` in your shell installing Lokyr's terminfo on the hosts that you reach, or falling back to `xterm-256color`, and carrying the shell's integration there at each session, so that the blocks, the gutter's marks and the jumps between prompts work in a remote shell. Until it comes, a session over ssh is one long command to Lokyr.
 
 ### F5b — Sessions and iTerm2 power features
 
@@ -211,7 +215,7 @@ Ordered by what people ask of terminals, as the trackers of fifteen terminals an
 
 **1.7**:
 - **Images**, past F3's OSC 1337 `File=` and kitty graphics' subset of direct transmission: sixel, kitty graphics' Unicode placeholders for tmux, its animation and relative placements, and the files of its transmission.
-- **Feel**: smooth scrolling by pixels, of no frame at rest; the cursor's trail, in the window server's animation as the cursor's slide; kitty's drag and drop protocol (OSC 72); a background image.
+- **Feel**: the cursor's trail, in the window server's animation as the cursor's slide; kitty's drag and drop protocol (OSC 72); a background image.
 - **Choosing a font**: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, which since F2 lists the system's families and their styles as `[font]` names them, as text, with `--monospace` for the fixed-pitch families and `--family` for a family's styles alone, draws each family in its own face with a line of samples, as images that the terminal shows.
 - **Links and selection**, in the `links` plugin: smart selection, with its actions in the context menu, and Quick Look for a link ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)); semantic history in a terminal editor, as `$EDITOR`, once plugins start processes (F6).
 
@@ -258,10 +262,10 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 | 1.1 | The settings window, of the `plugin-manager`'s page and the config's (F3b's first block) |
 | 1.2 | Themes made, duplicated and imported in the app, their colors of rules that name each other, faint text, the cursor guide, and the settings' Keys page (F3b's second block) |
 | 1.3 | The programs' status of OSC 7501, a click at the prompt, the tabs' management and groups, hints (F5a's first block) |
-| 1.4 | Warp-style blocks, ssh integration, and two plugins of the registry (F5a's second block) |
+| 1.4 | Warp-style blocks, smooth scrolling, and two plugins of the registry (F5a's second block) |
 | 1.5 | The scrollback restored, named sessions and layouts, broadcast input, floating panes and popups (F5b's first block) |
 | 1.6 | tmux -CC, triggers, profiles, Shortcuts and AppleScript, the search's filter (F5b's second block) |
-| 1.7 | All of kitty's graphics and sixel, smooth scrolling, the cursor's trail, drag and drop (F5c) |
+| 1.7 | All of kitty's graphics and sixel, the cursor's trail, drag and drop (F5c) |
 | 1.x | The plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
 
