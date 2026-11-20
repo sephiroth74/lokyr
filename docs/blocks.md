@@ -131,7 +131,7 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
 - The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
 - A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
-- Run Command Again types the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's row.
+- Run Command Again and Copy Command take the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's first row: a command that you typed over several lines, such as a loop, runs again or is copied from its first line alone. Run it again from the shell's history instead, with the Up arrow.
 
 ## Troubleshooting
 
