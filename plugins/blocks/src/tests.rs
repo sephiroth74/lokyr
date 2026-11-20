@@ -503,7 +503,13 @@ fn the_commands_register_of_a_cell_in_the_clipboard_s_and_the_edit_s_categories(
                 .iter()
                 .map(|param| param.name.as_str())
                 .collect();
-            assert_eq!(params, ["column", "row"], "{}", command.name);
+            // A copy of the selected block alone, as ⌘C asks.
+            let wanted: &[&str] = if command.name == COPY_BLOCK {
+                &["column", "row", "selected"]
+            } else {
+                &["column", "row"]
+            };
+            assert_eq!(params, wanted, "{}", command.name);
             assert_eq!(command.when.as_deref(), Some(super::PANE));
             let capabilities = command.capabilities.iter().map(ToString::to_string);
             (
