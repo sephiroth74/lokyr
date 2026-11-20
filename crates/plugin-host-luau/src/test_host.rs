@@ -512,6 +512,18 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "set_commands",
+        lua.create_function(move |_, commands: Value| {
+            let commands: Vec<lokyr_plugin_sdk::host::ShellCommand> =
+                shape::from_lua(commands).map_err(mlua::Error::runtime)?;
+            with(&hosted, |Hosted { host, .. }| {
+                host.pane(PaneId(1)).commands = commands;
+            });
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "clipboard_image",
         lua.create_function(move |lua, ()| {
             let image = with(&hosted, |Hosted { host, .. }| {
