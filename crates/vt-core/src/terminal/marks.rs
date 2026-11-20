@@ -569,7 +569,13 @@ impl Terminal {
                             row
                         }
                     }
-                    None if kind.is_some() => cursor,
+                    // A command that runs reaches the cursor; one of no end
+                    // that another followed, as a nested shell's outer
+                    // command, the next command's first row.
+                    None if kind.is_some() => list
+                        .get(at + 1)
+                        .and_then(first_row)
+                        .map_or(cursor, |next| next - 1),
                     None => first,
                 }
                 .max(first);

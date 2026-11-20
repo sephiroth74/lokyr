@@ -199,6 +199,34 @@ mod tests {
     }
 
     #[test]
+    fn a_command_of_no_end_that_another_followed_ends_its_block_there() {
+        let mut terminal = Terminal::new(20, 10, Options::default());
+        // `bash`, a nested shell, whose own commands mark their prompts,
+        // and whose end's mark never comes: the outer shell's lands on the
+        // inner one's last prompt.
+        feed(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07bash\r\n\x1b]133;C\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07pwd\r\n\x1b]133;C\x07/\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07",
+            ),
+        );
+        use GutterKind::{Running, Succeeded};
+        // `bash` to the row before `ls`' prompt, not over the blocks after.
+        assert_eq!(
+            blocks(&mut terminal),
+            [
+                (0, 0, Some(Running)),
+                (1, 2, Some(Succeeded)),
+                (3, 4, Some(Succeeded)),
+                (5, 5, None),
+            ]
+        );
+    }
+
+    #[test]
     fn the_view_s_blocks_run_from_their_prompts_to_their_ends() {
         let mut terminal = Terminal::new(20, 8, Options::default());
         // `ls` of two rows, `false` of none, then `seq`, which runs.
