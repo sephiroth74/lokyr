@@ -471,7 +471,11 @@ fn a_copy_of_no_selection_copies_the_block_that_blocks_selected() {
             Capability::TerminalRead,
             Capability::ClipboardWrite,
         ],
-        params: Vec::new(),
+        params: vec![lokyr_plugin_sdk::command::Param {
+            name: "selected".to_owned(),
+            kind: lokyr_plugin_sdk::command::Kind::Boolean,
+            default: Some(Value::Boolean(false)),
+        }],
         when: None,
     };
     let mut host = FakeHost::new(NAME)
@@ -480,11 +484,12 @@ fn a_copy_of_no_selection_copies_the_block_that_blocks_selected() {
     host.focus(Some(PaneId(7)));
     host.pane(PaneId(7));
     run(&mut host, COPY).unwrap();
+    // Of the selected block alone, which Blocks copies of one selected.
     assert_eq!(
         host.take_done(),
         [Request::RunCommand {
             name: COPY_BLOCK.to_owned(),
-            args: Args::new(),
+            args: Args::from([("selected".to_owned(), Value::Boolean(true))]),
         }]
     );
     // A selection's text first; of no Blocks, nothing.

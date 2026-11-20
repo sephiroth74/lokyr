@@ -1425,3 +1425,21 @@ fn a_context_click_on_the_pill_opens_its_block_s_menu_at_the_pointer() {
     );
     assert_eq!(plugin.menu, Some((PANE, 2)));
 }
+
+#[test]
+fn a_copy_of_the_selected_block_alone_copies_nothing_of_none() {
+    let (mut host, mut plugin) = commands_host();
+    let selected = Args::from([("selected".to_owned(), Value::Boolean(true))]);
+    // None selected: nothing read, the clipboard kept.
+    assert!(run(&mut host, &mut plugin, COPY_BLOCK, selected.clone()).is_empty());
+    assert_eq!(host.clipboard(), None);
+    // `ls` selected of a click: its line and its output.
+    host.post(Event::Click {
+        pane: PANE,
+        at: (0, 1),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(host.selected_block(PANE), Some(1));
+    run(&mut host, &mut plugin, COPY_BLOCK, selected);
+    assert_eq!(host.clipboard(), Some("ls\na.txt\nb.txt"));
+}

@@ -70,6 +70,10 @@ static CATALOGS: [(&str, &str); 2] = [
 /// The prefix of a header's panel's id, of its pane's id.
 const PANEL: &str = "block-header-";
 
+/// The argument of a copy of the selected block alone, `true`, of none
+/// selected nothing.
+const SELECTED: &str = "selected";
+
 /// Copy a block's command line; copy its command line and its output;
 /// select it whole, from its prompt to its output's end. Each of the block
 /// at the cell of its `column` and `row`, as the pane's context menu gives
@@ -320,12 +324,22 @@ impl Plugin for Blocks {
             ),
         ]);
         for (name, title, category, capabilities) in commands {
+            let mut params = vec![cell("column"), cell("row")];
+            // A copy of the selected block alone, as ⌘C asks of no text
+            // selected, which copies nothing of none.
+            if name == COPY_BLOCK {
+                params.push(Param {
+                    name: SELECTED.to_owned(),
+                    kind: Kind::Boolean,
+                    default: Some(Value::Boolean(false)),
+                });
+            }
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category,
                 capabilities,
-                params: vec![cell("column"), cell("row")],
+                params,
                 when: Some(PANE.to_owned()),
             })?;
         }
@@ -522,6 +536,10 @@ impl Blocks {
                 Ok(())
             }
             COPY_BLOCK => {
+                let selected = matches!(args.get(SELECTED), Some(Value::Boolean(true)));
+                if selected && cx.selected_block(pane)?.is_none() {
+                    return Ok(());
+                }
                 let Some(command) = block(cx, pane, args, true)? else {
                     return Ok(());
                 };

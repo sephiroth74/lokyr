@@ -326,16 +326,17 @@ impl Plugin for CoreActions {
             };
         }
         match name {
-            // The text selected, or else, as the context holds a block that
-            // Blocks selected, that block, its line and its output, as
-            // Blocks copies it; nothing of no Blocks.
+            // The text selected, or else the block that Blocks selected, its
+            // line and its output, as Blocks copies it; nothing of no block
+            // selected nor of no Blocks, the clipboard kept.
             COPY => {
                 if let Some(text) = cx.selection_text(pane)?
                     && !text.is_empty()
                 {
                     return cx.set_clipboard_text(&text);
                 }
-                match cx.run_command(COPY_BLOCK, Args::new()) {
+                let selected = Args::from([("selected".to_owned(), Value::Boolean(true))]);
+                match cx.run_command(COPY_BLOCK, selected) {
                     Err(error) if error.code == Code::NotFound => Ok(()),
                     done => done,
                 }

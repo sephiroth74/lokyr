@@ -189,6 +189,13 @@
         },
         "kind": "integer",
         "name": "row"
+      },
+      {
+        "default": {
+          "boolean": false
+        },
+        "kind": "boolean",
+        "name": "selected"
       }
     ],
     "plugin": "lokyr/blocks",

@@ -932,6 +932,15 @@ fn the_keyboard_selects_a_block_moves_the_selection_copies_it_and_a_key_or_a_cli
     framed_until(&mut fake, &mut app, window, |app| {
         tints(app, window, tint).is_empty()
     });
+    // ⌘C of no text nor block selected keeps the clipboard.
+    fake.set_clipboard_text("kept");
+    press(&mut fake, &mut app, KeyCode::KeyC, "c", cmd);
+    let mut turns = 0;
+    run_until(&mut fake, &mut app, |_, _| {
+        turns += 1;
+        turns > 40
+    });
+    assert_eq!(fake.clipboard_text().as_deref(), Some("kept"));
     // So do a key typed, which goes to the program, and a click.
     press(&mut fake, &mut app, KeyCode::ArrowUp, "", cmd);
     run_until(&mut fake, &mut app, |_, app| selected(app).is_some());
