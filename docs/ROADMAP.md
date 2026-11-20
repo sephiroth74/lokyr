@@ -184,7 +184,8 @@ Ordered by what people ask of terminals, as the trackers of fifteen terminals an
 **1.4, blocks and ssh**:
 - **Warp-style blocks**, on OSC 133's marks, of the shell's own line editor:
   - command and output grouped together, past F3's sticky header;
-  - actions: copy, select, the command's details, rerun, fold, hide, from the sticky header's menu and the context menu, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
+  - actions: copy, select, the command's details, rerun, from the sticky header's menu and the context menu, with the lines' marks ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu));
+  - the look: the selected block and the one under the pointer tinted, a sticky header of the block's own prompt rows, and a blank row between blocks as an option;
   - a block shared as an image, `snap`'s.
 - **ssh integration**: installs the terminfo on the remote host, or falls back to `xterm-256color` automatically, and the shell's integration remote.
 - **Two plugins of the registry**, published by the project as examples for authors: the scrollback, or a command's output, opened in the editor; a status bar of the folder, the branch and the clock.
