@@ -21,20 +21,29 @@ Scroll up into the numbers. The prompt and `seq 1 500` stay at the top of the pa
 - **A pill instead**: with `header = "pill"`, the command line shows in a pill on a thin line across the pane's top, as the [command header](plugins/command-header.md) shows it. A click on the pill goes to the prompt, and an arrow beside it goes to the end of the output, with its last row at the bottom of the pane, or, for a command that is still running, to the bottom of the screen, which the view then follows as the output grows.
 - **The command as you typed it**: zsh, and fish 4 or later, report the command line itself, so a right prompt on its row, such as zsh's `RPROMPT`, stays out of the pill.
 - **Long lines stay short**: in the pill, a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
-- **Copy a block's parts**: right-click a block to copy its command line, or its command line and its output, or to select the whole block · not released yet.
-- **A block's details**: right-click a block to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
-- **Run a command again**: right-click a block to run its command line again at the prompt · not released yet.
+- **Copy a block's parts**: right-click a block and open **Block** to copy its command line, its output, or both, or to select its output or the whole block · not released yet.
+- **A block's details**: right-click a block and open **Block** to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
+- **Run a command again**: right-click a block and open **Block** to run its command line again at the prompt · not released yet.
+- **The header's menu**: right-click the pinned prompt rows, or the pill, for a menu of the block's actions alone · not released yet.
 - **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
 - **Room between the blocks**: with `spacing = true`, a blank row comes before each prompt that follows a command, with the line between the blocks through its middle · not released yet.
 - **Select a block**: a click or ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · not released yet.
 
 ## Copy a command or its output
 
-Right-click anywhere in a block, on its prompt, its command line or its output, and choose:
+Right-click anywhere in a block, on its prompt, its command line or its output, open **Block**, and choose:
 
 - **Copy Command** to copy the command line, as you typed it.
+- **Copy Command Output** to copy the output alone.
 - **Copy Command and Output** to copy the command line, then its output on the next lines, without the prompt.
+- **Select Command Output** to select the output alone.
 - **Select Block** to select the whole block, from its prompt to the end of its output, as a drag would.
+
+The **Block** submenu holds every action on the block, its details and Run Command Again too, so that the context menu stays short. While Blocks is off, Copy Command Output and Select Command Output show in the context menu itself.
+
+### From the block's header
+
+Right-click the prompt rows pinned at the top of the pane, or the pill with `header = "pill"`, or ⌃-click them, for a menu of the same actions on that block alone. A click on them still takes you to the block's prompt. Block Details opens its panel at the top of the pane.
 
 The same commands are in the Edit menu and the command palette, where they act on the last command: Copy Command takes the last command that started, even one that still runs, and the other two the last command that ended. A command that still runs has no output to copy yet, so Copy Command and Output and Select Block are dimmed in its block.
 
@@ -42,7 +51,7 @@ A block whose prompt has left the scrollback still copies and selects the rows t
 
 ## See a block's details
 
-Right-click anywhere in a block and choose **Block Details**. A panel opens below the pointer with:
+Right-click anywhere in a block and choose **Block › Block Details**. A panel opens below the pointer with:
 
 - **the command line**, as you typed it;
 - **the status**: the exit status, 0 when the command succeeded and another number when it failed, or Running while the command still runs;
@@ -56,7 +65,7 @@ Edit › Block Details, with no click, shows the last command that started, belo
 
 ## Run a command again
 
-Right-click a block and choose **Run Command Again**. Lokyr types the block's command line at your shell's prompt and presses Return for you.
+Right-click a block and choose **Block › Run Command Again**. Lokyr types the block's command line at your shell's prompt and presses Return for you.
 
 It runs only while your shell waits at its prompt with an empty command line. Otherwise Lokyr sends nothing, and a notice tells you why:
 
@@ -219,7 +228,7 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 
 **Fix**: turn shell integration on, or set it up by hand, as [shell integration](shell-integration.md#set-it-up-by-hand) explains.
 
-**Check**: run `ls`, then right-click its output and choose Block Details. The Folder line shows the folder where you ran it.
+**Check**: run `ls`, then right-click its output and choose Block › Block Details. The Folder line shows the folder where you ran it.
 
 ### The arrow isn't there
 

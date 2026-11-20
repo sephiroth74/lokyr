@@ -2451,10 +2451,11 @@ impl Plugins {
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
                     ticked: item.ticked,
-                    own: state
-                        .commands
-                        .iter()
-                        .any(|command| command.name == item.command),
+                    own: (is_lokyrs_own(state) && item.submenu.is_some())
+                        || state
+                            .commands
+                            .iter()
+                            .any(|command| command.name == item.command),
                 }
             }));
         }
@@ -4058,7 +4059,10 @@ pub struct MenuEntry {
     pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked.
     pub ticked: bool,
-    /// Whether its command is its plugin's own, which it registered.
+    /// Whether it takes its command's place in its menu, of no arguments:
+    /// its command is its plugin's own, which it registered, or its plugin
+    /// is one of Lokyr's own and it goes into a submenu, which gathers
+    /// another's commands too, as a submenu of a block's actions.
     pub own: bool,
 }
 

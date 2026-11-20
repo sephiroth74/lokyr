@@ -187,6 +187,7 @@ export type Event =
     | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
     | { kind: "click", pane: PaneId, at: { number } }
+    | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     | { kind: "panel-closed", id: PanelId }

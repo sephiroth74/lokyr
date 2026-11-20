@@ -33,10 +33,10 @@ tip-prompt-click = Fai clic nella riga di comando per spostarci il cursore, in z
 tip-copy-output = Premi { $keys } per copiare l'output dell'ultimo comando, senza il prompt; il menu contestuale copia quello di qualsiasi comando.
 tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-clic su src/main.rs:42 apre il tuo editor alla riga 42.
 tip-block-header = Sei risalito in un output lungo? Il prompt del comando resta in cima al pannello: fai clic per tornare al comando.
-tip-block-copy = Fai clic destro sull'output di un comando per copiare il comando, o il comando e il suo output, o per selezionare tutto il blocco.
-tip-block-details = Fai clic destro sull'output di un comando e scegli Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
+tip-block-copy = Fai clic destro sull'output di un comando e apri Blocco per copiare il comando, il suo output o entrambi, o per selezionarne l'output o tutto il blocco. Lo stesso menu si apre col clic destro sulle righe fissate in cima.
+tip-block-details = Fai clic destro sull'output di un comando e scegli Blocco › Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
 tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
-tip-block-rerun = Fai clic destro sull'output di un comando e scegli Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
+tip-block-rerun = Fai clic destro sull'output di un comando e scegli Blocco › Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
 tip-block-spacing = Vuoi più spazio fra i comandi? Imposta spacing = true in [plugins.blocks] per una riga vuota prima di ogni prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.

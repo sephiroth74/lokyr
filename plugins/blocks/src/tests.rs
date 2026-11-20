@@ -39,10 +39,41 @@ fn commands() -> Vec<ShellCommand> {
     ]
 }
 
+/// The commands of a command's output, as `lokyr/core-actions` registers
+/// them, which the pane's context menu's submenu of a block's actions
+/// holds.
+fn outputs() -> Vec<lokyr_plugin_sdk::command::Command> {
+    use lokyr_plugin_sdk::command::{Capability, Command, Kind, Param};
+    let cell = |name: &str| Param {
+        name: name.to_owned(),
+        kind: Kind::Integer,
+        default: Some(Value::Integer(-1)),
+    };
+    [
+        (COPY_OUTPUT, "Copy Command Output", Category::Clipboard),
+        (SELECT_OUTPUT, "Select Command Output", Category::Edit),
+    ]
+    .into_iter()
+    .map(|(name, title, category)| Command {
+        name: name.to_owned(),
+        title: title.to_owned(),
+        category,
+        capabilities: vec![Capability::HistoryRead],
+        params: vec![cell("column"), cell("row")],
+        when: Some(PANE_FOCUSED.to_owned()),
+    })
+    .collect()
+}
+
+/// The context of the commands of a command's output.
+const PANE_FOCUSED: &str = "pane.focused";
+
 /// A host of a pane of 100 rows and the three commands, of the end
 /// button's texts, and the plugin, activated, of the pill's header.
 fn host() -> (FakeHost, Blocks) {
-    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(outputs());
     host.set_config(Data::Map(
         [("header".to_owned(), Data::Text("pill".to_owned()))].into(),
     ));
@@ -363,7 +394,9 @@ fn the_texts_are_in_both_languages() {
 /// runs: their prompts on the rows 0, 4 and 6, their lines as the host
 /// reads them, `$ ` and the line on each prompt's row.
 fn commands_host() -> (FakeHost, Blocks) {
-    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(outputs());
     host.focus(Some(PANE));
     let pane = host.pane(PANE);
     pane.tab = TabId(1);
@@ -1223,4 +1256,170 @@ fn the_prompt_rows_pin_by_default_in_place_of_the_pill_which_header_brings_back(
             .any(|request| matches!(request, Request::ClosePanel(id) if *id == panel(PANE)))
     );
     assert!(scrolled(&mut host, &mut plugin, 7).is_none());
+}
+
+/// The items of the block's menu that shows, of `host`: each button's key,
+/// title and whether it is dimmed, and a line as `-`.
+fn menu_items(host: &mut FakeHost, plugin: &mut Blocks) -> Vec<(String, String, bool)> {
+    let tree = host
+        .render(plugin, &ViewId::Panel(PanelId::from(MENU)))
+        .expect("the block's menu");
+    tree.children
+        .iter()
+        .map(|node| match &node.kind {
+            Kind::Button(button) => (
+                node.key
+                    .as_ref()
+                    .map(|key| key.0.clone())
+                    .unwrap_or_default(),
+                button.label.clone(),
+                button.disabled,
+            ),
+            _ => ("-".to_owned(), String::new(), false),
+        })
+        .collect()
+}
+
+/// A click on the item `name` of the block's menu, its events delivered.
+fn choose(host: &mut FakeHost, plugin: &mut Blocks, name: &str) {
+    host.set_clipboard(None);
+    let event = UiEvent {
+        view: ViewId::Panel(PanelId::from(MENU)),
+        key: Key::from(name),
+        kind: UiEventKind::Click,
+    };
+    host.ui_event(plugin, &event).unwrap();
+    host.deliver(plugin).unwrap();
+}
+
+#[test]
+fn the_context_menu_holds_a_block_s_actions_in_a_submenu_of_their_own() {
+    let (host, _) = commands_host();
+    let items: Vec<(&str, Option<&str>, bool)> = host
+        .menu_items()
+        .iter()
+        .map(|item| {
+            (
+                item.command.as_str(),
+                item.submenu.as_deref(),
+                item.place == MenuPlace::PaneContext && item.args.is_empty(),
+            )
+        })
+        .collect();
+    assert_eq!(items, ACTIONS.map(|name| (name, Some(BLOCK_SUBMENU), true)));
+}
+
+#[test]
+fn a_context_click_on_the_pinned_rows_opens_the_block_s_menu_which_acts_on_its_pane() {
+    let (mut host, mut plugin) = commands_host();
+    // Another pane has the keyboard: the menu acts on its own.
+    host.focus(Some(PaneId(2)));
+    host.pane(PaneId(2)).tab = TabId(1);
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    let options = host
+        .panels()
+        .get(&PanelId::from(MENU))
+        .expect("the block's menu");
+    assert_eq!(
+        (&options.anchor, options.role),
+        (
+            &Anchor::Pointer(lokyr_plugin_sdk::host::WindowId(1)),
+            PanelRole::Menu
+        )
+    );
+    // `ls`, which ended of some output: each action, none dimmed.
+    let item = |name: &str, title: &str, dimmed: bool| (name.to_owned(), title.to_owned(), dimmed);
+    assert_eq!(
+        menu_items(&mut host, &mut plugin),
+        [
+            item(COPY_COMMAND, "Copy Command", false),
+            item(COPY_OUTPUT, "Copy Command Output", false),
+            item(COPY_BLOCK, "Copy Command and Output", false),
+            item(SELECT_OUTPUT, "Select Command Output", false),
+            item(SELECT_BLOCK, "Select Block", false),
+            ("-".to_owned(), String::new(), false),
+            item(DETAILS, "Block Details", false),
+            item(RERUN, "Run Command Again", false),
+        ]
+    );
+    choose(&mut host, &mut plugin, COPY_OUTPUT);
+    assert_eq!(host.clipboard(), Some("a.txt\nb.txt"));
+    assert!(!host.panels().contains_key(&PanelId::from(MENU)));
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    choose(&mut host, &mut plugin, COPY_COMMAND);
+    assert_eq!(host.clipboard(), Some("ls"));
+    // Its details at the pane's top.
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 1,
+    });
+    host.deliver(&mut plugin).unwrap();
+    choose(&mut host, &mut plugin, DETAILS);
+    let details = host
+        .panels()
+        .iter()
+        .find(|(id, _)| id.0.starts_with(DETAILS_PANEL))
+        .map(|(_, options)| options.anchor.clone());
+    assert_eq!(
+        details,
+        Some(Anchor::PaneCorner {
+            pane: PANE,
+            corner: Corner::Top
+        })
+    );
+}
+
+#[test]
+fn a_running_block_s_menu_dims_what_waits_for_its_end() {
+    let (mut host, mut plugin) = commands_host();
+    host.post(Event::PromptRowsMenu {
+        pane: PANE,
+        window: lokyr_plugin_sdk::host::WindowId(1),
+        command: 3,
+    });
+    host.deliver(&mut plugin).unwrap();
+    let dimmed: Vec<String> = menu_items(&mut host, &mut plugin)
+        .into_iter()
+        .filter(|(_, _, dimmed)| *dimmed)
+        .map(|(name, ..)| name)
+        .collect();
+    assert_eq!(
+        dimmed,
+        [COPY_OUTPUT, COPY_BLOCK, SELECT_OUTPUT, SELECT_BLOCK]
+    );
+}
+
+#[test]
+fn a_context_click_on_the_pill_opens_its_block_s_menu_at_the_pointer() {
+    let (mut host, mut plugin) = host();
+    // `make`'s output at the view's top: its pill.
+    assert!(scrolled(&mut host, &mut plugin, 35).is_some());
+    let event = UiEvent {
+        view: ViewId::Panel(panel(PANE)),
+        key: Key::from(PILL),
+        kind: UiEventKind::ContextMenu,
+    };
+    host.ui_event(&mut plugin, &event).unwrap();
+    let options = host
+        .panels()
+        .get(&PanelId::from(MENU))
+        .expect("the block's menu");
+    assert_eq!(
+        options.anchor,
+        Anchor::ViewPointer {
+            view: ViewId::Panel(panel(PANE))
+        }
+    );
+    assert_eq!(plugin.menu, Some((PANE, 2)));
 }

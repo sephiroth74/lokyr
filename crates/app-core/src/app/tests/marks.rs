@@ -1175,6 +1175,64 @@ fn a_blank_row_comes_before_a_prompt_after_a_command_as_blocks_asks() {
 }
 
 #[test]
+fn a_right_click_on_a_block_s_pinned_rows_opens_its_menu_which_acts_on_it() {
+    // A prompt of two rows, then 80 rows of output, more than the pane's
+    // 62, then the prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let pane = app.windows[&window].views[0].pane;
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .snapshot()
+            .sticky()
+            .is_some_and(|sticky| sticky.rows() == 2)
+    });
+    let menus = fake.context_menus().len();
+    // A right click on them: the block's menu, of its actions alone; the
+    // word under them stays unselected.
+    right_click(&mut fake, &mut app, window, cell(1, 0), Modifiers::NONE);
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.context_menus().len() > menus
+    });
+    let (_, items, dimmed) = context_menu(&fake, window);
+    assert_eq!(
+        items,
+        [
+            "Copy Command",
+            "Copy Command Output",
+            "Copy Command and Output",
+            "Select Command Output",
+            "Select Block",
+            "-",
+            "Block Details",
+            "Run Command Again"
+        ]
+    );
+    assert!(dimmed.is_empty(), "{dimmed:?}");
+    assert_eq!(selected_text(&app, window), None);
+    let (_, _, menu) = fake.context_menus().last().unwrap();
+    let item = commands_of(&menu.items)
+        .find_map(|(title, command)| (title == "Copy Command").then(|| command.clone()))
+        .unwrap();
+    fake.send(&mut app, window, WindowEvent::ContextCommand(item));
+    run_until(&mut fake, &mut app, |fake, _| {
+        fake.clipboard_text().as_deref() == Some("seq 80")
+    });
+}
+
+#[test]
 fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_its_prompt() {
     // A prompt of two rows, then 80 rows of output, more than the pane's
     // 62, then the prompt where you type.

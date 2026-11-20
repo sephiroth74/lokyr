@@ -111,6 +111,9 @@ const ITEMS: [(MenuPlace, &str, Option<&str>, Option<&str>); 15] = [
 const BAR: MenuPlace = MenuPlace::Bar(Category::Panes);
 const CONTEXT: MenuPlace = MenuPlace::PaneContext;
 
+/// The message of the title of the context menu's submenu of the items.
+const PANE_SUBMENU: &str = "menu-pane";
+
 /// The plugin of the splits: its config, and the panes' headers that it
 /// rendered, each of its last tree, which it renders again as their trees
 /// change; the layouts are the host's.
@@ -189,7 +192,8 @@ impl Plugin for Splits {
                 command: command.to_owned(),
                 args: direction.map(towards).unwrap_or_default(),
                 title: title.map(str::to_owned),
-                submenu: None,
+                // The context menu's in a submenu of their own.
+                submenu: (place == CONTEXT).then(|| PANE_SUBMENU.to_owned()),
                 ticked: false,
             })?;
         }

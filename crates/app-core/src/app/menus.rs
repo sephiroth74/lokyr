@@ -154,8 +154,15 @@ impl<B: Backend> App<B> {
                 groups.push(Vec::new());
             }
             last = Some(space);
+            // An item of a command of a cell, of no arguments of its own,
+            // takes the cell too, as the command's own item would.
+            let args = if of_cell(command) && entry.invocation.args.is_empty() {
+                cell_args(column, row)
+            } else {
+                entry.invocation.args.clone()
+            };
             if let Some(group) = groups.last_mut() {
-                group.push((item_id(at), command.clone(), entry.invocation.args.clone()));
+                group.push((item_id(at), command.clone(), args));
             }
         }
         self.acting = Some(window);
@@ -428,7 +435,17 @@ impl<B: Backend> App<B> {
             .filter(|_| self.context_window == Some(window))
             .and_then(Pane::marked_cell);
         let invocation = match self.menu_item(name) {
-            Some(invocation) => Some(invocation),
+            // A plugin's item of a command of a cell, of no arguments of its
+            // own, takes the cell, as the command's own item does.
+            Some(invocation) => match self.commands.get(&invocation.command) {
+                Some(command) if of_cell(command) && invocation.args.is_empty() => {
+                    marked.map(|(column, row)| Invocation {
+                        command: invocation.command.clone(),
+                        args: cell_args(column, row),
+                    })
+                }
+                _ => Some(invocation),
+            },
             None => match self.commands.get(name) {
                 Some(command) if of_cell(command) => marked.map(|(column, row)| Invocation {
                     command: name.to_owned(),

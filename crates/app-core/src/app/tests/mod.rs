@@ -3488,29 +3488,39 @@ fn selecting(clipboard: &str, modes: &str) -> (Fake, App, WindowId) {
 fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<String>) {
     let (over, position, menu) = fake.context_menus().last().expect("a context menu");
     assert_eq!(*over, window);
-    let items = menu
-        .items
-        .iter()
-        .map(|item| match item {
+    // A submenu by its title and `›`, its items after it, each of the
+    // submenu's title and `›` before its own.
+    let mut items = Vec::new();
+    for item in &menu.items {
+        match item {
             MenuItem::Command {
                 title, shortcut, ..
             } => {
                 assert_eq!(*shortcut, None, "{title}");
-                title.clone()
+                items.push(title.clone());
             }
-            MenuItem::Separator => "-".to_owned(),
+            MenuItem::Separator => items.push("-".to_owned()),
+            MenuItem::Submenu(submenu) => {
+                items.push(format!("{} ›", submenu.title));
+                for inner in &submenu.items {
+                    match inner {
+                        MenuItem::Command { title, .. } => {
+                            items.push(format!("{} › {title}", submenu.title));
+                        }
+                        other => panic!("{other:?}"),
+                    }
+                }
+            }
             other => panic!("{other:?}"),
-        })
-        .collect();
+        }
+    }
     // A plugin's item by its title, as its id is its place in a list.
     let dimmed = menu
         .dimmed
         .iter()
         .map(|id| {
-            let title = menu.items.iter().find_map(|item| match item {
-                MenuItem::Command { title, command, .. } if command == id => Some(title),
-                _ => None,
-            });
+            let title = commands_of(&menu.items)
+                .find_map(|(title, command)| (command == id).then_some(title));
             match title {
                 Some(title) if id.starts_with("menu-item:") => title.clone(),
                 _ => id.clone(),
@@ -3518,6 +3528,16 @@ fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<Strin
         })
         .collect();
     (*position, items, dimmed)
+}
+
+/// The commands' items of `items`, those of their submenus too, each of
+/// its title and its command.
+fn commands_of(items: &[MenuItem]) -> impl Iterator<Item = (&String, &String)> {
+    items.iter().flat_map(|item| match item {
+        MenuItem::Command { title, command, .. } => vec![(title, command)],
+        MenuItem::Submenu(submenu) => commands_of(&submenu.items).collect(),
+        _ => Vec::new(),
+    })
 }
 
 /// A press and a release of the right button at `at`, with `mods`.

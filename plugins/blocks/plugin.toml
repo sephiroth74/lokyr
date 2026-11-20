@@ -18,8 +18,14 @@ clipboard-write = true
 process-read = true
 # A block's command line run again, typed at the shell's prompt.
 pty-write = true
-# A click on a block, which selects it.
+# A click on a block, which selects it, and a context click on the
+# block's prompt rows pinned at the pane's top, which opens its menu.
 pointer-read = true
+
+# The commands of a command's output, in the pane's context menu's submenu
+# of a block's actions.
+[uses]
+commands = ["pane.copy-output", "pane.select-output"]
 
 [contributes]
 config-schema = "blocks.schema.json"

@@ -23,15 +23,21 @@
 //! show its details in a panel: its line, its exit status, its start, its
 //! duration and its folder, each copied of a click, or run its line again
 //! at the shell's prompt, while the shell waits there of an empty command
-//! line. Like every built-in plugin, it depends only on the plugin SDK.
+//! line. The pane's context menu holds them in a submenu of their own,
+//! with the commands of a command's output, and a context click on a
+//! block's header, its prompt rows that the host pins or its pill, opens a
+//! menu of them that acts on that block. Like every built-in plugin, it
+//! depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{BlockLooks, LocalTime, NoticeLevel, PaneId, Scroll, ShellCommand};
-use lokyr_plugin_sdk::message::{CLICK, Data, Event};
+use lokyr_plugin_sdk::host::{
+    BlockLooks, LocalTime, MenuItem, MenuPlace, NoticeLevel, PaneId, Scroll, ShellCommand,
+};
+use lokyr_plugin_sdk::message::{CLICK, Data, Event, PROMPT_ROWS_MENU};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::ui::{
     Anchor, Corner, PanelId, PanelOptions, Role as PanelRole, UiEvent, ViewId,
@@ -104,6 +110,31 @@ const LINE_LINES: u16 = 3;
 /// The context of the commands: a focused pane.
 const PANE: &str = "pane.focused";
 
+/// Copy or select a command's output, of `lokyr/core-actions`, of the cell
+/// of its `column` and `row`.
+const COPY_OUTPUT: &str = "pane.copy-output";
+const SELECT_OUTPUT: &str = "pane.select-output";
+
+/// A block's actions, in their order, in the pane's context menu's submenu
+/// and in the block's menu, of its header's context click; a line before
+/// those that do not copy nor select.
+const ACTIONS: [&str; 7] = [
+    COPY_COMMAND,
+    COPY_OUTPUT,
+    COPY_BLOCK,
+    SELECT_OUTPUT,
+    SELECT_BLOCK,
+    DETAILS,
+    RERUN,
+];
+
+/// The message of the title of the context menu's submenu of a block's
+/// actions.
+const BLOCK_SUBMENU: &str = "menu-block";
+
+/// The panel of a block's menu.
+const MENU: &str = "block-menu";
+
 /// The rows that a copy of an output reads at most, as a read of rows
 /// takes them.
 const MOST_OUTPUT_ROWS: usize = lokyr_plugin_sdk::host::MOST_LINES;
@@ -123,6 +154,8 @@ pub struct Blocks {
     opened: u64,
     /// How the host draws the blocks, as the plugin last asked.
     looks: BlockLooks,
+    /// The pane and the command of the block whose menu shows.
+    menu: Option<(PaneId, u64)>,
 }
 
 /// A block's details that a panel shows: its panel, its pane, its command,
@@ -217,6 +250,7 @@ impl Default for Blocks {
             details: None,
             opened: 0,
             looks: BlockLooks::default(),
+            menu: None,
         }
     }
 }
@@ -224,8 +258,9 @@ impl Default for Blocks {
 impl Plugin for Blocks {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         self.headers.activate(cx)?;
-        // A click on a block selects it.
-        cx.subscribe(&[CLICK])?;
+        // A click on a block selects it; a context click on its prompt
+        // rows pinned at the pane's top opens its menu.
+        cx.subscribe(&[CLICK, PROMPT_ROWS_MENU])?;
         self.looks = looks_of(&cx.config()?);
         cx.set_block_looks(self.looks)?;
         // The pill of the command's line, unless the host pins the block's
@@ -308,6 +343,18 @@ impl Plugin for Blocks {
                 when: Some(PANE.to_owned()),
             })?;
         }
+        // The pane's context menu: a block's actions in a submenu of their
+        // own, of the cell that the menu opened on.
+        for name in ACTIONS {
+            cx.add_menu_item(MenuItem {
+                place: MenuPlace::PaneContext,
+                command: name.to_owned(),
+                args: Args::new(),
+                title: None,
+                submenu: Some(BLOCK_SUBMENU.to_owned()),
+                ticked: false,
+            })?;
+        }
         Ok(())
     }
 
@@ -335,6 +382,15 @@ impl Plugin for Blocks {
         for event in events {
             if let Event::Click { pane, at } = event {
                 select_clicked(cx, *pane, at.1)?;
+                continue;
+            }
+            if let Event::PromptRowsMenu {
+                pane,
+                window,
+                command,
+            } = event
+            {
+                self.open_menu(cx, *pane, *command, Anchor::Pointer(*window))?;
                 continue;
             }
             let Event::Lines {
@@ -368,6 +424,9 @@ impl Plugin for Blocks {
     }
 
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view == ViewId::Panel(PanelId::from(MENU)) {
+            return Some(self.menu_tree(cx));
+        }
         match &self.details {
             Some(details) if *view == ViewId::Panel(details.panel.clone()) => {
                 let rows = rows(cx, details);
@@ -383,6 +442,31 @@ impl Plugin for Blocks {
 
     /// A click on a row of the details, or on its button, copies its part.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        // A block's menu's item chosen; the pointer's moves over the
+        // platform's menu tell hovers, which choose nothing.
+        if event.view == ViewId::Panel(PanelId::from(MENU)) {
+            if event.kind != UiEventKind::Click {
+                return Ok(());
+            }
+            let Some((pane, command)) = self.menu else {
+                return Ok(());
+            };
+            let Some(&name) = ACTIONS.iter().find(|&&name| name == event.key.0) else {
+                return Ok(());
+            };
+            let _ = cx.close_panel(PanelId::from(MENU));
+            return self.act_on_block(cx, pane, command, name);
+        }
+        // A context click on a header's pill opens its block's menu.
+        if event.kind == UiEventKind::ContextMenu
+            && let ViewId::Panel(id) = &event.view
+            && let Some((pane, command)) = self.headers.shown_command(id)
+        {
+            let anchor = Anchor::ViewPointer {
+                view: event.view.clone(),
+            };
+            return self.open_menu(cx, pane, command, anchor);
+        }
         let Some(details) = &self.details else {
             return self.headers.on_ui_event(cx, event);
         };
@@ -410,29 +494,26 @@ impl Plugin for Blocks {
     /// A command applies where its block has what it takes: a line to
     /// copy, or a command that ended.
     fn applies(&mut self, cx: &mut Cx<'_>, name: &str, args: &Args) -> bool {
-        let Some(pane) = cx.focused_pane() else {
-            return false;
-        };
-        match name {
-            COPY_COMMAND => block(cx, pane, args, false)
-                .ok()
-                .flatten()
-                .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
-                .is_some(),
-            COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
-            DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
-            DESELECT => cx.selected_block(pane).ok().flatten().is_some(),
-            _ => true,
-        }
+        cx.focused_pane()
+            .is_some_and(|pane| applies_in(cx, pane, name, args))
     }
 
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
+        self.act(cx, pane, name, &args)
+    }
+}
+
+impl Blocks {
+    /// Runs the command `name` of `args` in `pane`, as its call does in the
+    /// focused pane; the commands of a command's output too, as the block's
+    /// menu runs them in its own pane.
+    fn act(&mut self, cx: &mut Cx<'_>, pane: PaneId, name: &str, args: &Args) -> Result<(), Error> {
         match name {
             COPY_COMMAND => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
                 if let Some(line) = cx.command_line(pane, command.id)? {
@@ -441,7 +522,7 @@ impl Plugin for Blocks {
                 Ok(())
             }
             COPY_BLOCK => {
-                let Some(command) = block(cx, pane, &args, true)? else {
+                let Some(command) = block(cx, pane, args, true)? else {
                     return Ok(());
                 };
                 let line = cx.command_line(pane, command.id)?;
@@ -476,7 +557,7 @@ impl Plugin for Blocks {
                 Ok(())
             }
             SELECT_BLOCK => {
-                let Some(command) = block(cx, pane, &args, true)? else {
+                let Some(command) = block(cx, pane, args, true)? else {
                     return Ok(());
                 };
                 let (columns, _) = cx.pane_grid(pane)?;
@@ -495,16 +576,39 @@ impl Plugin for Blocks {
                 Ok(())
             }
             DETAILS => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
-                self.open_details(cx, pane, command, &args)
+                self.open_details(cx, pane, command, args)
             }
             RERUN => {
-                let Some(command) = block(cx, pane, &args, false)? else {
+                let Some(command) = block(cx, pane, args, false)? else {
                     return Ok(());
                 };
                 rerun(cx, pane, &command)
+            }
+            COPY_OUTPUT | SELECT_OUTPUT => {
+                let Some(command) = block(cx, pane, args, true)? else {
+                    return Ok(());
+                };
+                let (columns, _) = cx.pane_grid(pane)?;
+                let Some(output) = output_span(&command, columns) else {
+                    return Ok(());
+                };
+                let ((_, first), (_, last)) = output;
+                // A selection reads its last row alone, whose end may hold
+                // a shell's mark of a missing newline.
+                let (from, rows, to) = if name == SELECT_OUTPUT {
+                    (last, 1, Destination::Select { block: output })
+                } else {
+                    let rows = usize::try_from(last - first + 1)
+                        .unwrap_or(0)
+                        .min(MOST_OUTPUT_ROWS);
+                    (first, rows, Destination::Copy { line: None, output })
+                };
+                let id = cx.read_lines(pane, from, rows)?;
+                self.reading = Some(Reading { id, pane, to });
+                Ok(())
             }
             SELECT_PREVIOUS => select_step(cx, pane, false),
             SELECT_NEXT => select_step(cx, pane, true),
@@ -515,9 +619,97 @@ impl Plugin for Blocks {
             )),
         }
     }
-}
 
-impl Blocks {
+    /// Opens the menu of the block of `command`, of `pane`, at `anchor`, of
+    /// its actions, in place of a menu that shows.
+    fn open_menu(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: u64,
+        anchor: Anchor,
+    ) -> Result<(), Error> {
+        self.menu = Some((pane, command));
+        let _ = cx.close_panel(PanelId::from(MENU));
+        cx.open_panel(
+            PanelId::from(MENU),
+            PanelOptions {
+                anchor,
+                role: PanelRole::Menu,
+                close_outside: true,
+                close_escape: true,
+                takes_keys: false,
+                close_typing: false,
+            },
+        )
+    }
+
+    /// The block's menu: its actions, each dimmed where it would do
+    /// nothing to the block, of its command's titles.
+    fn menu_tree(&self, cx: &mut Cx<'_>) -> Node {
+        let args = self
+            .menu
+            .and_then(|(pane, command)| Some((pane, block_cell(cx, pane, command)?)));
+        let mut items = Vec::new();
+        for name in ACTIONS {
+            if name == DETAILS {
+                items.push(Node::separator());
+            }
+            let (message, english) = match name {
+                COPY_OUTPUT => ("menu-copy-output".to_owned(), "Copy Command Output"),
+                SELECT_OUTPUT => ("menu-select-output".to_owned(), "Select Command Output"),
+                COPY_COMMAND => (title_message(name), "Copy Command"),
+                COPY_BLOCK => (title_message(name), "Copy Command and Output"),
+                SELECT_BLOCK => (title_message(name), "Select Block"),
+                DETAILS => (title_message(name), "Block Details"),
+                _ => (title_message(name), "Run Command Again"),
+            };
+            // The catalogs' title, or English's where they lack it.
+            let title = cx
+                .message(&message, &[])
+                .ok()
+                .filter(|text| !text.is_empty() && *text != message)
+                .unwrap_or_else(|| english.to_owned());
+            let applies = args
+                .as_ref()
+                .is_some_and(|(pane, args)| applies_in(cx, *pane, name, args));
+            items.push(
+                Node::new(NodeKind::Button(Button {
+                    label: title,
+                    disabled: !applies,
+                    ..Button::default()
+                }))
+                .key(name),
+            );
+        }
+        Node::container(items)
+    }
+
+    /// Runs `name` on the block of `command`, of `pane`, as its menu
+    /// chose it: of the block's cell, its details at the pane's top.
+    fn act_on_block(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: u64,
+        name: &str,
+    ) -> Result<(), Error> {
+        let Some(args) = block_cell(cx, pane, command) else {
+            return Ok(());
+        };
+        if name == DETAILS {
+            let Some(shown) = block(cx, pane, &args, false)? else {
+                return Ok(());
+            };
+            let anchor = Anchor::PaneCorner {
+                pane,
+                corner: Corner::Top,
+            };
+            return self.open_details_at(cx, pane, shown, anchor);
+        }
+        self.act(cx, pane, name, &args)
+    }
+
     /// Opens the details of `command`, of `pane`, in a panel below the cell
     /// of `args`, or, of none, below the cursor while the view shows the
     /// screen, at the pane's top otherwise; in place of the details that
@@ -529,8 +721,6 @@ impl Blocks {
         command: ShellCommand,
         args: &Args,
     ) -> Result<(), Error> {
-        let line = cx.command_line(pane, command.id)?;
-        let now = cx.now()?;
         let anchor = match cell_of(args) {
             Some((column, row)) => Anchor::Cell { pane, column, row },
             None => {
@@ -545,6 +735,20 @@ impl Blocks {
                 }
             }
         };
+        self.open_details_at(cx, pane, command, anchor)
+    }
+
+    /// Opens the details of `command`, of `pane`, in a panel at `anchor`,
+    /// in place of the details that show.
+    fn open_details_at(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        command: ShellCommand,
+        anchor: Anchor,
+    ) -> Result<(), Error> {
+        let line = cx.command_line(pane, command.id)?;
+        let now = cx.now()?;
         if let Some(shown) = self.details.take() {
             cx.close_panel(shown.panel)?;
         }
@@ -929,6 +1133,48 @@ fn details_tree(rows: &[Row], copied: Option<Part>, label: &str) -> Node {
             shadow: Some(Shadow::default()),
             ..Style::default()
         })
+}
+
+/// Whether the command `name` of `args` would do something in `pane`:
+/// its block has what it takes, a line to copy, a command that ended, or
+/// an output of some rows.
+fn applies_in(cx: &mut Cx<'_>, pane: PaneId, name: &str, args: &Args) -> bool {
+    match name {
+        COPY_COMMAND => block(cx, pane, args, false)
+            .ok()
+            .flatten()
+            .and_then(|command| cx.command_line(pane, command.id).ok().flatten())
+            .is_some(),
+        COPY_BLOCK | SELECT_BLOCK => block(cx, pane, args, true).ok().flatten().is_some(),
+        COPY_OUTPUT | SELECT_OUTPUT => {
+            let Ok((columns, _)) = cx.pane_grid(pane) else {
+                return false;
+            };
+            block(cx, pane, args, true)
+                .ok()
+                .flatten()
+                .is_some_and(|command| output_span(&command, columns).is_some())
+        }
+        DETAILS | RERUN => block(cx, pane, args, false).ok().flatten().is_some(),
+        DESELECT => cx.selected_block(pane).ok().flatten().is_some(),
+        _ => true,
+    }
+}
+
+/// The message of the plugin's catalogs that titles its command `name`.
+fn title_message(name: &str) -> String {
+    format!("command-{}", name.replace('.', "-"))
+}
+
+/// The arguments of a cell of the block of `command`, of `pane`, its
+/// prompt's or, of none, its first mark's, if the pane keeps it.
+fn block_cell(cx: &mut Cx<'_>, pane: PaneId, command: u64) -> Option<Args> {
+    let shown = cx.shell_command(pane, command).ok().flatten()?;
+    let (_, row) = shown.prompt.or(shown.input).or(shown.output)?;
+    Some(Args::from([
+        ("column".to_owned(), Value::Integer(0)),
+        ("row".to_owned(), Value::Integer(row)),
+    ]))
 }
 
 /// The block that `args` names in `pane`: of the command whose block holds

@@ -421,6 +421,18 @@ impl Headers {
     fn pane_of(&self, panel: &PanelId) -> Option<PaneId> {
         panel.0.strip_prefix(self.prefix)?.parse().ok().map(PaneId)
     }
+
+    /// The pane and the command, by its id, of the header of the panel
+    /// `panel`, while it shows.
+    #[allow(
+        dead_code,
+        reason = "the plain header, which shares this module, has no block's menu"
+    )]
+    pub(crate) fn shown_command(&self, panel: &PanelId) -> Option<(PaneId, u64)> {
+        let pane = self.pane_of(panel)?;
+        let shown = self.panes.get(&pane)?.shown.as_ref()?;
+        Some((pane, shown.command))
+    }
 }
 
 /// The header of `pane`, of `viewport`, if one shows: of the command whose

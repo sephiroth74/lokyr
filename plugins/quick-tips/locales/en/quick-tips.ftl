@@ -38,10 +38,10 @@ tip-prompt-click = Click in the command line to move the cursor there, in zsh, b
 tip-copy-output = Press { $keys } to copy the output of the last command, without its prompt; its context menu copies any command's.
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
 tip-block-header = Scrolled up through a long output? The command's prompt stays at the pane's top: click it to go back to the command.
-tip-block-copy = Right-click a command's output to copy the command, or the command and its output, or to select its whole block.
-tip-block-details = Right-click a command's output and choose Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
+tip-block-copy = Right-click a command's output and open Block to copy the command, its output or both, or to select its output or its whole block. Right-click its pinned rows at the top for the same menu.
+tip-block-details = Right-click a command's output and choose Block › Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
 tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
-tip-block-rerun = Right-click a command's output and choose Run Command Again to run it once more at the prompt.
+tip-block-rerun = Right-click a command's output and choose Block › Run Command Again to run it once more at the prompt.
 tip-block-spacing = Want room between your commands? Set spacing = true in [plugins.blocks] for a blank row before each prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.

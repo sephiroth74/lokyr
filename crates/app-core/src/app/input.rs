@@ -619,12 +619,24 @@ impl<B: Backend> App<B> {
         {
             self.focus_pane(platform, window, under);
         }
+        // The right button, or the left one with Control, opens a context
+        // menu.
+        let menu_button = match button {
+            lokyr_vt_core::input::MouseButton::Right => true,
+            lokyr_vt_core::input::MouseButton::Left => mods.control,
+            _ => false,
+        };
         // A press on the prompt rows of a block pinned at the view's top
-        // scrolls to the block's prompt, as a header's click does.
+        // scrolls to the block's prompt, as a header's click does; a press
+        // of the menu's button asks the plugins for the block's menu.
         if pressed
             && button == lokyr_vt_core::input::MouseButton::Left
+            && !menu_button
             && self.sticky_press(platform, window, position)
         {
+            return;
+        }
+        if pressed && menu_button && self.sticky_menu(platform, window, position) {
             return;
         }
         // A press of the left button that goes to the program ends the
@@ -649,13 +661,8 @@ impl<B: Backend> App<B> {
         {
             return;
         }
-        // The right button, or the left one with Control, opens the context
-        // menu where the terminal keeps the click.
-        let menu_button = match button {
-            lokyr_vt_core::input::MouseButton::Right => true,
-            lokyr_vt_core::input::MouseButton::Left => mods.control,
-            _ => false,
-        };
+        // The menu's button opens the context menu where the terminal keeps
+        // the click.
         if pressed && menu_button && self.keeps_click(window, mods) {
             self.context_menu(platform, window, position);
             return;
@@ -1037,26 +1044,58 @@ impl<B: Backend> App<B> {
         window: WindowId,
         position: Point,
     ) -> bool {
-        let Some(id) = self.pane_at(platform, window, position) else {
-            return false;
-        };
-        let Some(pointer) = self.pointer_in(platform, window, id, position) else {
+        let Some((id, _, prompt)) = self.sticky_under(platform, window, position) else {
             return false;
         };
         let Some(pane) = self.workspace.pane(id) else {
             return false;
         };
-        let snapshot = pane.snapshot();
-        let Some((_, prompt)) = snapshot
-            .sticky()
-            .filter(|sticky| pointer.row < sticky.rows())
-            .and(snapshot.sticky_prompt())
-        else {
-            return false;
-        };
         pane.scroll(Scroll::Row(prompt));
         platform.request_frame(window);
         true
+    }
+
+    /// Tells the plugins of a press of the menu's button on the prompt rows
+    /// of a block pinned at the view's top of the pane under `position`,
+    /// over `window`, if `position` is over them, as their block's menu
+    /// opens there. Whether it was.
+    fn sticky_menu(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> bool {
+        let Some((id, command, _)) = self.sticky_under(platform, window, position) else {
+            return false;
+        };
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        self.plugins.post(plugins::Event::PromptRowsMenu {
+            pane: lokyr_kernel::plugins::host::PaneId(id.get()),
+            window: lokyr_kernel::plugins::host::WindowId::from(state.window),
+            command,
+        });
+        true
+    }
+
+    /// The pane under `position`, over `window`, the command and the row's
+    /// number of its prompt of the block whose prompt rows its snapshot
+    /// pins at its top, if `position` is over them.
+    fn sticky_under(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<(lokyr_kernel::workspace::PaneId, u64, i64)> {
+        let id = self.pane_at(platform, window, position)?;
+        let pointer = self.pointer_in(platform, window, id, position)?;
+        let snapshot = self.workspace.pane(id)?.snapshot();
+        let (command, prompt) = snapshot
+            .sticky()
+            .filter(|sticky| pointer.row < sticky.rows())
+            .and(snapshot.sticky_prompt())?;
+        Some((id, command, prompt))
     }
 
     /// The pointer moved over `window`: a program that asked learns of it,
