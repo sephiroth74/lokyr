@@ -194,3 +194,38 @@ fn a_command_that_did_not_end_ends_its_pinned_rows_at_the_next_prompt() {
     assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ make"]);
     assert_eq!(text(&snapshot, 1), "$ seq");
 }
+
+#[test]
+fn a_running_command_s_rows_pin_only_as_the_view_leaves_the_screen() {
+    let options = Options {
+        scrollback: Scrollback {
+            limit: 1 << 30,
+            budget: None,
+        },
+        ..Options::default()
+    };
+    let mut terminal = Terminal::new(40, 10, options);
+    // `git log` that runs, its pager on the primary screen at the screen's
+    // top, of no end's mark yet.
+    feed(
+        &mut terminal,
+        "\x1b]133;A\x07$ \x1b]133;B\x07git log\r\n\x1b]133;C\x07",
+    );
+    for n in 1..=30 {
+        feed(&mut terminal, &format!("commit {n}\r\n"));
+    }
+    feed(&mut terminal, "\x1b[H\x1b[2Jcommit 1\r\nAuthor\r\n");
+    terminal.set_sticky_prompts(true);
+    let mut snapshot = Snapshot::default();
+    // At the screen, what the pager draws stays in sight.
+    assert!(pinned(&mut terminal, &mut snapshot).is_empty());
+    assert_eq!(text(&snapshot, 0), "commit 1");
+    // Scrolled into the scrollback, its output: its rows pinned.
+    let output = terminal.commands()[0].output.unwrap().1;
+    terminal.scroll_viewport(Scroll::Row(output + 3));
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ git log"]);
+    // Ended, at the screen too, the view's top of its output.
+    terminal.scroll_viewport(Scroll::Bottom);
+    feed(&mut terminal, "\x1b]133;D;0\x07");
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ git log"]);
+}

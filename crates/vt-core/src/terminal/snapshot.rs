@@ -673,7 +673,9 @@ impl Terminal {
     /// leaves it, over the rows that scroll under it; and, as the block's
     /// last row comes nearer the top than they are many, their last rows
     /// alone, as the block's end pushes them up; none while the prompt's
-    /// first row shows, or of no command, or of none whose output came.
+    /// first row shows, or of no command, or of none whose output came, nor
+    /// of the command that runs while the view shows the screen, where it
+    /// draws.
     fn sticky_rows(&self, map: &ViewMap) -> Option<(u64, i64, i64, u16)> {
         let top = map.top();
         let command = self.command_at(top)?;
@@ -693,17 +695,25 @@ impl Terminal {
         // next command's first.
         let last = match command.end {
             Some((column, end)) => end - i64::from(column == 0),
-            None => self
-                .commands_meeting(top, top.saturating_add(rows))
-                .into_iter()
-                .find(|next| next.id != command.id)
-                .and_then(|next| {
-                    [next.prompt, next.input, next.output, next.end]
-                        .into_iter()
-                        .flatten()
-                        .next()
-                })
-                .map_or(i64::MAX, |(_, row)| row - 1),
+            None => {
+                let next = self
+                    .commands_meeting(top, top.saturating_add(rows))
+                    .into_iter()
+                    .find(|next| next.id != command.id)
+                    .and_then(|next| {
+                        [next.prompt, next.input, next.output, next.end]
+                            .into_iter()
+                            .flatten()
+                            .next()
+                    });
+                // The command that runs, of no command after it, draws on
+                // the screen: nothing pinned over it while the view shows
+                // the screen, as a pager or a remote shell draws at its top.
+                if next.is_none() && self.viewport_offset() == 0 {
+                    return None;
+                }
+                next.map_or(i64::MAX, |(_, row)| row - 1)
+            }
         };
         let room = last.saturating_sub(top).saturating_add(1);
         let shown = rows.min(room);
