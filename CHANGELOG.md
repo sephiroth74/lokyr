@@ -47,6 +47,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- A text field that has the keyboard, such as the find bar's, the command palette's or the settings window's, leaves Option-Command and an arrow, as the move between panes, and Shift-Command-C, Copy Mode, to Lokyr, where it took them as its own.
 - In zsh, with a plugin that switches the history list as you type, such as Oh My Zsh's per-directory-history together with `share_history`, the shell integration reports each command's line again, so that the command's header leaves the right prompt out.
 - A plugin that starts while a pane's view stays still, such as the command header when you turn Blocks off, sees the view at once, rather than at the next scroll or output.
 
