@@ -2115,6 +2115,8 @@ impl<B: Backend> App<B> {
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
         let term_changed = config.terminal.term != self.config.terminal.term;
+        // Scrolling by pixels turned off leaves no pane a share of a row.
+        let smooth_off = self.config.window.smooth_scroll && !config.window.smooth_scroll;
         let themes_changed = config.theme.light != self.config.theme.light
             || config.theme.dark != self.config.theme.dark;
         self.settle_update_checks(platform, config.updates.check);
@@ -2198,6 +2200,14 @@ impl<B: Backend> App<B> {
             pane.set_width_tables(widths.tables, widths.ambiguous_wide);
             pane.set_normalization(terminal.normalization.form());
             pane.set_scrollback_limit(self.config.scrollback.limit.bytes());
+            if smooth_off {
+                pane.drop_fraction();
+            }
+        }
+        if smooth_off {
+            for &window in self.windows.keys() {
+                platform.request_frame(window);
+            }
         }
         if icon_changed {
             self.show_icon(platform);

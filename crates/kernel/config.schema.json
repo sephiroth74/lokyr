@@ -553,6 +553,16 @@
           "x-example": "\"always\"",
           "x-example-comment": "system | always | never: the panes' scroll bars"
         },
+        "smooth-scroll": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether a trackpad, a mouse's wheel and the scroll bar scroll the panes by pixels, rather than by whole rows.",
+          "x-platforms": ["macos"],
+          "x-since": "next",
+          "x-guide": "Whether a trackpad, a mouse's wheel and the scroll bar scroll the panes by pixels, rather than by whole rows.\n\n| Values | Default |\n|---|---|\n| `true`, `false` | `false` |\n\n- With `true`, the text follows your fingers on a trackpad or a Magic Mouse, and keeps gliding as you let go, as macOS's momentum has it. A mouse wheel's step glides over its rows, and a drag of the [scroll bar](#scrollbar)'s knob moves the text by pixels.\n- The keys still scroll by whole rows: Page Up and Page Down, the jumps between prompts and the search's matches. The view stops at the scrollback's top and at the screen.\n- A program that takes the wheel, such as vim or less on its own screen, still gets whole steps.\n- While you scroll, Lokyr draws a frame for each scroll event, 60 or 120 a second, rather than one for each row that the text crosses; at rest, it draws none.\n- It applies as you save the file.",
+          "x-example": "true",
+          "x-example-comment": "true | false: scroll by pixels"
+        },
         "background-opacity": {
           "type": "number",
           "default": 1,

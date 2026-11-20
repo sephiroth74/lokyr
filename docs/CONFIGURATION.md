@@ -99,6 +99,7 @@ padding-x = 6                        # points, from 0 to 100
 padding-y = 4
 gutter = false                       # true | false: the commands' marks at the panes' left
 scrollbar = "always"                 # system | always | never: the panes' scroll bars
+smooth-scroll = true                 # true | false: scroll by pixels
 background-opacity = 0.9             # from 0 to 1
 background-blur = 20                 # points, from 0 to 100
 title-size = false                   # true | false: the grid's size in the title
@@ -857,6 +858,22 @@ Default: `"system"`.
 - A view that shows every row, and a program's own screen, as vim's or less's, have none.
 - Its colors are the theme's: `scrollbar`, the knob's, `scrollbar.hover`, while a drag holds it, `scrollbar.track`, and `scrollbar.mark` and `scrollbar.mark.current`, the matches'.
 - It applies as you save the file. A change of macOS's settings shows at the window's next frame, as you come back to it.
+
+### `smooth-scroll`
+
+<sub>Platforms: macOS · not released yet</sub>
+
+Whether a trackpad, a mouse's wheel and the scroll bar scroll the panes by pixels, rather than by whole rows.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- With `true`, the text follows your fingers on a trackpad or a Magic Mouse, and keeps gliding as you let go, as macOS's momentum has it. A mouse wheel's step glides over its rows, and a drag of the [scroll bar](#scrollbar)'s knob moves the text by pixels.
+- The keys still scroll by whole rows: Page Up and Page Down, the jumps between prompts and the search's matches. The view stops at the scrollback's top and at the screen.
+- A program that takes the wheel, such as vim or less on its own screen, still gets whole steps.
+- While you scroll, Lokyr draws a frame for each scroll event, 60 or 120 a second, rather than one for each row that the text crosses; at rest, it draws none.
+- It applies as you save the file.
 
 ### `background-opacity`
 

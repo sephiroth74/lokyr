@@ -72,6 +72,11 @@ pub struct Snapshot {
     /// The rows that the folds take out of the list, all of them and those
     /// above the view's first row.
     folded: (usize, usize),
+    /// Whether the lines end with the row past the view's last, as the view
+    /// is scrolled a share of a row past its first.
+    below: bool,
+    /// The share of a row that the view is scrolled past its first row.
+    fraction: f32,
 }
 
 /// The cursor, as a renderer draws it.
@@ -109,15 +114,34 @@ impl Snapshot {
         self.cols
     }
 
-    /// The view's rows, as many as the screen's.
+    /// The view's rows, as many as the screen's, without the row past its
+    /// last that [`Snapshot::below`] gives.
     pub fn rows(&self) -> u16 {
         // The screen has at most `u16::MAX` rows.
-        self.lines.len() as u16
+        (self.lines.len() - usize::from(self.below)) as u16
     }
 
-    /// Row `y` of the view.
+    /// Row `y` of the view, or, at [`Snapshot::rows`], the row past its
+    /// last while it has one.
     pub fn line(&self, y: u16) -> &Line {
         &self.lines[usize::from(y)]
+    }
+
+    /// The share of a row, from 0 to under 1, that the view is scrolled
+    /// past its first row, as [`Terminal::viewport_fraction`] told it: the
+    /// view shows its rows a share of a row up, and the row past its last,
+    /// [`Snapshot::below`], at its bottom.
+    pub fn fraction(&self) -> f32 {
+        self.fraction
+    }
+
+    /// The row past the view's last, which the view shows at its bottom
+    /// while it is scrolled a share of a row past its first: its line, at
+    /// the view's row [`Snapshot::rows`], whose selection, decorations,
+    /// gutter's marks, blocks, matches and images the snapshot tells as
+    /// those of the view's rows, at that row.
+    pub fn below(&self) -> Option<&Line> {
+        self.below.then(|| &self.lines[self.lines.len() - 1])
     }
 
     /// How many rows the view is above the screen's top, as
@@ -478,6 +502,12 @@ impl Terminal {
         let in_view = usize::from(self.cursor().y) + offset;
         let top = self.screen().rows.scrollback_rows() - offset;
         self.snapshot_state(snapshot, in_view, &self.view_map(top, &[]));
+        // The row past the view's last, as the view is scrolled a share of
+        // a row past its first: never at the screen, which has none below.
+        let fraction = self.viewport_fraction();
+        let below = fraction > 0.0 && offset > 0;
+        snapshot.fraction = if below { fraction } else { 0.0 };
+        snapshot.below = below;
         let origin = self.origin();
         // A view of folds before, whose lines are other rows: every line
         // is copied anew.
@@ -488,7 +518,7 @@ impl Terminal {
         }
         let rows = &mut self.screen_mut().rows;
         let (cols, height) = (rows.cols(), rows.rows());
-        let lines = usize::from(height);
+        let lines = usize::from(height) + usize::from(below);
         let scrollback = rows.scrollback_rows();
         // How far the view's first row moved down since the last update,
         // as the lines that the snapshot has move up; up when negative.
@@ -545,7 +575,8 @@ impl Terminal {
             }
         }
         for y in above..lines {
-            // A row of the screen, `offset` rows down from the view's.
+            // A row of the screen, `offset` rows down from the view's: the
+            // row below too, as the view is above the screen.
             let (page, row) = rows.screen_row_mut((y - offset) as u16);
             if fresh(y) || page.row(row).has(RowFlag::Dirty) {
                 snapshot.lines[y].copy(page, row);
@@ -607,7 +638,8 @@ impl Terminal {
     fn snapshot_rest(&mut self, snapshot: &mut Snapshot) {
         let top = snapshot.scrollback - snapshot.offset.min(snapshot.scrollback);
         let view = std::mem::take(&mut snapshot.view);
-        let map = self.view_map(top, &view);
+        // The view's rows, and the row below while it has one.
+        let map = ViewMap::new(self.row_number(0), top, snapshot.lines.len(), &view);
         snapshot.selection = self.selection_in_snapshot(&map, &snapshot.changed);
         snapshot.decorations = self.decorated_view(&map);
         (snapshot.gutter, snapshot.blocks) = self.gutter_view(&map);
@@ -743,6 +775,9 @@ impl Terminal {
             .position(|&row| row == ViewRow::Row(index))
             .unwrap_or(usize::MAX);
         self.snapshot_state(snapshot, in_view, &self.view_map(view.top, &view.rows));
+        // A view of folds scrolls by whole rows alone.
+        snapshot.fraction = 0.0;
+        snapshot.below = false;
         let origin = super::Origin {
             epoch: self.primary.rows.epoch(),
             top: self.row_number(view.top),
@@ -881,6 +916,8 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         sticky_of: None,
         view: Vec::new(),
         folded: (0, 0),
+        below: false,
+        fraction: 0.0,
     }
 }
 
@@ -1442,3 +1479,6 @@ mod tests {
 
 #[cfg(test)]
 mod sticky_tests;
+
+#[cfg(test)]
+mod fraction_tests;

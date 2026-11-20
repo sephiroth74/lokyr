@@ -1334,6 +1334,26 @@ impl Pane {
         }
     }
 
+    /// Scrolls the view by `rows`, up into the scrollback where positive,
+    /// of a share of a row too, as a trackpad's points scroll it: whole
+    /// rows move the view, and the rest is the share of a row that the
+    /// next snapshot shows the view scrolled past its first row, of the row
+    /// past its last, [`Snapshot::fraction`]; the view's reads and its
+    /// event of whole rows, as [`Pane::viewport`] tells.
+    pub fn scroll_by(&self, rows: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_by(rows);
+        }
+    }
+
+    /// Lets the view's share of a row go, its rows where they are, as
+    /// scrolling by pixels turns off.
+    pub fn drop_fraction(&self) {
+        if let Some(session) = &self.session {
+            session.drop_fraction();
+        }
+    }
+
     /// Whether the program's output brings the view back to the screen.
     pub fn scroll_on_output(&self) -> bool {
         self.session
