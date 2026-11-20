@@ -404,7 +404,7 @@ type Node = {
     search: boolean?,
     link: boolean?, -- for button nodes: a link's look, its label underlined in the accent's color, of no box, the pointer a hand over it
     -- For button nodes, what its press does: "plain", by default; "default", the view's main action, of the accent's
-    -- fill, which Return presses wherever the view's focus is but in a field or a list; "destructive", an action that
+    -- fill, which Return presses wherever the view's focus is but in a field or a list, none of a themed part's; "destructive", an action that
     -- removes something, its label red.
     variant: ("plain" | "default" | "destructive")?,
     keycaps: boolean?, -- for button nodes: its label a shortcut, as macOS writes it, drawn as key caps

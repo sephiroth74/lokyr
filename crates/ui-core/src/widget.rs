@@ -334,7 +334,9 @@ pub fn pops_up(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<bool> {
 /// default button takes it: it presses the tree's first default button
 /// that is not disabled, but from a list, which takes Return itself, as a
 /// field does before; `None` of another key, or of a tree of no default
-/// button. A release or a repeat of it takes nothing.
+/// button. A part of the tree drawn in a theme of its own, as a theme's
+/// preview of real controls, holds none. A release or a repeat of it takes
+/// nothing.
 pub fn default_key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<NodeEvent>> {
     let returns = matches!(key.key, Key::Enter | Key::Keypad(Keypad::Enter)) && plain(key);
     if !returns || matches!(tree.kind(node), Some(Kind::List(_) | Kind::Field(_))) {
@@ -354,10 +356,14 @@ pub fn default_key(tree: &Tree, node: NodeId, key: &KeyEvent<'_>) -> Option<Vec<
 }
 
 /// The first node of `id`'s subtree in `tree`, in its order, of a kind that
-/// `wanted` takes.
+/// `wanted` takes, outside the parts drawn in a theme of their own, which
+/// are previews.
 fn first(tree: &Tree, id: NodeId, wanted: &dyn Fn(&Kind) -> bool) -> Option<NodeId> {
     if tree.kind(id).is_some_and(wanted) {
         return Some(id);
+    }
+    if matches!(tree.kind(id), Some(Kind::Themed(_))) {
+        return None;
     }
     tree.children(id)
         .iter()
@@ -652,6 +658,26 @@ mod tests {
         assert_eq!(
             typed(&held, cancel, Key::Enter),
             Some(vec![("cancel".to_owned(), UiEventKind::Click)])
+        );
+        // A default button of a themed preview presses nothing.
+        let mut previewed = Tree::new();
+        previewed
+            .update(&Node::container(vec![
+                Node::toggle("regex", false).key("regex"),
+                Node::themed(
+                    "Lokyr Dark",
+                    vec![button("Back Up", ButtonVariant::Default, false).key("sample")],
+                ),
+            ]))
+            .unwrap();
+        let regex = previewed.by_key(&"regex".into()).unwrap();
+        assert_eq!(
+            default_key(
+                &previewed,
+                regex,
+                &pressed_key(Key::Enter, KeyAction::Press, Mods::NONE)
+            ),
+            None
         );
         // A modifier, a release: nothing, and nothing told.
         let shifted = pressed_key(
