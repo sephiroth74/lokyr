@@ -58,13 +58,13 @@ pub struct Snapshot {
     matches_shown: bool,
     /// The images' placements that the view shows, the lowest first.
     images: Vec<super::Placed>,
-    /// The prompt rows of the block whose output the view's top shows,
+    /// The prompt rows of the block whose rows the view's top shows,
     /// pinned over the view's first rows, as a snapshot of their own.
     sticky: Option<Box<Snapshot>>,
-    /// The command of the pinned rows and the number of their first, the
-    /// prompt's, and the epoch of the rows' numbers that they were copied
-    /// of, with how many.
-    sticky_of: Option<(u64, i64, u64, u16)>,
+    /// The command of the pinned rows, the number of its prompt's row and
+    /// of the first pinned row, and the epoch of the rows' numbers that they
+    /// were copied of, with how many.
+    sticky_of: Option<(u64, i64, i64, u64, u16)>,
     /// The view's rows, of folds: each the list's row or a fold's
     /// placeholder; none of no fold, as the view's rows are the list's from
     /// its first.
@@ -187,20 +187,21 @@ impl Snapshot {
         self.folded
     }
 
-    /// The prompt rows of the block whose output the view's top shows, as
+    /// The prompt rows of the block whose rows the view's top shows, as
     /// the last update found them, while the embedder asks for them: a
     /// snapshot of those rows alone, of the view's colors, which a renderer
-    /// draws over the view's first rows; none while the block's command
-    /// line shows, on the alternate screen, or of no command.
+    /// draws over the view's first rows; none while the prompt's first row
+    /// shows, on the alternate screen, or of no command.
     pub fn sticky(&self) -> Option<&Snapshot> {
         self.sticky.as_deref()
     }
 
-    /// The command of the pinned rows and the number of their first, the
-    /// row of its prompt, to which a click on them scrolls.
+    /// The command of the pinned rows and the number of its prompt's row,
+    /// to which a click on them scrolls.
     pub fn sticky_prompt(&self) -> Option<(u64, i64)> {
         self.sticky.as_ref()?;
-        self.sticky_of.map(|(command, row, ..)| (command, row))
+        self.sticky_of
+            .map(|(command, prompt, ..)| (command, prompt))
     }
 
     /// The map of the view as the last update found it, none before the
@@ -452,9 +453,11 @@ pub const MOST_STICKY_ROWS: u16 = 3;
 
 impl Terminal {
     /// Whether each snapshot pins, over the view's first rows, the prompt
-    /// rows of the block whose output the view's top shows, the prompt's
-    /// and the command's line, as a sticky header of the block, while the
-    /// command's line is above the view, on the primary screen.
+    /// rows of the block whose rows the view's top shows, the prompt's and
+    /// the command's line, as a sticky header of the block, from the
+    /// moment the prompt's first row leaves the view's top, on the primary
+    /// screen; the block's end pushes them up, so that they cover no row of
+    /// the next block.
     pub fn set_sticky_prompts(&mut self, on: bool) {
         self.sticky_prompts = on;
     }
@@ -616,25 +619,23 @@ impl Terminal {
         snapshot.view = view;
     }
 
-    /// Pins in `snapshot` the prompt rows of the block whose output the
-    /// view `map`'s top shows, while the embedder asks for them: those from
-    /// the prompt's row to the last of the command's line, the row before
-    /// its output's mark, or the mark's own past its first column, three at
-    /// most and fewer than the view's rows, all above the view; copied
-    /// again only as the block, its rows' epoch or their count change, as
-    /// rows above the view are the scrollback's, which only a reflow writes
-    /// anew.
+    /// Pins in `snapshot` the prompt rows of the block whose rows the view
+    /// `map`'s top shows, while the embedder asks for them, as
+    /// [`Terminal::sticky_rows`] finds them; copied again only as the
+    /// block, its first pinned row, its rows' epoch or their count change,
+    /// as a block's prompt rows, above its output, change only as a reflow
+    /// writes them anew.
     fn sticky_view(&self, snapshot: &mut Snapshot, map: &ViewMap) {
         let found = (self.sticky_prompts && !self.alternate_active)
             .then(|| self.sticky_rows(map))
             .flatten();
-        let Some((command, first, rows)) = found else {
+        let Some((command, prompt, first, rows)) = found else {
             snapshot.sticky = None;
             snapshot.sticky_of = None;
             return;
         };
         let rows_list = &self.primary.rows;
-        let of = (command, first, rows_list.epoch(), rows);
+        let of = (command, prompt, first, rows_list.epoch(), rows);
         let mut pinned = snapshot.sticky.take().unwrap_or_default();
         if snapshot.sticky_of != Some(of) || pinned.cols != rows_list.cols() {
             let Some(index) = self.row_index(first) else {
@@ -662,26 +663,52 @@ impl Terminal {
         snapshot.sticky = Some(pinned);
     }
 
-    /// The command whose block holds the view `map`'s first row, of its
-    /// output, and the number and the count of its prompt rows, as
-    /// [`Terminal::sticky_view`] pins them; none while the command's line
-    /// shows or of no command.
-    fn sticky_rows(&self, map: &ViewMap) -> Option<(u64, i64, u16)> {
+    /// The command whose block holds the view `map`'s first row, the
+    /// number of its prompt's row, and the number of the first row that
+    /// [`Terminal::sticky_view`] pins with their count: the block's prompt
+    /// rows, from the prompt's row to the last of the command's line, the
+    /// row before its output's mark, or the mark's own past its first
+    /// column, three at most and fewer than the view's rows, as a sticky
+    /// header that stays at the view's top once the prompt's first row
+    /// leaves it, over the rows that scroll under it; and, as the block's
+    /// last row comes nearer the top than they are many, their last rows
+    /// alone, as the block's end pushes them up; none while the prompt's
+    /// first row shows, or of no command, or of none whose output came.
+    fn sticky_rows(&self, map: &ViewMap) -> Option<(u64, i64, i64, u16)> {
         let top = map.top();
         let command = self.command_at(top)?;
         let (_, prompt) = command.prompt?;
         let (column, output) = command.output?;
+        if prompt >= top {
+            return None;
+        }
         // The command's line ends at the row before its output's mark, or
         // at the mark's own past its first column.
         let line_end = if column == 0 { output - 1 } else { output };
-        if prompt >= top || line_end >= top {
-            return None;
-        }
-        let rows = u16::try_from(line_end - prompt + 1)
-            .ok()?
-            .min(MOST_STICKY_ROWS)
-            .min(self.rows.saturating_sub(1));
-        (rows > 0).then_some((command.id, prompt, rows))
+        let rows = (line_end - prompt + 1)
+            .min(i64::from(MOST_STICKY_ROWS))
+            .min(i64::from(self.rows) - 1);
+        // The block's last row: its end's, past its first column, or the
+        // row before; of a command that has not ended, the row before the
+        // next command's first.
+        let last = match command.end {
+            Some((column, end)) => end - i64::from(column == 0),
+            None => self
+                .commands_meeting(top, top.saturating_add(rows))
+                .into_iter()
+                .find(|next| next.id != command.id)
+                .and_then(|next| {
+                    [next.prompt, next.input, next.output, next.end]
+                        .into_iter()
+                        .flatten()
+                        .next()
+                })
+                .map_or(i64::MAX, |(_, row)| row - 1),
+        };
+        let room = last.saturating_sub(top).saturating_add(1);
+        let shown = rows.min(room);
+        let shown = u16::try_from(shown).ok().filter(|&shown| shown > 0)?;
+        Some((command.id, prompt, prompt + rows - i64::from(shown), shown))
     }
 
     /// Brings `snapshot` up to date with `view`, a view of folds of the

@@ -86,12 +86,17 @@ fn a_block_s_prompt_rows_pin_while_its_output_fills_the_view_s_top() {
     assert_eq!(text(&snapshot, 0), "ls 6");
     terminal.scroll_viewport(Scroll::Row(output));
     assert_eq!(pinned(&mut terminal, &mut snapshot).len(), 2);
-    // The command's line at the top, or the prompt's, pins nothing.
+    // The prompt's first row gone, the command's line at the top: pinned
+    // already, over it, as a sticky header.
     terminal.scroll_viewport(Scroll::Row(output - 1));
-    assert!(pinned(&mut terminal, &mut snapshot).is_empty());
-    assert_eq!(snapshot.sticky_prompt(), None);
+    assert_eq!(
+        pinned(&mut terminal, &mut snapshot),
+        ["user 1 ~/dir", "$ ls"]
+    );
+    // The prompt's first row at the top pins nothing.
     terminal.scroll_viewport(Scroll::Row(prompt));
     assert!(pinned(&mut terminal, &mut snapshot).is_empty());
+    assert_eq!(snapshot.sticky_prompt(), None);
     // Not asked for, none; nor on the alternate screen.
     terminal.scroll_viewport(Scroll::Row(output + 5));
     terminal.set_sticky_prompts(false);
@@ -122,4 +127,70 @@ fn a_long_prompt_pins_its_first_three_rows_and_a_short_view_fewer() {
     // A view of three rows pins two, so that one row shows.
     terminal.resize(40, 3);
     assert_eq!(pinned(&mut terminal, &mut snapshot).len(), 2);
+}
+
+#[test]
+fn the_block_s_end_pushes_its_pinned_rows_up_off_the_next_block() {
+    let mut terminal = terminal();
+    feed(&mut terminal, "seq\r\n\x1b]133;C\x07");
+    for n in 1..=20 {
+        feed(&mut terminal, &format!("seq {n}\r\n"));
+    }
+    feed(
+        &mut terminal,
+        "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+    );
+    let mut snapshot = Snapshot::default();
+    let ls = terminal.commands()[0].clone();
+    let prompt = ls.prompt.unwrap().1;
+    let end = ls.end.unwrap().1;
+    // The block's last two rows at the top: both rows pinned.
+    terminal.scroll_viewport(Scroll::Row(end - 2));
+    assert_eq!(
+        pinned(&mut terminal, &mut snapshot),
+        ["user 1 ~/dir", "$ ls"]
+    );
+    // Its last row alone: the command's line alone, which the next
+    // block's prompt shows under.
+    terminal.scroll_viewport(Scroll::Row(end - 1));
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ ls"]);
+    assert_eq!(snapshot.sticky_prompt(), Some((ls.id, prompt)));
+    assert_eq!(text(&snapshot, 0), "ls 50");
+    assert_eq!(text(&snapshot, 1), "$ seq");
+    // The next block's prompt at the top pins nothing.
+    terminal.scroll_viewport(Scroll::Row(end));
+    assert!(pinned(&mut terminal, &mut snapshot).is_empty());
+}
+
+#[test]
+fn a_command_that_did_not_end_ends_its_pinned_rows_at_the_next_prompt() {
+    let options = Options {
+        scrollback: Scrollback {
+            limit: 1 << 30,
+            budget: None,
+        },
+        ..Options::default()
+    };
+    let mut terminal = Terminal::new(40, 10, options);
+    // `make` of no end's mark, then `seq`, then the prompt.
+    feed(
+        &mut terminal,
+        "\x1b]133;A\x07user ~/dir\r\n$ \x1b]133;B\x07make\r\n\x1b]133;C\x07",
+    );
+    for n in 1..=30 {
+        feed(&mut terminal, &format!("make {n}\r\n"));
+    }
+    feed(&mut terminal, &command(1, "seq", 20));
+    feed(&mut terminal, "\x1b]133;A\x07$ \x1b]133;B\x07");
+    terminal.set_sticky_prompts(true);
+    let mut snapshot = Snapshot::default();
+    let next = terminal.commands()[1].prompt.unwrap().1;
+    terminal.scroll_viewport(Scroll::Row(next - 2));
+    assert_eq!(
+        pinned(&mut terminal, &mut snapshot),
+        ["user ~/dir", "$ make"]
+    );
+    terminal.scroll_viewport(Scroll::Row(next - 1));
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ make"]);
+    assert_eq!(text(&snapshot, 1), "$ seq");
 }

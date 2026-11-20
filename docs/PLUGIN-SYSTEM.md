@@ -942,8 +942,9 @@ type Cx = {
     -- The commands' blocks of every pane drawn so, while the plugin runs, each look that any plugin asks: the gutter's
     -- bar of a command along its block's rows (`bars`), a hairline at the top of each block, across the pane, of the
     -- theme's `blocks.divider` (`dividers`), a failed block's rows tinted of `blocks.failed` (`failed_tint`), and the
-    -- prompt rows of the block whose output the view's top shows pinned over the view's first rows, three at most, a line
-    -- of `blocks.divider` under them, which a click scrolls to the prompt (`prompt_rows`) · not released yet.
+    -- prompt rows of the block whose rows the view's top shows pinned over the view's first rows once the prompt's first
+    -- row leaves the view's top, three at most, which the block's end pushes up, a line of `blocks.divider` under them,
+    -- which a click scrolls to the prompt (`prompt_rows`) · not released yet.
     set_block_looks: (looks: { bars: boolean?, dividers: boolean?, failed_tint: boolean?, prompt_rows: boolean? }) -> (boolean, Error?),
     -- Selects the block of a pane's command, by its id, or none: the host tints its rows, of the theme's
     -- `blocks.selected.bg`, and the keys' context holds `namespace.selected` while the pane has the keyboard, until the
