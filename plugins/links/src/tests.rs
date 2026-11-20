@@ -1477,3 +1477,41 @@ fn a_hint_across_two_reads_of_a_tall_view_is_found_once() {
     let long = format!("https://lokyr.dev/{}", "b".repeat(40));
     assert_eq!(texts, ["https://lokyr.dev/a".to_owned(), long]);
 }
+
+#[test]
+fn a_wrapped_line_of_no_space_past_the_read_keeps_its_hints_but_those_at_its_edges() {
+    // A minified document of 100 rows, of no space, two URLs in the view's
+    // rows: both hinted, the read cut past the view.
+    let mut text = String::from("{\"a\":\"");
+    text.push_str(&"x".repeat(80 * 2));
+    text.push_str("\",\"one\":\"https://lokyr.dev/one\",\"b\":\"");
+    text.push_str(&"x".repeat(80 * 2));
+    text.push_str("\",\"two\":\"https://lokyr.dev/two\",\"c\":\"");
+    text.push_str(&"y".repeat(80 * 100 - text.chars().count() - 2));
+    text.push_str("\"}");
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.grid = (80, 10);
+    pane.held = 0..100;
+    pane.viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 10,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+        folds: Vec::new(),
+    });
+    wrapped(&mut host, PANE, 0, 80, &text);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let mut texts: Vec<String> = links
+        .hints
+        .iter()
+        .flat_map(|shown| shown.hints.iter().map(|hint| hint.text.clone()))
+        .collect();
+    texts.sort();
+    assert_eq!(texts, ["https://lokyr.dev/one", "https://lokyr.dev/two"]);
+}

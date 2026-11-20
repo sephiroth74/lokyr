@@ -868,14 +868,14 @@ fn screen_hints(
             let cut_before = row - first_row >= reach as i64;
             let cut_after = last_row - row >= reach as i64;
             let chars: Vec<char> = line.text.chars().collect();
-            let first_word_end = chars
-                .iter()
-                .position(|c| c.is_whitespace())
-                .unwrap_or(chars.len());
+            // Of no space, as a minified document wrapped over the read, the
+            // word is the whole read: only the hints that reach its edges,
+            // which the cut may have cut.
+            let first_word_end = chars.iter().position(|c| c.is_whitespace()).unwrap_or(1);
             let last_word_start = chars
                 .iter()
                 .rposition(|c| c.is_whitespace())
-                .map_or(0, |space| space + 1);
+                .map_or(chars.len().saturating_sub(1), |space| space + 1);
             let from = row;
             let since = resume.take();
             // The next read from the cut word's row, so that a hint across the
