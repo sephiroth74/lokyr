@@ -11,6 +11,7 @@ pub mod claude_code;
 pub mod commands;
 pub mod config;
 pub mod diagnostics;
+mod git;
 pub mod keymap;
 pub mod l10n;
 pub mod paste;

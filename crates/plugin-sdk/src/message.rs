@@ -230,6 +230,27 @@ pub enum Request {
     /// a file of its own, which it does not without a state's folder: a
     /// plugin that shows something once in a while shows nothing then.
     KeepsState,
+    /// Writes `bytes` as the plugin's temporary file `name`, in a folder of
+    /// the plugin's own that the host empties at the quit and at the start,
+    /// a file of the same name in place of the old one, marked as come from
+    /// elsewhere, so that the system asks before it opens as a program: the
+    /// host answers with its path, as an editor opens it. Within
+    /// [`TemporaryFiles::check`](crate::host::TemporaryFiles::check)'s
+    /// bounds; no capability, as the plugin's folder is its own.
+    TempFile {
+        /// The file's name.
+        name: String,
+        /// Its bytes.
+        bytes: Bytes,
+    },
+    /// The branch of the git repository that holds the folder of this
+    /// absolute path, as its `HEAD` tells, which the host reads up from the
+    /// folder, a worktree's too, without running git: a detached head's
+    /// short hash; none out of a repository.
+    GitBranch {
+        /// The folder's absolute path.
+        folder: String,
+    },
     /// The AI agents that run in the panes, of every window, in the
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
@@ -1275,7 +1296,9 @@ impl Request {
             | Self::ScreenCells(_)
             | Self::RowCells { .. }
             | Self::EditedLine(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
+            Self::WorkingDirectory(_) | Self::Agents | Self::GitBranch { .. } => {
+                Some(Capability::ProcessRead)
+            }
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. }
             | Self::CommandLine { .. }
@@ -1396,6 +1419,7 @@ impl Request {
             | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
+            | Self::TempFile { .. }
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::ShowColorPanel { .. }
@@ -1457,6 +1481,8 @@ impl Request {
             | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
+            | Self::TempFile { .. }
+            | Self::GitBranch { .. }
             | Self::Agents
             | Self::Plugins
             | Self::Settings
@@ -2196,7 +2222,9 @@ impl Request {
             | Self::EditedLine { .. }
             | Self::KeysOf { .. }
             | Self::Message { .. }
-            | Self::PaneTitle { .. } => "text",
+            | Self::PaneTitle { .. }
+            | Self::TempFile { .. }
+            | Self::GitBranch { .. } => "text",
             Self::FocusedWindow { .. } | Self::OpenQuickWindow { .. } => "window",
             Self::FocusedPane { .. } | Self::Split { .. } => "pane",
             Self::LineText { .. } => "line",
@@ -2642,6 +2670,22 @@ mod tests {
             .name(),
             "saved"
         );
+        // A temporary file of the plugin's own, a read of none, its path
+        // the answer; a folder's branch, of `process-read`.
+        let temporary = Request::TempFile {
+            name: "x.txt".to_owned(),
+            bytes: Bytes(Vec::new()),
+        };
+        assert!(temporary.capabilities().is_empty());
+        assert_eq!(
+            (temporary.effect(), temporary.answer()),
+            (Effect::Read, "text")
+        );
+        let branch = Request::GitBranch {
+            folder: "/".to_owned(),
+        };
+        assert_eq!(branch.capabilities(), [Capability::ProcessRead]);
+        assert_eq!((branch.effect(), branch.answer()), (Effect::Read, "text"));
         // An image of the plugin's own cells, a read of none.
         let image = Request::RenderImage(crate::image::ImageSpec::default());
         assert!(image.capabilities().is_empty());

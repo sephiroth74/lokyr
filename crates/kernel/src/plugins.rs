@@ -672,6 +672,8 @@ struct State {
     written: Data,
     /// Its state on the disk.
     stored: Stored,
+    /// Its temporary files.
+    temporary: Temporary,
     /// Whether its section of the config turns it on, as by default.
     wanted: bool,
     /// The plugin that replaces it, by its name, while one that runs does,
@@ -1046,6 +1048,20 @@ struct Stored {
     held: Option<Data>,
 }
 
+/// The function that marks a file that a plugin wrote as come from
+/// elsewhere, so that the system asks before it opens as a program, as the
+/// platform gives it.
+pub type Mark = fn(&std::path::Path) -> std::io::Result<()>;
+
+/// A plugin's temporary files: their folder, its own in the host's folder
+/// of them, with the function that marks each, none without a state's
+/// folder; and the tally of those that it wrote, which their bounds count.
+#[derive(Debug, Default)]
+struct Temporary {
+    folder: Option<(PathBuf, Mark)>,
+    files: host::TemporaryFiles,
+}
+
 impl State {
     /// Whether its manifest declares that it fills `slot`.
     fn fills(&self, slot: Slot) -> bool {
@@ -1089,6 +1105,9 @@ pub struct Plugins {
     serve_for: Option<Duration>,
     /// The app's state directory, which the plugins' states are kept in.
     state_directory: Option<PathBuf>,
+    /// The folder of the plugins' temporary files, each plugin's in a
+    /// folder of its own, with the function that marks them.
+    temporary_directory: Option<(PathBuf, Mark)>,
     /// The capabilities that the host withholds and that a declared
     /// plugin's manifest asked for, by the plugin's name, which
     /// [`Plugins::take_withheld`] tells.
@@ -1726,6 +1745,10 @@ impl Plugins {
             .state_directory
             .as_ref()
             .map(|directory| state_file(directory, &namespace));
+        let temporary = self
+            .temporary_directory
+            .as_ref()
+            .map(|(directory, mark)| (directory.join(&namespace), *mark));
         let (granted, uses) = declared.unzip();
         let wanted = enabled_by_default(manifest.as_ref());
         self.entries.push(Entry {
@@ -1760,6 +1783,10 @@ impl Plugins {
                 config: data(&Value::Object(config)),
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
+                temporary: Temporary {
+                    folder: temporary,
+                    files: host::TemporaryFiles::default(),
+                },
                 wanted,
                 replaced_by: None,
                 ran: false,
@@ -1817,6 +1844,38 @@ impl Plugins {
             };
         }
         self.state_directory = directory;
+    }
+
+    /// Gives the host the folder of the plugins' temporary files, each
+    /// plugin's in a folder of its namespace's within it, and the function
+    /// that marks each file as come from elsewhere: emptied now, as the
+    /// app starts, of the files of a run that did not quit; none, as
+    /// without a state's folder, fails a temporary file.
+    pub fn set_temporary_directory(&mut self, directory: Option<PathBuf>, mark: Mark) {
+        if let Some(directory) = &directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        for entry in &mut self.entries {
+            entry.state.temporary = Temporary {
+                folder: directory
+                    .as_ref()
+                    .map(|directory| (directory.join(&entry.state.namespace), mark)),
+                files: host::TemporaryFiles::default(),
+            };
+        }
+        self.temporary_directory = directory.map(|directory| (directory, mark));
+    }
+
+    /// Takes the plugins' temporary files away, their folder whole, as the
+    /// app quits.
+    pub fn empty_temporary(&self) {
+        if let Some((directory, _)) = &self.temporary_directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
     }
 
     /// Checks the plugins' sections of `config` against their schemas: a
@@ -6233,6 +6292,30 @@ impl Host<'_, '_> {
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),
             Asked::Now => Response::Now((self.context.local_time)()),
+            Asked::TempFile { name, bytes } => {
+                if self.looking {
+                    return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+                }
+                let Some((folder, mark)) = self.state.temporary.folder.clone() else {
+                    return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+                };
+                self.state.temporary.files.check(&name, bytes.0.len())?;
+                // Written whole, of the platform's mark before it takes its
+                // name, on the main thread: a few milliseconds of its most.
+                let path = folder.join(&name);
+                lokyr_pkg_model::write_whole_marked(&path, &bytes.0, mark).map_err(|error| {
+                    Error::new(
+                        Code::Failed,
+                        format!("the temporary file `{name}` was not written: {error}"),
+                    )
+                })?;
+                self.state.temporary.files.insert(&name, bytes.0.len());
+                Response::Text(Some(path.to_string_lossy().into_owned()))
+            }
+            Asked::GitBranch { folder } => {
+                host::check_absolute_folder(&folder)?;
+                Response::Text(crate::git::branch(std::path::Path::new(&folder)))
+            }
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Settings => {
                 let mut sections = crate::config::schema::sections(self.context.config);

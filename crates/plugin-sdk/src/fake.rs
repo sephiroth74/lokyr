@@ -580,6 +580,15 @@ pub struct FakeHost {
     /// The system's time and the local time zone's offset that a read of
     /// the time gives.
     local_time: host::LocalTime,
+    /// The folder of the host's temporary files, of none as without a
+    /// state's folder, and the temporary files that the plugin wrote, their
+    /// bounds' tally and their bytes by their names, kept in memory.
+    temporary_folder: Option<std::path::PathBuf>,
+    temporary: host::TemporaryFiles,
+    temporary_bytes: BTreeMap<String, Vec<u8>>,
+    /// The git branches of the repositories' folders, as the test gave
+    /// them, which a folder within one takes.
+    git_branches: BTreeMap<String, String>,
     /// The AI agents that a read of the agents gives, as the test gave them.
     agents: Vec<host::AgentInfo>,
     /// The plugins that a read of the plugins gives, as the test gave them,
@@ -719,6 +728,10 @@ impl FakeHost {
             fonts: fonts(),
             day: DAY,
             local_time: LOCAL_TIME,
+            temporary_folder: Some(std::path::PathBuf::from(TEMPORARY_FOLDER)),
+            temporary: host::TemporaryFiles::default(),
+            temporary_bytes: BTreeMap::new(),
+            git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
             settings: host::Settings::default(),
@@ -1190,6 +1203,37 @@ impl FakeHost {
     /// Shows a notice of the app's, or none, which a read tells.
     pub fn set_notice_shows(&mut self, shows: bool) -> &mut Self {
         self.notice = shows;
+        self
+    }
+
+    /// Keeps the host's temporary files in `folder`, [`TEMPORARY_FOLDER`]
+    /// by default, which their paths are of, or none, as the app without a
+    /// state's folder, when a temporary file fails; the fake keeps their
+    /// bytes in memory, which [`FakeHost::temporary_file`] gives.
+    pub fn set_temporary_folder(&mut self, folder: Option<std::path::PathBuf>) -> &mut Self {
+        self.temporary_folder = folder;
+        self
+    }
+
+    /// The bytes of the plugin's temporary file `name`, as it wrote them
+    /// last; none of a file that it did not write.
+    pub fn temporary_file(&self, name: &str) -> Option<&[u8]> {
+        self.temporary_bytes.get(name).map(Vec::as_slice)
+    }
+
+    /// Makes the folder of the absolute path `folder` a git repository's
+    /// of the branch `branch`, or no repository's of none, which a read of
+    /// the branch of a folder within it gives.
+    pub fn set_git_branch(&mut self, folder: &str, branch: Option<&str>) -> &mut Self {
+        match branch {
+            Some(branch) => {
+                self.git_branches
+                    .insert(folder.to_owned(), branch.to_owned());
+            }
+            None => {
+                self.git_branches.remove(folder);
+            }
+        }
         self
     }
 
@@ -4118,6 +4162,25 @@ impl Calling<'_> {
     /// processes, the name of its folder, as the app's; what a plugin that
     /// does not read them learns of it, of which a change that it cannot
     /// read tells it nothing.
+    /// Writes the plugin's temporary file `name` of `bytes`, as the app's
+    /// host does, in memory: its path in the folder of the host's
+    /// temporary files.
+    fn temp_file(&mut self, name: &str, bytes: &[u8]) -> Result<Response, Error> {
+        if self.looking {
+            return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+        }
+        let Some(folder) = self.host.temporary_folder.clone() else {
+            return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+        };
+        self.host.temporary.check(name, bytes.len())?;
+        self.host.temporary.insert(name, bytes.len());
+        self.host
+            .temporary_bytes
+            .insert(name.to_owned(), bytes.to_vec());
+        let path = host::temporary_path(&folder, self.host.namespace(), name);
+        Ok(Response::Text(Some(path.to_string_lossy().into_owned())))
+    }
+
     fn pane_title(&mut self, pane: PaneId) -> Result<Response, Error> {
         let reads = self.host.reads_processes();
         let held = self.host.held(pane)?;
@@ -4144,6 +4207,9 @@ impl Calling<'_> {
     fn read(&mut self, request: &Request) -> Result<Response, Error> {
         if let Request::PaneTitle(pane) = request {
             return self.pane_title(*pane);
+        }
+        if let Request::TempFile { name, bytes } = request {
+            return self.temp_file(name, &bytes.0);
         }
         let host = &*self.host;
         Ok(match request {
@@ -4354,6 +4420,13 @@ impl Calling<'_> {
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
             Request::Now => Response::Now(host.local_time),
+            Request::GitBranch { folder } => {
+                host::check_absolute_folder(folder)?;
+                let branch = std::path::Path::new(folder)
+                    .ancestors()
+                    .find_map(|at| host.git_branches.get(at.to_str()?));
+                Response::Text(branch.cloned())
+            }
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
@@ -5874,6 +5947,10 @@ struct Declared {
 /// The system's day that the fake host gives by default, in days since
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
+
+/// The folder of the host's temporary files that the fake gives by
+/// default, which their paths are of; the fake writes nothing there.
+pub const TEMPORARY_FOLDER: &str = "/tmp/lokyr-temporary";
 
 /// The system's time that the fake host gives by default: 11 November 2026
 /// at noon in UTC, of a time zone an hour east of it, as Central European

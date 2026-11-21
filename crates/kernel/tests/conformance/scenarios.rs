@@ -25,10 +25,11 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
     DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
-    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier,
-    Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
-    TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
+    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
+    MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
+    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
+    check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -152,6 +153,10 @@ pub struct World {
     pub cursor: (u16, i64),
     /// The cells of the rows that the pane's view shows.
     pub screen: Vec<CellRow>,
+    /// A folder of the scenarios' own: of the host's temporary files, in
+    /// `temporary`, and of a git repository of the branch `main`, in
+    /// `repository`, beside a folder of no repository, `plain`.
+    pub files: std::path::PathBuf,
 }
 
 /// A scenario: what the test plugin holds, and its steps.
@@ -3029,6 +3034,19 @@ fn color_panel() -> Scenario {
 
 /// What every plugin asks of the app: a command run, a window opened or
 /// closed, the app quit and the text's size, and what of them is refused.
+/// The path of the temporary file `name` of the scenarios' plugin, in the
+/// host's folder of them of `world`'s.
+fn temporary(world: &World, name: &str) -> String {
+    lokyr_plugin_sdk::host::temporary_path(&world.files.join("temporary"), "conformer", name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The absolute path of `world`'s folder `name`.
+fn folder(world: &World, name: &str) -> String {
+    world.files.join(name).to_string_lossy().into_owned()
+}
+
 fn app_requests(world: &World) -> Scenario {
     Scenario {
         name: "the app's requests".to_owned(),
@@ -3150,6 +3168,63 @@ fn app_requests(world: &World) -> Scenario {
             ),
             (Request::NoticeShows, Response::Boolean(false)),
             (Request::KeepsState, Response::Boolean(true)),
+            // A temporary file, in the plugin's folder, its path the
+            // answer; one of the same name in its place; a name of a
+            // folder's, and bytes past the bound, refused.
+            (
+                Request::TempFile {
+                    name: "output.txt".to_owned(),
+                    bytes: Bytes(b"ls\n".to_vec()),
+                },
+                Response::Text(Some(temporary(world, "output.txt"))),
+            ),
+            (
+                Request::TempFile {
+                    name: "output.txt".to_owned(),
+                    bytes: Bytes(b"ls -l\n".to_vec()),
+                },
+                Response::Text(Some(temporary(world, "output.txt"))),
+            ),
+            (
+                Request::TempFile {
+                    name: "a/b.txt".to_owned(),
+                    bytes: Bytes(Vec::new()),
+                },
+                failed(
+                    Code::Failed,
+                    &check_file_name("a/b.txt").unwrap_err().message,
+                ),
+            ),
+            (
+                Request::TempFile {
+                    name: "big.txt".to_owned(),
+                    bytes: Bytes(vec![b'x'; MOST_TEMPORARY_BYTES + 1]),
+                },
+                failed(
+                    Code::Failed,
+                    &format!("a temporary file has {MOST_TEMPORARY_BYTES} bytes at most"),
+                ),
+            ),
+            // The branch of a folder within a repository; none out of one;
+            // a path that is not absolute refused.
+            (
+                Request::GitBranch {
+                    folder: folder(world, "repository/src"),
+                },
+                Response::Text(Some("main".to_owned())),
+            ),
+            (
+                Request::GitBranch {
+                    folder: folder(world, "plain"),
+                },
+                Response::Text(None),
+            ),
+            (
+                Request::GitBranch {
+                    folder: "src".to_owned(),
+                },
+                failed(Code::Failed, "`src` is not a folder's absolute path"),
+            ),
             // No agent runs in the scenarios' panes.
             (Request::Agents, Response::Agents(Vec::new())),
             (

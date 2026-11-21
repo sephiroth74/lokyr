@@ -621,3 +621,61 @@ fn a_test_gives_the_pane_its_commands_and_reads_a_block_s_rows() {
     assert_eq!(ran.len(), 1, "{ran:?}");
     assert_eq!(ran[0].failure, None, "{ran:?}");
 }
+
+#[test]
+fn a_test_reads_a_temporary_file_and_gives_a_folder_its_branch() {
+    // A plugin that writes the screen's text as a temporary file, and the
+    // branch of the pane's folder.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "files.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            local rows = assert(cx.screen_cells(pane))
+            local path = assert(cx.temp_file("screen.txt", rows[1].text))
+            local branch = cx.git_branch("/work/lokyr/src") or "none"
+            assert(cx.set_clipboard_text(path .. " " .. branch))
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        writes_and_reads = function(host)
+            host.activate()
+            host.set_screen({ { text = "$ ls", runs = {} } })
+            host.set_git_branch("/work/lokyr", "main")
+            host.command("files.go")
+            assert(host.temporary_file("screen.txt") == "$ ls", host.temporary_file("screen.txt"))
+            assert(host.clipboard() == "/tmp/lokyr-temporary/files/screen.txt main", host.clipboard())
+            host.set_git_branch("/work/lokyr", nil)
+            host.command("files.go")
+            assert(host.clipboard():sub(-5) == " none", host.clipboard())
+            assert(host.temporary_file("other.txt") == nil)
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/files.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/files",
+            capabilities: &[
+                Capability::TerminalRead,
+                Capability::ProcessRead,
+                Capability::ClipboardWrite,
+            ],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

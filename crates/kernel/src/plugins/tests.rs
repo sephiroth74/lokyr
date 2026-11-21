@@ -25,6 +25,7 @@ mod cells;
 mod config;
 mod consent;
 mod double_taps;
+mod files;
 mod images;
 mod lazy;
 mod pages;
@@ -2279,6 +2280,7 @@ fn a_call_is_its_own_plugin_s() {
             config: Data::Map(BTreeMap::new()),
             written: Data::Map(BTreeMap::new()),
             stored: Stored::default(),
+            temporary: Temporary::default(),
             wanted: true,
             replaced_by: None,
             ran: true,

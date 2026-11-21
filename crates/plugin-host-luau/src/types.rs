@@ -754,6 +754,13 @@ export type TestHost = {
     answer_save: (id: number, path: string?) -> (),
     -- The bytes of the file that a save wrote at `path`, if one did.
     saved_file: (path: string) -> string?,
+    -- The bytes of the plugin's temporary file `name`, as it wrote them
+    -- last, if it did.
+    temporary_file: (name: string) -> string?,
+    -- Makes the folder of the absolute path `folder` a git repository's of
+    -- the branch `branch`, or no repository's of none, which a read of the
+    -- branch of a folder within it gives.
+    set_git_branch: (folder: string, branch: string?) -> (),
     -- The ids of the images that the host keeps of the plugin's, the oldest
     -- first.
     kept_images: () -> { number },

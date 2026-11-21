@@ -823,6 +823,31 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Writes `bytes` as the plugin's temporary file `name`, in a folder of
+    /// its own that the host empties at the quit and at the start, marked
+    /// as come from elsewhere: its path, as an editor opens it.
+    pub fn temp_file(&mut self, name: &str, bytes: Vec<u8>) -> Result<String, Error> {
+        match self.request(Request::TempFile {
+            name: name.to_owned(),
+            bytes: crate::host::Bytes(bytes),
+        }) {
+            Response::Text(Some(path)) => Ok(path),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The branch of the git repository that holds the folder of the
+    /// absolute path `folder`, as its `HEAD` tells: a detached head's short
+    /// hash; none out of a repository.
+    pub fn git_branch(&mut self, folder: &str) -> Result<Option<String>, Error> {
+        match self.request(Request::GitBranch {
+            folder: folder.to_owned(),
+        }) {
+            Response::Text(branch) => Ok(branch),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Whether a notice of the app's shows, which a plugin's card of its
     /// own yields to.
     pub fn notice_shows(&mut self) -> Result<bool, Error> {
