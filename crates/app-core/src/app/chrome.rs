@@ -636,8 +636,9 @@ impl<B: Backend> App<B> {
             view.surface
                 .set_room(if crosses && tab_bar { through } else { room });
         }
-        // Each slot's height, of its views laid out across the window, or
-        // its share of it for a slot of many.
+        // Each slot's height, of its views measured across the window, or
+        // its share of it for a slot of many: a measure of no event, as the
+        // frame's layout tells them.
         let mut natural = |slot: Slot| {
             let mut views: Vec<&mut SlotView> = state
                 .chrome
@@ -648,12 +649,9 @@ impl<B: Backend> App<B> {
             views
                 .iter_mut()
                 .map(|view| {
-                    let laid = view.surface.lay_out((Some(share), None), font);
-                    events.extend(
-                        laid.into_iter()
-                            .map(|event| (view.plugin.clone(), view.view.clone(), event)),
-                    );
-                    view.surface.size().map_or(0.0, |size| size.1)
+                    view.surface
+                        .measure((Some(share), None), font)
+                        .map_or(0.0, |size| size.1)
                 })
                 .fold(0.0_f32, f32::max)
         };
@@ -667,7 +665,8 @@ impl<B: Backend> App<B> {
         };
         let window_strip = natural(Slot::WindowStrip);
         // The status bar's views at their natural sizes, each on its
-        // plugin's side, and the bar of the tallest.
+        // plugin's side, and the bar of the tallest, measured of no event,
+        // as the frame's layout tells them.
         let mut status_views = Vec::new();
         let mut status_bar = 0.0_f32;
         for view in state
@@ -675,12 +674,7 @@ impl<B: Backend> App<B> {
             .iter_mut()
             .filter(|view| view.view.slot() == Some(Slot::StatusBar) && view.shows())
         {
-            let laid = view.surface.lay_out((None, None), font);
-            events.extend(
-                laid.into_iter()
-                    .map(|event| (view.plugin.clone(), view.view.clone(), event)),
-            );
-            let (natural, height) = view.surface.size().unwrap_or_default();
+            let (natural, height) = view.surface.measure((None, None), font).unwrap_or_default();
             status_bar = status_bar.max(height);
             status_views.push((self.plugins.status_bar_side(&view.plugin), natural));
         }

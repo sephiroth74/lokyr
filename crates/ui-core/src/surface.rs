@@ -170,6 +170,21 @@ impl Surface {
         events
     }
 
+    /// Its size laid out in `width` and `height` pixels, either as its
+    /// content's where it is `None`, its texts measured by `measure`, as a
+    /// host measures a view before it gives it its frame: of no event, its
+    /// lists' rows and its texts' cuts left as its last
+    /// [`lay_out`](Surface::lay_out) left them, which its frame's layout
+    /// tells.
+    pub fn measure(
+        &mut self,
+        (width, height): (Option<f32>, Option<f32>),
+        measure: &mut impl Measure,
+    ) -> Option<(f32, f32)> {
+        self.layout.compute(&self.tree, width, height, measure);
+        self.size()
+    }
+
     /// Its last layout, at `now`: its nodes of transitions that it moved
     /// slide, those whose opacity changed fade, and those whose hover or
     /// press changed, unless the system reduces motion, `reduced`.
@@ -806,6 +821,15 @@ mod tests {
             [("tip".to_owned(), UiEventKind::Cut { cut: true })]
         );
         // Told once.
+        assert_eq!(cut(&mut surface), []);
+        // A measure of its content's width tells nothing, nor changes what
+        // the next layout tells.
+        assert_eq!(
+            surface
+                .measure((None, None), &mut Fixed)
+                .map(|size| size.0 > 80.0),
+            Some(true)
+        );
         assert_eq!(cut(&mut surface), []);
         // Whole of as many lines as it needs.
         surface.update(&tip(long, 0)).unwrap();
