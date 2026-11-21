@@ -231,14 +231,19 @@ pub(crate) type Place = Option<(Origin, f32)>;
 
 /// A wheel's steps gliding a pane's view over their rows, by pixels: from
 /// the time of its last step, it eases out over [`GLIDE`], the view moving
-/// fast at first and slower as it comes to its rows.
+/// fast at first and slower as it comes to its rows. It puts the view at
+/// each step's place from where it started, by the rows' numbers, so that
+/// no step's rounding adds up, and its last puts it where it goes.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Glide {
     /// The pane whose view glides.
     pub(crate) pane: PaneId,
     /// When its last step came.
     start: Instant,
-    /// The rows that it moves the view from `start`, up where positive.
+    /// The view's place then: its first row's number and the share of a
+    /// row past it.
+    from: f64,
+    /// The rows that it moves the view from `from`, up where positive.
     rows: f64,
     /// Those of them that it moved.
     moved: f64,
@@ -249,24 +254,34 @@ pub(crate) struct Glide {
 
 impl Glide {
     /// A glide of `pane`'s view by `rows`, up where positive, of a step at
-    /// `now`, the view at `place`.
-    pub(crate) fn new(pane: PaneId, rows: f64, now: Instant, place: Place) -> Glide {
+    /// `now`, the view at `place`, from its place `from`, of its first
+    /// row's number and the share past it.
+    pub(crate) fn new(pane: PaneId, rows: f64, now: Instant, (place, from): (Place, f64)) -> Glide {
         Glide {
             pane,
             start: now,
+            from,
             rows,
             moved: 0.0,
             left: place,
         }
     }
 
-    /// Adds `rows`, of another step at `now`, the view at `place`: the
-    /// glide eases out again from where it is, over the rows that it has
-    /// left and these, or over these alone where the view moved another way
-    /// since its last step.
-    pub(crate) fn add(&mut self, rows: f64, now: Instant, place: Place) {
-        let left = if place == self.left { self.left() } else { 0.0 };
-        *self = Glide::new(self.pane, left + rows, now, place);
+    /// Adds `rows`, of another step at `now`, the view at `place` and its
+    /// place `from`: the glide eases out again from where it is, over the
+    /// rows that it has left and these, or from `from` over these alone
+    /// where the view moved another way since its last step.
+    pub(crate) fn add(&mut self, rows: f64, now: Instant, (place, from): (Place, f64)) {
+        *self = if place == self.left {
+            Glide::new(
+                self.pane,
+                self.left() + rows,
+                now,
+                (place, self.from - self.moved),
+            )
+        } else {
+            Glide::new(self.pane, rows, now, (place, from))
+        };
     }
 
     /// The rows that it has yet to move the view.
@@ -274,21 +289,25 @@ impl Glide {
         self.rows - self.moved
     }
 
-    /// The rows that the view moves at `now`, since the last step, and
-    /// whether the glide goes on after: the last step takes the view to its
-    /// rows, whole as the sum of the steps.
+    /// The place where it takes the view, its first row's number and the
+    /// share of a row past it.
+    pub(crate) fn end(&self) -> f64 {
+        self.from - self.rows
+    }
+
+    /// The view's place at `now`, of its first row's number and the share
+    /// past it, and whether the glide goes on after: the last step's is
+    /// where it goes.
     pub(crate) fn step(&mut self, now: Instant) -> (f64, bool) {
         let elapsed = now.saturating_duration_since(self.start);
         let time = (elapsed.as_secs_f64() / GLIDE.as_secs_f64()).min(1.0);
         // An ease-out of the cube: fast at first, still at its end.
-        let at = if time >= 1.0 {
+        self.moved = if time >= 1.0 {
             self.rows
         } else {
             self.rows * (1.0 - (1.0 - time).powi(3))
         };
-        let rows = at - self.moved;
-        self.moved = at;
-        (rows, time < 1.0)
+        (self.from - self.moved, time < 1.0)
     }
 }
 
@@ -688,36 +707,35 @@ mod tests {
         let pane = PaneId::of(1);
         let start = Instant::now();
         let at = |ms| start + Duration::from_millis(ms);
-        let mut glide = Glide::new(pane, 3.0, start, None);
+        // Three rows up from the row numbered 40.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0));
+        assert_eq!(glide.end(), 37.0);
         // Fast at first: past half its rows in a quarter of its time.
         let (first, on) = glide.step(at(37));
         assert!(on);
-        assert!(first > 1.5 && first < 3.0, "{first}");
+        assert!(first < 38.5 && first > 37.0, "{first}");
         let (second, on) = glide.step(at(75));
         assert!(on);
-        assert!(second > 0.0 && second < first, "{second}");
-        // At its end, the rows whole, and no more.
-        let (last, on) = glide.step(at(150));
-        assert!(!on);
-        assert_eq!(first + second + last, 3.0);
+        assert!(second < first && first - second < 40.0 - first, "{second}");
+        // At its end, its rows whole, and no further.
+        assert_eq!(glide.step(at(150)), (37.0, false));
         assert_eq!(glide.left(), 0.0);
-        assert_eq!(glide.step(at(300)), (0.0, false));
+        assert_eq!(glide.step(at(300)), (37.0, false));
         // A step during a glide adds to where it goes, from where it is.
-        let mut glide = Glide::new(pane, 3.0, start, None);
-        let (moved, _) = glide.step(at(50));
-        glide.add(-1.0, at(50), None);
-        assert!((glide.left() - (2.0 - moved)).abs() < 1e-9);
-        let (rest, on) = glide.step(at(200));
-        assert!(!on);
-        assert!((moved + rest - 2.0).abs() < 1e-9, "{moved} {rest}");
-        // A view moved another way since starts it anew, of the step's
-        // rows alone.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0));
+        let (there, _) = glide.step(at(50));
+        glide.add(-1.0, at(50), (None, 0.0));
+        assert_eq!(glide.end(), 38.0);
+        assert!((glide.left() - (there - 38.0)).abs() < 1e-9);
+        assert_eq!(glide.step(at(200)), (38.0, false));
+        // A view moved another way since starts it anew, from where the
+        // view is, of the step's rows alone.
         let origin = Origin { epoch: 0, top: 10 };
-        let mut glide = Glide::new(pane, 3.0, start, Some((origin, 0.5)));
-        glide.add(1.0, at(10), None);
-        assert_eq!(glide.left(), 1.0);
+        let mut glide = Glide::new(pane, 3.0, start, (Some((origin, 0.5)), 10.5));
+        glide.add(1.0, at(10), (None, 60.0));
+        assert_eq!((glide.left(), glide.end()), (1.0, 59.0));
         // A clock that goes back moves nothing.
-        let mut glide = Glide::new(pane, 3.0, at(10), None);
-        assert_eq!(glide.step(start), (0.0, true));
+        let mut glide = Glide::new(pane, 3.0, at(10), (None, 40.0));
+        assert_eq!(glide.step(start), (40.0, true));
     }
 }

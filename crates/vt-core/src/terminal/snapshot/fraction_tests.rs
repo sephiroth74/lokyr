@@ -220,3 +220,56 @@ fn a_snapshot_of_a_share_holds_the_row_past_the_view_s_last_and_its_cursor() {
     let shown: Vec<String> = (0..4).map(|y| text(&snapshot, y)).collect();
     assert_eq!(shown, ["17", "18", "19", ""]);
 }
+
+#[test]
+fn a_scroll_to_a_place_takes_its_row_and_its_share() {
+    let mut terminal = terminal();
+    // The row numbered 10, and half of it past.
+    terminal.scroll_viewport_to(10.5);
+    assert_eq!(terminal.origin().top, 10);
+    assert!(near(terminal.viewport_fraction(), 0.5));
+    // From there, another place, up or down.
+    terminal.scroll_viewport_to(3.25);
+    assert_eq!(terminal.origin().top, 3);
+    assert!(near(terminal.viewport_fraction(), 0.25));
+    terminal.scroll_viewport_to(16.5);
+    assert_eq!(terminal.origin().top, 16);
+    assert!(near(terminal.viewport_fraction(), 0.5));
+    // Past the ends: the scrollback's first row, and the screen, which the
+    // view then follows, of no share.
+    terminal.scroll_viewport_to(-5.0);
+    assert_eq!(terminal.origin().top, 0);
+    assert_eq!(terminal.viewport_fraction(), 0.0);
+    terminal.scroll_viewport_to(100.0);
+    assert_eq!(terminal.viewport_offset(), 0);
+    assert_eq!(terminal.viewport_fraction(), 0.0);
+    feed(&mut terminal, "20\r\n");
+    assert_eq!(terminal.viewport_offset(), 0);
+    // Not a number moves nothing.
+    terminal.scroll_viewport_to(4.5);
+    terminal.scroll_viewport_to(f64::NAN);
+    assert_eq!(terminal.origin().top, 4);
+    assert!(near(terminal.viewport_fraction(), 0.5));
+    // By the rows' numbers, which the scrollback's limit leaves them as it
+    // takes the oldest rows.
+    let options = Options {
+        scrollback: Scrollback {
+            limit: 1,
+            budget: None,
+        },
+        ..Options::default()
+    };
+    let mut kept = Terminal::new(20, 4, options);
+    for at in 0..20_000 {
+        feed(&mut kept, &format!("{at}\r\n"));
+    }
+    let first = kept.row_number(0);
+    assert!(first > 0, "the oldest rows went");
+    kept.scroll_viewport_to(first as f64 + 2.5);
+    assert_eq!(kept.origin().top, first + 2);
+    assert!(near(kept.viewport_fraction(), 0.5));
+    // The alternate screen's view never moves.
+    feed(&mut terminal, "\x1b[?1049h");
+    terminal.scroll_viewport_to(2.0);
+    assert_eq!(terminal.viewport_offset(), 0);
+}

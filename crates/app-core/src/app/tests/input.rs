@@ -567,7 +567,7 @@ fn drawn_view(fake: &mut Fake, app: &mut App, window: WindowId) -> (usize, f32) 
 
 #[test]
 fn a_trackpad_scrolls_the_view_by_pixels_with_smooth_scroll() {
-    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 10"));
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
     let none = Modifiers::NONE;
     // Up a row and a half: the view a share of a row up, of a frame asked
     // for at once.
@@ -594,7 +594,7 @@ fn a_trackpad_scrolls_the_view_by_pixels_with_smooth_scroll() {
 
 #[test]
 fn a_wheel_s_step_glides_over_its_rows_with_smooth_scroll() {
-    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 10"));
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
     let lines = |y| wheel(ScrollDelta::Lines { x: 0.0, y }, Modifiers::NONE);
     let view = |app: &App| {
         let snapshot = app.pane(window).snapshot();
@@ -670,7 +670,7 @@ fn with_smooth_scroll_a_program_that_takes_the_wheel_gets_whole_steps() {
 
 #[test]
 fn at_a_share_of_a_row_the_pointer_takes_the_cell_drawn_under_it() {
-    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 10"));
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
     // Up a row and a half: the rows drawn 4 points up, `ready` on the row
     // past the view's last.
     fake.send(&mut app, window, swiped(12.0, false, Modifiers::NONE));

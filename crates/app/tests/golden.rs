@@ -1462,6 +1462,7 @@ fn check_bars(light: bool, scale: u32) {
     let rows = |top: u64| Rows {
         total: 400,
         top,
+        share: 0.0,
         shown: 8,
     };
     let mark = |at: f32, current: bool| Mark { at, current };

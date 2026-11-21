@@ -1347,38 +1347,22 @@ impl<B: Backend> App<B> {
             && !(to_program
                 && pane.takes_mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer)));
         let (across, mut up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        // A wheel's lines glide, once the steps below are done with.
+        let mut glides = None;
         if by_pixels {
             state.mouse.settle_up();
             up = 0;
-            let moved = match delta {
+            match delta {
                 // A frame as the view moves, none at its ends, where the
                 // momentum goes on a while.
                 ScrollDelta::Points { .. } => {
                     let before = pane.scrolled_place();
                     pane.scroll_by(rows);
-                    pane.scrolled_place() != before
-                }
-                ScrollDelta::Lines { .. } => {
-                    let now = Instant::now();
-                    let place = pane.scrolled_place();
-                    match &mut state.mouse.glide {
-                        Some(glide) if glide.pane == target => glide.add(rows, now, place),
-                        slot => {
-                            // Another pane's glide goes to its rows at once.
-                            if let Some(glide) = slot.take()
-                                && let Some(other) = self.workspace.pane(glide.pane)
-                                && other.scrolled_place() == glide.left
-                            {
-                                other.scroll_by(glide.left());
-                            }
-                            *slot = Some(Glide::new(target, rows, now, place));
-                        }
+                    if pane.scrolled_place() != before {
+                        platform.request_frame(window);
                     }
-                    true
                 }
-            };
-            if moved {
-                platform.request_frame(window);
+                ScrollDelta::Lines { .. } => glides = Some(rows),
             }
         }
         let mut runs = Vec::new();
@@ -1417,9 +1401,53 @@ impl<B: Backend> App<B> {
             });
             platform.request_frame(window);
         }
+        if let Some(rows) = glides {
+            self.glide(platform, window, target, rows);
+        }
         for invocation in runs {
             self.run(platform, &invocation.command, invocation.args);
         }
+    }
+
+    /// Glides the view of `target`, one of `window`'s panes, by `rows`, up
+    /// where positive, as a wheel's step, or a click on a scroll bar's
+    /// track, scrolling by pixels: from where a glide of its view is, over
+    /// the rows that it has left and these; another pane's glide goes to
+    /// its rows at once.
+    pub(super) fn glide(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        target: PaneId,
+        rows: f64,
+    ) {
+        let (Some(state), Some(pane)) =
+            (self.windows.get_mut(&window), self.workspace.pane(target))
+        else {
+            return;
+        };
+        let now = Instant::now();
+        let place = pane.scrolled_place();
+        // The view's place, of its first row's number: at the screen, its
+        // top row's.
+        let from = match place {
+            // Far fewer rows than an `f64` holds exactly.
+            Some((origin, share)) => origin.top as f64 + f64::from(share),
+            None => pane.origin().map_or(0.0, |origin| origin.top as f64),
+        };
+        match &mut state.mouse.glide {
+            Some(glide) if glide.pane == target => glide.add(rows, now, (place, from)),
+            slot => {
+                if let Some(glide) = slot.take()
+                    && let Some(other) = self.workspace.pane(glide.pane)
+                    && other.scrolled_place() == glide.left
+                {
+                    other.scroll_to(glide.end());
+                }
+                *slot = Some(Glide::new(target, rows, now, (place, from)));
+            }
+        }
+        platform.request_frame(window);
     }
 
     /// Moves the view that the wheel glides over `window` by its step at
@@ -1447,8 +1475,8 @@ impl<B: Backend> App<B> {
             state.mouse.glide = None;
             return;
         };
-        let (rows, on) = glide.step(now);
-        pane.scroll_by(rows);
+        let (place, on) = glide.step(now);
+        pane.scroll_to(place);
         glide.left = pane.scrolled_place();
         if on {
             platform.request_frame(window);

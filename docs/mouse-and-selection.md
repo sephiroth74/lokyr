@@ -97,6 +97,7 @@ With [`[window] smooth-scroll`](CONFIGURATION.md#smooth-scroll) on, the text fol
 - **A program that takes the wheel**, such as `less` or vim, still gets whole steps. Hold ⇧ to scroll the scrollback by pixels anyway.
 - **The ends**: the text stops at the top of the scrollback and at the screen, with no bounce.
 - **Dragging a selection** past the window's top or bottom scrolls by whole rows, keeping the part of a row where you left the text.
+- **The scroll bar**: dragging its knob moves the text by pixels, and a click on its track glides a page, or to the spot clicked, as macOS's Click in the scroll bar to setting says.
 
 ```toml
 [window]

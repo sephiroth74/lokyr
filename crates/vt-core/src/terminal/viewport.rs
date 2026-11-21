@@ -315,6 +315,28 @@ impl Terminal {
         }
     }
 
+    /// Scrolls the view of the primary screen to `place`: its first row the
+    /// row numbered `place`'s whole part, and the share of a row past it
+    /// the rest, as a scroll bar's knob dragged by pixels or a wheel's
+    /// glide puts it, as far as the scrollback's first row and the screen,
+    /// which the view then follows, as [`Terminal::scroll_viewport_by`]
+    /// does; a view of folds to the nearest row's place; the alternate
+    /// screen's never moves.
+    pub fn scroll_viewport_to(&mut self, place: f64) {
+        if self.alternate_active || !place.is_finite() {
+            return;
+        }
+        if self.settle_folded().is_some() {
+            // A cast from a float saturates.
+            self.scroll_viewport(Scroll::Row(place.round() as i64));
+            return;
+        }
+        self.settle_viewport();
+        // Far fewer rows than an `f64` holds exactly.
+        let now = self.origin().top as f64 + f64::from(self.viewport_fraction());
+        self.scroll_viewport_by(now - place);
+    }
+
     /// Lets the share of a row that the view is scrolled past its first row
     /// go, its rows where they are, as scrolling by pixels turns off.
     pub fn drop_viewport_fraction(&mut self) {

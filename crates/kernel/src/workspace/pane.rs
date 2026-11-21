@@ -1354,6 +1354,16 @@ impl Pane {
         }
     }
 
+    /// Scrolls the view so that its first row is the row numbered
+    /// `place`'s whole part, and the share of a row past it the rest, as a
+    /// scroll bar's knob dragged by pixels or a wheel's glide puts it, as
+    /// [`Terminal::scroll_viewport_to`] does.
+    pub fn scroll_to(&self, place: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_to(place);
+        }
+    }
+
     /// Lets the view's share of a row go, its rows where they are, as
     /// scrolling by pixels turns off.
     pub fn drop_fraction(&self) {

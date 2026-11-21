@@ -406,6 +406,13 @@ impl Session {
         self.lock().scroll_viewport_by(rows);
     }
 
+    /// Scrolls the view of the terminal's primary screen to `place`, its
+    /// first row's number and a share of a row past it, as
+    /// [`Terminal::scroll_viewport_to`] does.
+    pub fn scroll_to(&self, place: f64) {
+        self.lock().scroll_viewport_to(place);
+    }
+
     /// Lets the view's share of a row go, as
     /// [`Terminal::drop_viewport_fraction`] does.
     pub fn drop_fraction(&self) {
