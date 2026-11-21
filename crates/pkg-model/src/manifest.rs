@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{self, Capability, Category};
+use lokyr_plugin_sdk::host::StatusBarSide;
 use lokyr_plugin_sdk::keys;
 use lokyr_plugin_sdk::ui::Slot;
 use serde::Deserialize;
@@ -133,6 +134,14 @@ struct RawContributes {
     #[serde(default)]
     pages: Vec<toml::Spanned<RawPage>>,
     config_schema: Option<toml::Spanned<String>>,
+    status_bar: Option<toml::Spanned<RawStatusBar>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawStatusBar {
+    #[serde(default)]
+    side: StatusBarSide,
 }
 
 #[derive(Deserialize)]
@@ -299,6 +308,10 @@ pub struct Contributes {
     pub pages: Vec<Page>,
     /// The file of its config's schema, in the package.
     pub config_schema: Option<String>,
+    /// The side of the status bar where its view goes, of
+    /// `[contributes.status-bar] side`, until it asks for another: the
+    /// start of none.
+    pub status_bar_side: StatusBarSide,
 }
 
 /// A page of the settings tab that a plugin of Lokyr's own shows: its id,
@@ -745,6 +758,20 @@ fn contributed(
             id: page.id.into_inner(),
             icon: page.icon.into_inner(),
         });
+    }
+    if let Some(status_bar) = raw.status_bar {
+        if !contributes
+            .slots
+            .iter()
+            .any(|slot| slot == Slot::StatusBar.name())
+        {
+            return Err(fail(
+                status_bar.span(),
+                "`[contributes.status-bar]` is of a plugin that fills the `status-bar` slot, in `slots`"
+                    .to_owned(),
+            ));
+        }
+        contributes.status_bar_side = status_bar.into_inner().side;
     }
     if let Some(schema) = raw.config_schema {
         use std::path::{Component, Path};
@@ -1226,6 +1253,42 @@ config-schema = "schema.json"
         for bad in ["^", "0.1.x", "^01.2", ">>1", "1.2-beta", "latest", ""] {
             assert!(!is_requirement(bad), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_status_bar_s_side_is_its_manifest_s_of_the_slot_that_it_fills() {
+        let luau = "[plugin]\nname = \"acme/x\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n";
+        let parse = |rest: &str| Manifest::parse(&format!("{luau}{rest}"));
+        // The start of none; the side that it names.
+        let none = parse("[contributes]\nslots = [\"status-bar\"]\n").unwrap();
+        assert_eq!(none.contributes.status_bar_side, StatusBarSide::Start);
+        for (named, side) in [
+            ("start", StatusBarSide::Start),
+            ("center", StatusBarSide::Center),
+            ("end", StatusBarSide::End),
+        ] {
+            let manifest = parse(&format!(
+                "[contributes]\nslots = [\"status-bar\"]\n[contributes.status-bar]\nside = \"{named}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(manifest.contributes.status_bar_side, side);
+        }
+        // A side of no slot of the status bar, or of another name, refused.
+        let unfilled = parse(
+            "[contributes]\nslots = [\"tab-bar\"]\n[contributes.status-bar]\nside = \"end\"\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            unfilled.contains("fills the `status-bar` slot"),
+            "{unfilled}"
+        );
+        let left = parse(
+            "[contributes]\nslots = [\"status-bar\"]\n[contributes.status-bar]\nside = \"left\"\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(left.contains("left"), "{left}");
     }
 
     #[test]

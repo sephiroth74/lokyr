@@ -569,6 +569,44 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "temporary_file",
+        lua.create_function(move |lua, name: String| {
+            let bytes = with(&hosted, |Hosted { host, .. }| {
+                host.temporary_file(&name).map(<[u8]>::to_vec)
+            });
+            bytes.map(|bytes| lua.create_string(bytes)).transpose()
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "set_directory",
+        lua.create_function(move |_, folder: Option<String>| {
+            with(&hosted, |Hosted { host, .. }| {
+                host.pane(PaneId(1)).directory = folder;
+            });
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "status_bar_side",
+        lua.create_function(move |lua, ()| {
+            let side = with(&hosted, |Hosted { host, .. }| host.status_bar_side());
+            shape::to_lua(lua, &side).map_err(mlua::Error::runtime)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "set_git_branch",
+        lua.create_function(move |_, (folder, branch): (String, Option<String>)| {
+            with(&hosted, |Hosted { host, .. }| {
+                host.set_git_branch(&folder, branch.as_deref());
+            });
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "kept_images",
         lua.create_function(move |lua, ()| {
             let kept = with(&hosted, |Hosted { host, .. }| host.kept_images().to_vec());

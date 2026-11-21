@@ -216,6 +216,7 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `progress.error` | A program's progress that failed | `red` |
 | `progress.paused` | A program's progress paused | `yellow` |
 | `tabs.bar.bg` | The tab bar | `mix(background, foreground, 6%)` |
+| `status-bar.bg` | The status bar's band across the window's bottom, while a plugin's view fills it · not released yet | `tabs.bar.bg` |
 | `tabs.track.bg` | The track of the tab bar's pills | light `text / 7%`, dark `text / 10%` |
 | `tabs.active.bg` | The tab that shows | `background` |
 | `tabs.active.fg` | The title of the tab that shows | `text` |

@@ -11,10 +11,11 @@ use lokyr_kernel::plugins::ui::ViewId;
 use lokyr_kernel::plugins::view::{Align, Edges, Node, Style, Token};
 use lokyr_kernel::plugins::{Cx, Plugin};
 
-/// Its manifest, of the status bar, on a thread of its own.
+/// Its manifest, of the status bar's end, on a thread of its own.
 pub(crate) const MANIFEST: &str = concat!(
     "[plugin]\nname = \"lokyr/sample-worker\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
     "thread = \"worker\"\n[contributes]\nslots = [\"status-bar\"]\n",
+    "[contributes.status-bar]\nside = \"end\"\n",
 );
 
 /// The rows that each render reads, a request each.

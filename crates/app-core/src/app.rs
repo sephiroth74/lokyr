@@ -94,6 +94,9 @@ use input::{show_selection, shown_number};
 /// The command that quits.
 const QUIT: &str = "app.quit";
 
+/// The folder of the plugins' temporary files, in the state's folder.
+const TEMPORARY_FOLDER: &str = "temporary";
+
 /// The command that opens the config file in the text editor, made first
 /// when it is not there.
 const SETTINGS: &str = "app.settings";
@@ -3007,6 +3010,7 @@ impl<B: Backend> App<B> {
         }
         self.keep_windows(platform);
         self.end_latency_bench(platform);
+        self.plugins.empty_temporary();
         platform.quit();
     }
 
@@ -3087,6 +3091,7 @@ impl<B: Backend> App<B> {
             // window closes; the windows kept, none now, forgotten.
             self.end_latency_bench(platform);
             self.keep_windows(platform);
+            self.plugins.empty_temporary();
             platform.quit();
         } else if self
             .windows
@@ -3548,6 +3553,15 @@ impl<B: Backend> App<B> {
         // next and no card that shows once in a while comes in a measure.
         self.plugins
             .set_state_directory(self.state.clone().filter(|_| !self.benched));
+        // Their temporary files, marked as the platform marks a download,
+        // in a folder that the start empties, and the quit.
+        self.plugins.set_temporary_directory(
+            self.state
+                .as_ref()
+                .filter(|_| !self.benched)
+                .map(|state| state.join(TEMPORARY_FOLDER)),
+            platform.quarantine(),
+        );
         self.add_installed(platform);
         self.configure_plugins(platform);
         self.tell_keys(platform);

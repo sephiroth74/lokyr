@@ -149,6 +149,9 @@
 "progress.paused" = "yellow"
 # The tab bar.
 "tabs.bar.bg" = "mix(background, foreground, 6%)"
+# The status bar's band across the window's bottom, while a plugin's view
+# fills it · not released yet.
+"status-bar.bg" = "tabs.bar.bg"
 # The track of the tab bar's pills.
 "tabs.track.bg" = { light = "text / 7%", dark = "text / 10%" }
 # The tab that shows.

@@ -25,11 +25,13 @@ mod cells;
 mod config;
 mod consent;
 mod double_taps;
+mod files;
 mod images;
 mod lazy;
 mod pages;
 mod questions;
 mod replaces;
+mod sides;
 mod timers;
 
 type Activate = Box<dyn FnMut(&mut Cx<'_>) -> Result<(), Error>>;
@@ -2279,11 +2281,13 @@ fn a_call_is_its_own_plugin_s() {
             config: Data::Map(BTreeMap::new()),
             written: Data::Map(BTreeMap::new()),
             stored: Stored::default(),
+            temporary: Temporary::default(),
             wanted: true,
             replaced_by: None,
             ran: true,
             starts: 1,
             bar_place: host::BarPlace::default(),
+            status_bar_side: None,
             window_places: BTreeMap::new(),
             dim: 0.0,
             follows: false,

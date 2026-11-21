@@ -580,6 +580,15 @@ pub struct FakeHost {
     /// The system's time and the local time zone's offset that a read of
     /// the time gives.
     local_time: host::LocalTime,
+    /// The folder of the host's temporary files, of none as without a
+    /// state's folder, and the temporary files that the plugin wrote, their
+    /// bounds' tally and their bytes by their names, kept in memory.
+    temporary_folder: Option<std::path::PathBuf>,
+    temporary: host::TemporaryFiles,
+    temporary_bytes: BTreeMap<String, Vec<u8>>,
+    /// The git branches of the repositories' folders, as the test gave
+    /// them, which a folder within one takes.
+    git_branches: BTreeMap<String, String>,
     /// The AI agents that a read of the agents gives, as the test gave them.
     agents: Vec<host::AgentInfo>,
     /// The plugins that a read of the plugins gives, as the test gave them,
@@ -598,6 +607,9 @@ pub struct FakeHost {
     messages: Vec<(String, BTreeMap<String, Data>, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
+    /// The side of the status bar of the plugin's view: its manifest's,
+    /// then the one that it asked for.
+    status_bar_side: host::StatusBarSide,
     /// The places of the plugin's tab bar of windows of their own.
     window_bar_places: BTreeMap<WindowId, BarPlace>,
     /// The fade of the panes that have not the keyboard, and whether the
@@ -719,6 +731,10 @@ impl FakeHost {
             fonts: fonts(),
             day: DAY,
             local_time: LOCAL_TIME,
+            temporary_folder: Some(std::path::PathBuf::from(TEMPORARY_FOLDER)),
+            temporary: host::TemporaryFiles::default(),
+            temporary_bytes: BTreeMap::new(),
+            git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
             settings: host::Settings::default(),
@@ -747,6 +763,7 @@ impl FakeHost {
             },
             messages: Vec::new(),
             bar_place: BarPlace::default(),
+            status_bar_side: host::StatusBarSide::Start,
             window_bar_places: BTreeMap::new(),
             inactive_dim: 0.0,
             focus_follows_mouse: false,
@@ -831,6 +848,7 @@ impl FakeHost {
             uses,
             builtin,
             pages,
+            status_bar_side,
         } = declared(manifest);
         // Lokyr's own plugins' alone, which another's manifest has refused.
         if !builtin {
@@ -838,6 +856,7 @@ impl FakeHost {
         }
         let mut host = self.with_capabilities(capabilities).with_pages(pages);
         host.third_party = !builtin;
+        host.status_bar_side = status_bar_side;
         match uses {
             Some(patterns) => host.with_uses(patterns),
             None => host,
@@ -1193,6 +1212,37 @@ impl FakeHost {
         self
     }
 
+    /// Keeps the host's temporary files in `folder`, [`TEMPORARY_FOLDER`]
+    /// by default, which their paths are of, or none, as the app without a
+    /// state's folder, when a temporary file fails; the fake keeps their
+    /// bytes in memory, which [`FakeHost::temporary_file`] gives.
+    pub fn set_temporary_folder(&mut self, folder: Option<std::path::PathBuf>) -> &mut Self {
+        self.temporary_folder = folder;
+        self
+    }
+
+    /// The bytes of the plugin's temporary file `name`, as it wrote them
+    /// last; none of a file that it did not write.
+    pub fn temporary_file(&self, name: &str) -> Option<&[u8]> {
+        self.temporary_bytes.get(name).map(Vec::as_slice)
+    }
+
+    /// Makes the folder of the absolute path `folder` a git repository's
+    /// of the branch `branch`, or no repository's of none, which a read of
+    /// the branch of a folder within it gives.
+    pub fn set_git_branch(&mut self, folder: &str, branch: Option<&str>) -> &mut Self {
+        match branch {
+            Some(branch) => {
+                self.git_branches
+                    .insert(folder.to_owned(), branch.to_owned());
+            }
+            None => {
+                self.git_branches.remove(folder);
+            }
+        }
+        self
+    }
+
     /// Keeps the plugin's state between the app's runs, as by default, or
     /// not, as the app without a state's folder, which a read tells; it
     /// holds the state in memory all the same.
@@ -1293,6 +1343,12 @@ impl FakeHost {
     /// screens, the window of a tab that was alone too.
     pub fn place(&self, window: WindowId) -> Option<ScreenPoint> {
         self.places.get(&window).copied()
+    }
+
+    /// The side of the status bar where the plugin's view goes: its
+    /// manifest's, or the one that it asked for last.
+    pub fn status_bar_side(&self) -> host::StatusBarSide {
+        self.status_bar_side
     }
 
     /// The place of the plugin's tab bar in `window`: the window's own, or
@@ -2191,6 +2247,7 @@ impl FakeHost {
                 self.looked(*id, &before);
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
+            Request::SetStatusBarSide(side) => self.status_bar_side = *side,
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
             Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
             Request::SetBlockLooks(looks) => self.block_looks = *looks,
@@ -4118,6 +4175,25 @@ impl Calling<'_> {
     /// processes, the name of its folder, as the app's; what a plugin that
     /// does not read them learns of it, of which a change that it cannot
     /// read tells it nothing.
+    /// Writes the plugin's temporary file `name` of `bytes`, as the app's
+    /// host does, in memory: its path in the folder of the host's
+    /// temporary files.
+    fn temp_file(&mut self, name: &str, bytes: &[u8]) -> Result<Response, Error> {
+        if self.looking {
+            return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+        }
+        let Some(folder) = self.host.temporary_folder.clone() else {
+            return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+        };
+        self.host.temporary.check(name, bytes.len())?;
+        self.host.temporary.insert(name, bytes.len());
+        self.host
+            .temporary_bytes
+            .insert(name.to_owned(), bytes.to_vec());
+        let path = host::temporary_path(&folder, self.host.namespace(), name);
+        Ok(Response::Text(Some(path.to_string_lossy().into_owned())))
+    }
+
     fn pane_title(&mut self, pane: PaneId) -> Result<Response, Error> {
         let reads = self.host.reads_processes();
         let held = self.host.held(pane)?;
@@ -4144,6 +4220,9 @@ impl Calling<'_> {
     fn read(&mut self, request: &Request) -> Result<Response, Error> {
         if let Request::PaneTitle(pane) = request {
             return self.pane_title(*pane);
+        }
+        if let Request::TempFile { name, bytes } = request {
+            return self.temp_file(name, &bytes.0);
         }
         let host = &*self.host;
         Ok(match request {
@@ -4354,6 +4433,13 @@ impl Calling<'_> {
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
             Request::Now => Response::Now(host.local_time),
+            Request::GitBranch { folder } => {
+                host::check_absolute_folder(folder)?;
+                let branch = std::path::Path::new(folder)
+                    .ancestors()
+                    .find_map(|at| host.git_branches.get(at.to_str()?));
+                Response::Text(branch.cloned())
+            }
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
@@ -4625,6 +4711,7 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::SetStatusBarSide(_) => Response::Done,
             Request::SetInactiveDim(dim) => {
                 if !(0.0..=1.0).contains(dim) {
                     return Err(Error::new(Code::Failed, DIM_RANGE));
@@ -5787,6 +5874,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 fn declared(text: &str) -> Declared {
     let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
     let mut pages = Vec::new();
+    let mut status_bar_side = host::StatusBarSide::Start;
     let mut section = "";
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -5803,6 +5891,7 @@ fn declared(text: &str) -> Declared {
                 "capabilities" => "capabilities",
                 "uses" => "uses",
                 "contributes" => "contributes",
+                "contributes.status-bar" => "status-bar",
                 _ => "",
             };
             continue;
@@ -5848,6 +5937,13 @@ fn declared(text: &str) -> Declared {
                     })
                 }));
             }
+            "status-bar" if key == "side" => {
+                status_bar_side = match value.trim_matches('"') {
+                    "center" => host::StatusBarSide::Center,
+                    "end" => host::StatusBarSide::End,
+                    _ => host::StatusBarSide::Start,
+                };
+            }
             _ => {}
         }
     }
@@ -5856,6 +5952,7 @@ fn declared(text: &str) -> Declared {
         uses,
         builtin,
         pages,
+        status_bar_side,
     }
 }
 
@@ -5869,11 +5966,17 @@ struct Declared {
     builtin: bool,
     /// The ids of its settings' window's pages.
     pages: Vec<String>,
+    /// The side of the status bar of its view.
+    status_bar_side: host::StatusBarSide,
 }
 
 /// The system's day that the fake host gives by default, in days since
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
+
+/// The folder of the host's temporary files that the fake gives by
+/// default, which their paths are of; the fake writes nothing there.
+pub const TEMPORARY_FOLDER: &str = "/tmp/lokyr-temporary";
 
 /// The system's time that the fake host gives by default: 11 November 2026
 /// at noon in UTC, of a time zone an hour east of it, as Central European

@@ -2309,7 +2309,108 @@ pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
     ))
 }
 
+/// Where a plugin's view goes along the status bar, as the interface reads,
+/// from left to right in every language that Lokyr has: from the bar's
+/// start edge, the plugins' first nearest it; together in its middle; or
+/// from its end edge, the first nearest it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StatusBarSide {
+    /// From the bar's start edge, the left one.
+    #[default]
+    Start,
+    /// In its middle.
+    Center,
+    /// From its end edge, the right one.
+    End,
+}
+
+/// The most bytes of a plugin's temporary file.
+pub const MOST_TEMPORARY_BYTES: usize = 8 * 1024 * 1024;
+
+/// The most temporary files that a plugin keeps at once.
+pub const MOST_TEMPORARY_FILES: usize = 16;
+
+/// The most bytes of a plugin's temporary files together.
+pub const MOST_TEMPORARY_TOTAL: usize = 32 * 1024 * 1024;
+
+/// The message of the error of a temporary file asked of a host that keeps
+/// none, as without a state's folder.
+pub const NO_TEMPORARY_FOLDER: &str = "the host keeps no temporary files without a state's folder";
+
+/// The message of the error of a temporary file asked by a call that only
+/// looks, as `applies`.
+pub const LOOKING_WRITES_NOTHING: &str = "a call that only looks, as `applies`, writes no file";
+
+/// A plugin's temporary files, as a host keeps them for it in a folder of
+/// its own, which it empties at the quit and at the start: the bytes of
+/// each by its name, which a new file's bounds count.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TemporaryFiles {
+    sizes: std::collections::BTreeMap<String, usize>,
+}
+
+impl TemporaryFiles {
+    /// Whether a file of `name` and of `bytes` fits: its name as
+    /// [`check_file_name`] takes it, its bytes [`MOST_TEMPORARY_BYTES`] at
+    /// most, and, with the others, [`MOST_TEMPORARY_FILES`] files and
+    /// [`MOST_TEMPORARY_TOTAL`] bytes at most, a file of the same name in
+    /// place of the old one; the error that tells it does not.
+    pub fn check(&self, name: &str, bytes: usize) -> Result<(), crate::command::Error> {
+        check_file_name(name)?;
+        let failed = |message: String| {
+            Err(crate::command::Error::new(
+                crate::command::Code::Failed,
+                message,
+            ))
+        };
+        if bytes > MOST_TEMPORARY_BYTES {
+            return failed(format!(
+                "a temporary file has {MOST_TEMPORARY_BYTES} bytes at most"
+            ));
+        }
+        let old = self.sizes.get(name).copied();
+        if old.is_none() && self.sizes.len() >= MOST_TEMPORARY_FILES {
+            return failed(format!(
+                "a plugin keeps {MOST_TEMPORARY_FILES} temporary files at most"
+            ));
+        }
+        let others: usize = self.sizes.values().sum::<usize>() - old.unwrap_or(0);
+        if others + bytes > MOST_TEMPORARY_TOTAL {
+            return failed(format!(
+                "a plugin's temporary files have {MOST_TEMPORARY_TOTAL} bytes at most together"
+            ));
+        }
+        Ok(())
+    }
+
+    /// Notes the file `name`, of `bytes`, written.
+    pub fn insert(&mut self, name: &str, bytes: usize) {
+        self.sizes.insert(name.to_owned(), bytes);
+    }
+}
+
+/// The path of the temporary file `name` of the plugin of `namespace`, in
+/// the host's folder of temporary files `folder`: in a folder of the
+/// plugin's own.
+pub fn temporary_path(folder: &std::path::Path, namespace: &str, name: &str) -> std::path::PathBuf {
+    folder.join(namespace).join(name)
+}
+
+/// Whether `folder` is a folder's absolute path, as a plugin asks of it;
+/// the error that tells it is not.
+pub fn check_absolute_folder(folder: &str) -> Result<(), crate::command::Error> {
+    if std::path::Path::new(folder).is_absolute() && !folder.contains('\0') {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!("`{folder}` is not a folder's absolute path"),
+    ))
+}
+
 /// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
+/// Luau's, rather than as a list of numbers./// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
 /// Luau's, rather than as a list of numbers.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Bytes(pub Vec<u8>);

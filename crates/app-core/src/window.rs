@@ -341,6 +341,10 @@ pub(crate) struct Window<B: Backend> {
     /// The window's room below its titlebar and its tab bar, in pixels, as
     /// its last layout placed it, whose corners panels anchor in.
     pub(crate) overlay: Frame,
+    /// The status bar's region across the window, in pixels, as its last
+    /// layout placed it, while a plugin's view fills it, whose band the
+    /// frame draws under the views.
+    pub(crate) status_bar: Option<Frame>,
 }
 
 /// Where a pane of a window lies, as a frame laid it out.
@@ -490,6 +494,7 @@ impl<B: Backend> Window<B> {
             native_hovered: None,
             native_item: None,
             overlay: Frame::default(),
+            status_bar: None,
         }
     }
 

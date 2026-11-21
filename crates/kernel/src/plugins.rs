@@ -672,6 +672,8 @@ struct State {
     written: Data,
     /// Its state on the disk.
     stored: Stored,
+    /// Its temporary files.
+    temporary: Temporary,
     /// Whether its section of the config turns it on, as by default.
     wanted: bool,
     /// The plugin that replaces it, by its name, while one that runs does,
@@ -684,6 +686,9 @@ struct State {
     starts: u64,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// The side of the status bar that it asked for its view, in place of
+    /// its manifest's, until it stops.
+    status_bar_side: Option<host::StatusBarSide>,
     /// The fade of the panes that have not the keyboard that it asked for,
     /// and whether it asked that the keyboard follow the pointer.
     dim: f32,
@@ -1046,6 +1051,20 @@ struct Stored {
     held: Option<Data>,
 }
 
+/// The function that marks a file that a plugin wrote as come from
+/// elsewhere, so that the system asks before it opens as a program, as the
+/// platform gives it.
+pub type Mark = fn(&std::path::Path) -> std::io::Result<()>;
+
+/// A plugin's temporary files: their folder, its own in the host's folder
+/// of them, with the function that marks each, none without a state's
+/// folder; and the tally of those that it wrote, which their bounds count.
+#[derive(Debug, Default)]
+struct Temporary {
+    folder: Option<(PathBuf, Mark)>,
+    files: host::TemporaryFiles,
+}
+
 impl State {
     /// Whether its manifest declares that it fills `slot`.
     fn fills(&self, slot: Slot) -> bool {
@@ -1089,6 +1108,9 @@ pub struct Plugins {
     serve_for: Option<Duration>,
     /// The app's state directory, which the plugins' states are kept in.
     state_directory: Option<PathBuf>,
+    /// The folder of the plugins' temporary files, each plugin's in a
+    /// folder of its own, with the function that marks them.
+    temporary_directory: Option<(PathBuf, Mark)>,
     /// The capabilities that the host withholds and that a declared
     /// plugin's manifest asked for, by the plugin's name, which
     /// [`Plugins::take_withheld`] tells.
@@ -1726,6 +1748,10 @@ impl Plugins {
             .state_directory
             .as_ref()
             .map(|directory| state_file(directory, &namespace));
+        let temporary = self
+            .temporary_directory
+            .as_ref()
+            .map(|(directory, mark)| (directory.join(&namespace), *mark));
         let (granted, uses) = declared.unzip();
         let wanted = enabled_by_default(manifest.as_ref());
         self.entries.push(Entry {
@@ -1760,11 +1786,16 @@ impl Plugins {
                 config: data(&Value::Object(config)),
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
+                temporary: Temporary {
+                    folder: temporary,
+                    files: host::TemporaryFiles::default(),
+                },
                 wanted,
                 replaced_by: None,
                 ran: false,
                 starts: 0,
                 bar_place: host::BarPlace::default(),
+                status_bar_side: None,
                 window_places: BTreeMap::new(),
                 dim: 0.0,
                 follows: false,
@@ -1817,6 +1848,38 @@ impl Plugins {
             };
         }
         self.state_directory = directory;
+    }
+
+    /// Gives the host the folder of the plugins' temporary files, each
+    /// plugin's in a folder of its namespace's within it, and the function
+    /// that marks each file as come from elsewhere: emptied now, as the
+    /// app starts, of the files of a run that did not quit; none, as
+    /// without a state's folder, fails a temporary file.
+    pub fn set_temporary_directory(&mut self, directory: Option<PathBuf>, mark: Mark) {
+        if let Some(directory) = &directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        for entry in &mut self.entries {
+            entry.state.temporary = Temporary {
+                folder: directory
+                    .as_ref()
+                    .map(|directory| (directory.join(&entry.state.namespace), mark)),
+                files: host::TemporaryFiles::default(),
+            };
+        }
+        self.temporary_directory = directory.map(|directory| (directory, mark));
+    }
+
+    /// Takes the plugins' temporary files away, their folder whole, as the
+    /// app quits.
+    pub fn empty_temporary(&self) {
+        if let Some((directory, _)) = &self.temporary_directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
     }
 
     /// Checks the plugins' sections of `config` against their schemas: a
@@ -2575,6 +2638,26 @@ impl Plugins {
         self.entries
             .iter()
             .any(|entry| entry.state.status == Status::Active && entry.state.follows)
+    }
+
+    /// The side of the status bar where the view of `plugin` goes: the one
+    /// that it asked for, or its manifest's; the start for a plugin not
+    /// there.
+    pub fn status_bar_side(&self, plugin: &str) -> host::StatusBarSide {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .map(|entry| {
+                entry.state.status_bar_side.unwrap_or_else(|| {
+                    entry
+                        .state
+                        .manifest
+                        .as_ref()
+                        .map(|manifest| manifest.contributes.status_bar_side)
+                        .unwrap_or_default()
+                })
+            })
+            .unwrap_or_default()
     }
 
     /// Where the tab bar of `plugin`, the provider of a window's, goes; at
@@ -4517,6 +4600,7 @@ fn stop(
     state.views.clear();
     state.subscribed.clear();
     state.bar_place = host::BarPlace::default();
+    state.status_bar_side = None;
     state.window_places.clear();
     state.dim = 0.0;
     state.follows = false;
@@ -4953,6 +5037,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
             Asked::SetTabBarPlace(place) => state.bar_place = place,
+            Asked::SetStatusBarSide(side) => state.status_bar_side = Some(side),
             Asked::SetInactiveDim(dim) => state.dim = dim,
             Asked::SetFocusFollowsMouse(on) => state.follows = on,
             Asked::SetBlockLooks(looks) => state.block_looks = looks,
@@ -6233,6 +6318,30 @@ impl Host<'_, '_> {
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),
             Asked::Now => Response::Now((self.context.local_time)()),
+            Asked::TempFile { name, bytes } => {
+                if self.looking {
+                    return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+                }
+                let Some((folder, mark)) = self.state.temporary.folder.clone() else {
+                    return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+                };
+                self.state.temporary.files.check(&name, bytes.0.len())?;
+                // Written whole, of the platform's mark before it takes its
+                // name, on the main thread: a few milliseconds of its most.
+                let path = folder.join(&name);
+                lokyr_pkg_model::write_whole_marked(&path, &bytes.0, mark).map_err(|error| {
+                    Error::new(
+                        Code::Failed,
+                        format!("the temporary file `{name}` was not written: {error}"),
+                    )
+                })?;
+                self.state.temporary.files.insert(&name, bytes.0.len());
+                Response::Text(Some(path.to_string_lossy().into_owned()))
+            }
+            Asked::GitBranch { folder } => {
+                host::check_absolute_folder(&folder)?;
+                Response::Text(crate::git::branch(std::path::Path::new(&folder)))
+            }
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Settings => {
                 let mut sections = crate::config::schema::sections(self.context.config);
