@@ -79,6 +79,7 @@ pub const LIGHT_TOKENS: &[TokenColor] = &[
     ("progress.error", 0xd63b3b, 1.0),
     ("progress.paused", 0xd99a00, 1.0),
     ("tabs.bar.bg", 0xf4f4f6, 1.0),
+    ("status-bar.bg", 0xf4f4f6, 1.0),
     ("tabs.track.bg", 0x000000, 0.07),
     ("tabs.active.bg", 0xffffff, 1.0),
     ("tabs.active.fg", 0x1e1e20, 1.0),
@@ -172,6 +173,7 @@ pub const DARK_TOKENS: &[TokenColor] = &[
     ("progress.error", 0xff5f57, 1.0),
     ("progress.paused", 0xffbd2e, 1.0),
     ("tabs.bar.bg", 0x232326, 1.0),
+    ("status-bar.bg", 0x232326, 1.0),
     ("tabs.track.bg", 0x000000, 0.3),
     ("tabs.active.bg", 0x404044, 1.0),
     ("tabs.active.fg", 0xf4f4f6, 1.0),
@@ -279,6 +281,7 @@ pub const LIGHT_RULED: &[&str] = &[
     "blocks.divider",
     "blocks.selected.bg",
     "blocks.failed",
+    "status-bar.bg",
 ];
 
 /// The tokens of [`DARK_TOKENS`] that the dark theme leaves to their
@@ -330,6 +333,7 @@ pub const DARK_RULED: &[&str] = &[
     "blocks.divider",
     "blocks.selected.bg",
     "blocks.failed",
+    "status-bar.bg",
 ];
 
 /// The built-in theme of the light appearance: its own tokens, the others

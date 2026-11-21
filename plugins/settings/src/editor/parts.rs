@@ -42,6 +42,7 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
             "tabs.hover.bg",
             "tabs.seamless.line",
             "tabs.seamless.veil",
+            "status-bar.bg",
         ],
     ),
     (

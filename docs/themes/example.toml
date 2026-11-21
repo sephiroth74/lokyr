@@ -144,6 +144,9 @@ hover.bg = "#ffffff0f"
 seamless.line = "#ffffff1f"
 seamless.veil = "#000000 / 27%"
 
+[status-bar]                        # the status bar's band, while a plugin fills it
+bg = "tabs.bar.bg"
+
 [segments]                          # the segmented controls
 bg = "#ffffff14"
 chosen.bg = "#2462c4"

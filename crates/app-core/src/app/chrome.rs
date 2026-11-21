@@ -697,6 +697,7 @@ impl<B: Backend> App<B> {
         };
         let regions = chrome::regions(&shape, place, heights);
         state.overlay = regions.window_overlay;
+        state.status_bar = regions.status_bar.filter(|_| !status_views.is_empty());
         // The buttons side by side, each a square in the middle of its room
         // and of the titlebar's height; the others hide.
         let side = (TITLE_BUTTON * scale).round();

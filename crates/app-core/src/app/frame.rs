@@ -47,11 +47,12 @@ const DIVIDER: f64 = 1.0;
 const GUTTER_ROOM: f64 = 4.0;
 
 /// The tokens of the chrome's backgrounds, which take the window's
-/// background's opacity: the tab bar's, of a pane's header too, and the
-/// active tab's. Over a translucent window, they take the place of what is
-/// under them, the window's background that the frame draws, so that they
-/// show the window's opacity rather than theirs over it.
-const TRANSLUCENT: [&str; 2] = ["tabs.bar.bg", "tabs.active.bg"];
+/// background's opacity: the tab bar's, of a pane's header too, the active
+/// tab's and the status bar's. Over a translucent window, they take the
+/// place of what is under them, the window's background that the frame
+/// draws, so that they show the window's opacity rather than theirs over
+/// it.
+const TRANSLUCENT: [&str; 3] = ["tabs.bar.bg", "tabs.active.bg", "status-bar.bg"];
 
 impl<B: Backend> App<B> {
     /// Asks every window for a frame.
@@ -1362,6 +1363,14 @@ impl<B: Backend> App<B> {
         if opaque_bar && let Some(Item::Rect { rect: band, .. }) = bar_item(size, background, past)
         {
             over_opaque(&mut painted, band, opacity);
+        }
+        // The status bar's band across the window, under its plugins' views,
+        // while one fills it.
+        if let (Some(band), Some(fill)) = (state.status_bar, tokens.get("status-bar.bg")) {
+            items.push(Item::Shapes(vec![Shape {
+                knockout: tokens.knocks_out("status-bar.bg"),
+                ..Shape::filled(chrome::rect_of(band), fill)
+            }]));
         }
         items.extend(painted);
         // The hand over its close, the arrow over the rest of the bar,

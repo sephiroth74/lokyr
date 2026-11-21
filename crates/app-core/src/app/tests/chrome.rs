@@ -371,6 +371,27 @@ fn the_status_bar_s_views_take_their_widths_on_their_plugins_sides() {
         (width, pixels(60.0))
     );
     assert_eq!(first.y, second.y);
+    // The bar's band across the window, under the views, of its token.
+    let fills = [false, true].map(|dark| app.theme.variant(dark).tokens.get("status-bar.bg"));
+    let bands: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| fills.contains(&Some(shape.fill)) && shape.rect.y == first.y)
+        .map(|shape| shape.rect)
+        .collect();
+    assert!(
+        bands
+            .iter()
+            .any(|band| band.x == 0 && band.width as i32 == width && band.height == first.height),
+        "{bands:?}"
+    );
     // The first asks for the middle, which it takes.
     app.run(&mut fake, "first.center", Args::new());
     let (first, _) = frames(&mut fake, &mut app);
