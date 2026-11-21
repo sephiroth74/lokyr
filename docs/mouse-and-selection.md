@@ -95,6 +95,7 @@ With [`[window] smooth-scroll`](CONFIGURATION.md#smooth-scroll) on, the text fol
 
 - **The keys** still scroll by whole rows, such as Page Up and Page Down and the jumps between prompts.
 - **A program that takes the wheel**, such as `less` or vim, still gets whole steps. Hold ⇧ to scroll the scrollback by pixels anyway.
+- **An even pace**: the text moves at every refresh of the display while it scrolls, easing toward where your fingers take it, so that it moves smoothly even when the trackpad's events come unevenly. It stops where your fingers took it, a moment after them.
 - **The ends**: the text stops at the top of the scrollback and at the screen, with no bounce.
 - **Dragging a selection** past the window's top or bottom scrolls by whole rows, keeping the part of a row where you left the text.
 - **The scroll bar**: dragging its knob moves the text by pixels, and a click on its track glides a page, or to the spot clicked, as macOS's Click in the scroll bar to setting says.

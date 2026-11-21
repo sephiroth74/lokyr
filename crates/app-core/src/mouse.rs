@@ -1,7 +1,7 @@
 //! The mouse over a pane: where the pointer is in its cells, the buttons
 //! that the program learned were held, the wheel's scroll, which adds up to
-//! whole steps or glides the view by pixels, and the cells that a drag
-//! selects.
+//! whole steps or glides the view by pixels, a trackpad's, which eases the
+//! view by pixels, and the cells that a drag selects.
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -356,11 +356,76 @@ impl Glide {
     }
 }
 
+/// A trackpad's scroll easing a pane's view toward where its events take
+/// it, by pixels: each event adds its rows to those left, and each frame
+/// moves the view a share of them, half of them in a refresh of the
+/// display, of the time since its last move, the rest at once once it is
+/// less than half a pixel. The view so moves at every refresh while rows
+/// are left, however the events fall between the refreshes, which macOS
+/// sends about once a refresh but some 11 to 25 ms apart, with steps that
+/// change little from one frame to the next, and stops where the events
+/// took it, never past.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Ease {
+    /// The pane whose view eases.
+    pub(crate) pane: PaneId,
+    /// The rows that the events gave and the view has yet to move, up
+    /// where positive.
+    left: f64,
+    /// When the view last moved toward them.
+    at: Instant,
+}
+
+impl Ease {
+    /// An ease of `pane`'s view by `rows`, up where positive, of an event at
+    /// `now`, on a display of `refresh`: its first frame moves the view as
+    /// a refresh after a move would, half of the rows, rather than waiting
+    /// for the next.
+    pub(crate) fn new(pane: PaneId, rows: f64, now: Instant, refresh: Duration) -> Ease {
+        Ease {
+            pane,
+            left: rows,
+            at: now.checked_sub(refresh).unwrap_or(now),
+        }
+    }
+
+    /// Adds `rows`, of another event, to those left.
+    pub(crate) fn add(&mut self, rows: f64) {
+        self.left += rows;
+    }
+
+    /// The rows that the view has yet to move.
+    pub(crate) fn left(&self) -> f64 {
+        self.left
+    }
+
+    /// The rows that the view moves at `now`, on a display of `refresh`: a
+    /// share of those left, half of them a refresh since its last move, or
+    /// all of them where fewer than `least` would be left.
+    pub(crate) fn step(&mut self, now: Instant, refresh: Duration, least: f64) -> f64 {
+        let elapsed = now.saturating_duration_since(self.at).as_secs_f64();
+        self.at = now;
+        let half = refresh.as_secs_f64();
+        let kept = if half > 0.0 {
+            0.5_f64.powf(elapsed / half)
+        } else {
+            0.0
+        };
+        let rows = if (self.left * kept).abs() < least {
+            self.left
+        } else {
+            self.left * (1.0 - kept)
+        };
+        self.left -= rows;
+        rows
+    }
+}
+
 /// A window's mouse: the buttons pressed that a pane's program learned of,
 /// and that pane, which takes the moves and the releases until the last
 /// goes up; where each pane's program last learned the pointer was; the
-/// scroll that adds up to the wheel's next steps; and the wheel's glide of
-/// a view, scrolling by pixels.
+/// scroll that adds up to the wheel's next steps; and the wheel's glide and
+/// the trackpad's ease of a view, scrolling by pixels.
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
     held: Vec<MouseButton>,
@@ -370,6 +435,8 @@ pub(crate) struct Mouse {
     rest: (f64, f64),
     /// The wheel's glide of a pane's view under way.
     pub(crate) glide: Option<Glide>,
+    /// The trackpad's ease of a pane's view under way.
+    pub(crate) ease: Option<Ease>,
 }
 
 impl Mouse {
@@ -406,6 +473,9 @@ impl Mouse {
         self.last.remove(&pane);
         if self.glide.is_some_and(|glide| glide.pane == pane) {
             self.glide = None;
+        }
+        if self.ease.is_some_and(|ease| ease.pane == pane) {
+            self.ease = None;
         }
         if self.holder == Some(pane) {
             self.holder = None;
@@ -807,5 +877,44 @@ mod tests {
         let mut glide = Glide::new(pane, -5.0, start, (scrolled(30), 30.0), 40.0);
         glide.follow(45.0);
         assert_eq!(glide.end(), 35.0);
+    }
+
+    #[test]
+    fn a_trackpad_s_ease_moves_half_its_rows_a_refresh_and_stops_where_they_go() {
+        let pane = PaneId::of(1);
+        let refresh = Duration::from_millis(16);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let least = 0.01;
+        // Its first frame, at the event, moves half, as a refresh after a
+        // move would.
+        let mut ease = Ease::new(pane, 8.0, start, refresh);
+        assert_eq!(ease.step(start, refresh, least), 4.0);
+        assert_eq!(ease.left(), 4.0);
+        // Half of the rest a refresh later, a quarter of it half a refresh
+        // later: of the time since its last move, whatever the display.
+        assert_eq!(ease.step(at(16), refresh, least), 2.0);
+        let rows = ease.step(at(24), refresh, least);
+        assert!(close(rows, 2.0 * (1.0 - 0.5_f64.sqrt())), "{rows}");
+        let mut moved = 6.0 + rows;
+        // An event adds its rows to those left, of either way: three down.
+        ease.add(-3.0);
+        assert!(close(ease.left(), 2.0 * 0.5_f64.sqrt() - 3.0));
+        // The rest at once where less than `least` would be left: the view
+        // where the events took it, five rows up, never past, within a few
+        // refreshes.
+        let mut time = 24;
+        while ease.left() != 0.0 {
+            time += 16;
+            moved += ease.step(at(time), refresh, least);
+        }
+        assert!(close(moved, 5.0), "{moved}");
+        assert!(time <= 24 + 16 * 8, "{time}");
+        // A late frame moves the more; one of no time, nothing.
+        let mut ease = Ease::new(pane, 8.0, start, refresh);
+        ease.step(start, refresh, least);
+        assert_eq!(ease.step(start, refresh, least), 0.0);
+        assert_eq!(ease.step(at(160), refresh, least), 4.0);
     }
 }
