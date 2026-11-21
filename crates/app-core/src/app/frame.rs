@@ -784,10 +784,12 @@ impl<B: Backend> App<B> {
             .and_then(|preedit| cells::composition_start(snapshot, preedit, snapshot.cols()))
             .map_or((at.x, at.y), |(row, column)| (column, row));
         let (width, height) = (f64::from(grid.cell_width), f64::from(grid.cell_height));
+        // The rows a share of a row up, as the view is scrolled by points.
+        let up = f64::from(cells::rows_up(snapshot, u32::from(grid.cell_height)));
         let (x, y, width, height) = field_area.map_or(
             (
                 f64::from(left) + f64::from(column) * width,
-                f64::from(top) + f64::from(row) * height,
+                f64::from(top) + f64::from(row) * height - up,
                 width,
                 height,
             ),
@@ -974,6 +976,29 @@ impl<B: Backend> App<B> {
             thickness: config.thickness(&cell, size.scale as f32),
             length: config.length.value(),
         };
+        // Each pane's rows, a share of a row up while its view is scrolled
+        // by points, within the band of its grid's rows across its room,
+        // its paddings too.
+        let pad = i32::try_from(bar_padding).unwrap_or(0);
+        let width = |pane: PaneId| {
+            views
+                .iter()
+                .find(|view| view.pane == pane)
+                .map_or(0, |view| view.rect.width)
+        };
+        let rows_of = |snapshot: &lokyr_vt_core::terminal::Snapshot, at: (i32, i32), pane| {
+            cells::rows_at(
+                snapshot,
+                &cell,
+                at,
+                (at.0 - pad, width(pane) + 2 * bar_padding),
+            )
+        };
+        let rows = rows_of(snapshot, (x, y), active);
+        let others_drawn: Vec<(&Pane, (i32, i32))> = others
+            .iter()
+            .map(|&(pane, at)| (pane, rows_of(pane.snapshot(), at, pane.id()).corner(at)))
+            .collect();
         // How much the panes that have not the keyboard fade, as the plugins
         // ask.
         let dim = self.plugins.inactive_dim();
@@ -981,24 +1006,24 @@ impl<B: Backend> App<B> {
         let mut batch = cells::cells_with(
             snapshot,
             &cell,
-            (x, y),
+            rows.corner((x, y)),
             selection.as_ref(),
             grid_cursor,
             guided,
             font,
         );
-        let mut other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
+        let mut other_batches = other_cells(&others_drawn, &cell, colors, hollow, look, dim, font);
         if font.draw_pending() {
             batch = cells::cells_with(
                 snapshot,
                 &cell,
-                (x, y),
+                rows.corner((x, y)),
                 selection.as_ref(),
                 grid_cursor,
                 guided,
                 font,
             );
-            other_batches = other_cells(&others, &cell, colors, hollow, look, dim, font);
+            other_batches = other_cells(&others_drawn, &cell, colors, hollow, look, dim, font);
         }
         // A search's matches over the cells, and the plugins' decorations
         // over the text and their labels, under the composition.
@@ -1041,40 +1066,45 @@ impl<B: Backend> App<B> {
             .collect();
         // The panes' cells and their inline images: those under the cells'
         // backgrounds, the backgrounds, those under the text, the text, and
-        // those over it after every pane's, each within its pane.
+        // those over it after every pane's, each within its pane, and
+        // within its rows' band while they draw a share of a row up.
         let mut over_text = Vec::new();
         {
             let renderer = &mut drawing.renderer;
             let cell_size = (cell.width, cell.height);
-            let shown = std::iter::once((snapshot, (x, y), (grid.columns, grid.rows))).chain(
+            let shown = std::iter::once((snapshot, (x, y), (grid.columns, grid.rows), rows)).chain(
                 others.iter().map(|(pane, corner)| {
                     let size = pane.grid();
-                    (pane.snapshot(), *corner, (size.columns, size.rows))
+                    let snapshot = pane.snapshot();
+                    let rows = rows_of(snapshot, *corner, pane.id());
+                    (snapshot, *corner, (size.columns, size.rows), rows)
                 }),
             );
             let batches = std::iter::once(batch).chain(other_batches);
-            for ((snapshot, corner, size), batch) in shown.zip(batches) {
+            for ((snapshot, corner, size, rows), batch) in shown.zip(batches) {
                 let layers = self.inline_images.items(
                     renderer,
                     &*platform,
                     snapshot.images(),
                     super::inline_images::Grid {
                         corner,
+                        up: rows.up,
                         cell: cell_size,
                         size,
                     },
                     now,
                 );
-                items.extend(layers.below);
+                let mut drawn = layers.below;
                 if layers.under.is_empty() {
-                    items.push(Item::Cells(batch));
+                    drawn.push(Item::Cells(batch));
                 } else {
                     let (backgrounds, text) = backgrounds_apart(batch);
-                    items.push(Item::Cells(backgrounds));
-                    items.extend(layers.under);
-                    items.push(Item::Cells(text));
+                    drawn.push(Item::Cells(backgrounds));
+                    drawn.extend(layers.under);
+                    drawn.push(Item::Cells(text));
                 }
-                over_text.extend(layers.over);
+                items.extend(rows.clipped(drawn));
+                over_text.extend(rows.clipped(layers.over));
             }
             self.inline_images.let_go(renderer, now);
         }
@@ -1109,12 +1139,6 @@ impl<B: Backend> App<B> {
                 shape
             }
         };
-        let width = |pane: PaneId| {
-            views
-                .iter()
-                .find(|view| view.pane == pane)
-                .map_or(0, |view| view.rect.width)
-        };
         let shown = || {
             std::iter::once((active, snapshot, (x, y), width(active), 0.0)).chain(
                 others.iter().map(move |(pane, at)| {
@@ -1122,7 +1146,6 @@ impl<B: Backend> App<B> {
                 }),
             )
         };
-        let pad = i32::try_from(bar_padding).unwrap_or(0);
         for (pane, snapshot, at, width, dim) in shown() {
             let selected = self
                 .plugins
@@ -1131,11 +1154,12 @@ impl<B: Backend> App<B> {
                 continue;
             }
             // Within the pane and its paddings, as a selected block's
-            // outline goes past the edges of the view that cut it.
+            // outline goes past the edges of the view that cut it, and of
+            // its rows, a share of a row up as they draw.
             let across = (at.0 - pad, width + 2 * bar_padding);
             let blocks: Vec<Shape> = cells::block_shapes(
                 snapshot,
-                at.1,
+                rows_of(snapshot, at, pane).corner(at).1,
                 cell.height,
                 across,
                 size.scale,
@@ -1156,20 +1180,29 @@ impl<B: Backend> App<B> {
                 items.push(Item::PopClip);
             }
         }
+        // The marks of the rows drawn a share of a row up, within their
+        // band, each pane's apart.
         let mut shapes: Vec<Shape> = Vec::new();
         if let Some(padding) = gutter {
-            for (_, snapshot, at, _, dim) in shown() {
-                shapes.extend(
-                    cells::gutter_marks(
-                        snapshot,
-                        at,
-                        (padding, cell.height),
-                        size.scale,
-                        tokens,
-                        looks.bars,
-                    )
-                    .map(faded(dim)),
-                );
+            for (pane, snapshot, at, _, dim) in shown() {
+                let rows = rows_of(snapshot, at, pane);
+                let marks = cells::gutter_marks(
+                    snapshot,
+                    rows.corner(at),
+                    (padding, cell.height),
+                    size.scale,
+                    tokens,
+                    looks.bars,
+                )
+                .map(faded(dim));
+                if rows.clip.is_none() {
+                    shapes.extend(marks);
+                } else {
+                    let marks: Vec<Shape> = marks.collect();
+                    if !marks.is_empty() {
+                        items.extend(rows.clipped(vec![Item::Shapes(marks)]));
+                    }
+                }
             }
         }
         if !shapes.is_empty() {
@@ -1346,13 +1379,16 @@ impl<B: Backend> App<B> {
         );
         // The hand over the decorations that ask for it, as a link's that
         // Command underlines, of every pane, under the bar.
-        for (pane, (left, top)) in &pointed {
-            let Some(pane) = self.workspace.pane(*pane) else {
+        for &(pane, corner) in &pointed {
+            let Some(pane) = self.workspace.pane(pane) else {
                 continue;
             };
+            let snapshot = pane.snapshot();
+            // Of the rows a share of a row up, within their band.
+            let rows = rows_of(snapshot, corner, pane.id());
+            let (left, top) = rows.corner(corner);
             let (width, height) = (cell.width, cell.height);
-            for span in pane
-                .snapshot()
+            for span in snapshot
                 .decorations()
                 .iter()
                 .filter(|span| span.look.pointing)
@@ -1362,6 +1398,9 @@ impl<B: Backend> App<B> {
                     y: top + i32::try_from(u32::from(span.row) * height).unwrap_or(i32::MAX),
                     width: u32::from(span.last - span.first + 1) * width,
                     height,
+                };
+                let Some(rect) = rows.clip.map_or(Some(rect), |band| within(rect, band)) else {
+                    continue;
                 };
                 areas.push(points(&rect, PointerShape::PointingHand));
             }
@@ -1617,6 +1656,8 @@ impl<B: Backend> App<B> {
             }
             (column, row, cells)
         });
+        // Its rows a share of a row up, as the view is scrolled by points.
+        let top = top - f64::from(rows.up);
         let cursor_shown = cursor_cells.map(|(column, row, cells)| {
             let at = (
                 left + f64::from(column) * width,
@@ -1627,7 +1668,12 @@ impl<B: Backend> App<B> {
         // A move of the cursor's own, in the pane that showed it, of the
         // same view, cells and place, of rows that did not scroll, slides,
         // as the config says, but where the system reduces motion.
-        let steady = (active, (x, y), (cell.width, cell.height), snapshot.offset());
+        let steady = (
+            active,
+            rows.corner((x, y)),
+            (cell.width, cell.height),
+            snapshot.offset(),
+        );
         let moved_alone =
             state.cursor_steady.replace(steady) == Some(steady) && snapshot.scrolled() == 0;
         let slide =
@@ -1643,7 +1689,7 @@ impl<B: Backend> App<B> {
             drawing,
             (window, Layer::Cursor, !state.occluded),
             &mut state.cursor_layer,
-            cursor_shown,
+            (cursor_shown, rows),
             size.scale,
             (shown_cursor.and_then(|(_, blink)| blink), slide),
         );
@@ -1661,7 +1707,7 @@ impl<B: Backend> App<B> {
             drawing,
             (window, Layer::BlinkingText, !state.occluded),
             &mut state.text_layer,
-            text_shown,
+            (text_shown, rows),
             size.scale,
             (text_blink, None),
         );
@@ -2376,7 +2422,7 @@ impl<B: Backend> App<B> {
             drawing,
             (window, Layer::Cursor, false),
             &mut state.cursor_layer,
-            None,
+            (None, cells::Rows::default()),
             size.scale,
             (None, None),
         );
@@ -2386,7 +2432,7 @@ impl<B: Backend> App<B> {
             drawing,
             (window, Layer::BlinkingText, false),
             &mut state.text_layer,
-            None,
+            (None, cells::Rows::default()),
             size.scale,
             (None, None),
         );
@@ -2399,18 +2445,23 @@ impl<B: Backend> App<B> {
     }
 }
 
+/// A layer's cells, and where their top left corner goes, in the window's
+/// pixels.
+type LayerCells = (CellBatch, (f64, f64));
+
 /// Shows `shown` in `layer` of `window`, which `state` keeps: cells, which
 /// `drawing` draws into the layer's surface as they change, as large as
 /// they are and as their margin on each side, their batch's corner, at a
 /// corner in pixels of the content, of `scale`, blinking as `blink` says,
-/// and sliding there as `slide` says, from where it showed, of its size.
-/// `None` hides the layer.
+/// and sliding there as `slide` says, from where it showed, of its size;
+/// over `rows` drawn a share of a row up, the part of it within their band
+/// alone, and none past it. `None` hides the layer.
 fn show_layer<B: Backend>(
     platform: &mut dyn Platform,
     drawing: &mut Drawing<B>,
     (window, layer, visible): (WindowId, Layer, bool),
     state: &mut WindowLayer<B>,
-    shown: Option<(CellBatch, (f64, f64))>,
+    (shown, rows): (Option<LayerCells>, cells::Rows),
     scale: f64,
     (blink, slide): (Option<PlatformBlink>, Option<Slide>),
 ) {
@@ -2420,11 +2471,23 @@ fn show_layer<B: Backend>(
         let margin = |pixels: i32| u32::try_from(pixels).unwrap_or(0) * 2;
         let width = u32::from(cells.columns) * cells.cell_width + margin(cells.x);
         let height = u32::from(cells.rows) * cells.cell_height + margin(cells.y);
-        let drawn = (cells, scale, drawing.fonts);
+        // Over rows drawn a share of a row up, the part of it within their
+        // band alone, as the window server cuts no layer: none past it.
+        let part = match rows.layer((x, y), (width, height)) {
+            cells::Shows::All => None,
+            cells::Shows::Part(part) => Some(part),
+            cells::Shows::Nothing => return None,
+        };
+        let drawn = (cells, part, scale, drawing.fonts);
         if state.drawn.as_ref() != Some(&drawn) {
+            let cells = Item::Cells(drawn.0.clone());
+            let items = match part {
+                Some(part) => vec![Item::PushClip(part), cells, Item::PopClip],
+                None => vec![cells],
+            };
             let list = DisplayList {
                 background: Color::default().with_alpha(0.0),
-                items: vec![Item::Cells(drawn.0.clone())],
+                items,
                 frame: drawing.font.atlas_frame(),
             };
             surface.resize(width, height, scale);
@@ -2472,6 +2535,20 @@ fn show_layer<B: Backend>(
         platform.place_layer(window, layer, sent.as_ref());
         state.place = place;
     }
+}
+
+/// The part of `rect` within `band`, from its top to its bottom; `None`
+/// past it.
+fn within(rect: Rect, band: Rect) -> Option<Rect> {
+    let top = rect.y.max(band.y);
+    let bottom = (i64::from(rect.y) + i64::from(rect.height))
+        .min(i64::from(band.y) + i64::from(band.height));
+    let height = u32::try_from(bottom - i64::from(top)).ok()?;
+    (height > 0).then_some(Rect {
+        y: top,
+        height,
+        ..rect
+    })
 }
 
 /// `color` of its components, encoded as sRGB's are, times `factor`, past

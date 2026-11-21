@@ -154,12 +154,13 @@ fn any_other_move_of_the_view_lets_the_share_go() {
 }
 
 #[test]
-fn a_snapshot_of_a_share_holds_the_row_past_the_view_s_last() {
+fn a_snapshot_of_a_share_holds_the_row_past_the_view_s_last_and_its_cursor() {
     let mut terminal = terminal();
     let mut snapshot = Snapshot::default();
     // At the screen, of no share: the screen's four rows alone.
     terminal.snapshot(&mut snapshot);
     assert_eq!(snapshot.rows(), 4);
+    assert_eq!(snapshot.drawn_rows(), 4);
     assert!(snapshot.below().is_none());
     assert_eq!(snapshot.fraction(), 0.0);
     // Up of a share, from the row of `10`: its four rows, then `14`.
@@ -196,6 +197,16 @@ fn a_snapshot_of_a_share_holds_the_row_past_the_view_s_last() {
     assert_eq!(terminal.origin().top, 16);
     let shown: Vec<String> = (0..5).map(|y| text(&snapshot, y)).collect();
     assert_eq!(shown, ["16", "17", "18", "19", ""]);
+    assert_eq!(snapshot.drawn_rows(), 5);
+    // The cursor, on the screen's last row, shows on the row below.
+    let cursor = snapshot.cursor();
+    assert!(cursor.visible);
+    assert_eq!((cursor.position.x, cursor.position.y), (0, 4));
+    // A row further up, it is past the row below, and hidden.
+    terminal.scroll_viewport_by(1.0);
+    terminal.snapshot(&mut snapshot);
+    assert!(!snapshot.cursor().visible);
+    terminal.scroll_viewport_by(-1.0);
     // Back at the screen, the row below goes.
     terminal.scroll_viewport_by(-0.5);
     terminal.snapshot(&mut snapshot);

@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Rect,
-    Shape, Texture,
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, Item, LineStyle,
+    Rect, Shape, Texture,
 };
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
@@ -314,7 +314,8 @@ pub fn foreground(snapshot: &Snapshot) -> Color {
 /// selected, is opaque. Reverse video swaps the default colors; faint text mixes
 /// its color toward its background, of the config's opacity of it; hidden text shows its background
 /// alone. The cursor covers both cells of a wide character, and the text
-/// under a block takes its cell's background.
+/// under a block takes its cell's background. While the view shows the row
+/// past its last, [`Snapshot::below`], the grid has it as its last row.
 pub fn cells(
     snapshot: &Snapshot,
     cell: &CellMetrics,
@@ -480,9 +481,9 @@ pub fn highlight(batch: &mut CellBatch, snapshot: &Snapshot, colors: MatchColors
 }
 
 /// Whether `snapshot` shows text that blinks, as SGR 5 and 6 make it: some
-/// cell of a style that blinks.
+/// cell of a style that blinks, the row below the view's last too.
 pub fn has_blinking_text(snapshot: &Snapshot) -> bool {
-    (0..snapshot.rows()).any(|row| snapshot.line(row).styles().any(|style| style.blink))
+    (0..snapshot.drawn_rows()).any(|row| snapshot.line(row).styles().any(|style| style.blink))
 }
 
 /// The grid of `snapshot`, as [`cells`] lays it out, its text as `text`
@@ -509,6 +510,116 @@ pub fn cells_with(
         (text, shown),
         glyphs,
     )
+}
+
+/// Where a pane's rows draw while its view shows them a share of a row up,
+/// as [`Snapshot::fraction`] tells, so that a scroll by points moves them
+/// by points: [`rows_at`] gives it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rows {
+    /// How many pixels up of the grid's place the rows draw.
+    pub up: i32,
+    /// The band of the grid's rows, across the pane, that what is drawn
+    /// on the rows keeps within while they draw up, as the row past the
+    /// view's last shows at its bottom; `None` at no share, where the rows
+    /// draw in their place and nothing is cut.
+    pub clip: Option<Rect>,
+}
+
+impl Rows {
+    /// The top left corner that the rows draw from, of a grid whose corner
+    /// is `corner`.
+    pub fn corner(self, (x, y): (i32, i32)) -> (i32, i32) {
+        (x, y.saturating_sub(self.up))
+    }
+
+    /// `items`, drawn on the rows, within their band, where they have one.
+    pub fn clipped(self, items: Vec<Item>) -> Vec<Item> {
+        match self.clip {
+            Some(clip) if !items.is_empty() => std::iter::once(Item::PushClip(clip))
+                .chain(items)
+                .chain(std::iter::once(Item::PopClip))
+                .collect(),
+            _ => items,
+        }
+    }
+
+    /// What a layer over the rows shows, of `size` pixels, its top left
+    /// corner at `at`, in the window's pixels, as the band cuts what is
+    /// drawn on the rows: all of it, of no band or within it; the part of
+    /// it within the band, across its whole width, in its own pixels; or
+    /// nothing, past the band.
+    pub fn layer(self, at: (f64, f64), (width, height): (u32, u32)) -> Shows {
+        let Some(clip) = self.clip else {
+            return Shows::All;
+        };
+        let top = f64::from(clip.y) - at.1;
+        let bottom = top + f64::from(clip.height);
+        let height = f64::from(height);
+        if top <= 0.0 && bottom >= height {
+            return Shows::All;
+        }
+        let (top, bottom) = (top.max(0.0).round(), bottom.min(height).round());
+        if bottom <= top {
+            return Shows::Nothing;
+        }
+        // Casts from floats saturate.
+        Shows::Part(Rect {
+            x: 0,
+            y: top as i32,
+            width,
+            height: (bottom - top) as u32,
+        })
+    }
+}
+
+/// What a layer over a pane's rows shows of itself, as [`Rows::layer`]
+/// tells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shows {
+    /// All of it.
+    All,
+    /// The part of it in the rectangle, in its own pixels.
+    Part(Rect),
+    /// Nothing.
+    Nothing,
+}
+
+/// How many pixels up of their place the rows of `snapshot`, of rows of
+/// `row_height`, draw, as its view is scrolled a share of a row past its
+/// first row: that share of a row, rounded to whole pixels; none at none.
+pub fn rows_up(snapshot: &Snapshot, row_height: u32) -> i32 {
+    if snapshot.below().is_none() {
+        return 0;
+    }
+    // Casts from floats saturate; a share is under a row.
+    (f64::from(snapshot.fraction()) * f64::from(row_height)).round() as i32
+}
+
+/// Where the rows of `snapshot` draw, of cells of `cell`, in a pane whose
+/// grid's top left corner is `corner`, in pixels, `across` its left edge
+/// and its width, its paddings too: a share of a row up, rounded to whole
+/// pixels, within the band of the grid's rows across the pane, while the
+/// view is scrolled a share of a row past its first; in their place, of
+/// no band, at none.
+pub fn rows_at(
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    corner: (i32, i32),
+    across: (i32, u32),
+) -> Rows {
+    if snapshot.below().is_none() {
+        return Rows::default();
+    }
+    Rows {
+        up: rows_up(snapshot, cell.height),
+        clip: Some(Rect {
+            x: across.0,
+            y: corner.1,
+            width: across.1,
+            height: u32::from(snapshot.rows()) * cell.height,
+        }),
+    }
 }
 
 /// The text that blinks of `snapshot`, as SGR 5 and 6 make it, as a batch
@@ -594,7 +705,8 @@ fn cells_of(
     (text, shown): (TextLook, Shown),
     glyphs: &mut dyn Glyphs,
 ) -> CellBatch {
-    let (columns, rows) = (snapshot.cols(), snapshot.rows());
+    // The row below the view's last too, while the view shows it.
+    let (columns, rows) = (snapshot.cols(), snapshot.drawn_rows());
     let colors = snapshot.colors();
     let defaults = defaults(snapshot);
     // The last color of selected text that kept the text's own, by its
@@ -1397,12 +1509,12 @@ pub fn cursor_cells(
 }
 
 /// The cell of `snapshot`'s cursor, its column and row, and whether it is
-/// a wide character's, when the program shows it in the view: a wide
-/// character's first, from either of its cells.
+/// a wide character's, when the program shows it in the view, the row
+/// below its last too: a wide character's first, from either of its cells.
 fn cursor_cell(snapshot: &Snapshot) -> Option<(u16, u16, bool)> {
     let cursor = snapshot.cursor();
     let (mut column, row) = (cursor.position.x, cursor.position.y);
-    let (columns, rows) = (snapshot.cols(), snapshot.rows());
+    let (columns, rows) = (snapshot.cols(), snapshot.drawn_rows());
     if !cursor.visible || row >= rows || column >= columns {
         return None;
     }
@@ -1559,7 +1671,7 @@ pub fn gutter_marks<'a>(
         knockout: false,
         mark: None,
     };
-    let rows = i32::from(snapshot.rows());
+    let rows = i32::from(snapshot.drawn_rows());
     let marks = snapshot
         .gutter()
         .iter()
@@ -1608,7 +1720,7 @@ pub fn block_shapes(
     (looks, selected): (lokyr_plugin_sdk::host::BlockLooks, Option<u64>),
 ) -> Vec<Shape> {
     use lokyr_vt_core::terminal::GutterKind;
-    let rows = i32::from(snapshot.rows());
+    let rows = i32::from(snapshot.drawn_rows());
     let shape = |y: i32, height: u32, fill: Color| Shape {
         rect: Rect {
             x: across.0,
@@ -1703,6 +1815,9 @@ fn faint(text: Color, under: Color, opacity: f32) -> Color {
 fn color(rgb: Rgb) -> Color {
     Color::from_rgb8(rgb.r, rgb.g, rgb.b)
 }
+
+#[cfg(test)]
+mod fraction_tests;
 
 #[cfg(test)]
 mod tests {

@@ -121,6 +121,14 @@ impl Snapshot {
         (self.lines.len() - usize::from(self.below)) as u16
     }
 
+    /// The rows that a frame draws: the view's, then the row past its last
+    /// while it has one, [`Snapshot::below`].
+    pub fn drawn_rows(&self) -> u16 {
+        // The screen has at most `u16::MAX` rows, and the row below one
+        // past them at most.
+        u16::try_from(self.lines.len()).unwrap_or(u16::MAX)
+    }
+
     /// Row `y` of the view, or, at [`Snapshot::rows`], the row past its
     /// last while it has one.
     pub fn line(&self, y: u16) -> &Line {
@@ -137,9 +145,9 @@ impl Snapshot {
 
     /// The row past the view's last, which the view shows at its bottom
     /// while it is scrolled a share of a row past its first: its line, at
-    /// the view's row [`Snapshot::rows`], whose selection, decorations,
-    /// gutter's marks, blocks, matches and images the snapshot tells as
-    /// those of the view's rows, at that row.
+    /// the view's row [`Snapshot::rows`], whose cursor, selection,
+    /// decorations, gutter's marks, blocks, matches and images the snapshot
+    /// tells as those of the view's rows, at that row.
     pub fn below(&self) -> Option<&Line> {
         self.below.then(|| &self.lines[self.lines.len() - 1])
     }
@@ -501,13 +509,15 @@ impl Terminal {
         let offset = self.settle_viewport();
         let in_view = usize::from(self.cursor().y) + offset;
         let top = self.screen().rows.scrollback_rows() - offset;
-        self.snapshot_state(snapshot, in_view, &self.view_map(top, &[]));
         // The row past the view's last, as the view is scrolled a share of
         // a row past its first: never at the screen, which has none below.
         let fraction = self.viewport_fraction();
         let below = fraction > 0.0 && offset > 0;
         snapshot.fraction = if below { fraction } else { 0.0 };
         snapshot.below = below;
+        let shown = usize::from(self.rows) + usize::from(below);
+        let map = ViewMap::new(self.row_number(0), top, shown, &[]);
+        self.snapshot_state(snapshot, in_view, &map);
         let origin = self.origin();
         // A view of folds before, whose lines are other rows: every line
         // is copied anew.
@@ -590,11 +600,12 @@ impl Terminal {
     }
 
     /// Brings the parts of `snapshot` but its rows up to date: the cursor,
-    /// at the view's row `in_view`, shown if the view has it, or the held
-    /// one, of the view `map`, the colors and the modes.
+    /// at the view's row `in_view`, shown if the view has it, the row below
+    /// too while there is one, or the held one, of the view `map`, the
+    /// colors and the modes.
     fn snapshot_state(&self, snapshot: &mut Snapshot, in_view: usize, map: &ViewMap) {
         let cursor = self.cursor();
-        let rows_shown = usize::from(self.rows);
+        let rows_shown = usize::from(self.rows) + usize::from(snapshot.below);
         snapshot.cursor = SnapshotCursor {
             position: Cursor {
                 y: u16::try_from(in_view).unwrap_or(u16::MAX),
@@ -774,10 +785,10 @@ impl Terminal {
             .iter()
             .position(|&row| row == ViewRow::Row(index))
             .unwrap_or(usize::MAX);
-        self.snapshot_state(snapshot, in_view, &self.view_map(view.top, &view.rows));
         // A view of folds scrolls by whole rows alone.
         snapshot.fraction = 0.0;
         snapshot.below = false;
+        self.snapshot_state(snapshot, in_view, &self.view_map(view.top, &view.rows));
         let origin = super::Origin {
             epoch: self.primary.rows.epoch(),
             top: self.row_number(view.top),
