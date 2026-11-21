@@ -52,7 +52,7 @@ A slot is a place of the window that plugins' views fill; a plugin names the slo
 |---|---|---|
 | `tab-bar` | One, chosen in the config | The tab bar, in the titlebar, below it, at the window's bottom or down a column at its side |
 | `title-buttons` | Many, three at most, more behind a menu | A button of an icon right after the window's buttons, as a toggle of a state that the plugin keeps |
-| `status-bar` | Many, side by side | Status information across the window's bottom, of its views' height |
+| `status-bar` | Many, on three sides | Status information across the window's bottom, of its tallest view's height, each view at its width on its side, `start`, `center` or `end`, of the manifest's `[contributes.status-bar] side` or `cx.set_status_bar_side` · not released yet |
 | `window-strip` | Many | A thin strip across the panes' top, over them, as the programs' progress |
 | `pane-header` | One | A header across each pane's top, above its grid |
 

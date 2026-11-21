@@ -666,7 +666,24 @@ impl<B: Backend> App<B> {
             _ => natural(Slot::TabBar),
         };
         let window_strip = natural(Slot::WindowStrip);
-        let status_bar = natural(Slot::StatusBar);
+        // The status bar's views at their natural sizes, each on its
+        // plugin's side, and the bar of the tallest.
+        let mut status_views = Vec::new();
+        let mut status_bar = 0.0_f32;
+        for view in state
+            .chrome
+            .iter_mut()
+            .filter(|view| view.view.slot() == Some(Slot::StatusBar) && view.shows())
+        {
+            let laid = view.surface.lay_out((None, None), font);
+            events.extend(
+                laid.into_iter()
+                    .map(|event| (view.plugin.clone(), view.view.clone(), event)),
+            );
+            let (natural, height) = view.surface.size().unwrap_or_default();
+            status_bar = status_bar.max(height);
+            status_views.push((self.plugins.status_bar_side(&view.plugin), natural));
+        }
         let heights = Heights {
             tab_bar,
             window_strip,
@@ -723,9 +740,19 @@ impl<B: Backend> App<B> {
                 .filter(|view| view.view.slot() == Some(slot))
                 .collect();
             let count = views.iter().filter(|view| view.shows()).count().max(1);
+            // The status bar's views on their sides, at their widths; the
+            // others' an equal share each.
+            let mut sided = region
+                .filter(|_| slot == Slot::StatusBar)
+                .map(|region| chrome::status_bar_frames(region, &status_views))
+                .unwrap_or_default()
+                .into_iter();
             let mut shown = 0;
             for view in &mut views {
-                view.frame = region.filter(|_| view.shows()).map(|region| {
+                view.frame = region.filter(|_| view.shows()).and_then(|region| {
+                    if slot == Slot::StatusBar {
+                        return sided.next().flatten();
+                    }
                     let share = region.width / count as f32;
                     let frame = Frame {
                         x: region.x + share * shown as f32,
@@ -733,7 +760,7 @@ impl<B: Backend> App<B> {
                         ..region
                     };
                     shown += 1;
-                    frame
+                    Some(frame)
                 });
                 if let Some(frame) = view.frame {
                     let laid = view

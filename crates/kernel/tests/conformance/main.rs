@@ -1190,11 +1190,12 @@ fn kind(request: &Request) -> usize {
         Request::RowCells { .. } => 148,
         Request::TempFile { .. } => 149,
         Request::GitBranch { .. } => 150,
+        Request::SetStatusBarSide(_) => 151,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 151;
+const KINDS: usize = 152;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

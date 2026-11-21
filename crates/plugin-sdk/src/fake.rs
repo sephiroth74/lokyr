@@ -607,6 +607,9 @@ pub struct FakeHost {
     messages: Vec<(String, BTreeMap<String, Data>, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
+    /// The side of the status bar of the plugin's view: its manifest's,
+    /// then the one that it asked for.
+    status_bar_side: host::StatusBarSide,
     /// The places of the plugin's tab bar of windows of their own.
     window_bar_places: BTreeMap<WindowId, BarPlace>,
     /// The fade of the panes that have not the keyboard, and whether the
@@ -760,6 +763,7 @@ impl FakeHost {
             },
             messages: Vec::new(),
             bar_place: BarPlace::default(),
+            status_bar_side: host::StatusBarSide::Start,
             window_bar_places: BTreeMap::new(),
             inactive_dim: 0.0,
             focus_follows_mouse: false,
@@ -844,6 +848,7 @@ impl FakeHost {
             uses,
             builtin,
             pages,
+            status_bar_side,
         } = declared(manifest);
         // Lokyr's own plugins' alone, which another's manifest has refused.
         if !builtin {
@@ -851,6 +856,7 @@ impl FakeHost {
         }
         let mut host = self.with_capabilities(capabilities).with_pages(pages);
         host.third_party = !builtin;
+        host.status_bar_side = status_bar_side;
         match uses {
             Some(patterns) => host.with_uses(patterns),
             None => host,
@@ -1337,6 +1343,12 @@ impl FakeHost {
     /// screens, the window of a tab that was alone too.
     pub fn place(&self, window: WindowId) -> Option<ScreenPoint> {
         self.places.get(&window).copied()
+    }
+
+    /// The side of the status bar where the plugin's view goes: its
+    /// manifest's, or the one that it asked for last.
+    pub fn status_bar_side(&self) -> host::StatusBarSide {
+        self.status_bar_side
     }
 
     /// The place of the plugin's tab bar in `window`: the window's own, or
@@ -2235,6 +2247,7 @@ impl FakeHost {
                 self.looked(*id, &before);
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
+            Request::SetStatusBarSide(side) => self.status_bar_side = *side,
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
             Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
             Request::SetBlockLooks(looks) => self.block_looks = *looks,
@@ -4698,6 +4711,7 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::SetStatusBarSide(_) => Response::Done,
             Request::SetInactiveDim(dim) => {
                 if !(0.0..=1.0).contains(dim) {
                     return Err(Error::new(Code::Failed, DIM_RANGE));
@@ -5860,6 +5874,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 fn declared(text: &str) -> Declared {
     let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
     let mut pages = Vec::new();
+    let mut status_bar_side = host::StatusBarSide::Start;
     let mut section = "";
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -5876,6 +5891,7 @@ fn declared(text: &str) -> Declared {
                 "capabilities" => "capabilities",
                 "uses" => "uses",
                 "contributes" => "contributes",
+                "contributes.status-bar" => "status-bar",
                 _ => "",
             };
             continue;
@@ -5921,6 +5937,13 @@ fn declared(text: &str) -> Declared {
                     })
                 }));
             }
+            "status-bar" if key == "side" => {
+                status_bar_side = match value.trim_matches('"') {
+                    "center" => host::StatusBarSide::Center,
+                    "end" => host::StatusBarSide::End,
+                    _ => host::StatusBarSide::Start,
+                };
+            }
             _ => {}
         }
     }
@@ -5929,6 +5952,7 @@ fn declared(text: &str) -> Declared {
         uses,
         builtin,
         pages,
+        status_bar_side,
     }
 }
 
@@ -5942,6 +5966,8 @@ struct Declared {
     builtin: bool,
     /// The ids of its settings' window's pages.
     pages: Vec<String>,
+    /// The side of the status bar of its view.
+    status_bar_side: host::StatusBarSide,
 }
 
 /// The system's day that the fake host gives by default, in days since

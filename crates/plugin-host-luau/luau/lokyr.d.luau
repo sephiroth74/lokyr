@@ -132,6 +132,7 @@ export type Cx = {
     set_group_color: (group: GroupId, color: Color?) -> (true?, string?, number?),
     fold_group: (group: GroupId, folded: boolean) -> (true?, string?, number?),
     ungroup: (group: GroupId) -> (true?, string?, number?),
+    set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
     set_focus_follows_mouse: (on: boolean) -> (true?, string?, number?),
@@ -362,6 +363,9 @@ export type TestHost = {
     -- The bytes of the plugin's temporary file `name`, as it wrote them
     -- last, if it did.
     temporary_file: (name: string) -> string?,
+    -- The side of the status bar where its view goes: its manifest's, or
+    -- the one that it asked for last.
+    status_bar_side: () -> StatusBarSide,
     -- Makes the folder of the absolute path `folder` a git repository's of
     -- the branch `branch`, or no repository's of none, which a read of the
     -- branch of a folder within it gives.
@@ -980,6 +984,11 @@ export type ShellCommand = {
 export type Side =
     | "first"
     | "second"
+
+export type StatusBarSide =
+    | "start"
+    | "center"
+    | "end"
 
 export type Style = {
     background: Token?,

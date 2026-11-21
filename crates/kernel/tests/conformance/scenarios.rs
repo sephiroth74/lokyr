@@ -3168,6 +3168,11 @@ fn app_requests(world: &World) -> Scenario {
             ),
             (Request::NoticeShows, Response::Boolean(false)),
             (Request::KeepsState, Response::Boolean(true)),
+            // The side of the status bar of the plugin's view.
+            (
+                Request::SetStatusBarSide(lokyr_plugin_sdk::host::StatusBarSide::End),
+                Response::Done,
+            ),
             // A temporary file, in the plugin's folder, its path the
             // answer; one of the same name in its place; a name of a
             // folder's, and bytes past the bound, refused.

@@ -2309,6 +2309,22 @@ pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
     ))
 }
 
+/// Where a plugin's view goes along the status bar, as the interface reads,
+/// from left to right in every language that Lokyr has: from the bar's
+/// start edge, the plugins' first nearest it; together in its middle; or
+/// from its end edge, the first nearest it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StatusBarSide {
+    /// From the bar's start edge, the left one.
+    #[default]
+    Start,
+    /// In its middle.
+    Center,
+    /// From its end edge, the right one.
+    End,
+}
+
 /// The most bytes of a plugin's temporary file.
 pub const MOST_TEMPORARY_BYTES: usize = 8 * 1024 * 1024;
 

@@ -901,6 +901,10 @@ pub enum Request {
     },
     /// Takes a group apart, its tabs staying where they are.
     Ungroup(GroupId),
+    /// Puts the plugin's view of the status bar on `side`, in place of its
+    /// manifest's side, or of the one asked before, until the plugin stops;
+    /// no capability, as it moves the plugin's own view within the bar.
+    SetStatusBarSide(crate::host::StatusBarSide),
     /// Puts the plugin's tab bar at `place` in the windows that show it, a
     /// column's width from [`COLUMN_WIDTHS`](crate::host::COLUMN_WIDTHS)'s
     /// narrowest to its widest, in
@@ -1420,6 +1424,7 @@ impl Request {
             | Self::NoticeShows
             | Self::KeepsState
             | Self::TempFile { .. }
+            | Self::SetStatusBarSide(_)
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::ShowColorPanel { .. }
@@ -1526,6 +1531,7 @@ impl Request {
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
             | Self::ReopenTab(_)
+            | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
@@ -2177,6 +2183,7 @@ impl Request {
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
             | Self::ReopenTab(_)
+            | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }

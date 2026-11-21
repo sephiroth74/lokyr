@@ -823,6 +823,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Puts the plugin's view of the status bar on `side`, in place of its
+    /// manifest's side, until it stops.
+    pub fn set_status_bar_side(&mut self, side: crate::host::StatusBarSide) -> Result<(), Error> {
+        match self.request(Request::SetStatusBarSide(side)) {
+            Response::Done => Ok(()),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Writes `bytes` as the plugin's temporary file `name`, in a folder of
     /// its own that the host empties at the quit and at the start, marked
     /// as come from elsewhere: its path, as an editor opens it.

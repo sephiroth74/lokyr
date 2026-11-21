@@ -579,6 +579,14 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "status_bar_side",
+        lua.create_function(move |lua, ()| {
+            let side = with(&hosted, |Hosted { host, .. }| host.status_bar_side());
+            shape::to_lua(lua, &side).map_err(mlua::Error::runtime)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "set_git_branch",
         lua.create_function(move |_, (folder, branch): (String, Option<String>)| {
             with(&hosted, |Hosted { host, .. }| {

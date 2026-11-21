@@ -686,6 +686,9 @@ struct State {
     starts: u64,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// The side of the status bar that it asked for its view, in place of
+    /// its manifest's, until it stops.
+    status_bar_side: Option<host::StatusBarSide>,
     /// The fade of the panes that have not the keyboard that it asked for,
     /// and whether it asked that the keyboard follow the pointer.
     dim: f32,
@@ -1792,6 +1795,7 @@ impl Plugins {
                 ran: false,
                 starts: 0,
                 bar_place: host::BarPlace::default(),
+                status_bar_side: None,
                 window_places: BTreeMap::new(),
                 dim: 0.0,
                 follows: false,
@@ -2634,6 +2638,26 @@ impl Plugins {
         self.entries
             .iter()
             .any(|entry| entry.state.status == Status::Active && entry.state.follows)
+    }
+
+    /// The side of the status bar where the view of `plugin` goes: the one
+    /// that it asked for, or its manifest's; the start for a plugin not
+    /// there.
+    pub fn status_bar_side(&self, plugin: &str) -> host::StatusBarSide {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .map(|entry| {
+                entry.state.status_bar_side.unwrap_or_else(|| {
+                    entry
+                        .state
+                        .manifest
+                        .as_ref()
+                        .map(|manifest| manifest.contributes.status_bar_side)
+                        .unwrap_or_default()
+                })
+            })
+            .unwrap_or_default()
     }
 
     /// Where the tab bar of `plugin`, the provider of a window's, goes; at
@@ -4576,6 +4600,7 @@ fn stop(
     state.views.clear();
     state.subscribed.clear();
     state.bar_place = host::BarPlace::default();
+    state.status_bar_side = None;
     state.window_places.clear();
     state.dim = 0.0;
     state.follows = false;
@@ -5012,6 +5037,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
             Asked::SetTabBarPlace(place) => state.bar_place = place,
+            Asked::SetStatusBarSide(side) => state.status_bar_side = Some(side),
             Asked::SetInactiveDim(dim) => state.dim = dim,
             Asked::SetFocusFollowsMouse(on) => state.follows = on,
             Asked::SetBlockLooks(looks) => state.block_looks = looks,

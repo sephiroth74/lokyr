@@ -277,6 +277,106 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
     assert!(app.deliver_timer.is_none());
 }
 
+/// A plugin of a status bar's segment of `width` points, whose command
+/// `<namespace>.center` puts it in the bar's middle.
+struct Segment {
+    namespace: &'static str,
+    width: f32,
+}
+
+impl plugins::Plugin for Segment {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        let name = format!("{}.center", self.namespace);
+        cx.register_command(Command {
+            name: name.clone(),
+            title: name,
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.set_status_bar_side(plugins::host::StatusBarSide::Center)?;
+        for window in cx.windows()? {
+            cx.request_render(ViewId::StatusBar(window.id))?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot()? != Slot::StatusBar {
+            return None;
+        }
+        let mut node = Node::container(vec![Node::text(self.namespace)]);
+        node.layout.width = Length::Points(self.width);
+        node.layout.height = Length::Points(STATUS);
+        Some(node)
+    }
+}
+
+#[test]
+fn the_status_bar_s_views_take_their_widths_on_their_plugins_sides() {
+    let manifest = |name: &str, side: &str| {
+        format!(
+            "[plugin]\nname = \"lokyr/{name}\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\nslots = [\"status-bar\"]\n{side}"
+        )
+    };
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(
+            &manifest("first", ""),
+            Box::new(Segment {
+                namespace: "first",
+                width: 100.0,
+            }),
+        )
+        .with_builtin(
+            &manifest("second", "[contributes.status-bar]\nside = \"end\"\n"),
+            Box::new(Segment {
+                namespace: "second",
+                width: 60.0,
+            }),
+        );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+        let of = |plugin: &str| {
+            app.windows[&window]
+                .chrome
+                .iter()
+                .find(|view| view.plugin == plugin)
+                .and_then(|view| view.frame)
+                .map(super::super::chrome::rect_of)
+                .expect("a view's frame")
+        };
+        (of("lokyr/first"), of("lokyr/second"))
+    };
+    let size = fake.window(window).unwrap().size;
+    let width = size.pixels.width as i32;
+    let pixels = |points: f32| (f64::from(points) * size.scale).round() as u32;
+    // The first at the start, of no side in its manifest; the second at
+    // the end, as its manifest says; each of its own width.
+    let (first, second) = frames(&mut fake, &mut app);
+    assert_eq!((first.x, first.width), (0, pixels(100.0)));
+    assert_eq!(
+        (second.x + second.width as i32, second.width),
+        (width, pixels(60.0))
+    );
+    assert_eq!(first.y, second.y);
+    // The first asks for the middle, which it takes.
+    app.run(&mut fake, "first.center", Args::new());
+    let (first, _) = frames(&mut fake, &mut app);
+    assert_eq!(first.x, (width - pixels(100.0) as i32) / 2);
+}
+
 #[test]
 fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     use plugins::host::BarPlace;
@@ -350,7 +450,10 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     let (_, tab_bar, status, pane) = placed(&mut fake, &mut app, BarPlace::Right { width: 100.0 });
     assert_eq!(tab_bar.x + tab_bar.width as i32, width);
     assert_eq!(pane.x + pane.width as i32, tab_bar.x);
-    assert_eq!(status.x + status.width as i32, tab_bar.x);
+    // The status bar's view at its start, of its own width, before the
+    // column.
+    assert_eq!(status.x, 0);
+    assert!(status.x + status.width as i32 <= tab_bar.x);
     // Below a titlebar of the title, across the window.
     let (bar, tab_bar, _, pane) = placed(&mut fake, &mut app, BarPlace::BelowTitlebar);
     assert_eq!(bar, Titlebar::Titled);

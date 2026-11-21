@@ -34,7 +34,7 @@ const RENAMES: [(&str, &str, &str); 6] = [
 
 /// The names of the parameters of the requests of a value, or of values,
 /// which have no fields' names, where their types' do not tell them.
-const PARAMS: [(&str, &[&str]); 19] = [
+const PARAMS: [(&str, &[&str]); 20] = [
     ("subscribe", &["names"]),
     ("show_page", &["page"]),
     ("keep_awake", &["awake"]),
@@ -52,6 +52,7 @@ const PARAMS: [(&str, &[&str]); 19] = [
     ("opens", &["target"]),
     ("set_font_size", &["size"]),
     ("set_tab_bar_place", &["place"]),
+    ("set_status_bar_side", &["side"]),
     ("set_inactive_dim", &["dim"]),
     ("set_state", &["state"]),
 ];
@@ -758,6 +759,9 @@ export type TestHost = {
     -- The bytes of the plugin's temporary file `name`, as it wrote them
     -- last, if it did.
     temporary_file: (name: string) -> string?,
+    -- The side of the status bar where its view goes: its manifest's, or
+    -- the one that it asked for last.
+    status_bar_side: () -> StatusBarSide,
     -- Makes the folder of the absolute path `folder` a git repository's of
     -- the branch `branch`, or no repository's of none, which a read of the
     -- branch of a folder within it gives.
