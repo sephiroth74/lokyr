@@ -1380,6 +1380,13 @@ impl Pane {
         self.session.as_ref()?.scrolled_place()
     }
 
+    /// The numbers of the oldest row, the scrollback's first, and of the
+    /// screen's first row, between which the view scrolls, as output has
+    /// them now; none for a pane whose program did not start.
+    pub fn row_ends(&self) -> Option<(i64, i64)> {
+        Some(self.session.as_ref()?.row_ends())
+    }
+
     /// Whether the program's output brings the view back to the screen.
     pub fn scroll_on_output(&self) -> bool {
         self.session

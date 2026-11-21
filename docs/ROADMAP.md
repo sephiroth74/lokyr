@@ -188,7 +188,7 @@ Ordered by what people ask of terminals, as the trackers of fifteen terminals an
   - the look: the selected block and the one under the pointer tinted, a sticky header of the block's own prompt rows, and a blank row between blocks as an option;
   - a block shared as an image, `snap`'s.
 - **Smooth scrolling**, off by default: the trackpad and the Magic Mouse move the view by pixels, with macOS's momentum; a mouse wheel's step glides over its rows; the scroll bar's knob moves by pixels. The keys' scrolls stay whole rows, and the view stops at the scrollback's top and at the screen. While you scroll, a frame for each scroll event; none at rest.
-- **Two plugins of the registry**, published by the project as examples for authors: the scrollback, or a command's output, opened in the editor; a status bar of the folder, the branch and the clock.
+- **Two plugins of the registry**, published by the project as examples for authors: the scrollback, or a command's output, opened in the editor; the focused pane's folder and its git branch in the status bar, whose plugins' views take its start, its center or its end.
 - **The controls polished**: a switch for the settings' on and off, the controls' sizes, focus ring and states made alike, of macOS's look, and the controls that the settings' pages lack.
 - **A plugin that replaces another** in the same place, as the blocks replace the plain sticky header: the other plugin off while it is on, and back as it goes, of nothing written to the config.
 

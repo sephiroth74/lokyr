@@ -352,7 +352,8 @@ impl<B: Backend> App<B> {
 
     /// The pointer moved to `position` over `window` in a knob's drag: the
     /// view goes to the row that the knob's place gives, or, by pixels, to
-    /// its place, of a share of a row too. Whether a drag was under way.
+    /// its place, of a share of a row too; at the track's last, to the
+    /// screen. Whether a drag was under way.
     pub(super) fn bar_dragged(
         &mut self,
         platform: &mut dyn Platform,
@@ -377,7 +378,13 @@ impl<B: Backend> App<B> {
             if by_pixels {
                 // Far fewer rows than an `f64` holds exactly.
                 let place = scrollbar::place_at(bar.area, bar.rows, scale, top);
-                pane.scroll_to(bar.oldest as f64 + place);
+                // At the track's last, the screen, however many rows came
+                // since the bar's frame, which the view then follows.
+                if place >= bar.rows.last_top() as f64 {
+                    pane.scroll(Scroll::Bottom);
+                } else {
+                    pane.scroll_to(bar.oldest as f64 + place);
+                }
             } else {
                 pane.scroll(scroll_to(
                     bar,

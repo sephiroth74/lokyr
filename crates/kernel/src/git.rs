@@ -21,9 +21,17 @@ const SHORT_HASH: usize = 7;
 /// The branch of the git repository that holds `folder`, as its `HEAD`
 /// tells: the branch that `ref: refs/heads/` names, or the other reference,
 /// or a detached head's short hash; none out of a repository, of a `HEAD`
-/// that does not read, or of one of another form.
+/// that does not read, or of one of another form; none either of a folder
+/// or a repository on a volume that may not answer, as another machine's,
+/// whose looks could hold the caller.
 pub(crate) fn branch(folder: &Path) -> Option<String> {
+    if lokyr_pty::may_wait(folder) {
+        return None;
+    }
     let git = repository(folder)?;
+    if lokyr_pty::may_wait(&git) {
+        return None;
+    }
     let head = read(&git.join("HEAD"))?;
     let head = head.trim();
     let name = if let Some(reference) = head.strip_prefix("ref:") {
@@ -67,14 +75,25 @@ fn repository(folder: &Path) -> Option<PathBuf> {
 }
 
 /// The text of the file at `path`, [`MOST_READ`] bytes at most; none of a
-/// file that does not read, or not of UTF-8.
+/// file that does not read, or not of UTF-8, or of no regular file, as a
+/// FIFO, whose open would wait for a writer, or a link to one.
 fn read(path: &Path) -> Option<String> {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // Opened of no wait, as a FIFO's open waits for a writer; then read of
+    // a regular file alone, as the open file tells, whatever the path held
+    // at a look before.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
     let mut text = String::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(MOST_READ)
-        .read_to_string(&mut text)
-        .ok()?;
+    file.take(MOST_READ).read_to_string(&mut text).ok()?;
     Some(text)
 }
 
@@ -141,6 +160,49 @@ mod tests {
         assert_eq!(branch(&side).as_deref(), Some("side"));
         std::fs::write(side.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
         assert_eq!(branch(&side.join("src")).as_deref(), Some("side"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `branch(folder)` within 2 seconds, or the test fails rather than
+    /// waits.
+    fn branch_soon(folder: &Path) -> Option<String> {
+        let folder = folder.to_owned();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = send.send(branch(&folder));
+        });
+        receive
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("the branch's read waited")
+    }
+
+    /// Makes a FIFO at `path`.
+    fn fifo(path: &Path) {
+        let made = std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()
+            .unwrap();
+        assert!(made.success());
+    }
+
+    #[test]
+    fn a_fifo_in_place_of_a_repository_s_file_tells_no_branch_at_once() {
+        let root = root("fifo");
+        // A FIFO `HEAD`, as a tar archive keeps one.
+        let head = root.join("head");
+        std::fs::create_dir_all(head.join(".git")).unwrap();
+        fifo(&head.join(".git/HEAD"));
+        assert_eq!(branch_soon(&head), None);
+        // A link to a FIFO.
+        let linked = root.join("linked");
+        std::fs::create_dir_all(linked.join(".git")).unwrap();
+        std::os::unix::fs::symlink(head.join(".git/HEAD"), linked.join(".git/HEAD")).unwrap();
+        assert_eq!(branch_soon(&linked), None);
+        // A FIFO `.git`, in place of a worktree's file.
+        let dot = root.join("dot");
+        std::fs::create_dir_all(&dot).unwrap();
+        fifo(&dot.join(".git"));
+        assert_eq!(branch_soon(&dot), None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

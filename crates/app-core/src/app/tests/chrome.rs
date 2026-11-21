@@ -398,6 +398,68 @@ fn the_status_bar_s_views_take_their_widths_on_their_plugins_sides() {
     assert_eq!(first.x, (width - pixels(100.0) as i32) / 2);
 }
 
+/// A plugin of a status bar's text of one line, longer than any window,
+/// which counts the `cut` events that it hears and renders again at each,
+/// as a view that shows a More button while its text is cut.
+struct Cutting {
+    cuts: Rc<Cell<usize>>,
+}
+
+impl plugins::Plugin for Cutting {
+    fn on_ui_event(
+        &mut self,
+        cx: &mut plugins::Cx<'_>,
+        event: &plugins::ui::UiEvent,
+    ) -> Result<(), Error> {
+        if matches!(event.kind, plugins::view::UiEventKind::Cut { .. }) {
+            self.cuts.set(self.cuts.get() + 1);
+            cx.request_render(event.view.clone())?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot()? != Slot::StatusBar {
+            return None;
+        }
+        let text = Node::text("a long status ".repeat(200)).key("long").layout(
+            lokyr_kernel::plugins::view::Layout {
+                lines: Some(1),
+                ..lokyr_kernel::plugins::view::Layout::default()
+            },
+        );
+        Some(Node::container(vec![text]))
+    }
+}
+
+#[test]
+fn a_cut_view_of_the_status_bar_hears_one_cut_and_asks_no_frame_at_rest() {
+    let cuts = Rc::new(Cell::new(0));
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/cutting\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(
+            manifest,
+            Box::new(Cutting {
+                cuts: Rc::clone(&cuts),
+            }),
+        );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    for _ in 0..6 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert_eq!(cuts.get(), 1);
+    assert!(!fake.window(window).unwrap().frame_requested);
+}
+
 #[test]
 fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     use plugins::host::BarPlace;

@@ -5,7 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use lokyr_plugin_sdk::host::{Bytes, MOST_TEMPORARY_FILES, NO_TEMPORARY_FOLDER};
+use lokyr_plugin_sdk::host::{
+    Bytes, MOST_TEMPORARY_FILES, NO_TEMPORARY_FOLDER, TEMPORARY_BUSY, TEMPORARY_RATE,
+};
 use lokyr_plugin_sdk::message::Request as Asked;
 
 use super::*;
@@ -112,6 +114,47 @@ fn a_plugin_s_temporary_files_are_written_marked_bounded_and_emptied() {
         panic!("a file of no folder");
     };
     assert_eq!(error.message, NO_TEMPORARY_FOLDER);
+}
+
+#[test]
+fn a_plugin_s_temporary_files_take_its_budget_of_writes_which_comes_back_in_time() {
+    let mut app = App::default();
+    let folder = std::env::temp_dir().join(format!("lokyr-budget-{}", std::process::id()));
+    let (asks, got) = (Rc::default(), Rc::default());
+    let mut plugins = Plugins::new();
+    plugins.add("asker", asker(&asks, &got)).unwrap();
+    plugins.set_temporary_directory(Some(folder.clone()), mark);
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let big = Asked::TempFile {
+        name: "big.txt".to_owned(),
+        bytes: Bytes(vec![b'x'; TEMPORARY_RATE as usize]),
+    };
+    let ask = |plugins: &mut Plugins, app: &mut App, times: usize| -> Vec<Response> {
+        asks.borrow_mut()
+            .extend(std::iter::repeat_n(big.clone(), times));
+        plugins
+            .run("asker.go", Args::new(), &mut app.context())
+            .unwrap();
+        got.borrow_mut().drain(..).collect()
+    };
+    // Four files of 8 MiB take the budget's 32, the fifth waits.
+    let written = ask(&mut plugins, &mut app, 5);
+    assert!(
+        written[..4]
+            .iter()
+            .all(|response| matches!(response, Response::Text(Some(_)))),
+        "{written:?}"
+    );
+    assert!(
+        matches!(&written[4], Response::Failed(error) if error.message == TEMPORARY_BUSY),
+        "{written:?}"
+    );
+    // A second gives 8 MiB back.
+    app.wait(Duration::from_secs(1));
+    let written = ask(&mut plugins, &mut app, 2);
+    assert!(matches!(written[0], Response::Text(Some(_))), "{written:?}");
+    assert!(matches!(written[1], Response::Failed(_)), "{written:?}");
+    plugins.empty_temporary();
 }
 
 #[test]

@@ -7,7 +7,7 @@ What a plugin's author looks up while writing one: the capabilities and their ri
 `plugin.toml` holds the plugin's name, `owner/name`, its version, its license, its description, the plugin API that it takes, `api = "^0.1"`, its entry, its activation, the capabilities that it asks for, the commands of others that it runs, `[uses] commands`, and what it contributes: its slots, its config's schema and its catalogs. Every field is in [`plugin.toml`'s reference](../PACKAGE-MANAGER.md#plugintoml); `sleip check` checks the manifest as the registry does.
 
 - **Activation**: a plugin starts as one of its triggers comes, `command:<name>` of its own commands, `event:<name>` or `slot:<name>`, rather than as Lokyr starts; one of no trigger starts with the app.
-- **Replaces**: `[plugin] replaces = ["lokyr/tabs"]` names the plugins that it stands in for in the same place, as a tab bar of its own in place of Lokyr's: Lokyr turns them off while it runs, once the user grants it, and on again as it goes · not released yet.
+- **Replaces**: `[plugin] replaces = ["lokyr/tabs"]` names the plugins that it stands in for in the same place, as a tab bar of its own in place of Lokyr's: Lokyr turns them off while it runs, once you grant it, and on again as it goes · not released yet.
 - **Its namespace** is its name after the owner, as `hello` of `acme/hello`: its commands are `hello.<action>`, its events `hello.<name>`, its config the section `[plugins.hello]`, and no other plugin has it.
 
 ## Capabilities
@@ -29,8 +29,8 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, the double taps of modifiers from any app, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
-| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends | High: a password typed by mistake ends up there |
-| `process-read` | Seeing the panes' processes: their command lines and working directories, the programs that run and the agents' states | Medium: command lines can hold passwords |
+| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends of their exit statuses | High: a password typed by mistake ends up there |
+| `process-read` | Seeing the panes' processes: their command lines and working directories, a folder's git branch, the programs that run and the agents' states; hearing as a command starts and ends, of no exit status · not released yet | Medium: command lines can hold passwords |
 | `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs and groups of tabs, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text |
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
@@ -42,7 +42,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
 | `replaces:<plugin>` | Turning the plugin of that name off while this one runs, as both show in the same place, of the manifest's `[plugin] replaces` rather than of `[capabilities]`; never `lokyr/plugin-manager` · not released yet | High: what the other plugin did goes while this one runs |
 
-A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
+A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read` or `process-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
 
 ## Slots
 
@@ -74,7 +74,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `pane-changed` | A pane's title or header changes | `process-read` |
 | `layout-changed` | A tab's splits change | — |
 | `viewport-changed` | A pane's view scrolls or resizes, once a frame | — |
-| `command-started`, `command-ended` | A command of the shell starts or ends, of shell integration's marks | `history-read` |
+| `command-started`, `command-ended` | A command of the shell starts or ends, of shell integration's marks | `history-read`, or `process-read` of no exit status · not released yet |
 | `pointer` | The pointer moves over a pane's cells | `pointer-read` |
 | `keys-changed` | The keymap changes | — |
 | `config-changed` | The plugin's section of the config changes | — |
@@ -107,6 +107,8 @@ Each plugin runs in a VM of its own, so a failing plugin never affects the termi
 - **Faults**: a plugin that faults starts again after a second, then two; at its third fault within a minute, it stays off until it is turned on again.
 - **A call's writes** and requests of the app's, which apply as it returns: 10 000 at most together.
 - **Reads of rows**: four under way at most; **searches**: 16 a call; **images**: four a call, 16 million pixels each.
+- **Cells of rows**, `row_cells`: 1000 rows at most a read, as an image's · not released yet.
+- **Temporary files**, `temp_file`: a name of a text's extension, `.txt`, `.log`, `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.diff` or `.patch`; 8 MiB a file, 16 files and 32 MiB together; 32 MiB of writes at once, each 256 KiB at least, given back at 8 MiB a second; none of a call that only looks, as `applies` · not released yet.
 - **Timers**: 64 at most, from 10 ms to a day.
 - **Notices**: one a second a plugin, a text of 1 to 1024 characters and a title of 100 at most.
 - **Questions**, `ask_text` and `ask_choice`: one at a time a plugin, until its answer comes; a message of 1 to 256 characters, a detail of 1024 and a button's title of 64 at most, of no control character but the detail's line breaks nor one that hides the text around it. The alert of a plugin other than Lokyr's own names it.

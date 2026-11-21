@@ -3032,8 +3032,6 @@ fn color_panel() -> Scenario {
     }
 }
 
-/// What every plugin asks of the app: a command run, a window opened or
-/// closed, the app quit and the text's size, and what of them is refused.
 /// The path of the temporary file `name` of the scenarios' plugin, in the
 /// host's folder of them of `world`'s.
 fn temporary(world: &World, name: &str) -> String {
@@ -3047,6 +3045,8 @@ fn folder(world: &World, name: &str) -> String {
     world.files.join(name).to_string_lossy().into_owned()
 }
 
+/// What every plugin asks of the app: a command run, a window opened or
+/// closed, the app quit and the text's size, and what of them is refused.
 fn app_requests(world: &World) -> Scenario {
     Scenario {
         name: "the app's requests".to_owned(),
@@ -3175,7 +3175,8 @@ fn app_requests(world: &World) -> Scenario {
             ),
             // A temporary file, in the plugin's folder, its path the
             // answer; one of the same name in its place; a name of a
-            // folder's, and bytes past the bound, refused.
+            // folder's, a name of no text's extension, and bytes past the
+            // bound, refused.
             (
                 Request::TempFile {
                     name: "output.txt".to_owned(),
@@ -3198,6 +3199,19 @@ fn app_requests(world: &World) -> Scenario {
                 failed(
                     Code::Failed,
                     &check_file_name("a/b.txt").unwrap_err().message,
+                ),
+            ),
+            (
+                Request::TempFile {
+                    name: "page.html".to_owned(),
+                    bytes: Bytes(Vec::new()),
+                },
+                failed(
+                    Code::Failed,
+                    &lokyr_plugin_sdk::host::TemporaryFiles::default()
+                        .check("page.html", 0)
+                        .unwrap_err()
+                        .message,
                 ),
             ),
             (

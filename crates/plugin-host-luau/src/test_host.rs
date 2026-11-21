@@ -415,6 +415,26 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "reads",
+        lua.create_function(move |lua, ()| {
+            let reads = with(&hosted, |Hosted { host, .. }| host.take_reads());
+            let table = lua.create_table()?;
+            for request in &reads {
+                table.raw_push(shape::to_lua(lua, request).map_err(mlua::Error::runtime)?)?;
+            }
+            Ok(table)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "cut_reads",
+        lua.create_function(move |_, ()| {
+            with(&hosted, |Hosted { host, .. }| host.cut_reads());
+            Ok(())
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "commands",
         lua.create_function(move |lua, ()| {
             let names: Vec<String> = with(&hosted, |Hosted { host, .. }| {

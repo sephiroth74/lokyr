@@ -27,6 +27,10 @@ use crate::mouse::{Glide, Pointer, Spot};
 use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
 
+/// The rows that a glide's view stops short of its place by, at most, of
+/// the shares that a view rounds: past them, the view met the oldest row.
+const STOPPED: f64 = 0.01;
+
 impl<B: Backend> App<B> {
     /// A key of `window`: the press that the latency's bench waits for;
     /// a man page's keys, which scroll it; a key of a window whose program
@@ -1413,7 +1417,8 @@ impl<B: Backend> App<B> {
     /// where positive, as a wheel's step, or a click on a scroll bar's
     /// track, scrolling by pixels: from where a glide of its view is, over
     /// the rows that it has left and these; another pane's glide goes to
-    /// its rows at once.
+    /// its rows at once. A glide that has nowhere to go, down at the screen
+    /// or up at the oldest row, is none, of no frame.
     pub(super) fn glide(
         &mut self,
         platform: &mut dyn Platform,
@@ -1428,24 +1433,41 @@ impl<B: Backend> App<B> {
         };
         let now = Instant::now();
         let place = pane.scrolled_place();
+        let Some((oldest, screen)) = pane.row_ends() else {
+            return;
+        };
+        // Far fewer rows than an `f64` holds exactly.
+        let (oldest, screen) = (oldest as f64, screen as f64);
         // The view's place, of its first row's number: at the screen, its
         // top row's.
         let from = match place {
             // Far fewer rows than an `f64` holds exactly.
             Some((origin, share)) => origin.top as f64 + f64::from(share),
-            None => pane.origin().map_or(0.0, |origin| origin.top as f64),
+            None => screen,
         };
-        match &mut state.mouse.glide {
-            Some(glide) if glide.pane == target => glide.add(rows, now, (place, from)),
-            slot => {
+        let slot = &mut state.mouse.glide;
+        match slot {
+            Some(glide) if glide.pane == target => glide.add(rows, now, (place, from), screen),
+            _ => {
                 if let Some(glide) = slot.take()
                     && let Some(other) = self.workspace.pane(glide.pane)
                     && other.scrolled_place() == glide.left
                 {
                     other.scroll_to(glide.end());
                 }
-                *slot = Some(Glide::new(target, rows, now, (place, from)));
+                *slot = Some(Glide::new(target, rows, now, (place, from), screen));
             }
+        }
+        let stuck = slot.as_ref().is_some_and(|glide| {
+            if glide.down() {
+                place.is_none()
+            } else {
+                from <= oldest
+            }
+        });
+        if stuck {
+            *slot = None;
+            return;
         }
         platform.request_frame(window);
     }
@@ -1454,7 +1476,9 @@ impl<B: Backend> App<B> {
     /// `now`, as a frame starts, before the frame takes the panes' screens,
     /// and asks for the next frame while the glide goes on; a view that
     /// moved another way since its last step, as a key moves it, or output
-    /// that brings it back to the screen, ends it.
+    /// that brings it back to the screen, ends it, as the view's reaching
+    /// the screen going down, which it then follows, or its oldest row
+    /// going up.
     pub(super) fn glide_view(
         &mut self,
         platform: &mut dyn Platform,
@@ -1467,18 +1491,34 @@ impl<B: Backend> App<B> {
         let Some(glide) = &mut state.mouse.glide else {
             return;
         };
-        let Some(pane) = self
+        let Some((pane, (_, screen))) = self
             .workspace
             .pane(glide.pane)
             .filter(|pane| pane.scrolled_place() == glide.left)
+            .and_then(|pane| Some((pane, pane.row_ends()?)))
         else {
             state.mouse.glide = None;
             return;
         };
+        if glide.down() && glide.left.is_none() {
+            state.mouse.glide = None;
+            return;
+        }
+        // Far fewer rows than an `f64` holds exactly.
+        glide.follow(screen as f64);
         let (place, on) = glide.step(now);
         pane.scroll_to(place);
         glide.left = pane.scrolled_place();
-        if on {
+        // Short of its place going up, at the oldest row; down, at the
+        // screen, which the view then follows.
+        let stopped = match glide.left {
+            Some((origin, share)) => {
+                // Far fewer rows than an `f64` holds exactly.
+                origin.top as f64 + f64::from(share) - place > STOPPED
+            }
+            None => glide.down(),
+        };
+        if on && !stopped {
             platform.request_frame(window);
         } else {
             state.mouse.glide = None;

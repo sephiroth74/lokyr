@@ -4,7 +4,7 @@
 use crate::page::{Content, Scrollback};
 use crate::parser::Parser;
 use crate::terminal::decorations::Look;
-use crate::terminal::{Options, Scroll, Snapshot, Terminal};
+use crate::terminal::{ImageFormat, Options, Placing, Scroll, Side, Snapshot, Terminal};
 
 fn feed(terminal: &mut Terminal, text: &str) {
     Parser::new().advance(terminal, text.as_bytes());
@@ -219,6 +219,48 @@ fn a_snapshot_of_a_share_holds_the_row_past_the_view_s_last_and_its_cursor() {
     assert!(snapshot.below().is_none());
     let shown: Vec<String> = (0..4).map(|y| text(&snapshot, y)).collect();
     assert_eq!(shown, ["17", "18", "19", ""]);
+}
+
+#[test]
+fn a_snapshot_of_a_share_holds_the_images_of_the_row_below() {
+    let options = Options {
+        scrollback: Scrollback {
+            limit: 1 << 30,
+            budget: None,
+        },
+        ..Options::default()
+    };
+    let mut terminal = Terminal::new(20, 4, options);
+    for at in 0..14 {
+        feed(&mut terminal, &format!("{at}\r\n"));
+    }
+    // An image of a row on the row of `14`.
+    let id = terminal
+        .keep_image(None, (ImageFormat::Rgb, 1, 1), vec![0; 3], true)
+        .unwrap();
+    let placing = Placing {
+        width: Side::Cells(2),
+        height: Side::Cells(1),
+        move_cursor: false,
+        ..Placing::default()
+    };
+    assert!(terminal.place_image(id, placing));
+    for at in 14..20 {
+        feed(&mut terminal, &format!("{at}\r\n"));
+    }
+    let mut snapshot = Snapshot::default();
+    let rows = |snapshot: &Snapshot| -> Vec<i32> {
+        snapshot.images().iter().map(|placed| placed.row).collect()
+    };
+    // From the row of `10`, of no share: past the view.
+    terminal.scroll_viewport(Scroll::Row(10));
+    terminal.snapshot(&mut snapshot);
+    assert_eq!(rows(&snapshot), [] as [i32; 0]);
+    // Of a share, on the row below.
+    terminal.scroll_viewport_by(-0.25);
+    terminal.snapshot(&mut snapshot);
+    assert_eq!(text(&snapshot, 4), "14");
+    assert_eq!(rows(&snapshot), [4]);
 }
 
 #[test]

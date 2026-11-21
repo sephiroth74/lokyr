@@ -249,13 +249,13 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 |---|---|
 | Declarations | `register_command`, `bind`, `subscribe`, `add_menu_item`, `emit` |
 | The commands | `run_command`, `commands` |
-| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `working_directory`, `shell_commands`, `command_line`, `shell_command`, `command_at`, `edited_line` · not released yet, `viewport` |
+| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `row_cells` · not released yet, `working_directory`, `git_branch` · not released yet, `shell_commands`, `command_line`, `shell_command`, `command_at`, `edited_line` · not released yet, `viewport` |
 | Search | `search`, `end_search`, `search_matches`, `current_match`, `show_matches` |
 | Writing to a pane | `paste`, `send_text`, `run_line` · not released yet, `clear`, `clear_scrollback`, `scroll`, `select_all`, `select_cells`, `deselect`, `show_cursor`, `cursor_cell` |
 | Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter`, `set_block_looks`, `select_block`, `selected_block` · not released yet |
 | Windows, tabs and panes | `windows`, `tabs`, `agents`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
-| Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
-| Questions, opening and texts | `notify`, `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
+| Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node`, `set_status_bar_side` · not released yet |
+| Questions, opening and texts | `notify`, `ask_text`, `save_file`, `temp_file` · not released yet, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
 | Settings and state | `config`, `state`, `set_state`, `keeps_state` |

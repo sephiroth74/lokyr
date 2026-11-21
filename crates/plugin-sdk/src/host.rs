@@ -2334,6 +2334,28 @@ pub const MOST_TEMPORARY_FILES: usize = 16;
 /// The most bytes of a plugin's temporary files together.
 pub const MOST_TEMPORARY_TOTAL: usize = 32 * 1024 * 1024;
 
+/// The bytes of a plugin's budget of temporary files' writes at once, each
+/// write's cost its bytes, [`TEMPORARY_LEAST_COST`] at least: a plugin
+/// that writes faster than [`TEMPORARY_RATE`] waits.
+pub const TEMPORARY_BUDGET: u64 = 32 * 1024 * 1024;
+
+/// The bytes a second given back to a plugin's budget of temporary files.
+pub const TEMPORARY_RATE: u64 = 8 * 1024 * 1024;
+
+/// The least cost of a temporary file's write, however few its bytes.
+pub const TEMPORARY_LEAST_COST: u64 = 256 * 1024;
+
+/// The extensions of a temporary file's name, whatever their case: texts'
+/// alone, which no app runs as a program nor loads as a page.
+pub const TEMPORARY_EXTENSIONS: [&str; 9] = [
+    "txt", "log", "md", "json", "yaml", "yml", "toml", "diff", "patch",
+];
+
+/// The message of the error of a temporary file past the plugin's budget of
+/// writes.
+pub const TEMPORARY_BUSY: &str =
+    "a plugin's temporary files wait a moment, as it wrote too many too fast";
+
 /// The message of the error of a temporary file asked of a host that keeps
 /// none, as without a state's folder.
 pub const NO_TEMPORARY_FOLDER: &str = "the host keeps no temporary files without a state's folder";
@@ -2344,18 +2366,37 @@ pub const LOOKING_WRITES_NOTHING: &str = "a call that only looks, as `applies`, 
 
 /// A plugin's temporary files, as a host keeps them for it in a folder of
 /// its own, which it empties at the quit and at the start: the bytes of
-/// each by its name, which a new file's bounds count.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// each by its name, which a new file's bounds count, and what its budget
+/// of writes has left, below zero of a plugin that owes it.
+#[derive(Clone, Debug, PartialEq)]
 pub struct TemporaryFiles {
     sizes: std::collections::BTreeMap<String, usize>,
+    left: f64,
+}
+
+impl Default for TemporaryFiles {
+    fn default() -> Self {
+        Self {
+            sizes: std::collections::BTreeMap::new(),
+            left: TEMPORARY_BUDGET as f64,
+        }
+    }
 }
 
 impl TemporaryFiles {
+    /// Gives back the budget of `elapsed`, up to the whole budget.
+    pub fn refill(&mut self, elapsed: std::time::Duration) {
+        self.left = (self.left + elapsed.as_secs_f64() * TEMPORARY_RATE as f64)
+            .min(TEMPORARY_BUDGET as f64);
+    }
+
     /// Whether a file of `name` and of `bytes` fits: its name as
-    /// [`check_file_name`] takes it, its bytes [`MOST_TEMPORARY_BYTES`] at
+    /// [`check_file_name`] takes it, of an extension of
+    /// [`TEMPORARY_EXTENSIONS`], its bytes [`MOST_TEMPORARY_BYTES`] at
     /// most, and, with the others, [`MOST_TEMPORARY_FILES`] files and
     /// [`MOST_TEMPORARY_TOTAL`] bytes at most, a file of the same name in
-    /// place of the old one; the error that tells it does not.
+    /// place of the old one, of a budget of writes left; the error that
+    /// tells it does not.
     pub fn check(&self, name: &str, bytes: usize) -> Result<(), crate::command::Error> {
         check_file_name(name)?;
         let failed = |message: String| {
@@ -2364,6 +2405,17 @@ impl TemporaryFiles {
                 message,
             ))
         };
+        let text = name.rsplit_once('.').is_some_and(|(_, extension)| {
+            TEMPORARY_EXTENSIONS
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(extension))
+        });
+        if !text {
+            return failed(format!(
+                "a temporary file's name ends in one of .{}",
+                TEMPORARY_EXTENSIONS.join(", .")
+            ));
+        }
         if bytes > MOST_TEMPORARY_BYTES {
             return failed(format!(
                 "a temporary file has {MOST_TEMPORARY_BYTES} bytes at most"
@@ -2381,12 +2433,17 @@ impl TemporaryFiles {
                 "a plugin's temporary files have {MOST_TEMPORARY_TOTAL} bytes at most together"
             ));
         }
+        if self.left <= 0.0 {
+            return failed(TEMPORARY_BUSY.to_owned());
+        }
         Ok(())
     }
 
-    /// Notes the file `name`, of `bytes`, written.
+    /// Notes the file `name`, of `bytes`, written, its cost taken from the
+    /// budget.
     pub fn insert(&mut self, name: &str, bytes: usize) {
         self.sizes.insert(name.to_owned(), bytes);
+        self.left -= (bytes as u64).max(TEMPORARY_LEAST_COST) as f64;
     }
 }
 
@@ -2410,7 +2467,6 @@ pub fn check_absolute_folder(folder: &str) -> Result<(), crate::command::Error> 
 }
 
 /// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
-/// Luau's, rather than as a list of numbers./// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
 /// Luau's, rather than as a list of numbers.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Bytes(pub Vec<u8>);
@@ -2669,5 +2725,57 @@ mod tests {
             assert!(!is_local_host(host, "mac.local"), "{host}");
         }
         assert!(!is_local_host("mac", ""));
+    }
+
+    #[test]
+    fn a_temporary_file_is_a_text_s_of_a_budget_that_comes_back_in_time() {
+        let mut files = TemporaryFiles::default();
+        // Texts' extensions alone, whatever their case.
+        for name in ["output.txt", "LOG.Log", "a.b.json", "x.patch"] {
+            assert!(files.check(name, 1).is_ok(), "{name}");
+        }
+        for name in ["page.html", "run.command", "script.sh", "txt", "a.txt.app"] {
+            let refused = files.check(name, 1).unwrap_err();
+            assert!(
+                refused.message.contains(".txt, .log"),
+                "{name}: {refused:?}"
+            );
+        }
+        // Four files of 8 MiB take the 32 MiB of the budget, then a write
+        // waits.
+        let most = TEMPORARY_RATE as usize;
+        for _ in 0..4 {
+            files.check("big.txt", most).unwrap();
+            files.insert("big.txt", most);
+        }
+        assert_eq!(
+            files.check("big.txt", 1).unwrap_err().message,
+            TEMPORARY_BUSY
+        );
+        // A millisecond gives back a little, which a write takes and owes
+        // the rest of: then a second, less a millisecond, owes still.
+        files.refill(std::time::Duration::from_millis(1));
+        files.check("big.txt", most).unwrap();
+        files.insert("big.txt", most);
+        files.refill(std::time::Duration::from_millis(999));
+        assert!(files.check("big.txt", 1).is_err());
+        files.refill(std::time::Duration::from_millis(1));
+        assert!(files.check("big.txt", 1).is_ok());
+        // Small writes cost the least cost each: 128 of the whole budget.
+        let mut files = TemporaryFiles::default();
+        for _ in 0..TEMPORARY_BUDGET / TEMPORARY_LEAST_COST {
+            files.check("small.txt", 1).unwrap();
+            files.insert("small.txt", 1);
+        }
+        assert!(files.check("small.txt", 1).is_err());
+        // Never more than the whole budget, however long the wait.
+        files.refill(std::time::Duration::from_secs(3600));
+        assert_eq!(
+            files,
+            TemporaryFiles {
+                left: TEMPORARY_BUDGET as f64,
+                ..files.clone()
+            }
+        );
     }
 }

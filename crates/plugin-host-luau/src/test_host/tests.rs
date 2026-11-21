@@ -679,3 +679,70 @@ fn a_test_reads_a_temporary_file_and_gives_a_folder_its_branch() {
     assert_eq!(ran.len(), 1, "{ran:?}");
     assert_eq!(ran[0].failure, None, "{ran:?}");
 }
+
+#[test]
+fn a_test_tells_the_plugin_s_reads_and_cuts_its_reads_of_rows_short() {
+    // A plugin that reads the pane's folder and its rows, and copies
+    // whether the read of its rows went to its end.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "reads.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            cx.working_directory(pane)
+            assert(cx.read_lines(pane, 0, 1))
+        end,
+        on_event = function(cx, events)
+            for _, event in events do
+                if event.kind == "lines" then
+                    assert(cx.set_clipboard_text(if event.complete then "whole" else "cut"))
+                end
+            end
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        reads = function(host)
+            host.activate()
+            host.reads()
+            host.command("reads.go")
+            local reads = host.reads()
+            assert(#reads == 3, #reads)
+            assert(reads[1] == "focused-pane" and reads[2].working_directory ~= nil)
+            assert(reads[3].read_lines ~= nil)
+            assert(#host.reads() == 0, "taken")
+            host.events({})
+            assert(host.clipboard() == "whole", host.clipboard())
+            host.command("reads.go")
+            host.cut_reads()
+            host.events({})
+            assert(host.clipboard() == "cut", host.clipboard())
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/reads.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/reads",
+            capabilities: &[
+                Capability::TerminalRead,
+                Capability::ProcessRead,
+                Capability::ClipboardWrite,
+            ],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

@@ -249,9 +249,6 @@ impl FakePane {
         })
     }
 
-    /// The cells of the rows that its view shows, of their texts without
-    /// the spaces that end them and their styles, as a read of them gives
-    /// them: a fold's placeholder's of none.
     /// The cells of `count` rows from the row numbered `first`, as many as
     /// the pane holds; none of a first row that it does not hold.
     fn row_cells(&self, first: i64, count: usize) -> Option<Vec<crate::image::CellRow>> {
@@ -275,6 +272,9 @@ impl FakePane {
         )
     }
 
+    /// The cells of the rows that its view shows, of their texts without
+    /// the spaces that end them and their styles, as a read of them gives
+    /// them: a fold's placeholder's of none.
     fn view_cells(&self) -> Vec<crate::image::CellRow> {
         let view = self.viewport();
         let cells = |row: i64| crate::image::CellRow {
@@ -582,10 +582,12 @@ pub struct FakeHost {
     local_time: host::LocalTime,
     /// The folder of the host's temporary files, of none as without a
     /// state's folder, and the temporary files that the plugin wrote, their
-    /// bounds' tally and their bytes by their names, kept in memory.
+    /// bounds' tally and their bytes by their names, kept in memory, and
+    /// the clock's time of the last, from which their budget refills.
     temporary_folder: Option<std::path::PathBuf>,
     temporary: host::TemporaryFiles,
     temporary_bytes: BTreeMap<String, Vec<u8>>,
+    temporary_written: Option<u64>,
     /// The git branches of the repositories' folders, as the test gave
     /// them, which a folder within one takes.
     git_branches: BTreeMap<String, String>,
@@ -663,6 +665,8 @@ pub struct FakeHost {
     menu_items: Vec<crate::host::MenuItem>,
     subscribed: Vec<String>,
     done: Vec<Request>,
+    /// The plugin's reads since the last take, in their order.
+    reads: Vec<Request>,
     decorations: Vec<FakeDecoration>,
     gutter_marks: Vec<FakeGutterMark>,
     panels: BTreeMap<PanelId, PanelOptions>,
@@ -734,6 +738,7 @@ impl FakeHost {
             temporary_folder: Some(std::path::PathBuf::from(TEMPORARY_FOLDER)),
             temporary: host::TemporaryFiles::default(),
             temporary_bytes: BTreeMap::new(),
+            temporary_written: None,
             git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
@@ -792,6 +797,7 @@ impl FakeHost {
             menu_items: Vec::new(),
             subscribed: Vec::new(),
             done: Vec::new(),
+            reads: Vec::new(),
             decorations: Vec::new(),
             gutter_marks: Vec::new(),
             panels: BTreeMap::new(),
@@ -1584,6 +1590,24 @@ impl FakeHost {
         std::mem::take(&mut self.done)
     }
 
+    /// The plugin's reads since the last take that its capabilities allow,
+    /// in their order, as the requests themselves: what its calls looked
+    /// at.
+    pub fn take_reads(&mut self) -> Vec<Request> {
+        std::mem::take(&mut self.reads)
+    }
+
+    /// Cuts short the reads of rows that the plugin asked for and has yet
+    /// to hear of, as a resize or the pane's closing does in their middle:
+    /// their `lines` events, at the next delivery, tell them incomplete.
+    pub fn cut_reads(&mut self) {
+        for event in &mut self.owed {
+            if let Event::Lines { complete, .. } = event {
+                *complete = false;
+            }
+        }
+    }
+
     /// The ids of the plugin's searches that the host keeps, in their
     /// order, as their ends take them away.
     pub fn searches(&self) -> Vec<u64> {
@@ -1775,7 +1799,7 @@ impl FakeHost {
                     | Event::DoubleTapped { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
-                batch.push(event);
+                batch.push(self.told(event));
             }
         }
         self.timers.retain(|&id, timer| {
@@ -2405,6 +2429,20 @@ impl FakeHost {
         }
         if settles {
             self.settle_groups();
+        }
+    }
+
+    /// `event` as the plugin hears it: a command's end of no exit status
+    /// to a plugin of no `history-read`, as the app's host tells it.
+    fn told(&self, event: Event) -> Event {
+        let history = self
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::HistoryRead));
+        if history {
+            event
+        } else {
+            event.without_history()
         }
     }
 
@@ -4171,10 +4209,6 @@ impl Calling<'_> {
         ))
     }
 
-    /// The title of `pane`: its program's, or, to a plugin that reads the
-    /// processes, the name of its folder, as the app's; what a plugin that
-    /// does not read them learns of it, of which a change that it cannot
-    /// read tells it nothing.
     /// Writes the plugin's temporary file `name` of `bytes`, as the app's
     /// host does, in memory: its path in the folder of the host's
     /// temporary files.
@@ -4185,6 +4219,13 @@ impl Calling<'_> {
         let Some(folder) = self.host.temporary_folder.clone() else {
             return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
         };
+        let now = self.host.clock;
+        if let Some(at) = self.host.temporary_written {
+            self.host
+                .temporary
+                .refill(std::time::Duration::from_millis(now.saturating_sub(at)));
+        }
+        self.host.temporary_written = Some(now);
         self.host.temporary.check(name, bytes.len())?;
         self.host.temporary.insert(name, bytes.len());
         self.host
@@ -4194,6 +4235,10 @@ impl Calling<'_> {
         Ok(Response::Text(Some(path.to_string_lossy().into_owned())))
     }
 
+    /// The title of `pane`: its program's, or, to a plugin that reads the
+    /// processes, the name of its folder, as the app's; what a plugin that
+    /// does not read them learns of it, of which a change that it cannot
+    /// read tells it nothing.
     fn pane_title(&mut self, pane: PaneId) -> Result<Response, Error> {
         let reads = self.host.reads_processes();
         let held = self.host.held(pane)?;
@@ -5612,10 +5657,7 @@ impl host::Host for Calling<'_> {
             Err(error) => return Response::Failed(error),
         };
         if let Some(granted) = &self.host.granted
-            && let Some(needed) = request
-                .capabilities()
-                .into_iter()
-                .find(|needed| !crate::command::grants(granted, needed))
+            && let Some(needed) = request.lacking(granted)
         {
             return Response::Failed(Error::new(
                 Code::MissingCapability,
@@ -5626,7 +5668,10 @@ impl host::Host for Calling<'_> {
             ));
         }
         let answered = match request.effect() {
-            Effect::Read => self.read(&request),
+            Effect::Read => {
+                self.host.reads.push(request.clone());
+                self.read(&request)
+            }
             Effect::Write | Effect::App => self.queue(request),
             Effect::Declaration if self.looking => Err(Error::new(
                 Code::Failed,

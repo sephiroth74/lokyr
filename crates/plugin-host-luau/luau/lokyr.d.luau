@@ -329,6 +329,15 @@ export type TestHost = {
     -- its request's name in snake case, as `{ notify = { ... } }` or
     -- `{ open_at = { ... } }`.
     done: () -> { { [string]: any } },
+    -- The reads that its calls made since the last look, of those that its
+    -- capabilities allow, each a table of its request's name in snake case,
+    -- as `{ git_branch = { ... } }` or `{ tabs = 1 }`, or the name alone of
+    -- a request of nothing more, in kebab case, as `focused-pane`.
+    reads: () -> { { [string]: any } | string },
+    -- Cuts short the reads of rows that it asked for and has yet to hear
+    -- of, as a resize or the pane's closing does: their `lines` events, at
+    -- the next delivery, tell them incomplete.
+    cut_reads: () -> (),
     -- The names of the commands that it registered.
     commands: () -> { string },
     -- The clipboard's text.

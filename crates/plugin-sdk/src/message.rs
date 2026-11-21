@@ -1267,6 +1267,24 @@ impl Request {
         }
     }
 
+    /// The first of the capabilities that the request needs that `granted`
+    /// lacks, as the host refuses the request for it; none of a request
+    /// that `granted` allows. A subscription to the commands' starts and
+    /// ends takes `history-read` or `process-read`: a plugin that reads the
+    /// processes hears as a command starts and ends, as a folder's branch
+    /// may change then, of no exit status.
+    pub fn lacking(&self, granted: &[Capability]) -> Option<Capability> {
+        let commands = matches!(
+            self,
+            Self::Subscribe(names)
+                if names.iter().any(|name| name == COMMAND_STARTED || name == COMMAND_ENDED)
+        ) && crate::command::grants(granted, &Capability::ProcessRead);
+        self.capabilities()
+            .into_iter()
+            .filter(|needed| !(commands && *needed == Capability::HistoryRead))
+            .find(|needed| !crate::command::grants(granted, needed))
+    }
+
     /// The one capability that a request other than a subscription needs,
     /// if it needs one.
     fn capability(&self) -> Option<Capability> {
@@ -1889,7 +1907,7 @@ pub enum Event {
     },
     /// A command that the shell marked started in a pane, as its output's
     /// mark came, of its id among the pane's commands, as a read of them
-    /// gives it, to a plugin of `history-read`.
+    /// gives it, to a plugin of `history-read` or `process-read`.
     CommandStarted {
         /// The pane.
         pane: PaneId,
@@ -1898,9 +1916,10 @@ pub enum Event {
     },
     /// A command that started ended, as its end's mark came, of the exit
     /// status that the shell told, if it told one, to a plugin of
-    /// `history-read`; or as its pane let go of it before its end, as a
-    /// reset or a screen cleared under it does, of none. A shell that marks
-    /// no end tells none.
+    /// `history-read`, or of none to a plugin of `process-read` alone; or
+    /// as its pane let go of it before its end, as a reset or a screen
+    /// cleared under it does, of none. A shell that marks no end tells
+    /// none.
     CommandEnded {
         /// The pane.
         pane: PaneId,
@@ -2021,6 +2040,19 @@ pub enum Event {
 }
 
 impl Event {
+    /// The event as a plugin of no `history-read` hears it: a command's
+    /// end of no exit status, which tells what the command did.
+    pub fn without_history(self) -> Self {
+        match self {
+            Self::CommandEnded { pane, command, .. } => Self::CommandEnded {
+                pane,
+                command,
+                status: None,
+            },
+            other => other,
+        }
+    }
+
     /// The event's name, as a plugin subscribes to it.
     pub fn name(&self) -> &str {
         match self {
@@ -2614,6 +2646,35 @@ mod tests {
                 .capabilities()
                 .is_empty()
         );
+        // The commands' events of `history-read` or `process-read`, the
+        // others' capabilities still needed.
+        let commands = Request::Subscribe(vec![COMMAND_ENDED.to_owned()]);
+        assert_eq!(commands.lacking(&[]), Some(Capability::HistoryRead));
+        assert_eq!(commands.lacking(&[Capability::HistoryRead]), None);
+        assert_eq!(commands.lacking(&[Capability::ProcessRead]), None);
+        let pointed = Request::Subscribe(vec![POINTER.to_owned(), COMMAND_ENDED.to_owned()]);
+        assert_eq!(
+            pointed.lacking(&[Capability::ProcessRead]),
+            Some(Capability::PointerRead)
+        );
+        assert_eq!(
+            Request::ClipboardText.lacking(&[Capability::ProcessRead]),
+            Some(Capability::ClipboardRead)
+        );
+        // Of no `history-read`, a command's end of no status.
+        let ended = Event::CommandEnded {
+            pane: PaneId(1),
+            command: 2,
+            status: Some(1),
+        };
+        assert!(matches!(
+            ended.without_history(),
+            Event::CommandEnded {
+                status: None,
+                command: 2,
+                ..
+            }
+        ));
         // A modifier's double tap, from any app, of `global-hotkey`, a
         // declaration.
         let tap = Request::WatchDoubleTap(Some(crate::host::Modifier::Alt));

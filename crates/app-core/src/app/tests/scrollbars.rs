@@ -327,6 +327,33 @@ fn by_pixels_the_knob_s_drag_moves_the_view_a_share_of_a_row_where_the_knob_show
 }
 
 #[test]
+fn by_pixels_the_knob_dragged_to_the_bottom_goes_to_the_screen_while_output_comes() {
+    let program = shell(
+        "for n in $(seq 1 200); do echo \"line $n\"; done; while :; do echo tick; sleep 0.02; done",
+    );
+    let (mut fake, mut app, window) = drawn(smooth(), program);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "tick"));
+    glided_up(&mut fake, &mut app, window);
+    let none = Modifiers::NONE;
+    let grab = knob_middle(&fake, &app, window);
+    fake.send(&mut app, window, click(true, grab, none, 1));
+    // Rows come after the bar's frame, before the drag.
+    std::thread::sleep(Duration::from_millis(200));
+    let bottom = Point {
+        y: grab.y + 10_000.0,
+        ..grab
+    };
+    fake.send(&mut app, window, moved(bottom, none));
+    assert_eq!(app.pane(window).view_offset(), 0);
+    fake.send(&mut app, window, click(false, bottom, none, 1));
+    // The view follows the output after.
+    let after = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > after);
+    assert_eq!(app.pane(window).view_offset(), 0);
+}
+
+#[test]
 fn by_pixels_a_click_on_the_track_glides_a_page_or_there() {
     let (mut fake, mut app, window) = started_bars(smooth());
     glided_up(&mut fake, &mut app, window);

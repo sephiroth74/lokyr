@@ -9,9 +9,9 @@
 //! panes' top, over them, as it takes none of their rows; the status bar
 //! goes across the bottom of the room that a column leaves, of its view's
 //! height, its views on three sides, each at its natural width; a pane's
-//! header goes across the pane's top, of its view's height, above its grid. The overlays and the popups are the rooms that
-//! the floating panels anchor in. A slot whose view is empty takes no
-//! room.
+//! header goes across the pane's top, of its view's height, above its
+//! grid. The overlays and the popups are the rooms that the floating
+//! panels anchor in. A slot whose view is empty takes no room.
 
 use lokyr_plugin_sdk::host::StatusBarSide;
 use lokyr_plugin_sdk::view::Kind;
@@ -184,7 +184,6 @@ pub fn status_bar_frames(region: Frame, views: &[(StatusBarSide, f32)]) -> Vec<O
 }
 
 /// The regions of `window`'s slots, the tab bar at `place`, of the views of
-/// `heights`, the tab bar's of a column any height but 0./// The regions of `window`'s slots, the tab bar at `place`, of the views of
 /// `heights`, the tab bar's of a column any height but 0.
 pub fn regions(window: &Window, place: TabBarPlace, heights: Heights) -> Regions {
     let (width, height) = (window.size.0.max(0.0), window.size.1.max(0.0));
