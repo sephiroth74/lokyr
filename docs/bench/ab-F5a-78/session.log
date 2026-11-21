@@ -1,0 +1,333 @@
+17:25:57 step startup
+--- startup
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:25  up 9 days,  6:03, 307 users, load averages: 6.24 8.51 9.98
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:25:57 30 starts of v130
+17:26:06 30 starts of v140
+17:26:16 startup v130 1
+17:26:34 startup v140 1
+17:26:51 startup floor 1
+17:27:06 load { 3.91 7.45 9.47 }
+17:27:08 startup v140 2
+17:27:25 startup v130 2
+17:27:43 startup floor 2
+17:27:57 load { 4.58 7.14 9.24 }
+17:27:59 startup v140 3
+17:28:16 startup v130 3
+17:28:34 startup floor 3
+17:28:48 load { 3.71 6.50 8.88 }
+17:28:50 startup v130 4
+17:29:07 startup v140 4
+17:29:25 startup floor 4
+17:29:39 load { 3.32 5.95 8.53 }
+17:29:39 step startup done
+17:29:49 step startup-again
+--- startup-again
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:29  up 9 days,  6:07, 307 users, load averages: 3.04 5.80 8.44
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:29:50 30 starts of v130
+17:29:58 30 starts of v140
+17:30:09 startup v130 1
+17:30:26 startup v140 1
+17:30:44 startup floor 1
+17:30:58 load { 5.13 5.84 8.26 }
+17:31:00 startup v140 2
+17:31:18 startup v130 2
+17:31:35 startup floor 2
+17:31:49 load { 5.83 5.84 8.10 }
+17:31:52 startup v140 3
+17:32:09 startup v130 3
+17:32:26 startup floor 3
+17:32:41 load { 5.00 5.56 7.87 }
+17:32:43 startup v130 4
+17:33:00 startup v140 4
+17:33:18 startup floor 4
+17:33:32 load { 4.25 5.26 7.62 }
+17:33:34 startup v130 5
+17:33:51 startup v140 5
+17:34:09 startup floor 5
+17:34:24 load { 4.68 5.17 7.45 }
+17:34:26 startup v140 6
+17:34:43 startup v130 6
+17:35:00 startup floor 6
+17:35:15 load { 4.24 4.92 7.21 }
+17:35:17 startup v140 7
+17:35:34 startup v130 7
+17:35:52 startup floor 7
+17:36:06 load { 4.52 4.87 7.06 }
+17:36:08 startup v130 8
+17:36:26 startup v140 8
+17:36:43 startup floor 8
+17:36:58 load { 3.93 4.72 6.88 }
+17:36:58 step startup-again done
+17:37:08 step latency
+--- latency
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:37  up 9 days,  6:14, 307 users, load averages: 3.88 4.68 6.84
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:37:08 latency warm-up v130
+17:37:11 latency warm-up v140
+17:37:16 latency v130 1
+17:37:30 latency v140 1
+17:37:42 load { 4.65 4.76 6.78 }
+17:37:44 latency v140 2
+17:37:58 latency v130 2
+17:38:11 load { 4.09 4.61 6.66 }
+17:38:13 latency v140 3
+17:38:27 latency v130 3
+17:38:39 load { 3.46 4.41 6.51 }
+17:38:42 latency v130 4
+17:38:56 latency v140 4
+17:39:08 load { 3.01 4.23 6.38 }
+17:39:10 latency v130 5
+17:39:25 latency v140 5
+17:39:37 load { 2.93 4.09 6.26 }
+17:39:39 latency v140 6
+17:39:53 latency v130 6
+17:40:05 load { 2.81 3.94 6.13 }
+17:40:07 latency v140 7
+17:40:22 latency v130 7
+17:40:34 load { 2.53 3.79 6.01 }
+17:40:36 latency v130 8
+17:40:50 latency v140 8
+17:41:03 load { 2.76 3.72 5.91 }
+17:41:03 step latency done
+17:41:13 step idle
+--- idle
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:41  up 9 days,  6:19, 307 users, load averages: 2.71 3.68 5.87
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:41:13 idle v130-1
+17:42:50 idle v140-1
+17:44:28 load { 3.71 3.61 5.37 }
+17:44:28 idle v140-2
+17:46:05 idle v130-2
+17:47:42 load { 3.75 3.44 4.91 }
+17:47:42 step idle done
+17:47:52 step memory
+--- memory
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:47  up 9 days,  6:25, 307 users, load averages: 3.48 3.39 4.88
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:47:53 memory v130-1
+17:48:26 memory v140-1
+17:48:59 load { 3.21 3.37 4.76 }
+17:49:00 memory v140-2
+17:49:33 memory v130-2
+17:50:06 load { 2.51 3.12 4.55 }
+17:50:06 memory v140-3
+17:50:40 memory v130-3
+17:51:13 load { 2.80 3.08 4.43 }
+17:51:13 memory v130-4
+17:51:47 memory v140-4
+17:52:20 load { 2.70 3.00 4.30 }
+17:52:20 throughput ascii v130 1
+17:52:29 throughput ascii v140 1
+17:52:37 throughput ascii v140 2
+17:52:45 throughput ascii v130 2
+17:52:56 load { 5.76 3.85 4.56 }
+17:52:56 throughput seq v130 1
+17:52:57 throughput seq v140 1
+17:52:59 throughput seq v140 2
+17:53:00 throughput seq v130 2
+17:53:02 load { 6.10 3.95 4.59 }
+17:53:02 throughput sgr v130 1
+17:53:04 throughput sgr v140 1
+17:53:05 throughput sgr v140 2
+17:53:07 throughput sgr v130 2
+17:53:09 load { 8.73 4.53 4.79 }
+17:53:09 throughput cjk v130 1
+17:53:11 throughput cjk v140 1
+17:53:13 throughput cjk v140 2
+17:53:14 throughput cjk v130 2
+17:53:16 load { 8.17 4.55 4.79 }
+17:53:16 step memory done
+17:53:26 step motion-1
+--- motion-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+17:53  up 9 days,  6:31, 307 users, load averages: 7.30 4.48 4.76
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+17:53:27 motion v130 opaque 1
+17:55:49 recording /tmp/lokyr/bench-F5a-78/motion/v130-opaque-drag-1 hung, try 1
+17:58:10 recording /tmp/lokyr/bench-F5a-78/motion/v130-opaque-drag-1 hung, try 2
+18:00:32 recording /tmp/lokyr/bench-F5a-78/motion/v130-opaque-resize-1 hung, try 1
+18:02:54 recording /tmp/lokyr/bench-F5a-78/motion/v130-opaque-resize-1 hung, try 2
+18:02:58 motion v140 opaque 1
+18:06:48 recordings done: the Mac is free, the figures follow
+18:08:51 step motion-1 done
+18:09:01 step motion-2
+--- motion-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; (no estimate) present: true
+18:09  up 9 days,  6:46, 307 users, load averages: 6.49 7.41 6.29
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+18:09:01 motion v140 blur 1
+18:12:53 motion v130 blur 1
+18:16:55 recordings done: the Mac is free, the figures follow
+18:21:01 step motion-2 done
+18:21:11 step motion-3
+--- motion-3
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; 0:21 remaining present: true
+18:21  up 9 days,  6:58, 307 users, load averages: 4.66 7.30 7.19
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+18:21:12 motion v130 blur 2
+18:25:00 motion v140 blur 2
+18:27:22 recording /tmp/lokyr/bench-F5a-78/motion/v140-blur-drag-2 hung, try 1
+18:31:11 recordings done: the Mac is free, the figures follow
+18:35:18 step motion-3 done
+18:35:29 step motion-4
+--- motion-4
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; 0:11 remaining present: true
+18:35  up 9 days,  7:13, 307 users, load averages: 4.19 5.56 6.24
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+18:35:29 motion v140 opaque 2
+18:39:14 motion v130 opaque 2
+18:43:02 recordings done: the Mac is free, the figures follow
+18:47:05 step motion-4 done
+18:47:15 step again
+--- again
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; 0:06 remaining present: true
+18:47  up 9 days,  7:25, 307 users, load averages: 5.51 9.49 9.06
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+18:47:16 idle v140-3
+18:48:53 idle v130-3
+18:50:31 load { 1.80 5.79 7.57 }
+18:50:31 idle v130-4
+18:52:08 idle v140-4
+18:53:45 load { 1.72 3.93 6.42 }
+18:53:45 throughput ascii v140 3
+18:53:53 throughput ascii v130 3
+18:54:01 throughput ascii v130 4
+18:54:09 throughput ascii v140 4
+18:54:17 load { 4.12 4.29 6.45 }
+18:54:17 throughput seq v140 3
+18:54:19 throughput seq v130 3
+18:54:20 throughput seq v130 4
+18:54:21 throughput seq v140 4
+18:54:22 load { 4.03 4.27 6.43 }
+18:54:22 throughput sgr v140 3
+18:54:24 throughput sgr v130 3
+18:54:26 throughput sgr v130 4
+18:54:27 throughput sgr v140 4
+18:54:29 load { 4.11 4.28 6.42 }
+18:54:29 throughput cjk v140 3
+18:54:30 throughput cjk v130 3
+18:54:32 throughput cjk v130 4
+18:54:34 throughput cjk v140 4
+18:54:36 load { 4.34 4.33 6.42 }
+18:54:36 step again done
+18:54:46 step idle-long-1
+--- idle-long-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+18:54  up 9 days,  7:32, 307 users, load averages: 4.14 4.28 6.38
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+18:54:46 idle-long v130-1
+18:59:11 idle-long v140-1
+19:03:37 load { 1.85 2.33 4.34 }
+19:03:37 step idle-long-1 done
+19:03:47 step idle-long-2
+--- idle-long-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+19:03  up 9 days,  7:41, 307 users, load averages: 1.79 2.30 4.30
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+19:03:47 idle-long v140-2
+19:08:13 idle-long v130-2
+19:12:38 load { 2.08 2.01 3.19 }
+19:12:38 step idle-long-2 done
+19:12:48 step scroll-1
+--- scroll-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+19:12  up 9 days,  7:50, 307 users, load averages: 2.07 2.01 3.17
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+19:12:48 scroll v130 rows 1
+19:15:27 scroll v140 rows 1
+19:17:55 scroll v140 pixels 1
+19:20:28 recordings done: the figures follow
+19:23:40 step scroll-1 done
+19:23:50 step scroll-2
+--- scroll-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+19:23  up 9 days,  8:01, 307 users, load averages: 4.75 6.95 6.70
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+19:23:51 scroll v140 pixels 2
+19:26:20 scroll v140 rows 2
+19:28:50 scroll v130 rows 2
+19:31:18 recordings done: the figures follow
+19:34:20 step scroll-2 done
+19:34:57 step motion-1
+--- motion-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+19:34  up 9 days,  8:12, 307 users, load averages: 2.83 6.43 7.74
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+19:34:58 motion v130 opaque 1
+19:38:42 motion v140 opaque 1
+19:42:31 recordings done: the Mac is free, the figures follow
+19:46:51 step motion-1 done
+22:18:37 step prepare
+--- prepare
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+22:18  up 9 days, 10:56, 309 users, load averages: 2.29 3.24 3.21
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+22:18:38 lokyr-bench
+22:18:38 1.4.0's bundle of 313f5a5a
+22:20:03 1.3.0's app of its DMG
+22:20:04 v130: 1.3.0 (202611181532)
+22:20:04 v140: 1.3.0 (202611212117)
+22:20:04 step prepare done
+22:20:14 step scroll-1
+--- scroll-1
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+22:20  up 9 days, 10:58, 309 users, load averages: 2.21 3.00 3.12
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+22:20:14 scroll v130 rows 1
+22:22:53 scroll v140 rows 1
+22:25:29 scroll v140 pixels 1
+22:27:59 recordings done: the figures follow
+22:32:07 step scroll-1 done
+22:32:17 step scroll-2
+--- scroll-2
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+22:32  up 9 days, 11:10, 309 users, load averages: 3.98 5.60 4.81
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+22:32:17 scroll v140 pixels 2
+22:34:56 scroll v140 rows 2
+22:37:25 scroll v130 rows 2
+22:39:57 recordings done: the figures follow
+22:44:01 step scroll-2 done

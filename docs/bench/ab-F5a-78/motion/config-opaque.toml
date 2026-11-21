@@ -1,0 +1,19 @@
+[app]
+restore-windows = "never"
+[plugins.quick-tips]
+enabled = false
+[font]
+family = "Menlo"
+size = 20
+[window]
+columns = 88
+rows = 27
+remember-frame = false
+background-opacity = 1
+background-blur = 0
+[cursor]
+blink = true
+fade-in = 0
+visible = 600
+fade-out = 0
+hidden = 600
