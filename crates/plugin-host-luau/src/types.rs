@@ -721,7 +721,8 @@ export type TestHost = {
     -- Moves the host's time on by `milliseconds`, its timers' events given.
     advance: (milliseconds: number) -> (),
     -- The writes that its calls made since the last look, each a table of
-    -- its request's name, as `{ Notify = { ... } }`.
+    -- its request's name in snake case, as `{ notify = { ... } }` or
+    -- `{ open_at = { ... } }`.
     done: () -> { { [string]: any } },
     -- The names of the commands that it registered.
     commands: () -> { string },
