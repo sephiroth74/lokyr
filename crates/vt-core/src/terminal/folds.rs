@@ -174,6 +174,12 @@ impl<'a> ViewMap<'a> {
         self.first.saturating_add(index as i64)
     }
 
+    /// How many rows the view shows, the row below its last among them
+    /// while it has one.
+    pub(super) fn height(&self) -> usize {
+        self.height
+    }
+
     /// The number of the view's first row.
     pub(super) fn top(&self) -> i64 {
         self.number(self.top)

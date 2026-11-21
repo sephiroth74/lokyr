@@ -978,7 +978,9 @@ impl Terminal {
             self.unpin_cell(&placement.pin);
             self.drop_unplaced(placement.image);
         }
-        let shown = i64::from(self.rows);
+        // The view's rows, of the row below its last while it has one.
+        // The view has at most `u16::MAX` rows, and one below.
+        let shown = map.height() as i64;
         let mut placed: Vec<Placed> = self
             .images
             .placements
