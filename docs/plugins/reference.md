@@ -7,7 +7,7 @@ What a plugin's author looks up while writing one: the capabilities and their ri
 `plugin.toml` holds the plugin's name, `owner/name`, its version, its license, its description, the plugin API that it takes, `api = "^0.1"`, its entry, its activation, the capabilities that it asks for, the commands of others that it runs, `[uses] commands`, and what it contributes: its slots, its config's schema and its catalogs. Every field is in [`plugin.toml`'s reference](../PACKAGE-MANAGER.md#plugintoml); `sleip check` checks the manifest as the registry does.
 
 - **Activation**: a plugin starts as one of its triggers comes, `command:<name>` of its own commands, `event:<name>` or `slot:<name>`, rather than as Lokyr starts; one of no trigger starts with the app.
-- **Replaces**: `[plugin] replaces = ["lokyr/tabs"]` names the plugins that it stands in for in the same place, as a tab bar of its own in place of Lokyr's: Lokyr turns them off while it runs, once the user grants it, and on again as it goes · not released yet.
+- **Replaces**: `[plugin] replaces = ["lokyr/tabs"]` names the plugins that it stands in for in the same place, as a tab bar of its own in place of Lokyr's: Lokyr turns them off while it runs, once you grant it, and on again as it goes · not released yet.
 - **Its namespace** is its name after the owner, as `hello` of `acme/hello`: its commands are `hello.<action>`, its events `hello.<name>`, its config the section `[plugins.hello]`, and no other plugin has it.
 
 ## Capabilities
@@ -107,6 +107,8 @@ Each plugin runs in a VM of its own, so a failing plugin never affects the termi
 - **Faults**: a plugin that faults starts again after a second, then two; at its third fault within a minute, it stays off until it is turned on again.
 - **A call's writes** and requests of the app's, which apply as it returns: 10 000 at most together.
 - **Reads of rows**: four under way at most; **searches**: 16 a call; **images**: four a call, 16 million pixels each.
+- **Cells of rows**, `row_cells`: 1000 rows at most a read, as an image's · not released yet.
+- **Temporary files**, `temp_file`: a name of a text's extension, `.txt`, `.log`, `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.diff` or `.patch`; 8 MiB a file, 16 files and 32 MiB together; 32 MiB of writes at once, each 256 KiB at least, given back at 8 MiB a second; none of a call that only looks, as `applies` · not released yet.
 - **Timers**: 64 at most, from 10 ms to a day.
 - **Notices**: one a second a plugin, a text of 1 to 1024 characters and a title of 100 at most.
 - **Questions**, `ask_text` and `ask_choice`: one at a time a plugin, until its answer comes; a message of 1 to 256 characters, a detail of 1024 and a button's title of 64 at most, of no control character but the detail's line breaks nor one that hides the text around it. The alert of a plugin other than Lokyr's own names it.

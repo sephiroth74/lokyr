@@ -3032,8 +3032,6 @@ fn color_panel() -> Scenario {
     }
 }
 
-/// What every plugin asks of the app: a command run, a window opened or
-/// closed, the app quit and the text's size, and what of them is refused.
 /// The path of the temporary file `name` of the scenarios' plugin, in the
 /// host's folder of them of `world`'s.
 fn temporary(world: &World, name: &str) -> String {
@@ -3047,6 +3045,8 @@ fn folder(world: &World, name: &str) -> String {
     world.files.join(name).to_string_lossy().into_owned()
 }
 
+/// What every plugin asks of the app: a command run, a window opened or
+/// closed, the app quit and the text's size, and what of them is refused.
 fn app_requests(world: &World) -> Scenario {
     Scenario {
         name: "the app's requests".to_owned(),

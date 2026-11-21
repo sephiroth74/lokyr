@@ -2467,7 +2467,6 @@ pub fn check_absolute_folder(folder: &str) -> Result<(), crate::command::Error> 
 }
 
 /// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
-/// Luau's, rather than as a list of numbers./// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
 /// Luau's, rather than as a list of numbers.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct Bytes(pub Vec<u8>);

@@ -249,9 +249,6 @@ impl FakePane {
         })
     }
 
-    /// The cells of the rows that its view shows, of their texts without
-    /// the spaces that end them and their styles, as a read of them gives
-    /// them: a fold's placeholder's of none.
     /// The cells of `count` rows from the row numbered `first`, as many as
     /// the pane holds; none of a first row that it does not hold.
     fn row_cells(&self, first: i64, count: usize) -> Option<Vec<crate::image::CellRow>> {
@@ -275,6 +272,9 @@ impl FakePane {
         )
     }
 
+    /// The cells of the rows that its view shows, of their texts without
+    /// the spaces that end them and their styles, as a read of them gives
+    /// them: a fold's placeholder's of none.
     fn view_cells(&self) -> Vec<crate::image::CellRow> {
         let view = self.viewport();
         let cells = |row: i64| crate::image::CellRow {
@@ -4209,10 +4209,6 @@ impl Calling<'_> {
         ))
     }
 
-    /// The title of `pane`: its program's, or, to a plugin that reads the
-    /// processes, the name of its folder, as the app's; what a plugin that
-    /// does not read them learns of it, of which a change that it cannot
-    /// read tells it nothing.
     /// Writes the plugin's temporary file `name` of `bytes`, as the app's
     /// host does, in memory: its path in the folder of the host's
     /// temporary files.
@@ -4239,6 +4235,10 @@ impl Calling<'_> {
         Ok(Response::Text(Some(path.to_string_lossy().into_owned())))
     }
 
+    /// The title of `pane`: its program's, or, to a plugin that reads the
+    /// processes, the name of its folder, as the app's; what a plugin that
+    /// does not read them learns of it, of which a change that it cannot
+    /// read tells it nothing.
     fn pane_title(&mut self, pane: PaneId) -> Result<Response, Error> {
         let reads = self.host.reads_processes();
         let held = self.host.held(pane)?;
