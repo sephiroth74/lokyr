@@ -610,11 +610,18 @@ fn a_trackpad_s_scroll_eases_the_view_a_frame_at_every_refresh() {
     let requested = |fake: &Fake| fake.window(window).unwrap().frame_requested;
     // Two rows up: the frame at once moves the view half of them, and asks
     // for the next.
+    let before = Instant::now();
     fake.send(&mut app, window, swiped(16.0, false, none));
     fake.send(&mut app, window, WindowEvent::Frame);
     let first = rows_up_of(&app, window);
     assert!((0.95..1.3).contains(&first), "{first}");
     assert!(requested(&fake));
+    // The next at its own pace, a little quicker than the display's
+    // refresh, of a sixtieth of a second.
+    let next = fake.window(window).unwrap().frame_at.unwrap();
+    let refresh = Duration::from_secs(1) / 60;
+    assert!(next > before + refresh - Duration::from_millis(1));
+    assert!(next < Instant::now() + refresh);
     // The frames after, at their refreshes, take it to the two rows, a
     // share of them each, then ask for none.
     let mut frames = 0;

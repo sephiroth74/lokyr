@@ -1367,10 +1367,8 @@ impl<B: Backend> App<B> {
                 ScrollDelta::Points { .. } => {
                     let refresh = platform.refresh_interval(window).unwrap_or(REFRESH);
                     match &mut state.mouse.ease {
-                        Some(ease) if ease.pane == target => {
-                            ease.add(rows);
-                            platform.request_frame(window);
-                        }
+                        // Its frames come at their pace.
+                        Some(ease) if ease.pane == target => ease.add(rows),
                         slot => {
                             // Another pane's view takes the rows that it
                             // had left at once.
@@ -1380,8 +1378,9 @@ impl<B: Backend> App<B> {
                                 other.scroll_by(ease.left());
                             }
                             if !at_end(pane, rows) {
-                                *slot = Some(Ease::new(target, rows, Instant::now(), refresh));
-                                platform.request_frame(window);
+                                let now = Instant::now();
+                                *slot = Some(Ease::new(target, rows, now, refresh));
+                                platform.request_frame_at(window, now);
                             }
                         }
                     }
@@ -1547,9 +1546,9 @@ impl<B: Backend> App<B> {
 
     /// Moves the view that a trackpad's scroll eases over `window` by its
     /// step at `now`, as a frame starts, before the frame takes the panes'
-    /// screens, and asks for the next frame while rows are left; at an end
-    /// of the view, where it moves no more, the rest goes, as a scroll past
-    /// the end goes nowhere.
+    /// screens, and asks for the next frame at its pace while rows are left;
+    /// at an end of the view, where it moves no more, the rest goes, as a
+    /// scroll past the end goes nowhere.
     pub(super) fn ease_view(
         &mut self,
         platform: &mut dyn Platform,
@@ -1572,7 +1571,7 @@ impl<B: Backend> App<B> {
         let before = pane.scrolled_place();
         pane.scroll_by(ease.step(now, refresh, least));
         if ease.left() != 0.0 && pane.scrolled_place() != before {
-            platform.request_frame(window);
+            platform.request_frame_at(window, ease.next(now, refresh));
         } else {
             state.mouse.ease = None;
         }

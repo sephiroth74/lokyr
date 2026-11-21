@@ -65,6 +65,9 @@ pub struct FakeWindow {
     pub frame_requested: bool,
     /// How many times the app asked for a frame.
     pub frames_asked: usize,
+    /// The earliest time that the app asked for its frame at, with
+    /// [`Platform::request_frame_at`], until the frame comes.
+    pub frame_at: Option<Instant>,
     /// Where the app said that the typed text goes, if it said.
     pub text_area: Option<(Point, Size)>,
     /// How many times the app ended the input method's composition.
@@ -507,7 +510,10 @@ impl Fake {
                     state.frame_requested = true;
                 }
             }
-            WindowEvent::Frame => state.frame_requested = false,
+            WindowEvent::Frame => {
+                state.frame_requested = false;
+                state.frame_at = None;
+            }
             WindowEvent::MouseMoved { position, .. }
             | WindowEvent::MouseButton { position, .. }
             | WindowEvent::Scroll { position, .. } => state.pointer_at = *position,
@@ -1154,6 +1160,7 @@ impl Platform for Fake {
                 occluded: false,
                 frame_requested: false,
                 frames_asked: 0,
+                frame_at: None,
                 text_area: None,
                 compositions_ended: 0,
                 translucent: None,
@@ -1198,6 +1205,7 @@ impl Platform for Fake {
                 occluded: true,
                 frame_requested: false,
                 frames_asked: 0,
+                frame_at: None,
                 text_area: None,
                 compositions_ended: 0,
                 translucent: None,
@@ -1380,6 +1388,15 @@ impl Platform for Fake {
             } else {
                 state.frame_requested = true;
             }
+        }
+    }
+
+    fn request_frame_at(&mut self, window: WindowId, at: Instant) {
+        self.request_frame(window);
+        if let Some(state) = self.windows.get_mut(&window)
+            && !state.occluded
+        {
+            state.frame_at = Some(state.frame_at.map_or(at, |asked| asked.min(at)));
         }
     }
 

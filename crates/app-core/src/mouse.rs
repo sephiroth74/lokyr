@@ -15,6 +15,16 @@ use lokyr_vt_core::terminal::Origin;
 /// pixels.
 pub(crate) const GLIDE: Duration = Duration::from_millis(150);
 
+/// How much quicker than the display's refresh a trackpad's ease paces its
+/// frames, so that every refresh has one, as their times wander a little:
+/// two of them then fall within a refresh about once a second, the later
+/// shown.
+const QUICKER: Duration = Duration::from_micros(250);
+
+/// How long before its frame is due a frame of a trackpad's ease is still
+/// that one, rather than another, as output's, between two.
+const EARLY: Duration = Duration::from_millis(1);
+
 /// Where the pointer is in a grid: its cell, and its pixel from the cells'
 /// top left corner, of the rows as they are drawn, a share of a row up
 /// while the view is scrolled by one.
@@ -364,7 +374,9 @@ impl Glide {
 /// are left, however the events fall between the refreshes, which macOS
 /// sends about once a refresh but some 11 to 25 ms apart, with steps that
 /// change little from one frame to the next, and stops where the events
-/// took it, never past.
+/// took it, never past. It paces its frames itself, a little quicker than
+/// the refreshes, as the display link follows the input while it comes,
+/// its ticks uneven.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Ease {
     /// The pane whose view eases.
@@ -374,6 +386,8 @@ pub(crate) struct Ease {
     left: f64,
     /// When the view last moved toward them.
     at: Instant,
+    /// When its frame is due.
+    due: Instant,
 }
 
 impl Ease {
@@ -386,6 +400,7 @@ impl Ease {
             pane,
             left: rows,
             at: now.checked_sub(refresh).unwrap_or(now),
+            due: now,
         }
     }
 
@@ -397,6 +412,20 @@ impl Ease {
     /// The rows that the view has yet to move.
     pub(crate) fn left(&self) -> f64 {
         self.left
+    }
+
+    /// When the frame after one at `now` is due, on a display of `refresh`:
+    /// a refresh, less [`QUICKER`], past the one due before, of a steady
+    /// pace, or that from `now` where it is past; a frame of another's, as
+    /// output's, before the one due leaves it as it is.
+    pub(crate) fn next(&mut self, now: Instant, refresh: Duration) -> Instant {
+        if now + EARLY < self.due {
+            return self.due;
+        }
+        let period = refresh.saturating_sub(QUICKER);
+        let next = self.due + period;
+        self.due = if next <= now { now + period } else { next };
+        self.due
     }
 
     /// The rows that the view moves at `now`, on a display of `refresh`: a
@@ -916,5 +945,22 @@ mod tests {
         ease.step(start, refresh, least);
         assert_eq!(ease.step(start, refresh, least), 0.0);
         assert_eq!(ease.step(at(160), refresh, least), 4.0);
+    }
+
+    #[test]
+    fn a_trackpad_s_ease_paces_its_frames_a_little_quicker_than_the_refreshes() {
+        let refresh = Duration::from_millis(16);
+        let start = Instant::now();
+        let at = |us: u64| start + Duration::from_micros(us);
+        let period = 16_000 - 250;
+        let mut ease = Ease::new(PaneId::of(1), 8.0, start, refresh);
+        // Its first frame, at the event, asks for the next a period later; a
+        // frame a little late keeps the pace.
+        assert_eq!(ease.next(start, refresh), at(period));
+        assert_eq!(ease.next(at(period + 300), refresh), at(2 * period));
+        // A frame of another's, before the one due, leaves it.
+        assert_eq!(ease.next(at(2 * period - 5_000), refresh), at(2 * period));
+        // One late past a period starts the pace again from it.
+        assert_eq!(ease.next(at(5 * period), refresh), at(6 * period));
     }
 }
