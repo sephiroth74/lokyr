@@ -974,6 +974,20 @@ impl State {
         self.wanted && !off_for_good
     }
 
+    /// `event` as it hears it: a command's end of no exit status to a
+    /// plugin of no `history-read`.
+    fn told(&self, event: Event) -> Event {
+        let history = self
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::HistoryRead));
+        if history {
+            event
+        } else {
+            event.without_history()
+        }
+    }
+
     /// Whether it reads the processes, whose folders and programs a tab's
     /// title tells it.
     fn reads_processes(&self) -> bool {
@@ -1647,12 +1661,11 @@ impl Plugins {
         // capabilities that it holds now, as a subscription takes them.
         let granted = self.entries[at].state.granted.clone();
         for event in deferred.events {
-            let needed =
-                lokyr_plugin_sdk::message::Request::Subscribe(vec![event.name().to_owned()])
-                    .capabilities();
+            let subscription =
+                lokyr_plugin_sdk::message::Request::Subscribe(vec![event.name().to_owned()]);
             let may = granted
                 .as_ref()
-                .is_none_or(|granted| needed.iter().all(|capability| granted.contains(capability)));
+                .is_none_or(|granted| subscription.lacking(granted).is_none());
             if may {
                 self.out.events.push((Some(name.to_owned()), event));
             }
@@ -3604,8 +3617,13 @@ impl Plugins {
                 let held: Vec<(Option<String>, Event)> = events
                     .iter()
                     .filter(|(to, _)| to.as_ref().is_none_or(|to| *to == name))
-                    .filter(|(_, event)| state.hears(event, context.workspace))
-                    .cloned()
+                    .filter_map(|(to, event)| {
+                        if state.hears(event, context.workspace) {
+                            Some((to.clone(), state.told(event.clone())))
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 worker.hold(held);
                 continue;
@@ -3621,7 +3639,14 @@ impl Plugins {
                 .collect();
             let mut batch: Vec<Event> = batch
                 .into_iter()
-                .filter(|event| entry.state.hears(event, context.workspace))
+                .filter_map(|event| {
+                    let state = &mut entry.state;
+                    if state.hears(&event, context.workspace) {
+                        Some(state.told(event))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             // Its timers that fired, once it can take them: a plugin of a
             // thread of its own as its thread is free, so that a timer that
@@ -5960,11 +5985,7 @@ impl Host<'_, '_> {
         let Some(granted) = &self.state.granted else {
             return Ok(());
         };
-        match request
-            .capabilities()
-            .into_iter()
-            .find(|needed| !lokyr_plugin_sdk::command::grants(granted, needed))
-        {
+        match request.lacking(granted) {
             Some(needed) => Err(Error::new(
                 Code::MissingCapability,
                 format!(

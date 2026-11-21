@@ -140,6 +140,35 @@ fn marks(
 }
 
 #[test]
+fn a_plugin_that_reads_the_processes_hears_the_commands_of_no_status() {
+    let followed = Rc::new(RefCell::new(Followed::default()));
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/follower\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[capabilities]\nprocess-read = true\n",
+    );
+    let script = concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf '$ '; m B; echo false; m C; m 'D;1'\n",
+        "m A; printf '$ '; sleep 30\n",
+    );
+    let mut fake = Fake::default();
+    let mut app = app(unpadded(), shell(script));
+    let manifest = lokyr_pkg_model::manifest::Manifest::parse(manifest).unwrap();
+    app.plugins
+        .add_declared(manifest, Box::new(Follower(Rc::clone(&followed))))
+        .unwrap();
+    fake.start(&mut app);
+    // Its start and its end, of no exit status, which `history-read` tells.
+    run_until(&mut fake, &mut app, |_, _| {
+        followed.borrow().commands_told.len() == 2
+    });
+    assert_eq!(
+        followed.borrow().commands_told,
+        [(1, None), (1, Some(None))]
+    );
+}
+
+#[test]
 fn a_plugin_follows_three_commands_and_its_pane_s_view_through_output_and_the_scrollback_s_limit() {
     let directory = std::env::temp_dir().join(format!("lokyr-app-marks-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&directory);

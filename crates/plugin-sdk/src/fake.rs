@@ -665,6 +665,8 @@ pub struct FakeHost {
     menu_items: Vec<crate::host::MenuItem>,
     subscribed: Vec<String>,
     done: Vec<Request>,
+    /// The plugin's reads since the last take, in their order.
+    reads: Vec<Request>,
     decorations: Vec<FakeDecoration>,
     gutter_marks: Vec<FakeGutterMark>,
     panels: BTreeMap<PanelId, PanelOptions>,
@@ -795,6 +797,7 @@ impl FakeHost {
             menu_items: Vec::new(),
             subscribed: Vec::new(),
             done: Vec::new(),
+            reads: Vec::new(),
             decorations: Vec::new(),
             gutter_marks: Vec::new(),
             panels: BTreeMap::new(),
@@ -1587,6 +1590,24 @@ impl FakeHost {
         std::mem::take(&mut self.done)
     }
 
+    /// The plugin's reads since the last take that its capabilities allow,
+    /// in their order, as the requests themselves: what its calls looked
+    /// at.
+    pub fn take_reads(&mut self) -> Vec<Request> {
+        std::mem::take(&mut self.reads)
+    }
+
+    /// Cuts short the reads of rows that the plugin asked for and has yet
+    /// to hear of, as a resize or the pane's closing does in their middle:
+    /// their `lines` events, at the next delivery, tell them incomplete.
+    pub fn cut_reads(&mut self) {
+        for event in &mut self.owed {
+            if let Event::Lines { complete, .. } = event {
+                *complete = false;
+            }
+        }
+    }
+
     /// The ids of the plugin's searches that the host keeps, in their
     /// order, as their ends take them away.
     pub fn searches(&self) -> Vec<u64> {
@@ -1778,7 +1799,7 @@ impl FakeHost {
                     | Event::DoubleTapped { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
-                batch.push(event);
+                batch.push(self.told(event));
             }
         }
         self.timers.retain(|&id, timer| {
@@ -2408,6 +2429,20 @@ impl FakeHost {
         }
         if settles {
             self.settle_groups();
+        }
+    }
+
+    /// `event` as the plugin hears it: a command's end of no exit status
+    /// to a plugin of no `history-read`, as the app's host tells it.
+    fn told(&self, event: Event) -> Event {
+        let history = self
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::HistoryRead));
+        if history {
+            event
+        } else {
+            event.without_history()
         }
     }
 
@@ -5622,10 +5657,7 @@ impl host::Host for Calling<'_> {
             Err(error) => return Response::Failed(error),
         };
         if let Some(granted) = &self.host.granted
-            && let Some(needed) = request
-                .capabilities()
-                .into_iter()
-                .find(|needed| !crate::command::grants(granted, needed))
+            && let Some(needed) = request.lacking(granted)
         {
             return Response::Failed(Error::new(
                 Code::MissingCapability,
@@ -5636,7 +5668,10 @@ impl host::Host for Calling<'_> {
             ));
         }
         let answered = match request.effect() {
-            Effect::Read => self.read(&request),
+            Effect::Read => {
+                self.host.reads.push(request.clone());
+                self.read(&request)
+            }
             Effect::Write | Effect::App => self.queue(request),
             Effect::Declaration if self.looking => Err(Error::new(
                 Code::Failed,

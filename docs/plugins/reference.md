@@ -29,8 +29,8 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `global-hotkey` | System-wide shortcuts, bindings of `global:` keys, the double taps of modifiers from any app, and quick windows, which slide in over every app's | Medium |
 | `env-read:<name>` | Reading the listed variables of the app's environment and of the panes' programs', with `*` as `AWS_*` | High: they often hold secrets, as `GITHUB_TOKEN` |
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
-| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends | High: a password typed by mistake ends up there |
-| `process-read` | Seeing the panes' processes: their command lines and working directories, the programs that run and the agents' states | Medium: command lines can hold passwords |
+| `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends of their exit statuses | High: a password typed by mistake ends up there |
+| `process-read` | Seeing the panes' processes: their command lines and working directories, a folder's git branch, the programs that run and the agents' states; hearing as a command starts and ends, of no exit status · not released yet | Medium: command lines can hold passwords |
 | `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs and groups of tabs, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text |
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
@@ -42,7 +42,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
 | `replaces:<plugin>` | Turning the plugin of that name off while this one runs, as both show in the same place, of the manifest's `[plugin] replaces` rather than of `[capabilities]`; never `lokyr/plugin-manager` · not released yet | High: what the other plugin did goes while this one runs |
 
-A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
+A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read` or `process-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and Lokyr writes it.
 
 ## Slots
 
@@ -74,7 +74,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `pane-changed` | A pane's title or header changes | `process-read` |
 | `layout-changed` | A tab's splits change | — |
 | `viewport-changed` | A pane's view scrolls or resizes, once a frame | — |
-| `command-started`, `command-ended` | A command of the shell starts or ends, of shell integration's marks | `history-read` |
+| `command-started`, `command-ended` | A command of the shell starts or ends, of shell integration's marks | `history-read`, or `process-read` of no exit status · not released yet |
 | `pointer` | The pointer moves over a pane's cells | `pointer-read` |
 | `keys-changed` | The keymap changes | — |
 | `config-changed` | The plugin's section of the config changes | — |
