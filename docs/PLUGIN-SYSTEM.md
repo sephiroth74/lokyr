@@ -871,8 +871,11 @@ type Cx = {
     keeps_state: () -> (boolean?, Error?),
     -- Writes `bytes` as the plugin's temporary file `name`, of no capability, in a folder of the plugin's own that Lokyr
     -- empties as it quits and as it starts, a file of the same name in place of the old one, marked as downloaded, so
-    -- that macOS asks before it opens as a program: its path, as an editor opens it. A name of a file's alone, of no
-    -- `/`, 8 MiB a file, 16 files and 32 MiB together at most; an error without a state's folder · not released yet.
+    -- that macOS asks before it opens as a program, readable by your account alone: its path, as an editor opens it. A
+    -- name of a file's alone, of no `/`, ending in a text's extension (`.txt`, `.log`, `.md`, `.json`, `.yaml`, `.yml`,
+    -- `.toml`, `.diff` or `.patch`), 8 MiB a file, 16 files and 32 MiB together at most; 32 MiB of writes at once, each
+    -- 256 KiB at least, given back at 8 MiB a second, a write past them refused until they come back; an error without
+    -- a state's folder · not released yet.
     temp_file: (name: string, bytes: string) -> (string?, Error?),
     -- The AI agents that run in the panes, of every window, in the windows', tabs' and panes' order, of
     -- `process-read`: each one's pane, tab, window, program's name, state, message while it waits, what it asks for

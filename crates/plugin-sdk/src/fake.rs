@@ -582,10 +582,12 @@ pub struct FakeHost {
     local_time: host::LocalTime,
     /// The folder of the host's temporary files, of none as without a
     /// state's folder, and the temporary files that the plugin wrote, their
-    /// bounds' tally and their bytes by their names, kept in memory.
+    /// bounds' tally and their bytes by their names, kept in memory, and
+    /// the clock's time of the last, from which their budget refills.
     temporary_folder: Option<std::path::PathBuf>,
     temporary: host::TemporaryFiles,
     temporary_bytes: BTreeMap<String, Vec<u8>>,
+    temporary_written: Option<u64>,
     /// The git branches of the repositories' folders, as the test gave
     /// them, which a folder within one takes.
     git_branches: BTreeMap<String, String>,
@@ -734,6 +736,7 @@ impl FakeHost {
             temporary_folder: Some(std::path::PathBuf::from(TEMPORARY_FOLDER)),
             temporary: host::TemporaryFiles::default(),
             temporary_bytes: BTreeMap::new(),
+            temporary_written: None,
             git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
@@ -4185,6 +4188,13 @@ impl Calling<'_> {
         let Some(folder) = self.host.temporary_folder.clone() else {
             return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
         };
+        let now = self.host.clock;
+        if let Some(at) = self.host.temporary_written {
+            self.host
+                .temporary
+                .refill(std::time::Duration::from_millis(now.saturating_sub(at)));
+        }
+        self.host.temporary_written = Some(now);
         self.host.temporary.check(name, bytes.len())?;
         self.host.temporary.insert(name, bytes.len());
         self.host

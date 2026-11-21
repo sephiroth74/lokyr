@@ -1058,11 +1058,13 @@ pub type Mark = fn(&std::path::Path) -> std::io::Result<()>;
 
 /// A plugin's temporary files: their folder, its own in the host's folder
 /// of them, with the function that marks each, none without a state's
-/// folder; and the tally of those that it wrote, which their bounds count.
+/// folder; the tally of those that it wrote, which their bounds count; and
+/// the time of its last write, from which its budget of writes refills.
 #[derive(Debug, Default)]
 struct Temporary {
     folder: Option<(PathBuf, Mark)>,
     files: host::TemporaryFiles,
+    written: Option<Instant>,
 }
 
 impl State {
@@ -1789,6 +1791,7 @@ impl Plugins {
                 temporary: Temporary {
                     folder: temporary,
                     files: host::TemporaryFiles::default(),
+                    written: None,
                 },
                 wanted,
                 replaced_by: None,
@@ -1867,6 +1870,7 @@ impl Plugins {
                     .as_ref()
                     .map(|directory| (directory.join(&entry.state.namespace), mark)),
                 files: host::TemporaryFiles::default(),
+                written: None,
             };
         }
         self.temporary_directory = directory.map(|directory| (directory, mark));
@@ -6325,11 +6329,21 @@ impl Host<'_, '_> {
                 let Some((folder, mark)) = self.state.temporary.folder.clone() else {
                     return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
                 };
-                self.state.temporary.files.check(&name, bytes.0.len())?;
+                // Of the plugin's budget of writes in time, which each file
+                // takes, so that a plugin's loop of writes waits.
+                let temporary = &mut self.state.temporary;
+                if let Some(at) = temporary.written {
+                    temporary
+                        .files
+                        .refill(self.context.now.saturating_duration_since(at));
+                }
+                temporary.written = Some(self.context.now);
+                temporary.files.check(&name, bytes.0.len())?;
                 // Written whole, of the platform's mark before it takes its
-                // name, on the main thread: a few milliseconds of its most.
+                // name, on the main thread, of no flush to the disk, as the
+                // file is gone at the quit anyway.
                 let path = folder.join(&name);
-                lokyr_pkg_model::write_whole_marked(&path, &bytes.0, mark).map_err(|error| {
+                lokyr_pkg_model::write_scratch(&path, &bytes.0, mark).map_err(|error| {
                     Error::new(
                         Code::Failed,
                         format!("the temporary file `{name}` was not written: {error}"),

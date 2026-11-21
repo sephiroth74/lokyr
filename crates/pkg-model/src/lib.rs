@@ -227,6 +227,46 @@ pub fn write_whole_marked(
     Ok(())
 }
 
+/// Writes `bytes` to the file at `path`, whole, as a scratch file that the
+/// next start of its owner takes away: `mark` applied to the new file
+/// before it takes the old one's place, of the owner's alone (0600), in
+/// folders made of the owner's alone (0700); of no flush to the disk, as a
+/// durable file's write takes, and of no link followed at `path`, whose
+/// place the new file takes. Of its error, nothing is written.
+pub fn write_scratch(
+    path: &Path,
+    bytes: &[u8],
+    mark: impl FnOnce(&Path) -> io::Result<()>,
+) -> io::Result<()> {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let (Some(folder), Some(_)) = (path.parent(), path.file_name()) else {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "a file's path"));
+    };
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(folder)?;
+    let temporary = folder.join(format!(
+        ".lokyr-{}-{}.tmp",
+        std::process::id(),
+        TEMPORARIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&temporary)?;
+    let written = (|| {
+        file.write_all(bytes)?;
+        mark(&temporary)?;
+        std::fs::rename(&temporary, path)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    written
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,5 +337,42 @@ mod tests {
         assert_eq!(std::fs::read(&elsewhere).unwrap(), b"kept");
         assert!(!path.exists());
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_scratch_file_is_the_owner_s_alone_and_takes_a_link_s_place() {
+        let root = folder("scratch");
+        let path = root.join("plugin/out.txt");
+        let marked = std::cell::Cell::new(false);
+        write_scratch(&path, b"one", |_| {
+            marked.set(true);
+            Ok(())
+        })
+        .unwrap();
+        assert!(marked.get());
+        assert_eq!(std::fs::read(&path).unwrap(), b"one");
+        assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(root.join("plugin")).unwrap().mode() & 0o777,
+            0o700
+        );
+        // A link at the path is replaced, not followed.
+        let elsewhere = root.join("elsewhere.txt");
+        std::fs::write(&elsewhere, "kept").unwrap();
+        let linked = root.join("plugin/linked.txt");
+        std::os::unix::fs::symlink(&elsewhere, &linked).unwrap();
+        write_scratch(&linked, b"two", |_| Ok(())).unwrap();
+        assert_eq!(std::fs::read_to_string(&elsewhere).unwrap(), "kept");
+        assert!(
+            !std::fs::symlink_metadata(&linked)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        // A mark that fails writes nothing.
+        let refused = root.join("plugin/refused.txt");
+        assert!(write_scratch(&refused, b"x", |_| Err(io::Error::other("no"))).is_err());
+        assert!(!refused.exists());
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
