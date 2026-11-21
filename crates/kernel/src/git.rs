@@ -78,15 +78,22 @@ fn repository(folder: &Path) -> Option<PathBuf> {
 /// file that does not read, or not of UTF-8, or of no regular file, as a
 /// FIFO, whose open would wait for a writer, or a link to one.
 fn read(path: &Path) -> Option<String> {
-    if !std::fs::metadata(path).ok()?.is_file() {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    // Opened of no wait, as a FIFO's open waits for a writer; then read of
+    // a regular file alone, as the open file tells, whatever the path held
+    // at a look before.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NONBLOCK);
+    }
+    let file = options.open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
         return None;
     }
     let mut text = String::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(MOST_READ)
-        .read_to_string(&mut text)
-        .ok()?;
+    file.take(MOST_READ).read_to_string(&mut text).ok()?;
     Some(text)
 }
 
