@@ -363,6 +363,9 @@ export type TestHost = {
     -- The bytes of the plugin's temporary file `name`, as it wrote them
     -- last, if it did.
     temporary_file: (name: string) -> string?,
+    -- Gives the pane the folder of its program, as a read of its working
+    -- directory gives it, or none.
+    set_directory: (folder: string?) -> (),
     -- The side of the status bar where its view goes: its manifest's, or
     -- the one that it asked for last.
     status_bar_side: () -> StatusBarSide,

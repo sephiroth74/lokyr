@@ -50,7 +50,7 @@ pub fn dismantle(node: Node) {
 /// names: the codicons of Symbols Nerd Font, and two that the host draws
 /// as macOS 27's search field draws them, `magnifying-glass` and
 /// `clear-circle`, its button's cross knocked out of a disc.
-pub const ICONS: [&str; 58] = [
+pub const ICONS: [&str; 59] = [
     "add",
     "arrow-down",
     "arrow-up",
@@ -79,6 +79,7 @@ pub const ICONS: [&str; 58] = [
     "eye-closed",
     "filter",
     "folder",
+    "git-branch",
     "history",
     "hubot",
     "info",
