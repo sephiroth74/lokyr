@@ -18,7 +18,7 @@ use lokyr_platform_core::{
 use lokyr_ui_core::pane::{Preedit, rows_up};
 use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
-    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow,
+    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow, Snapshot,
 };
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
@@ -1108,10 +1108,9 @@ impl<B: Backend> App<B> {
         let id = self.pane_at(platform, window, position)?;
         let pointer = self.pointer_in(platform, window, id, position)?;
         let snapshot = self.workspace.pane(id)?.snapshot();
-        let (command, prompt) = snapshot
-            .sticky()
-            .filter(|sticky| pointer.band_row < sticky.rows())
-            .and(snapshot.sticky_prompt())?;
+        let (command, prompt) = over_sticky(snapshot, pointer)
+            .then(|| snapshot.sticky_prompt())
+            .flatten()?;
         Some((id, command, prompt))
     }
 
@@ -1263,9 +1262,7 @@ impl<B: Backend> App<B> {
             // The drawn frame's numbers, which take no lock of the pane; no
             // cell under a block's prompt rows pinned at the view's top.
             let snapshot = self.workspace.pane(pane)?.snapshot();
-            let pinned = snapshot
-                .sticky()
-                .is_some_and(|sticky| pointer.band_row < sticky.rows());
+            let pinned = over_sticky(snapshot, pointer);
             let row = snapshot.shown_row(pointer.row)?.row();
             Some((pane, (!pinned).then_some((pointer.col, row)), command))
         });
@@ -1607,6 +1604,18 @@ fn on_screen(pane: &Pane, pointer: Pointer) -> Option<Pointer> {
         return mouse::on_screen(pointer, snapshot.offset(), cell_height);
     }
     mouse::onto_row(pointer, snapshot.screen_row(pointer.row)?, cell_height)
+}
+
+/// Whether `pointer` is over the prompt rows that `snapshot` pins at its
+/// view's top: of the grid's band, where they stay, or of the rows, with
+/// which they move a share of a row as their block's end pushes them up.
+fn over_sticky(snapshot: &Snapshot, pointer: Pointer) -> bool {
+    let row = if snapshot.sticky_pushed() {
+        pointer.row
+    } else {
+        pointer.band_row
+    };
+    snapshot.sticky().is_some_and(|sticky| row < sticky.rows())
 }
 
 /// The number of the row of `pane`'s view `y`, as [`shown_row`] finds it:

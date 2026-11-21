@@ -1226,6 +1226,17 @@ impl<B: Backend> App<B> {
             let Some(sticky) = snapshot.sticky() else {
                 continue;
             };
+            // Pushed up by their block's end, they move up with the rows by
+            // the view's share of a row, within the rows' band; otherwise
+            // they stay at the view's top.
+            let rows = rows_of(snapshot, at, pane);
+            let rows = if snapshot.sticky_pushed() {
+                rows
+            } else {
+                cells::Rows::default()
+            };
+            let at = rows.corner(at);
+            let mut pinned = Vec::new();
             let across = (at.0 - pad, width + 2 * bar_padding);
             let height = u32::from(sticky.rows()) * cell.height;
             let band = |y: i32, height: u32, fill: Color, knockout: bool| Shape {
@@ -1245,7 +1256,7 @@ impl<B: Backend> App<B> {
                 mark: None,
             };
             let background = cells::background(snapshot);
-            items.push(Item::Shapes(vec![band(
+            pinned.push(Item::Shapes(vec![band(
                 at.1,
                 height,
                 background.with_alpha(opacity),
@@ -1253,7 +1264,7 @@ impl<B: Backend> App<B> {
             )]));
             let mut batch = cells::cells_with(sticky, &cell, at, None, None, look, font);
             cells::fade(&mut batch, background, dim);
-            items.push(Item::Cells(batch));
+            pinned.push(Item::Cells(batch));
             let mut over = Vec::new();
             let selected = self
                 .plugins
@@ -1270,7 +1281,8 @@ impl<B: Backend> App<B> {
                 let below = at.1 + i32::try_from(height).unwrap_or(i32::MAX);
                 over.push(faded(dim)(band(below, thickness, line, false)));
             }
-            items.push(Item::Shapes(over));
+            pinned.push(Item::Shapes(over));
+            items.extend(rows.clipped(pinned));
         }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {

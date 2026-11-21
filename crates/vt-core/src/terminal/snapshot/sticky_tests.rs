@@ -163,6 +163,55 @@ fn the_block_s_end_pushes_its_pinned_rows_up_off_the_next_block() {
 }
 
 #[test]
+fn at_a_share_of_a_row_the_prompt_rows_pin_at_once_and_their_push_moves_with_the_rows() {
+    let mut terminal = terminal();
+    feed(&mut terminal, "seq\r\n\x1b]133;C\x07");
+    for n in 1..=20 {
+        feed(&mut terminal, &format!("seq {n}\r\n"));
+    }
+    feed(
+        &mut terminal,
+        "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+    );
+    let mut snapshot = Snapshot::default();
+    let ls = terminal.commands()[0].clone();
+    let prompt = ls.prompt.unwrap().1;
+    let end = ls.end.unwrap().1;
+    // The prompt's first row at the top pins nothing; a share of a row
+    // past it, partly above the view, pins its rows at once, which stay at
+    // the view's top.
+    terminal.scroll_viewport(Scroll::Row(prompt));
+    assert!(pinned(&mut terminal, &mut snapshot).is_empty());
+    terminal.scroll_viewport_by(-0.25);
+    assert_eq!(
+        pinned(&mut terminal, &mut snapshot),
+        ["user 1 ~/dir", "$ ls"]
+    );
+    assert!(!snapshot.sticky_pushed());
+    // Far from the block's end, the same.
+    terminal.scroll_viewport(Scroll::Row(end - 10));
+    terminal.scroll_viewport_by(-0.5);
+    assert_eq!(pinned(&mut terminal, &mut snapshot).len(), 2);
+    assert!(!snapshot.sticky_pushed());
+    // The block's last two rows at the top: its end pushes them, so that
+    // they move up with the rows; then its last row alone.
+    terminal.scroll_viewport(Scroll::Row(end - 2));
+    terminal.scroll_viewport_by(-0.5);
+    assert_eq!(pinned(&mut terminal, &mut snapshot).len(), 2);
+    assert!(snapshot.sticky_pushed());
+    terminal.scroll_viewport(Scroll::Row(end - 1));
+    terminal.scroll_viewport_by(-0.5);
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ ls"]);
+    assert!(snapshot.sticky_pushed());
+    // The next block's prompt a share past the top: its own row pinned at
+    // once, which its long block does not push.
+    terminal.scroll_viewport(Scroll::Row(end));
+    terminal.scroll_viewport_by(-0.5);
+    assert_eq!(pinned(&mut terminal, &mut snapshot), ["$ seq"]);
+    assert!(!snapshot.sticky_pushed());
+}
+
+#[test]
 fn a_command_that_did_not_end_ends_its_pinned_rows_at_the_next_prompt() {
     let options = Options {
         scrollback: Scrollback {

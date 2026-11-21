@@ -65,6 +65,10 @@ pub struct Snapshot {
     /// of the first pinned row, and the epoch of the rows' numbers that they
     /// were copied of, with how many.
     sticky_of: Option<(u64, i64, i64, u64, u16)>,
+    /// Whether the pinned rows end at their block's last row, which pushes
+    /// them up, so that they move up with the rows by the view's share of
+    /// a row.
+    sticky_pushed: bool,
     /// The view's rows, of folds: each the list's row or a fold's
     /// placeholder; none of no fold, as the view's rows are the list's from
     /// its first.
@@ -223,9 +227,17 @@ impl Snapshot {
     /// the last update found them, while the embedder asks for them: a
     /// snapshot of those rows alone, of the view's colors, which a renderer
     /// draws over the view's first rows; none while the prompt's first row
-    /// shows, on the alternate screen, or of no command.
+    /// shows whole, on the alternate screen, or of no command.
     pub fn sticky(&self) -> Option<&Snapshot> {
         self.sticky.as_deref()
+    }
+
+    /// Whether the pinned rows end at their block's last row, as the
+    /// block's end pushes them up: a renderer draws them up by the view's
+    /// share of a row with the rows, so that they meet the block's end;
+    /// otherwise they stay at the view's top, whatever the share.
+    pub fn sticky_pushed(&self) -> bool {
+        self.sticky.is_some() && self.sticky_pushed
     }
 
     /// The command of the pinned rows and the number of its prompt's row,
@@ -670,13 +682,15 @@ impl Terminal {
     /// writes them anew.
     fn sticky_view(&self, snapshot: &mut Snapshot, map: &ViewMap) {
         let found = (self.sticky_prompts && !self.alternate_active)
-            .then(|| self.sticky_rows(map))
+            .then(|| self.sticky_rows(map, snapshot.fraction > 0.0))
             .flatten();
-        let Some((command, prompt, first, rows)) = found else {
+        let Some((command, prompt, first, rows, pushed)) = found else {
             snapshot.sticky = None;
             snapshot.sticky_of = None;
+            snapshot.sticky_pushed = false;
             return;
         };
+        snapshot.sticky_pushed = pushed;
         let rows_list = &self.primary.rows;
         let of = (command, prompt, first, rows_list.epoch(), rows);
         let mut pinned = snapshot.sticky.take().unwrap_or_default();
@@ -715,16 +729,19 @@ impl Terminal {
     /// header that stays at the view's top once the prompt's first row
     /// leaves it, over the rows that scroll under it; and, as the block's
     /// last row comes nearer the top than they are many, their last rows
-    /// alone, as the block's end pushes them up; none while the prompt's
-    /// first row shows, or of no command, or of none whose output came, nor
-    /// of the command that runs while the view shows the screen, where it
-    /// draws.
-    fn sticky_rows(&self, map: &ViewMap) -> Option<(u64, i64, i64, u16)> {
+    /// alone, as the block's end pushes them up, which the last value
+    /// tells; none while the prompt's first row shows whole, or of no
+    /// command, or of none whose output came, nor of the command that runs
+    /// while the view shows the screen, where it draws. With `shared`, of a
+    /// view scrolled a share of a row past its first row, the prompt's
+    /// first row at the view's top is partly above it, and its rows pinned
+    /// already, so that they stay still as a scroll by pixels starts.
+    fn sticky_rows(&self, map: &ViewMap, shared: bool) -> Option<(u64, i64, i64, u16, bool)> {
         let top = map.top();
         let command = self.command_at(top)?;
         let (_, prompt) = command.prompt?;
         let (column, output) = command.output?;
-        if prompt >= top {
+        if prompt > top || (prompt == top && !shared) {
             return None;
         }
         // The command's line ends at the row before its output's mark, or
@@ -761,7 +778,8 @@ impl Terminal {
         let room = last.saturating_sub(top).saturating_add(1);
         let shown = rows.min(room);
         let shown = u16::try_from(shown).ok().filter(|&shown| shown > 0)?;
-        Some((command.id, prompt, prompt + rows - i64::from(shown), shown))
+        let first = prompt + rows - i64::from(shown);
+        Some((command.id, prompt, first, shown, room <= rows))
     }
 
     /// Brings `snapshot` up to date with `view`, a view of folds of the
@@ -925,6 +943,7 @@ pub(super) fn copy_of(terminal: &Terminal) -> Snapshot {
         images: Vec::new(),
         sticky: None,
         sticky_of: None,
+        sticky_pushed: false,
         view: Vec::new(),
         folded: (0, 0),
         below: false,
