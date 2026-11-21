@@ -557,12 +557,23 @@ fn swiped(y: f64, momentum: bool, mods: Modifiers) -> WindowEvent {
     }
 }
 
-/// Where the view of `window` is, as a frame draws it: its offset above
-/// the screen and its share of a row.
+/// Where the view of `window` is, as the frames draw it once a trackpad's
+/// ease is done: its offset above the screen and its share of a row, to
+/// the fourth decimal, past the rounding of the steps that add up to it.
 fn drawn_view(fake: &mut Fake, app: &mut App, window: WindowId) -> (usize, f32) {
     fake.send(app, window, WindowEvent::Frame);
+    run_until(fake, app, |fake, _| {
+        !fake.window(window).unwrap().frame_requested
+    });
     let snapshot = app.pane(window).snapshot();
-    (snapshot.offset(), snapshot.fraction())
+    (snapshot.offset(), (snapshot.fraction() * 1e4).round() / 1e4)
+}
+
+/// The rows that the view of `window` is up from the screen, of its share.
+fn rows_up_of(app: &App, window: WindowId) -> f64 {
+    let snapshot = app.pane(window).snapshot();
+    // Far fewer rows than an `f64` holds exactly.
+    snapshot.offset() as f64 - f64::from(snapshot.fraction())
 }
 
 #[test]
@@ -570,7 +581,7 @@ fn a_trackpad_scrolls_the_view_by_pixels_with_smooth_scroll() {
     let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
     let none = Modifiers::NONE;
     // Up a row and a half: the view a share of a row up, of a frame asked
-    // for at once.
+    // for at once, as its ease ends.
     fake.send(&mut app, window, swiped(12.0, false, none));
     assert!(fake.window(window).unwrap().frame_requested);
     assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.5));
@@ -590,6 +601,61 @@ fn a_trackpad_scrolls_the_view_by_pixels_with_smooth_scroll() {
     fake.send(&mut app, window, swiped(100_000.0, true, none));
     let top = app.pane(window).snapshot().scrollback();
     assert_eq!(drawn_view(&mut fake, &mut app, window), (top, 0.0));
+}
+
+#[test]
+fn a_trackpad_s_scroll_eases_the_view_a_frame_at_every_refresh() {
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
+    let none = Modifiers::NONE;
+    let requested = |fake: &Fake| fake.window(window).unwrap().frame_requested;
+    // Two rows up: the frame at once moves the view half of them, and asks
+    // for the next.
+    let before = Instant::now();
+    fake.send(&mut app, window, swiped(16.0, false, none));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let first = rows_up_of(&app, window);
+    assert!((0.95..1.3).contains(&first), "{first}");
+    assert!(requested(&fake));
+    // The next at its own pace, a little quicker than the display's
+    // refresh, of a sixtieth of a second.
+    let next = fake.window(window).unwrap().frame_at.unwrap();
+    let refresh = Duration::from_secs(1) / 60;
+    assert!(next > before + refresh - Duration::from_millis(1));
+    assert!(next < Instant::now() + refresh);
+    // The frames after, at their refreshes, take it to the two rows, a
+    // share of them each, then ask for none.
+    let mut frames = 0;
+    let mut last = first;
+    run_until(&mut fake, &mut app, |fake, app| {
+        let up = rows_up_of(app, window);
+        if up != last {
+            assert!(up > last && up <= 2.0, "{last} then {up}");
+            frames += 1;
+            last = up;
+        }
+        !requested(fake)
+    });
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.0));
+    assert!(frames > 1, "{frames}");
+    // An event while it eases adds to where it goes, of either way.
+    fake.send(&mut app, window, swiped(16.0, false, none));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, swiped(-8.0, true, none));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (3, 0.0));
+    // At the oldest row the rest goes, and no frame comes after; up
+    // there, a scroll up asks for none.
+    fake.send(&mut app, window, swiped(100_000.0, true, none));
+    let top = app.pane(window).snapshot().scrollback();
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (top, 0.0));
+    assert!(app.windows[&window].mouse.ease.is_none());
+    fake.send(&mut app, window, swiped(8.0, true, none));
+    assert!(!requested(&fake));
+    // Turned off, the ease goes, and a scroll moves the view at once.
+    fake.send(&mut app, window, swiped(-16.0, true, none));
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = false;
+    app.apply(&mut fake, config);
+    assert!(app.windows[&window].mouse.ease.is_none());
 }
 
 #[test]

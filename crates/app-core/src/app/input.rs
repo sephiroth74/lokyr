@@ -4,7 +4,7 @@
 //! slots' views, which take the pointer over them and the keys while one of
 //! their nodes has the keyboard's focus.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::Value;
 use lokyr_kernel::keymap::{Invocation, Pressed, Resolved, Resolver};
@@ -23,13 +23,17 @@ use lokyr_vt_core::terminal::{
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
 use crate::drawing::Backend;
-use crate::mouse::{Glide, Pointer, Spot};
+use crate::mouse::{Ease, Glide, Pointer, Spot};
 use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
 
 /// The rows that a glide's view stops short of its place by, at most, of
 /// the shares that a view rounds: past them, the view met the oldest row.
 const STOPPED: f64 = 0.01;
+
+/// The refresh of a display that tells none, which a trackpad's ease takes:
+/// a sixtieth of a second.
+const REFRESH: Duration = Duration::from_nanos(16_666_667);
 
 impl<B: Backend> App<B> {
     /// A key of `window`: the press that the latency's bench waits for;
@@ -1357,13 +1361,28 @@ impl<B: Backend> App<B> {
             state.mouse.settle_up();
             up = 0;
             match delta {
-                // A frame as the view moves, none at its ends, where the
-                // momentum goes on a while.
+                // The view eases toward where the events take it, of a
+                // frame at every refresh while it moves; none at its ends,
+                // where the momentum goes on a while.
                 ScrollDelta::Points { .. } => {
-                    let before = pane.scrolled_place();
-                    pane.scroll_by(rows);
-                    if pane.scrolled_place() != before {
-                        platform.request_frame(window);
+                    let refresh = platform.refresh_interval(window).unwrap_or(REFRESH);
+                    match &mut state.mouse.ease {
+                        // Its frames come at their pace.
+                        Some(ease) if ease.pane == target => ease.add(rows),
+                        slot => {
+                            // Another pane's view takes the rows that it
+                            // had left at once.
+                            if let Some(ease) = slot.take()
+                                && let Some(other) = self.workspace.pane(ease.pane)
+                            {
+                                other.scroll_by(ease.left());
+                            }
+                            if !at_end(pane, rows) {
+                                let now = Instant::now();
+                                *slot = Some(Ease::new(target, rows, now, refresh));
+                                platform.request_frame_at(window, now);
+                            }
+                        }
                     }
                 }
                 ScrollDelta::Lines { .. } => glides = Some(rows),
@@ -1522,6 +1541,54 @@ impl<B: Backend> App<B> {
             platform.request_frame(window);
         } else {
             state.mouse.glide = None;
+        }
+    }
+
+    /// Moves the view that a trackpad's scroll eases over `window` by its
+    /// step at `now`, as a frame starts, before the frame takes the panes'
+    /// screens, and asks for the next frame at its pace while rows are left;
+    /// at an end of the view, where it moves no more, the rest goes, as a
+    /// scroll past the end goes nowhere.
+    pub(super) fn ease_view(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) {
+        let refresh = platform.refresh_interval(window).unwrap_or(REFRESH);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(ease) = &mut state.mouse.ease else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(ease.pane) else {
+            state.mouse.ease = None;
+            return;
+        };
+        // Half a pixel, of the rows' height in pixels.
+        let least = 0.5 / f64::from(pane.grid().cell_height.max(1));
+        let before = pane.scrolled_place();
+        pane.scroll_by(ease.step(now, refresh, least));
+        if ease.left() != 0.0 && pane.scrolled_place() != before {
+            platform.request_frame_at(window, ease.next(now, refresh));
+        } else {
+            state.mouse.ease = None;
+        }
+    }
+}
+
+/// Whether `pane`'s view is at the end that `rows` move it toward, up where
+/// positive: down at the screen, up at the oldest row.
+fn at_end(pane: &Pane, rows: f64) -> bool {
+    match pane.scrolled_place() {
+        None => rows < 0.0,
+        Some((origin, share)) => {
+            rows > 0.0
+                && pane.row_ends().is_some_and(|(oldest, _)| {
+                    // Far fewer rows than an `f64` holds exactly.
+                    origin.top as f64 + f64::from(share) <= oldest as f64
+                })
         }
     }
 }

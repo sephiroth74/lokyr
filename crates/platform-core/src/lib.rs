@@ -638,6 +638,20 @@ pub trait Platform {
     /// once it shows again.
     fn request_frame(&mut self, window: WindowId);
 
+    /// Asks for one [`WindowEvent::Frame`] of a window at `at`, of a pace of
+    /// the app's own rather than the display's refreshes: at once, once the
+    /// current call returns, where `at` is past. A frame asked for this way
+    /// comes at the earliest of the times asked for. On the Mac the display
+    /// link follows the input while a trackpad's events come, its ticks
+    /// uneven, so that a scroll that moves the view at every refresh paces
+    /// its frames itself. A window that is hidden or covered gets the frame
+    /// once it shows again, as [`Platform::request_frame`]'s. By default, a
+    /// frame at the display's pace.
+    fn request_frame_at(&mut self, window: WindowId, at: Instant) {
+        let _ = at;
+        self.request_frame(window);
+    }
+
     /// Brings a window in front of the others, with the focus; a hidden
     /// quick window, which [`Platform::show_quick_window`] shows, takes
     /// nothing.

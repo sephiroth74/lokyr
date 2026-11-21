@@ -172,6 +172,50 @@ fn the_wheel_scrolls_the_pane_under_it_which_keeps_the_keyboard_where_it_was() {
 }
 
 #[test]
+fn a_trackpad_s_scroll_over_another_pane_ends_the_first_s_ease_where_it_went() {
+    let mut config = unpadded();
+    config.window.smooth_scroll = true;
+    let (mut fake, mut app, window, a, b) = two_panes_of(
+        config,
+        shell("seq 1 200; echo ready-a; exec sleep 10"),
+        &shell("seq 1 200; echo ready-b; exec sleep 10"),
+        false,
+    );
+    let up = |app: &App, pane| {
+        let snapshot = app.workspace.pane(pane).unwrap().snapshot();
+        // Far fewer rows than an `f64` holds exactly.
+        snapshot.offset() as f64 - f64::from(snapshot.fraction())
+    };
+    let swipe = |at: Point| WindowEvent::Scroll {
+        delta: ScrollDelta::Points { x: 0.0, y: 16.0 },
+        phase: Some(lokyr_platform_core::ScrollPhase::Moved),
+        momentum: false,
+        position: at,
+        mods: Modifiers::NONE,
+    };
+    // Two rows up over the second pane, half of them in its first frame.
+    let (in_a, in_b) = (
+        middle_of(&fake, &app, window, a),
+        middle_of(&fake, &app, window, b),
+    );
+    fake.send(&mut app, window, swipe(in_b));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(up(&app, b) < 2.0);
+    // Then over the first: the second's view takes the rest at once, as
+    // the next frame shows, and the first's eases.
+    let close = |rows: f64| (rows - 2.0).abs() < 1e-4;
+    fake.send(&mut app, window, swipe(in_a));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(close(up(&app, b)), "{}", up(&app, b));
+    assert!(up(&app, a) < 2.0);
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.window(window).unwrap().frame_requested
+    });
+    assert!(close(up(&app, a)), "{}", up(&app, a));
+    assert!(close(up(&app, b)), "{}", up(&app, b));
+}
+
+#[test]
 fn an_accessibility_client_s_focus_of_a_pane_gives_it_the_keyboard() {
     let (mut fake, mut app, window, a, b) = two_panes(echoing("a"), &echoing("b"));
     click_in(&mut fake, &mut app, window, b);

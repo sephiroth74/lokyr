@@ -559,8 +559,10 @@ impl<B: Backend> App<B> {
         let started =
             (self.performance.is_some() || self.output_bench.is_some()).then(Instant::now);
         let now = Instant::now();
-        // A wheel's glide moves its view first, so that the frame shows it.
+        // A wheel's glide and a trackpad's ease move their views first, so
+        // that the frame shows them.
         self.glide_view(platform, window, now);
+        self.ease_view(platform, window, now);
         // The slots that show a view first ask their plugins for it, whose
         // calls' requests the turn's end takes.
         self.rendered_slots |= self.render_slots(platform, window);

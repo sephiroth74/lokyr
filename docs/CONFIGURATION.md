@@ -872,7 +872,7 @@ Whether a trackpad, a mouse's wheel and the scroll bar scroll the panes by pixel
 - With `true`, the text follows your fingers on a trackpad or a Magic Mouse, and keeps gliding as you let go, as macOS's momentum has it. A mouse wheel's step glides over its rows, a drag of the [scroll bar](#scrollbar)'s knob moves the text by pixels, and a click on its track glides there.
 - The keys still scroll by whole rows: Page Up and Page Down, the jumps between prompts and the search's matches. The view stops at the scrollback's top and at the screen.
 - A program that takes the wheel, such as vim or less on its own screen, still gets whole steps.
-- While you scroll, Lokyr draws a frame for each scroll event, 60 or 120 a second, rather than one for each row that the text crosses; at rest, it draws none.
+- While the text moves, Lokyr draws a frame at every refresh of the display, 60 or 120 a second, easing the text toward where the scroll takes it, so that it moves at an even pace however the trackpad's events fall, rather than one frame for each row that the text crosses; at rest, it draws none.
 - It applies as you save the file.
 
 ### `background-opacity`

@@ -2124,7 +2124,7 @@ impl<B: Backend> App<B> {
             config.debug.performance_overlay != self.config.debug.performance_overlay;
         let term_changed = config.terminal.term != self.config.terminal.term;
         // Scrolling by pixels turned off leaves no pane a share of a row,
-        // nor a wheel's glide.
+        // nor a wheel's glide, nor a trackpad's ease.
         let smooth_off = self.config.window.smooth_scroll && !config.window.smooth_scroll;
         let themes_changed = config.theme.light != self.config.theme.light
             || config.theme.dark != self.config.theme.dark;
@@ -2216,6 +2216,7 @@ impl<B: Backend> App<B> {
         if smooth_off {
             for (&window, state) in &mut self.windows {
                 state.mouse.glide = None;
+                state.mouse.ease = None;
                 platform.request_frame(window);
             }
         }

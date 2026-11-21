@@ -453,6 +453,17 @@ impl Window {
         self.pacer.request()
     }
 
+    /// Asks for a frame at `at`, of a pace of the app's own. Returns whether
+    /// it is due at once, as [`Window::request_frame`] tells.
+    pub(crate) fn request_frame_at(&self, at: std::time::Instant) -> bool {
+        // A window that does not show gets its frame as it shows again.
+        if self.occluded.get() {
+            self.frame_held.set(true);
+            return false;
+        }
+        self.pacer.request_at(at)
+    }
+
     /// The window shows again: the frame that it asked for meanwhile, if
     /// one; whether it comes at once, as [`Window::request_frame`] tells.
     pub(crate) fn request_held_frame(&self) -> bool {
