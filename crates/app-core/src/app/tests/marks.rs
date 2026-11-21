@@ -1231,6 +1231,90 @@ fn a_right_click_on_a_block_s_pinned_rows_opens_its_menu_which_acts_on_it() {
 }
 
 #[test]
+fn at_a_share_of_a_row_the_pinned_rows_stay_at_the_top_and_move_up_with_their_block_s_end() {
+    // Two commands of a prompt of two rows and 80 rows of output, then the
+    // prompt where you type.
+    let program = shell(concat!(
+        "m() { printf '\\033]133;%s\\007' \"$1\"; }\n",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf 'user ~/dir\\r\\n$ '; m B; echo 'seq 80'; m C; seq 80; m 'D;0'; ",
+        "m A; printf '$ '; m B; sleep 30\n",
+    ));
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), all_plugins(""), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let pane = app.windows[&window].views[0].pane;
+    let snapshot = |app: &App| app.workspace.pane(pane).unwrap().snapshot().clone();
+    framed_until(&mut fake, &mut app, window, |app| {
+        app.workspace
+            .pane(pane)
+            .unwrap()
+            .terminal()
+            .unwrap()
+            .commands()
+            .len()
+            == 3
+            && snapshot(app).sticky().is_some()
+    });
+    let (prompt, end) = {
+        let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
+        let first = &terminal.commands()[0];
+        (first.prompt.unwrap().1, first.end.unwrap().1)
+    };
+    let rect = app.windows[&window].views[0].rect;
+    let height = i32::from(app.workspace.pane(pane).unwrap().grid().cell_height);
+    // The bands that the frame knocks out under the pinned rows.
+    let knocked = |app: &App| -> Vec<(i32, u32)> {
+        app.windows[&window]
+            .shown
+            .as_ref()
+            .expect("a frame")
+            .items
+            .iter()
+            .flat_map(|item| match item {
+                Item::Shapes(shapes) => shapes.clone(),
+                _ => Vec::new(),
+            })
+            .filter(|shape| shape.knockout)
+            .map(|shape| (shape.rect.y, shape.rect.height))
+            .collect()
+    };
+    let scroll = |app: &App, row: i64| {
+        let pane = app.workspace.pane(pane).unwrap();
+        pane.scroll(lokyr_vt_core::terminal::Scroll::Row(row));
+        pane.scroll_by(-0.5);
+    };
+    // The prompt's first row half past the top: its two rows pinned at
+    // once, at the pane's top, still.
+    scroll(&app, prompt);
+    framed_until(&mut fake, &mut app, window, |app| {
+        let snapshot = snapshot(app);
+        snapshot.fraction() == 0.5 && snapshot.sticky().is_some_and(|sticky| sticky.rows() == 2)
+    });
+    assert!(
+        knocked(&app).contains(&(rect.y, 2 * height as u32)),
+        "{:?}",
+        knocked(&app)
+    );
+    // The block's last row half past the top: its last pinned row, pushed
+    // up with the rows by half a row.
+    scroll(&app, end - 1);
+    framed_until(&mut fake, &mut app, window, |app| {
+        let snapshot = snapshot(app);
+        snapshot.fraction() == 0.5 && snapshot.sticky().is_some_and(|sticky| sticky.rows() == 1)
+    });
+    let up = (f64::from(height) * 0.5).round() as i32;
+    assert!(
+        knocked(&app).contains(&(rect.y - up, height as u32)),
+        "{:?}",
+        knocked(&app)
+    );
+}
+
+#[test]
 fn a_block_s_prompt_rows_pin_at_the_pane_s_top_and_a_click_on_them_scrolls_to_its_prompt() {
     // A prompt of two rows, then 80 rows of output, more than the pane's
     // 62, then the prompt where you type.

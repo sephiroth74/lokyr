@@ -526,6 +526,10 @@ pub struct Terminal {
     /// The first row of the primary screen's view, pinned, while the view
     /// is above the screen; `None` while it shows the screen.
     viewport: Option<PinId>,
+    /// The share of a row that the view is scrolled past its first row, as
+    /// a scroll by a fraction of a row left it, and where the view's rows
+    /// were then: no share once they are elsewhere.
+    fraction: Option<(viewport::Origin, f32)>,
     /// Whether output brings the view back to the screen.
     scroll_on_output: bool,
     /// The selection, if there is one.
@@ -666,6 +670,7 @@ impl Terminal {
             last_printed: None,
             bells: 0,
             viewport: None,
+            fraction: None,
             scroll_on_output: options.scroll_on_output,
             selection: None,
             selection_anchor: None,

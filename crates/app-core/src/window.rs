@@ -98,9 +98,10 @@ pub(crate) struct WindowLayer<B: Backend> {
     /// Where the app placed it last, and how it blinks: `None` while it is
     /// hidden.
     pub(crate) place: Option<LayerPlace>,
-    /// The cells that it shows, at what scale, and of which of the
-    /// drawing's fonts, which a frame draws again only as they change.
-    pub(crate) drawn: Option<(CellBatch, f64, u64)>,
+    /// The cells that it shows, the part of it that shows them where it
+    /// shows a part alone, at what scale, and of which of the drawing's
+    /// fonts, which a frame draws again only as they change.
+    pub(crate) drawn: Option<(CellBatch, Option<Rect>, f64, u64)>,
     /// Whether its surface takes colors past white, of extended dynamic
     /// range.
     pub(crate) extended: bool,

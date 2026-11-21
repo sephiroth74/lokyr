@@ -14,6 +14,10 @@ use super::Terminal;
 use super::folds::{ShownRow, shown_index, starting};
 use crate::page::Position;
 
+/// The least share of a row that the view keeps past its first row: a
+/// smaller one is none, as it draws nothing that a frame would show.
+const LEAST_FRACTION: f64 = 1.0 / 1024.0;
+
 /// How the view scrolls.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scroll {
@@ -218,6 +222,7 @@ impl Terminal {
     /// Scrolls the view of the primary screen, within its scrollback and
     /// the screen; the alternate screen's never moves.
     pub fn scroll_viewport(&mut self, scroll: Scroll) {
+        self.fraction = None;
         if self.alternate_active {
             return;
         }
@@ -256,6 +261,105 @@ impl Terminal {
             }
         };
         self.set_viewport_offset(target);
+    }
+
+    /// Scrolls the view of the primary screen by `rows`, up into the
+    /// scrollback where positive, of a fraction of a row too, as a
+    /// trackpad's points scroll it: whole rows move the view as
+    /// [`Scroll::Up`] and [`Scroll::Down`] do, and what is left is the
+    /// share of a row that the view is scrolled past its first row,
+    /// [`Terminal::viewport_fraction`], which the snapshots draw of the row
+    /// past the view's last; as far as the scrollback's first row, of no
+    /// share, and the screen, which the view then follows, of none either.
+    /// Any other scroll of the view, output that brings it back to the
+    /// screen, a resize, the scrollback's limit that takes its first row,
+    /// and the alternate screen let the share go. A view of folds scrolls
+    /// by whole rows alone, rounded toward none; the alternate screen's
+    /// never moves.
+    pub fn scroll_viewport_by(&mut self, rows: f64) {
+        if self.alternate_active || !rows.is_finite() {
+            return;
+        }
+        if self.settle_folded().is_some() {
+            let whole = rows.trunc();
+            // Far fewer rows than a `usize` holds, as the list's are.
+            let count = whole.abs().min(usize::MAX as f64) as usize;
+            self.scroll_viewport(if whole > 0.0 {
+                Scroll::Up(count)
+            } else {
+                Scroll::Down(count)
+            });
+            return;
+        }
+        let offset = self.settle_viewport();
+        let scrollback = self.primary.rows.scrollback_rows();
+        // The view's place, in rows down from the list's first: its first
+        // row's index and the share past it.
+        // Far fewer rows than an `f64` holds exactly.
+        let place = (scrollback - offset) as f64 + f64::from(self.viewport_fraction());
+        let mut place = (place - rows).clamp(0.0, scrollback as f64);
+        // A share within the least of a whole row, either side, is that
+        // row, as steps that add up to whole rows leave a float's rounding.
+        if (place - place.round()).abs() < LEAST_FRACTION {
+            place = place.round();
+        }
+        let top = place.floor();
+        let share = place - top;
+        // Within the list, as the clamp keeps it.
+        let top = (top as usize).min(scrollback);
+        self.fraction = None;
+        self.set_viewport_offset(scrollback - top);
+        if top < scrollback && share >= LEAST_FRACTION {
+            // Below 1, as `floor` leaves it.
+            self.fraction = Some((self.origin(), share as f32));
+        }
+    }
+
+    /// Scrolls the view of the primary screen to `place`: its first row the
+    /// row numbered `place`'s whole part, and the share of a row past it
+    /// the rest, as a scroll bar's knob dragged by pixels or a wheel's
+    /// glide puts it, as far as the scrollback's first row and the screen,
+    /// which the view then follows, as [`Terminal::scroll_viewport_by`]
+    /// does; a view of folds to the nearest row's place; the alternate
+    /// screen's never moves.
+    pub fn scroll_viewport_to(&mut self, place: f64) {
+        if self.alternate_active || !place.is_finite() {
+            return;
+        }
+        if self.settle_folded().is_some() {
+            // A cast from a float saturates.
+            self.scroll_viewport(Scroll::Row(place.round() as i64));
+            return;
+        }
+        self.settle_viewport();
+        // Far fewer rows than an `f64` holds exactly.
+        let now = self.origin().top as f64 + f64::from(self.viewport_fraction());
+        self.scroll_viewport_by(now - place);
+    }
+
+    /// Lets the share of a row that the view is scrolled past its first row
+    /// go, its rows where they are, as scrolling by pixels turns off.
+    pub fn drop_viewport_fraction(&mut self) {
+        self.fraction = None;
+    }
+
+    /// The share of a row, from 0 to under 1, that the view is scrolled
+    /// past its first row, as [`Terminal::scroll_viewport_by`] left it, so
+    /// that the view shows its first row a share of a row up and the row
+    /// past its last at its bottom: 0 while the view's rows are no longer
+    /// where that scroll left them, at the screen, and on the alternate
+    /// screen.
+    pub fn viewport_fraction(&self) -> f32 {
+        match self.fraction {
+            Some((origin, share))
+                if !self.alternate_active
+                    && origin == self.origin()
+                    && self.viewport_offset() > 0 =>
+            {
+                share
+            }
+            _ => 0.0,
+        }
     }
 
     /// The view of folds, as [`Terminal::folded_view`] finds it, its folds

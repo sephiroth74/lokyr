@@ -1,28 +1,50 @@
 //! The mouse over a pane: where the pointer is in its cells, the buttons
 //! that the program learned were held, the wheel's scroll, which adds up to
-//! whole steps, and the cells that a drag selects.
+//! whole steps or glides the view by pixels, and the cells that a drag
+//! selects.
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::workspace::{Grid, PaneId};
 use lokyr_platform_core::{MouseButton as Button, Point, ScrollDelta, ScrollPhase};
 use lokyr_vt_core::input::MouseButton;
+use lokyr_vt_core::terminal::Origin;
+
+/// How long a wheel's step glides the view over its rows, scrolling by
+/// pixels.
+pub(crate) const GLIDE: Duration = Duration::from_millis(150);
 
 /// Where the pointer is in a grid: its cell, and its pixel from the cells'
-/// top left corner.
+/// top left corner, of the rows as they are drawn, a share of a row up
+/// while the view is scrolled by one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Pointer {
     pub(crate) col: u16,
+    /// The view's row under the pointer: the row past the view's last, at
+    /// the grid's bottom, while the view is scrolled a share of a row.
     pub(crate) row: u16,
     pub(crate) x: u32,
     pub(crate) y: u32,
+    /// The row of the grid's band under the pointer, from the band's top,
+    /// where what stays as the rows move a share of a row shows, as the
+    /// prompt rows pinned at the view's top: `row`, at no share.
+    pub(crate) band_row: u16,
 }
 
 /// The pointer at `position`, in points from the content's top left corner,
 /// over `grid`, in a window of `scale`, whose cells start `padding` pixels
-/// from its left and top edges: a pointer over the padding, or past the
-/// cells, takes the nearest cell's edge.
-pub(crate) fn pointer(position: Point, scale: f64, padding: (u32, u32), grid: Grid) -> Pointer {
+/// from its left and top edges, its rows drawn `up` pixels up, as a share
+/// of a row of the view has them: a pointer over the padding, or past the
+/// cells, takes the nearest cell's edge, of the rows that the grid's band
+/// shows.
+pub(crate) fn pointer(
+    position: Point,
+    scale: f64,
+    padding: (u32, u32),
+    grid: Grid,
+    up: u32,
+) -> Pointer {
     let within = |points: f64, padding: u32, cell: u16, cells: u16| {
         let cell = u32::from(cell.max(1));
         let last = (cell * u32::from(cells.max(1))).saturating_sub(1);
@@ -35,8 +57,19 @@ pub(crate) fn pointer(position: Point, scale: f64, padding: (u32, u32), grid: Gr
         (pixel, (pixel / cell) as u16)
     };
     let (x, col) = within(position.x, padding.0, grid.cell_width, grid.columns);
-    let (y, row) = within(position.y, padding.1, grid.cell_height, grid.rows);
-    Pointer { col, row, x, y }
+    let (band, band_row) = within(position.y, padding.1, grid.cell_height, grid.rows);
+    // Up by a row at most, as a share rounds to its pixels: the row past
+    // the view's last at most.
+    let y = band + up.min(u32::from(grid.cell_height));
+    // Within the grid's rows and the one below, which a `u16` holds.
+    let row = (y / u32::from(grid.cell_height.max(1))) as u16;
+    Pointer {
+        col,
+        row,
+        x,
+        y,
+        band_row,
+    }
 }
 
 /// `pointer`, over a view `offset` rows above the screen's top, of cells
@@ -191,10 +224,98 @@ fn number(button: MouseButton) -> u8 {
     }
 }
 
+/// Where a view is while it is above the screen, as only a scroll moves it
+/// there: its rows' origin and its share of a row; none at the screen,
+/// where output moves it.
+pub(crate) type Place = Option<(Origin, f32)>;
+
+/// A wheel's steps gliding a pane's view over their rows, by pixels: from
+/// the time of its last step, it eases out over [`GLIDE`], the view moving
+/// fast at first and slower as it comes to its rows. It puts the view at
+/// each step's place from where it started, by the rows' numbers, so that
+/// no step's rounding adds up, and its last puts it where it goes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Glide {
+    /// The pane whose view glides.
+    pub(crate) pane: PaneId,
+    /// When its last step came.
+    start: Instant,
+    /// The view's place then: its first row's number and the share of a
+    /// row past it.
+    from: f64,
+    /// The rows that it moves the view from `from`, up where positive.
+    rows: f64,
+    /// Those of them that it moved.
+    moved: f64,
+    /// Where it left the view, which a move of the view of another kind,
+    /// as a key's, changes, and which then ends it.
+    pub(crate) left: Place,
+}
+
+impl Glide {
+    /// A glide of `pane`'s view by `rows`, up where positive, of a step at
+    /// `now`, the view at `place`, from its place `from`, of its first
+    /// row's number and the share past it.
+    pub(crate) fn new(pane: PaneId, rows: f64, now: Instant, (place, from): (Place, f64)) -> Glide {
+        Glide {
+            pane,
+            start: now,
+            from,
+            rows,
+            moved: 0.0,
+            left: place,
+        }
+    }
+
+    /// Adds `rows`, of another step at `now`, the view at `place` and its
+    /// place `from`: the glide eases out again from where it is, over the
+    /// rows that it has left and these, or from `from` over these alone
+    /// where the view moved another way since its last step.
+    pub(crate) fn add(&mut self, rows: f64, now: Instant, (place, from): (Place, f64)) {
+        *self = if place == self.left {
+            Glide::new(
+                self.pane,
+                self.left() + rows,
+                now,
+                (place, self.from - self.moved),
+            )
+        } else {
+            Glide::new(self.pane, rows, now, (place, from))
+        };
+    }
+
+    /// The rows that it has yet to move the view.
+    pub(crate) fn left(&self) -> f64 {
+        self.rows - self.moved
+    }
+
+    /// The place where it takes the view, its first row's number and the
+    /// share of a row past it.
+    pub(crate) fn end(&self) -> f64 {
+        self.from - self.rows
+    }
+
+    /// The view's place at `now`, of its first row's number and the share
+    /// past it, and whether the glide goes on after: the last step's is
+    /// where it goes.
+    pub(crate) fn step(&mut self, now: Instant) -> (f64, bool) {
+        let elapsed = now.saturating_duration_since(self.start);
+        let time = (elapsed.as_secs_f64() / GLIDE.as_secs_f64()).min(1.0);
+        // An ease-out of the cube: fast at first, still at its end.
+        self.moved = if time >= 1.0 {
+            self.rows
+        } else {
+            self.rows * (1.0 - (1.0 - time).powi(3))
+        };
+        (self.from - self.moved, time < 1.0)
+    }
+}
+
 /// A window's mouse: the buttons pressed that a pane's program learned of,
 /// and that pane, which takes the moves and the releases until the last
-/// goes up; where each pane's program last learned the pointer was; and the
-/// scroll that adds up to the wheel's next steps.
+/// goes up; where each pane's program last learned the pointer was; the
+/// scroll that adds up to the wheel's next steps; and the wheel's glide of
+/// a view, scrolling by pixels.
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
     held: Vec<MouseButton>,
@@ -202,6 +323,8 @@ pub(crate) struct Mouse {
     last: BTreeMap<PaneId, Pointer>,
     /// The scroll that makes no whole step yet, across and up, in rows.
     rest: (f64, f64),
+    /// The wheel's glide of a pane's view under way.
+    pub(crate) glide: Option<Glide>,
 }
 
 impl Mouse {
@@ -236,6 +359,9 @@ impl Mouse {
     /// holds any more.
     pub(crate) fn forget(&mut self, pane: PaneId) {
         self.last.remove(&pane);
+        if self.glide.is_some_and(|glide| glide.pane == pane) {
+            self.glide = None;
+        }
         if self.holder == Some(pane) {
             self.holder = None;
             self.held.clear();
@@ -263,12 +389,10 @@ impl Mouse {
     }
 
     /// The whole steps, across and up, that `delta` makes with the scroll
-    /// that made none yet, in rows of `row_points` points: a wheel's lines,
-    /// or a trackpad's points. A gesture that starts, and a scroll the other
-    /// way, start the sum again. With `sideways`, a scroll across alone, as
-    /// Shift makes a mouse's wheel, goes up and down. A step across goes
-    /// toward the content's left edge, and a step up toward its top, when
-    /// positive.
+    /// that made none yet, in rows of `row_points` points, as [`rows`]
+    /// finds them. A gesture that starts, and a scroll the other way, start
+    /// the sum again. A step across goes toward the content's left edge,
+    /// and a step up toward its top, when positive.
     pub(crate) fn scroll(
         &mut self,
         delta: ScrollDelta,
@@ -276,13 +400,7 @@ impl Mouse {
         row_points: f64,
         sideways: bool,
     ) -> (i32, i32) {
-        let (mut across, mut up) = match delta {
-            ScrollDelta::Lines { x, y } => (x, y),
-            ScrollDelta::Points { x, y } => (x / row_points, y / row_points),
-        };
-        if sideways && up == 0.0 {
-            (across, up) = (0.0, across);
-        }
+        let (across, up) = rows(delta, row_points, sideways);
         if phase == Some(ScrollPhase::Started) {
             self.rest = (0.0, 0.0);
         }
@@ -302,6 +420,29 @@ impl Mouse {
         let up = step(&mut self.rest.1, up);
         (across, up)
     }
+
+    /// Lets the scroll up and down that made no whole step yet go, as the
+    /// view takes it by pixels.
+    pub(crate) fn settle_up(&mut self) {
+        self.rest.1 = 0.0;
+    }
+}
+
+/// The rows, across and up, that `delta` scrolls, of rows of `row_points`
+/// points: a wheel's lines, or a trackpad's points. With `sideways`, a
+/// scroll across alone, as Shift makes a mouse's wheel, goes up and down.
+/// Across goes toward the content's left edge, and up toward its top, when
+/// positive.
+pub(crate) fn rows(delta: ScrollDelta, row_points: f64, sideways: bool) -> (f64, f64) {
+    let (across, up) = match delta {
+        ScrollDelta::Lines { x, y } => (x, y),
+        ScrollDelta::Points { x, y } => (x / row_points, y / row_points),
+    };
+    if sideways && up == 0.0 {
+        (0.0, across)
+    } else {
+        (across, up)
+    }
 }
 
 #[cfg(test)]
@@ -319,7 +460,7 @@ mod tests {
 
     #[test]
     fn the_pointer_takes_its_cell_and_pixel_within_the_grid() {
-        let at = |x, y| pointer(Point { x, y }, 2.0, (8, 8), grid());
+        let at = |x, y| pointer(Point { x, y }, 2.0, (8, 8), grid(), 0);
         // 8 pixels of padding, at a scale of 2: the first cell from 4 points.
         assert_eq!(
             at(4.0, 4.0),
@@ -327,7 +468,8 @@ mod tests {
                 col: 0,
                 row: 0,
                 x: 0,
-                y: 0
+                y: 0,
+                band_row: 0,
             }
         );
         assert_eq!(
@@ -336,7 +478,8 @@ mod tests {
                 col: 1,
                 row: 1,
                 x: 17,
-                y: 34
+                y: 34,
+                band_row: 1,
             }
         );
         // Over the padding, and past the last cell.
@@ -346,7 +489,8 @@ mod tests {
                 col: 0,
                 row: 0,
                 x: 0,
-                y: 0
+                y: 0,
+                band_row: 0,
             }
         );
         let far = at(5000.0, 5000.0);
@@ -356,13 +500,44 @@ mod tests {
         );
     }
 
+    #[test]
+    fn over_rows_a_share_up_the_pointer_takes_the_drawn_row() {
+        // Rows of 32 pixels drawn 12 up, as a view scrolled a share of a
+        // row has them; 8 pixels of padding, at a scale of 2.
+        let at = |y| pointer(Point { x: 4.0, y }, 2.0, (8, 8), grid(), 12);
+        // The band's top shows the first row's lower part.
+        let top = at(4.0);
+        assert_eq!((top.row, top.y, top.band_row), (0, 12, 0));
+        // 20 pixels down the band, the second row, the band's first still,
+        // where what stays shows.
+        let second = at(14.0);
+        assert_eq!((second.row, second.y, second.band_row), (1, 32, 0));
+        // At the band's bottom, the row past the view's last, and past it
+        // or over the padding, the nearest of the drawn rows.
+        let bottom = (8.0 + 24.0 * 32.0 - 1.0) / 2.0;
+        let below = at(bottom);
+        assert_eq!((below.row, below.y, below.band_row), (24, 24 * 32 + 11, 23));
+        assert_eq!(at(5000.0), below);
+        assert_eq!(at(0.0), top);
+        // Up a whole row, as a share near a row rounds, the row below at
+        // most.
+        let whole = pointer(Point { x: 4.0, y: 5000.0 }, 2.0, (8, 8), grid(), 99);
+        assert_eq!((whole.row, whole.y), (24, 25 * 32 - 1));
+    }
+
     fn at(row: i64, col: u16, boundary: u16) -> Spot {
         Spot { row, col, boundary }
     }
 
     #[test]
     fn a_spot_takes_the_nearest_boundary_and_its_row_s_number() {
-        let pointer = |col: u16, x: u32, row: u16| Pointer { col, row, x, y: 0 };
+        let pointer = |col: u16, x: u32, row: u16| Pointer {
+            col,
+            row,
+            x,
+            y: 0,
+            band_row: row,
+        };
         // Cells of 16 pixels: the boundary after the first cell from 8.
         assert_eq!(spot(pointer(0, 7, 3), 3, 16, 80), at(3, 0, 0));
         assert_eq!(spot(pointer(0, 8, 3), 3, 16, 80), at(3, 0, 1));
@@ -430,6 +605,7 @@ mod tests {
             row,
             x: 50,
             y,
+            band_row: 0,
         };
         // Two rows of 32 pixels above the screen: the view's fifth row is
         // the screen's third.
@@ -478,6 +654,7 @@ mod tests {
             row: 0,
             x,
             y: 0,
+            band_row: 0,
         };
         let (first, second) = (PaneId::of(1), PaneId::of(2));
         assert!(mouse.moved(first, at(0, 1), false));
@@ -517,5 +694,48 @@ mod tests {
         let sideways = ScrollDelta::Lines { x: 2.0, y: 0.0 };
         assert_eq!(mouse.scroll(sideways, None, 16.0, true), (0, 2));
         assert_eq!(mouse.scroll(sideways, None, 16.0, false), (2, 0));
+        // The rows of a scroll, which the view takes by pixels.
+        assert_eq!(rows(points(-24.0), 16.0, false), (0.0, -1.5));
+        assert_eq!(rows(sideways, 16.0, true), (0.0, 2.0));
+        mouse.scroll(points(8.0), None, 16.0, false);
+        mouse.settle_up();
+        assert_eq!(mouse.scroll(points(8.0), None, 16.0, false), (0, 0));
+    }
+
+    #[test]
+    fn a_wheel_s_glide_eases_out_to_its_rows() {
+        let pane = PaneId::of(1);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        // Three rows up from the row numbered 40.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0));
+        assert_eq!(glide.end(), 37.0);
+        // Fast at first: past half its rows in a quarter of its time.
+        let (first, on) = glide.step(at(37));
+        assert!(on);
+        assert!(first < 38.5 && first > 37.0, "{first}");
+        let (second, on) = glide.step(at(75));
+        assert!(on);
+        assert!(second < first && first - second < 40.0 - first, "{second}");
+        // At its end, its rows whole, and no further.
+        assert_eq!(glide.step(at(150)), (37.0, false));
+        assert_eq!(glide.left(), 0.0);
+        assert_eq!(glide.step(at(300)), (37.0, false));
+        // A step during a glide adds to where it goes, from where it is.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0));
+        let (there, _) = glide.step(at(50));
+        glide.add(-1.0, at(50), (None, 0.0));
+        assert_eq!(glide.end(), 38.0);
+        assert!((glide.left() - (there - 38.0)).abs() < 1e-9);
+        assert_eq!(glide.step(at(200)), (38.0, false));
+        // A view moved another way since starts it anew, from where the
+        // view is, of the step's rows alone.
+        let origin = Origin { epoch: 0, top: 10 };
+        let mut glide = Glide::new(pane, 3.0, start, (Some((origin, 0.5)), 10.5));
+        glide.add(1.0, at(10), (None, 60.0));
+        assert_eq!((glide.left(), glide.end()), (1.0, 59.0));
+        // A clock that goes back moves nothing.
+        let mut glide = Glide::new(pane, 3.0, at(10), (None, 40.0));
+        assert_eq!(glide.step(start), (40.0, true));
     }
 }

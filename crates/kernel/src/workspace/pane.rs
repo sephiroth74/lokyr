@@ -827,6 +827,14 @@ impl Pane {
             .is_some_and(|session| session.mouse(event))
     }
 
+    /// Whether the program would take the mouse's `event`, as
+    /// [`Pane::mouse`] tells, sending nothing.
+    pub fn takes_mouse(&self, event: &MouseEvent) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.takes_mouse(event))
+    }
+
     /// The modes that the program set of what the keys, the mouse and a
     /// paste send, as they are now, under the lock.
     pub fn input_modes(&self) -> Option<InputModes> {
@@ -1332,6 +1340,44 @@ impl Pane {
         if let Some(session) = &self.session {
             session.scroll(scroll);
         }
+    }
+
+    /// Scrolls the view by `rows`, up into the scrollback where positive,
+    /// of a share of a row too, as a trackpad's points scroll it: whole
+    /// rows move the view, and the rest is the share of a row that the
+    /// next snapshot shows the view scrolled past its first row, of the row
+    /// past its last, [`Snapshot::fraction`]; the view's reads and its
+    /// event of whole rows, as [`Pane::viewport`] tells.
+    pub fn scroll_by(&self, rows: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_by(rows);
+        }
+    }
+
+    /// Scrolls the view so that its first row is the row numbered
+    /// `place`'s whole part, and the share of a row past it the rest, as a
+    /// scroll bar's knob dragged by pixels or a wheel's glide puts it, as
+    /// [`Terminal::scroll_viewport_to`] does.
+    pub fn scroll_to(&self, place: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_to(place);
+        }
+    }
+
+    /// Lets the view's share of a row go, its rows where they are, as
+    /// scrolling by pixels turns off.
+    pub fn drop_fraction(&self) {
+        if let Some(session) = &self.session {
+            session.drop_fraction();
+        }
+    }
+
+    /// Where the view is now while it is above the screen, which only a
+    /// scroll moves while output comes: its rows' origin and its share of a
+    /// row; none at the screen, where output moves the view, and for a pane
+    /// whose program did not start.
+    pub fn scrolled_place(&self) -> Option<(Origin, f32)> {
+        self.session.as_ref()?.scrolled_place()
     }
 
     /// Whether the program's output brings the view back to the screen.

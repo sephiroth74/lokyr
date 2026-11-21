@@ -173,10 +173,12 @@ impl Default for InlineImages {
 }
 
 /// Where a pane's grid is and what it holds: its top left corner, in
-/// pixels, its cells' size, and its columns and rows.
+/// pixels, how many pixels up of their place its rows draw, as its view is
+/// scrolled a share of a row, its cells' size, and its columns and rows.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Grid {
     pub(crate) corner: (i32, i32),
+    pub(crate) up: i32,
     pub(crate) cell: (u32, u32),
     pub(crate) size: (u16, u16),
 }
@@ -423,7 +425,7 @@ impl InlineImages {
 fn rect(placement: &Placed, grid: Grid) -> Rect {
     let (cell_width, cell_height) = grid.cell;
     let x = grid.corner.0 + i32::from(placement.column) * cell_width as i32;
-    let y = grid.corner.1 + placement.row * cell_height as i32;
+    let y = grid.corner.1 - grid.up + placement.row * cell_height as i32;
     let (width, height) = (
         u32::from(placement.columns) * cell_width,
         u32::from(placement.rows) * cell_height,
@@ -603,6 +605,7 @@ mod tests {
     fn grid(cell: (u32, u32)) -> Grid {
         Grid {
             corner: (0, 0),
+            up: 0,
             cell,
             size: (80, 24),
         }
@@ -844,6 +847,7 @@ mod tests {
     fn a_placement_s_rectangle_keeps_its_image_s_proportions_from_its_top_left() {
         let grid = Grid {
             corner: (100, 50),
+            up: 0,
             cell: (10, 20),
             size: (80, 24),
         };

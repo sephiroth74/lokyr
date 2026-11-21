@@ -1299,6 +1299,9 @@ pub struct WindowConfig {
     pub gutter: bool,
     /// When each pane shows its scroll bar, over its right edge.
     pub scrollbar: Scrollbar,
+    /// Whether a trackpad, a mouse's wheel and the scroll bar scroll the
+    /// panes by pixels, rather than by whole rows.
+    pub smooth_scroll: bool,
     /// The opacity of the default background.
     pub background_opacity: Opacity,
     /// The blur of what shows through the default background.
@@ -1326,6 +1329,7 @@ impl Default for WindowConfig {
             padding_y: Padding::default(),
             gutter: true,
             scrollbar: Scrollbar::default(),
+            smooth_scroll: false,
             background_opacity: Opacity::default(),
             background_blur: Blur::default(),
             title_size: true,
@@ -3843,6 +3847,7 @@ long-command = 0
                 "padding-y",
                 "gutter",
                 "scrollbar",
+                "smooth-scroll",
                 "background-opacity",
                 "background-blur",
                 "title-size",

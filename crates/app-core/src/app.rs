@@ -737,6 +737,10 @@ pub struct App<B: Backend> {
     /// plugins were told of, as its row changed or its pane scrolled under
     /// it, of which they are told again.
     pointer_text_changed: bool,
+    /// Whether the frame drawn moved the rows under the pointer by a share
+    /// of a row, as they scroll by pixels, which can bring another cell
+    /// under it, of which the plugins are told then.
+    pointer_shifted: bool,
     /// Whether a window opened since the app started, after which none
     /// restores the frame that a window kept, nor starts in the first
     /// window's directory.
@@ -1093,6 +1097,7 @@ impl<B: Backend> App<B> {
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
             viewport_listeners: 0,
             pointer_text_changed: false,
+            pointer_shifted: false,
             title_timer: None,
             command_looks: BTreeMap::new(),
             title_look: Some(TITLE_LOOK),
@@ -2115,6 +2120,9 @@ impl<B: Backend> App<B> {
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
         let term_changed = config.terminal.term != self.config.terminal.term;
+        // Scrolling by pixels turned off leaves no pane a share of a row,
+        // nor a wheel's glide.
+        let smooth_off = self.config.window.smooth_scroll && !config.window.smooth_scroll;
         let themes_changed = config.theme.light != self.config.theme.light
             || config.theme.dark != self.config.theme.dark;
         self.settle_update_checks(platform, config.updates.check);
@@ -2198,6 +2206,15 @@ impl<B: Backend> App<B> {
             pane.set_width_tables(widths.tables, widths.ambiguous_wide);
             pane.set_normalization(terminal.normalization.form());
             pane.set_scrollback_limit(self.config.scrollback.limit.bytes());
+            if smooth_off {
+                pane.drop_fraction();
+            }
+        }
+        if smooth_off {
+            for (&window, state) in &mut self.windows {
+                state.mouse.glide = None;
+                platform.request_frame(window);
+            }
         }
         if icon_changed {
             self.show_icon(platform);

@@ -2076,6 +2076,33 @@ fn the_config_s_scroll_on_output_reaches_the_panes() {
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
+#[test]
+fn scrolling_by_pixels_turned_off_leaves_no_pane_a_share_of_a_row() {
+    let (mut fake, mut app, window) = configured("", shell("seq 1 200; echo ready; sleep 10"));
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = true;
+    app.apply(&mut fake, config);
+    // Up two rows and a half: the next frame's snapshot shows the share,
+    // and the row past the view's last.
+    app.pane(window).scroll_by(2.5);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let snapshot = app.pane(window).snapshot();
+    assert!((snapshot.fraction() - 0.5).abs() < 1e-4);
+    assert!(snapshot.below().is_some());
+    let offset = snapshot.offset();
+    assert_eq!(offset, 3);
+    // The key turned off: no share, the view's rows where they were.
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = false;
+    app.apply(&mut fake, config);
+    assert!(fake.window(window).unwrap().frame_requested);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let snapshot = app.pane(window).snapshot();
+    assert_eq!(snapshot.fraction(), 0.0);
+    assert!(snapshot.below().is_none());
+    assert_eq!(snapshot.offset(), offset);
+}
+
 /// The config of a window without padding.
 /// The config of no padding, of windows of 200 columns and 62 rows:
 /// 800 points by 496, of cells 4 points wide and 8 high.

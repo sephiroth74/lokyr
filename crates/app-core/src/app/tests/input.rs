@@ -532,6 +532,211 @@ fn the_wheel_sends_the_cursor_keys_on_the_alternate_screen() {
     run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[B^[[B"));
 }
 
+/// The app without padding, scrolling by pixels, its window running
+/// `program`, once it shows `ready`: rows of 8 points, of 16 pixels.
+fn smooth(program: Program) -> (Fake, App, WindowId) {
+    let mut config = unpadded();
+    config.window.smooth_scroll = true;
+    let mut fake = Fake::default();
+    let mut app = app(config, program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    (fake, app, window)
+}
+
+/// A trackpad's scroll of `y` points, of its fingers or, with `momentum`,
+/// of the momentum after they lifted, with `mods`.
+fn swiped(y: f64, momentum: bool, mods: Modifiers) -> WindowEvent {
+    WindowEvent::Scroll {
+        delta: ScrollDelta::Points { x: 0.0, y },
+        phase: Some(lokyr_platform_core::ScrollPhase::Moved),
+        momentum,
+        position: cell(0, 0),
+        mods,
+    }
+}
+
+/// Where the view of `window` is, as a frame draws it: its offset above
+/// the screen and its share of a row.
+fn drawn_view(fake: &mut Fake, app: &mut App, window: WindowId) -> (usize, f32) {
+    fake.send(app, window, WindowEvent::Frame);
+    let snapshot = app.pane(window).snapshot();
+    (snapshot.offset(), snapshot.fraction())
+}
+
+#[test]
+fn a_trackpad_scrolls_the_view_by_pixels_with_smooth_scroll() {
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
+    let none = Modifiers::NONE;
+    // Up a row and a half: the view a share of a row up, of a frame asked
+    // for at once.
+    fake.send(&mut app, window, swiped(12.0, false, none));
+    assert!(fake.window(window).unwrap().frame_requested);
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.5));
+    // A quarter of a row more moves the share alone.
+    fake.send(&mut app, window, swiped(2.0, false, none));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.25));
+    // The momentum, as macOS sends it after the fingers lift.
+    fake.send(&mut app, window, swiped(-6.0, true, none));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (1, 0.0));
+    // The view stops at the screen and at the scrollback's top, of no
+    // share and no bounce.
+    fake.send(&mut app, window, swiped(-100.0, true, none));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (0, 0.0));
+    // There, the momentum's scroll asks for no frame.
+    fake.send(&mut app, window, swiped(-6.0, true, none));
+    assert!(!fake.window(window).unwrap().frame_requested);
+    fake.send(&mut app, window, swiped(100_000.0, true, none));
+    let top = app.pane(window).snapshot().scrollback();
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (top, 0.0));
+}
+
+#[test]
+fn a_wheel_s_step_glides_over_its_rows_with_smooth_scroll() {
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
+    let lines = |y| wheel(ScrollDelta::Lines { x: 0.0, y }, Modifiers::NONE);
+    let view = |app: &App| {
+        let snapshot = app.pane(window).snapshot();
+        (snapshot.offset(), snapshot.fraction())
+    };
+    // Three rows up: none at once, the frames on the way of a share of a
+    // row, then the rows whole, and no frame after.
+    fake.send(&mut app, window, lines(3.0));
+    assert!(fake.window(window).unwrap().frame_requested);
+    assert_eq!(app.pane(window).view_offset(), 0);
+    let mut shares = 0;
+    run_until(&mut fake, &mut app, |fake, app| {
+        let (offset, share) = view(app);
+        shares += usize::from(share > 0.0);
+        (offset, share) == (3, 0.0) && !fake.window(window).unwrap().frame_requested
+    });
+    assert!(shares > 0, "no frame between the rows");
+    // A step during a glide adds to where it goes.
+    fake.send(&mut app, window, lines(2.0));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, lines(2.0));
+    run_until(&mut fake, &mut app, |fake, app| {
+        view(app) == (7, 0.0) && !fake.window(window).unwrap().frame_requested
+    });
+    // A key, which brings the view back to the screen, ends a glide.
+    fake.send(&mut app, window, lines(3.0));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+    let after = Instant::now() + crate::mouse::GLIDE * 2;
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > after);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(view(&app), (0, 0.0));
+    assert!(app.windows[&window].mouse.glide.is_none());
+    // Turned off, the wheel's steps move whole rows at once.
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = false;
+    app.apply(&mut fake, config);
+    fake.send(&mut app, window, lines(3.0));
+    assert_eq!(app.pane(window).view_offset(), 3);
+}
+
+#[test]
+fn with_smooth_scroll_a_program_that_takes_the_wheel_gets_whole_steps() {
+    let program =
+        shell("seq 1 100; printf '\\033[?1000h\\033[?1006h'; stty raw -echo; echo ready; cat -v");
+    let (mut fake, mut app, window) = smooth(program);
+    // A row and a half makes a step, which the program takes.
+    fake.send(&mut app, window, swiped(12.0, false, Modifiers::NONE));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "^[[<64;1;1M")
+    });
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (0, 0.0));
+    // With Shift, the view takes it by pixels, and the program nothing.
+    fake.send(&mut app, window, swiped(12.0, false, SHIFT));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.5));
+    let pause = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    fake.send(&mut app, window, swiped(-100.0, false, SHIFT));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (0, 0.0));
+    assert_eq!(
+        screen(&app, window).concat().matches("^[[<").count(),
+        1,
+        "{:?}",
+        screen(&app, window)
+    );
+    // On the alternate screen, a wheel's steps are the cursor keys still.
+    let (mut fake, mut app, window) = smooth(reader("\\033[?1049h"));
+    let down = ScrollDelta::Lines { x: 0.0, y: -2.0 };
+    fake.send(&mut app, window, wheel(down, Modifiers::NONE));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "^[[B^[[B"));
+    assert!(app.windows[&window].mouse.glide.is_none());
+}
+
+#[test]
+fn at_a_share_of_a_row_the_pointer_takes_the_cell_drawn_under_it() {
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
+    // Up a row and a half: the rows drawn 4 points up, `ready` on the row
+    // past the view's last.
+    fake.send(&mut app, window, swiped(12.0, false, Modifiers::NONE));
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (2, 0.5));
+    let none = Modifiers::NONE;
+    let word = |fake: &mut Fake, app: &mut App, at: Point| {
+        fake.send(app, window, click(true, at, none, 2));
+        fake.send(app, window, click(false, at, none, 2));
+        selected_text(app, window)
+    };
+    // Past half the band's fourth row, the view's fifth row's word.
+    let fifth = row(&app, window, 4).trim().to_owned();
+    let at = Point {
+        x: 1.0,
+        y: 8.0 * 3.0 + 5.0,
+    };
+    assert_eq!(word(&mut fake, &mut app, at), Some(fifth));
+    // Above half of it, the fourth's.
+    let fourth = row(&app, window, 3).trim().to_owned();
+    let at = Point {
+        x: 1.0,
+        y: 8.0 * 3.0 + 3.0,
+    };
+    assert_eq!(word(&mut fake, &mut app, at), Some(fourth));
+    // At the band's bottom, the row past the view's last.
+    let rows = app.pane(window).grid().rows;
+    let below = row(&app, window, rows).trim().to_owned();
+    assert_eq!(below, "ready");
+    let at = Point {
+        x: 1.0,
+        y: 8.0 * f64::from(rows) - 1.0,
+    };
+    assert_eq!(word(&mut fake, &mut app, at), Some(below));
+}
+
+#[test]
+fn a_drag_past_the_bottom_at_a_share_of_a_row_keeps_it_and_takes_the_row_below() {
+    let (mut fake, mut app, window) =
+        smooth(shell("seq 1 200; echo ready; stty raw -echo; cat -v"));
+    // `131` at the view's top, half a row past it.
+    app.pane(window).scroll_by(9.5);
+    assert_eq!(drawn_view(&mut fake, &mut app, window), (10, 0.5));
+    let none = Modifiers::NONE;
+    // From after `133`, to three columns of the row below the window.
+    fake.send(&mut app, window, click(true, cell(3, 2), none, 1));
+    let rows = f64::from(app.pane(window).grid().rows);
+    let below = Point {
+        x: 13.0,
+        y: 8.0 * (rows + 2.0),
+    };
+    fake.send(&mut app, window, moved(below, none));
+    fake.fire_timers(&mut app, Instant::now() + SELECTION_SCROLL);
+    // Three rows down, a row for each that the pointer is past the edge,
+    // the share kept, and the selection to the row past the view's last,
+    // `196`.
+    assert_eq!(
+        app.pane(window).scrolled_place().map(|(_, share)| share),
+        Some(0.5)
+    );
+    assert_eq!(app.pane(window).view_offset(), 7);
+    let text = selected_text(&app, window).unwrap();
+    assert!(text.starts_with("\n134\n"), "{text:?}");
+    assert!(text.ends_with("\n195\n196"), "{text:?}");
+    fake.send(&mut app, window, click(false, below, none, 1));
+}
+
 #[test]
 fn moves_come_for_a_program_that_asked_for_them_once_a_cell() {
     let (mut fake, mut app, window) = started_with(reader("\\033[?1003h\\033[?1006h"));

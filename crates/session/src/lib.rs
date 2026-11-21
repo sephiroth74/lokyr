@@ -399,6 +399,35 @@ impl Session {
         self.lock().scroll_viewport(scroll);
     }
 
+    /// Scrolls the view of the terminal's primary screen by `rows`, up
+    /// where positive, of a share of a row too, as
+    /// [`Terminal::scroll_viewport_by`] does.
+    pub fn scroll_by(&self, rows: f64) {
+        self.lock().scroll_viewport_by(rows);
+    }
+
+    /// Scrolls the view of the terminal's primary screen to `place`, its
+    /// first row's number and a share of a row past it, as
+    /// [`Terminal::scroll_viewport_to`] does.
+    pub fn scroll_to(&self, place: f64) {
+        self.lock().scroll_viewport_to(place);
+    }
+
+    /// Lets the view's share of a row go, as
+    /// [`Terminal::drop_viewport_fraction`] does.
+    pub fn drop_fraction(&self) {
+        self.lock().drop_viewport_fraction();
+    }
+
+    /// Where the view is while it is above the screen, as only a scroll
+    /// moves it there: its rows' origin and its share of a row, as
+    /// [`Terminal::viewport_fraction`] tells it; none at the screen, where
+    /// output moves the view.
+    pub fn scrolled_place(&self) -> Option<(terminal::Origin, f32)> {
+        let terminal = self.lock();
+        (terminal.viewport_offset() > 0).then(|| (terminal.origin(), terminal.viewport_fraction()))
+    }
+
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
     /// have it, with the keyboard's `options`. A key that sends something
     /// brings the view back to the screen, as typing does.
@@ -475,6 +504,14 @@ impl Session {
         };
         self.write(bytes);
         taken
+    }
+
+    /// Whether the program would take the mouse's `event`, as
+    /// [`Session::mouse`] tells, sending nothing.
+    pub fn takes_mouse(&self, event: &MouseEvent) -> bool {
+        let terminal = self.lock();
+        let alternate = terminal.is_alternate_screen();
+        input::encode_mouse(event, &terminal.input_modes(), alternate, &mut Vec::new())
     }
 
     /// Tells the program that the terminal gained or lost the focus, if it

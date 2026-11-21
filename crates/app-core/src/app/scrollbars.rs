@@ -2,7 +2,9 @@
 //! edge, as macOS shows its own: as the view moves through the scrollback,
 //! a thin knob that fades a while after; as the pointer comes over it, a
 //! wider knob over a track, which a drag moves the view by, and a click on
-//! the track pages or jumps, as the system's settings say; always, as they
+//! the track pages or jumps, as the system's settings say, by pixels with
+//! `smooth-scroll`, the knob's place of the view's share of a row too, its
+//! drag by pixels and a click on the track gliding there; always, as they
 //! say so or the config does. The marks of a search's matches show along it
 //! while the search shows them, which keeps it shown. It takes no column of
 //! the grid, and a view that shows every row, or the alternate screen, has
@@ -51,12 +53,13 @@ pub(crate) struct Bar {
 }
 
 /// What a window keeps of a pane's bar between its frames: where the view
-/// was, its rows' epoch, its first row's number and how many rows it was
-/// above the screen; and when the view last moved, or the pointer left the
-/// bar, from when it shows a while.
+/// was, its rows' epoch, its first row's number, how many rows it was
+/// above the screen and its share of a row past its first; and when the
+/// view last moved, or the pointer left the bar, from when it shows a
+/// while.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Kept {
-    view: Option<(u64, i64, i64)>,
+    view: Option<(u64, i64, i64, f32)>,
     moved: Option<Instant>,
 }
 
@@ -108,11 +111,18 @@ pub(super) fn settle<B: Backend>(
             continue;
         };
         let kept = bars_kept.entry(view.pane).or_default();
-        let place = (viewport.epoch, viewport.top, viewport.screen - viewport.top);
-        if let Some((epoch, top, above)) = kept.view
+        let share = workspace
+            .pane(view.pane)
+            .map_or(0.0, |pane| pane.snapshot().fraction());
+        let place = (
+            viewport.epoch,
+            viewport.top,
+            viewport.screen - viewport.top,
+            share,
+        );
+        if let Some((epoch, top, above, was)) = kept.view
             && epoch == place.0
-            && top != place.1
-            && above != place.2
+            && ((top != place.1 && above != place.2) || was != share)
         {
             kept.moved = Some(now);
         }
@@ -129,6 +139,7 @@ pub(super) fn settle<B: Backend>(
             total: (count(viewport.screen - viewport.oldest) + u64::from(viewport.rows))
                 .saturating_sub(folded as u64),
             top: count(viewport.top - viewport.oldest).saturating_sub(above as u64),
+            share,
             shown: u64::from(viewport.rows),
         };
         if !rows.scrolls() {
@@ -241,12 +252,23 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Whether the bar of `pane` moves its view by pixels: with
+    /// `smooth-scroll`, of a view of no folds, which scrolls by whole rows.
+    fn bar_by_pixels(&self, pane: PaneId) -> bool {
+        self.config.window.smooth_scroll
+            && self
+                .workspace
+                .pane(pane)
+                .is_some_and(|pane| pane.snapshot().folded() == (0, 0))
+    }
+
     /// The pointer pressed or released `button` over `window` at
     /// `position`, with `mods`: a release ends a knob's drag under way; the
     /// left button's press over a bar that shows drags its knob, or, over
     /// its track, pages toward the press, or jumps there, the knob's middle
     /// at the press, which the drag then holds, as the system's settings
-    /// say, Option the other way. Whether a bar took it.
+    /// say, Option the other way; by pixels, the view glides a page, or
+    /// there. Whether a bar took it.
     pub(super) fn bar_button(
         &mut self,
         platform: &mut dyn Platform,
@@ -286,11 +308,18 @@ impl<B: Backend> App<B> {
         let y = position.y as f32 * scale;
         let knob = scrollbar::knob(bar.area, bar.rows, true, scale);
         let on_knob = (knob.y as f32..knob.y as f32 + knob.height as f32).contains(&y);
+        let by_pixels = self.bar_by_pixels(bar.pane);
+        // The view's place now, from the oldest row, as the bar shows it.
+        // Far fewer rows than an `f64` holds exactly.
+        let place = bar.rows.top as f64 + f64::from(bar.rows.share);
         let grab = if on_knob {
             y - knob.y as f32
         } else if jump {
             let top = scrollbar::centered_at(bar.area, bar.rows, scale, y);
-            if let Some(pane) = self.workspace.pane(bar.pane) {
+            if by_pixels {
+                let there = scrollbar::place_at(bar.area, bar.rows, scale, top);
+                self.glide(platform, window, bar.pane, place - there);
+            } else if let Some(pane) = self.workspace.pane(bar.pane) {
                 pane.scroll(scroll_to(
                     &bar,
                     scrollbar::top_at(bar.area, bar.rows, scale, top),
@@ -298,12 +327,13 @@ impl<B: Backend> App<B> {
             }
             y - top
         } else {
-            if let Some(pane) = self.workspace.pane(bar.pane) {
-                pane.scroll(if y < knob.y as f32 {
-                    Scroll::PageUp
-                } else {
-                    Scroll::PageDown
-                });
+            let up = y < knob.y as f32;
+            if by_pixels {
+                // Far fewer rows than an `f64` holds exactly.
+                let page = bar.rows.shown as f64;
+                self.glide(platform, window, bar.pane, if up { page } else { -page });
+            } else if let Some(pane) = self.workspace.pane(bar.pane) {
+                pane.scroll(if up { Scroll::PageUp } else { Scroll::PageDown });
             }
             platform.request_frame(window);
             return true;
@@ -321,8 +351,8 @@ impl<B: Backend> App<B> {
     }
 
     /// The pointer moved to `position` over `window` in a knob's drag: the
-    /// view goes to the row that the knob's place gives. Whether a drag was
-    /// under way.
+    /// view goes to the row that the knob's place gives, or, by pixels, to
+    /// its place, of a share of a row too. Whether a drag was under way.
     pub(super) fn bar_dragged(
         &mut self,
         platform: &mut dyn Platform,
@@ -342,9 +372,18 @@ impl<B: Backend> App<B> {
             return true;
         };
         let top = position.y as f32 * scale - drag.grab;
-        let scroll = scroll_to(bar, scrollbar::top_at(bar.area, bar.rows, scale, top));
+        let by_pixels = self.bar_by_pixels(drag.pane);
         if let Some(pane) = self.workspace.pane(drag.pane) {
-            pane.scroll(scroll);
+            if by_pixels {
+                // Far fewer rows than an `f64` holds exactly.
+                let place = scrollbar::place_at(bar.area, bar.rows, scale, top);
+                pane.scroll_to(bar.oldest as f64 + place);
+            } else {
+                pane.scroll(scroll_to(
+                    bar,
+                    scrollbar::top_at(bar.area, bar.rows, scale, top),
+                ));
+            }
         }
         platform.request_frame(window);
         true

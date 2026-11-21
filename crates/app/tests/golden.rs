@@ -39,7 +39,7 @@ use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    MatchCells, Options, SelectionShape, SelectionUnit, Snapshot, Terminal,
+    MatchCells, Options, Scroll, SelectionShape, SelectionUnit, Snapshot, Terminal,
 };
 
 /// The pixels around the cells, as a window's padding.
@@ -1462,6 +1462,7 @@ fn check_bars(light: bool, scale: u32) {
     let rows = |top: u64| Rows {
         total: 400,
         top,
+        share: 0.0,
         shown: 8,
     };
     let mark = |at: f32, current: bool| Mark { at, current };
@@ -1723,6 +1724,184 @@ fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images
             (width, height, &pixels),
             most,
         );
+    }
+}
+
+/// The pane of a scene of the commands' blocks, 16 columns by 4 rows, in
+/// the built-in theme's dark variant: `seq 1 6`, which failed, then the
+/// prompt's row, a selection over `6` and the prompt; scrolled as `scroll`
+/// moves its view, then drawn as a frame draws a pane, within a margin as
+/// its padding: through where its rows draw as the view is scrolled a share
+/// of a row, `scrolled`, or in their place as before, which draw the same
+/// at no share. Its rows' cells, its blocks' tint and dividers, their bars
+/// in the margin, an image over the view's first two rows' last cells, and
+/// the cursor's layer, a block, at its place, as much of it as shows.
+fn draw_scrolled(
+    drawing: &mut Drawing,
+    scroll: impl FnOnce(&mut Terminal),
+    scrolled: bool,
+) -> (u32, u32, Vec<u8>) {
+    let variant = Theme::builtin().variant(true).clone();
+    let mut terminal = Terminal::new(16, 4, Options::default());
+    terminal.set_default_colors(variant.colors.clone());
+    let mut text = String::from("\x1b]133;A\x07$ \x1b]133;B\x07seq 1 6\r\n\x1b]133;C\x07");
+    for at in 1..=6 {
+        text.push_str(&format!("{at}\r\n"));
+    }
+    text.push_str("\x1b]133;D;1\x07\x1b]133;A\x07$ \x1b]133;B\x07");
+    Parser::new().advance(&mut terminal, text.as_bytes());
+    terminal.select(
+        (0, 6),
+        (1, 7),
+        SelectionShape::Cells,
+        SelectionUnit::Cell,
+        "",
+    );
+    scroll(&mut terminal);
+    let mut snapshot = Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    drawing.font.begin_frame();
+    let cell = *drawing.font.cell();
+    let (cell_width, cell_height) = (cell.width, cell.height);
+    let width = 16 * cell_width + 2 * MARGIN;
+    let height = 4 * cell_height + 2 * MARGIN;
+    let corner = (MARGIN as i32, MARGIN as i32);
+    let rows = if scrolled {
+        cells::rows_at(&snapshot, &cell, corner, (0, width))
+    } else {
+        cells::Rows::default()
+    };
+    let at = rows.corner(corner);
+    let selected = snapshot.selection();
+    let contains =
+        |column: u16, row: u16| selected.is_some_and(|shown| shown.contains(column, row));
+    let selection = selected.map(|_| Selection {
+        colors: variant.selection,
+        contains: &contains,
+    });
+    let batch = cells::cells_with(
+        &snapshot,
+        &cell,
+        at,
+        selection.as_ref(),
+        None,
+        TextLook::default(),
+        &mut drawing.font,
+    );
+    let look = CursorLook {
+        shape: CursorShape::Block,
+        thickness: cell.underline_thickness.max(1),
+        length: 1.0,
+    };
+    let cursor = cells::cursor_cells(&batch, &snapshot, look, &cell, None);
+    let picture = drawing
+        .renderer
+        .picture_of_pixels(&IMAGE, 2, 2)
+        .unwrap()
+        .expect("a picture");
+    let image = Item::Picture {
+        rect: lokyr_render_core::Rect {
+            x: at.0 + (11 * cell_width) as i32,
+            y: at.1,
+            width: 4 * cell_width,
+            height: 2 * cell_height,
+        },
+        picture,
+    };
+    let tokens = &variant.tokens;
+    let looks = lokyr_plugin_sdk::host::BlockLooks {
+        bars: true,
+        dividers: true,
+        failed_tint: true,
+        prompt_rows: false,
+        spacing: false,
+    };
+    let scale = f64::from(drawing.font.scale());
+    let mut shapes = cells::block_shapes(
+        &snapshot,
+        at.1,
+        cell_height,
+        (0, width),
+        scale,
+        tokens,
+        (looks, None),
+    );
+    shapes.extend(cells::gutter_marks(
+        &snapshot,
+        at,
+        (MARGIN, cell_height),
+        scale,
+        tokens,
+        true,
+    ));
+    let mut items = rows.clipped(vec![Item::Cells(batch), image]);
+    items.extend(rows.clipped(vec![Item::Shapes(shapes)]));
+    // The cursor's layer over the frame, of the part of it that shows, as
+    // its own list draws it.
+    if let Some((column, row, mut cells)) = cursor {
+        let place = (
+            f64::from(at.0) + f64::from(u32::from(column) * cell_width),
+            f64::from(at.1) + f64::from(u32::from(row) * cell_height),
+        );
+        let size = (
+            u32::from(cells.columns) * cell_width,
+            u32::from(cells.rows) * cell_height,
+        );
+        (cells.x, cells.y) = (place.0 as i32, place.1 as i32);
+        match rows.layer(place, size) {
+            cells::Shows::All => items.push(Item::Cells(cells)),
+            cells::Shows::Part(part) => items.extend([
+                Item::PushClip(lokyr_render_core::Rect {
+                    x: part.x + cells.x,
+                    y: part.y + cells.y,
+                    ..part
+                }),
+                Item::Cells(cells),
+                Item::PopClip,
+            ]),
+            cells::Shows::Nothing => {}
+        }
+    }
+    let list = DisplayList {
+        background: cells::background(&snapshot),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    (width, height, pixels)
+}
+
+#[test]
+fn a_pane_scrolled_a_share_of_a_row_draws_as_its_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        // Half a row up from the screen: the rows of `3` to `6` half a row
+        // up, the top one cut, the prompt's row below them, half of it, its
+        // selection and the cursor's layer too.
+        let (width, height, pixels) = draw_scrolled(
+            &mut drawing,
+            |terminal| terminal.scroll_viewport_by(0.5),
+            true,
+        );
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("scrolled-fraction-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+        // Of no share, as the view scrolls by whole rows, the rows draw as
+        // they did before, to the pixel.
+        let whole = |terminal: &mut Terminal| terminal.scroll_viewport(Scroll::Up(1));
+        let (_, _, through) = draw_scrolled(&mut drawing, whole, true);
+        let (_, _, before) = draw_scrolled(&mut drawing, whole, false);
+        assert!(through == before, "a view of whole rows draws as before");
     }
 }
 
