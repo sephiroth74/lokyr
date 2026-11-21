@@ -637,6 +637,64 @@ fn a_wheel_s_step_glides_over_its_rows_with_smooth_scroll() {
 }
 
 #[test]
+fn a_glide_down_ends_at_the_screen_while_output_comes() {
+    let (mut fake, mut app, window) = smooth(shell(
+        "seq 1 100; echo ready; while :; do echo tick; sleep 0.02; done",
+    ));
+    let lines = |y| wheel(ScrollDelta::Lines { x: 0.0, y }, Modifiers::NONE);
+    let glides = |app: &App| app.windows[&window].mouse.glide.is_some();
+    let wait = |fake: &mut Fake, app: &mut App| {
+        let after = Instant::now() + crate::mouse::GLIDE * 2;
+        run_until(fake, app, |_, _| Instant::now() > after);
+    };
+    // At the screen, a step down is none: the view follows the output.
+    fake.send(&mut app, window, lines(-3.0));
+    assert!(!glides(&app));
+    wait(&mut fake, &mut app);
+    assert_eq!(app.pane(window).view_offset(), 0);
+    // Up, then down as far as the screen was at the step, while rows
+    // come: at the screen, which the view then follows.
+    fake.send(&mut app, window, lines(3.0));
+    run_until(&mut fake, &mut app, |_, app| {
+        !glides(app) && app.pane(window).view_offset() > 0
+    });
+    let offset = app.pane(window).view_offset();
+    // Far fewer rows than an `f64` holds exactly.
+    fake.send(&mut app, window, lines(-(offset as f64)));
+    run_until(&mut fake, &mut app, |_, app| !glides(app));
+    assert_eq!(app.pane(window).view_offset(), 0);
+    wait(&mut fake, &mut app);
+    assert_eq!(app.pane(window).view_offset(), 0);
+    assert_eq!(app.pane(window).snapshot().fraction(), 0.0);
+}
+
+#[test]
+fn a_glide_at_the_view_s_ends_is_none_of_no_frame() {
+    let (mut fake, mut app, window) = smooth(shell("seq 1 100; echo ready; sleep 30"));
+    let lines = |y| wheel(ScrollDelta::Lines { x: 0.0, y }, Modifiers::NONE);
+    // Down at the screen.
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, lines(-3.0));
+    assert!(app.windows[&window].mouse.glide.is_none());
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // Up at the oldest row.
+    app.pane(window).scroll(Scroll::Top);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    fake.send(&mut app, window, lines(3.0));
+    assert!(app.windows[&window].mouse.glide.is_none());
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // A row short of it, the glide stops there, before its time is out.
+    app.pane(window).scroll(Scroll::Down(1));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let top = app.pane(window).snapshot().scrollback();
+    fake.send(&mut app, window, lines(3.0));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows[&window].mouse.glide.is_none()
+    });
+    assert_eq!(app.pane(window).view_offset(), top);
+}
+
+#[test]
 fn with_smooth_scroll_a_program_that_takes_the_wheel_gets_whole_steps() {
     let program =
         shell("seq 1 100; printf '\\033[?1000h\\033[?1006h'; stty raw -echo; echo ready; cat -v");

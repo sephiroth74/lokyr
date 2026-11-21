@@ -428,6 +428,17 @@ impl Session {
         (terminal.viewport_offset() > 0).then(|| (terminal.origin(), terminal.viewport_fraction()))
     }
 
+    /// The numbers of the primary screen's oldest row, the scrollback's
+    /// first, and of the screen's first row, between which the view
+    /// scrolls, as output has them now.
+    pub fn row_ends(&self) -> (i64, i64) {
+        let terminal = self.lock();
+        (
+            terminal.row_number(0),
+            terminal.row_number(terminal.scrollback_rows()),
+        )
+    }
+
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
     /// have it, with the keyboard's `options`. A key that sends something
     /// brings the view back to the screen, as typing does.

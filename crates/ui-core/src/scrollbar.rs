@@ -49,8 +49,8 @@ impl Rows {
         self.total > self.shown
     }
 
-    /// The most that the view's first row can be.
-    fn last_top(&self) -> u64 {
+    /// The most that the view's first row can be, at the screen.
+    pub fn last_top(&self) -> u64 {
         self.total.saturating_sub(self.shown)
     }
 }
