@@ -412,6 +412,15 @@ impl Session {
         self.lock().drop_viewport_fraction();
     }
 
+    /// Where the view is while it is above the screen, as only a scroll
+    /// moves it there: its rows' origin and its share of a row, as
+    /// [`Terminal::viewport_fraction`] tells it; none at the screen, where
+    /// output moves the view.
+    pub fn scrolled_place(&self) -> Option<(terminal::Origin, f32)> {
+        let terminal = self.lock();
+        (terminal.viewport_offset() > 0).then(|| (terminal.origin(), terminal.viewport_fraction()))
+    }
+
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
     /// have it, with the keyboard's `options`. A key that sends something
     /// brings the view back to the screen, as typing does.
@@ -488,6 +497,14 @@ impl Session {
         };
         self.write(bytes);
         taken
+    }
+
+    /// Whether the program would take the mouse's `event`, as
+    /// [`Session::mouse`] tells, sending nothing.
+    pub fn takes_mouse(&self, event: &MouseEvent) -> bool {
+        let terminal = self.lock();
+        let alternate = terminal.is_alternate_screen();
+        input::encode_mouse(event, &terminal.input_modes(), alternate, &mut Vec::new())
     }
 
     /// Tells the program that the terminal gained or lost the focus, if it

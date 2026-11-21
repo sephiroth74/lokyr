@@ -52,6 +52,7 @@ tip-look-up = Fai clic destro su una parola per cercarla nel dizionario, sul web
 tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › Nuovo tab Lokyr qui per un terminale lì.
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
+tip-smooth-scroll = Imposta smooth-scroll = true in [window] nella config, e il trackpad scorre il testo a pixel, continuando a scivolare quando alzi le dita; anche lo scatto della rotella del mouse scivola.
 tip-cursor-guide = Premi { $keys }, o Vista › Mostra la guida del cursore, per una banda sulla riga del cursore che mostra dov'è.
 tip-transparency = Premi { $keys }, o Vista › Usa la trasparenza, per mostrare opaca una finestra traslucida mentre leggi, e di nuovo per vederci attraverso; la config resta com'è.
 tip-sleip = I plugin vengono dal registro: `sleip search` li elenca, e `sleip add` ne installa uno.

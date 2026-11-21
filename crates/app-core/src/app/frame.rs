@@ -512,8 +512,12 @@ impl<B: Backend> App<B> {
     /// it, still.
     pub(super) fn draw(&mut self, platform: &mut dyn Platform, window: WindowId, size: WindowSize) {
         self.draw_frame(platform, window, size);
+        let shifted = std::mem::take(&mut self.pointer_shifted);
         if std::mem::take(&mut self.pointer_text_changed) {
             self.tell_pointer_over_changed_text(platform, window);
+        } else if shifted {
+            let position = platform.pointer_position(window);
+            self.tell_pointer(platform, window, position, self.pointer_mods);
         }
     }
 
@@ -554,6 +558,8 @@ impl<B: Backend> App<B> {
         let started =
             (self.performance.is_some() || self.output_bench.is_some()).then(Instant::now);
         let now = Instant::now();
+        // A wheel's glide moves its view first, so that the frame shows it.
+        self.glide_view(platform, window, now);
         // The slots that show a view first ask their plugins for it, whose
         // calls' requests the turn's end takes.
         self.rendered_slots |= self.render_slots(platform, window);
@@ -657,11 +663,13 @@ impl<B: Backend> App<B> {
             };
             if view.pane != active {
                 pane.set_sticky_prompts(sticky);
+                let share = pane.snapshot().fraction();
                 let updated = pane.update();
                 viewports.extend(pane.viewport_changed().map(|now| (view.pane, now)));
                 others |= updated;
                 self.pointer_text_changed |=
                     updated && text_changed_under(self.pointer_told, view.pane, pane);
+                self.pointer_shifted |= shifted_under(self.pointer_told, view.pane, pane, share);
                 if asked {
                     cursors.push(access::tree_cursor(pane));
                 }
@@ -680,7 +688,9 @@ impl<B: Backend> App<B> {
         }
         // Output starts the cursor blinking again, on, as a key does.
         pane.set_sticky_prompts(sticky);
+        let share = pane.snapshot().fraction();
         let output = pane.update();
+        self.pointer_shifted |= shifted_under(self.pointer_told, active, pane, share);
         viewports.extend(pane.viewport_changed().map(|now| (active, now)));
         if tells_viewports {
             for (pane, viewport) in viewports {
@@ -2585,6 +2595,13 @@ fn blink_of(pattern: cursor::Pattern, start: Instant) -> PlatformBlink {
         fade_in: pattern.fade_in,
         fade_in_curve: easing(pattern.fade_in_curve),
     }
+}
+
+/// Whether `pane`, `id`, which the plugins were told the pointer is over,
+/// shows its rows at another share of a row than `share`, its last frame's,
+/// as they scroll by pixels.
+fn shifted_under(told: Option<PointerTold>, id: PaneId, pane: &Pane, share: f32) -> bool {
+    told.is_some_and(|(over, _, _)| over == id) && pane.snapshot().fraction() != share
 }
 
 /// Whether the last update of `pane`, of the id `id`, changed the text

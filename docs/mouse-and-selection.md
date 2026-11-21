@@ -1,6 +1,6 @@
 # Mouse and selection
 
-<sub>macOS · on by default · [`[clipboard] copy-on-select`](CONFIGURATION.md#copy-on-select), [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move)</sub>
+<sub>macOS · on by default · [`[clipboard] copy-on-select`](CONFIGURATION.md#copy-on-select), [`[cursor] click-to-move`](CONFIGURATION.md#click-to-move), [`[window] smooth-scroll`](CONFIGURATION.md#smooth-scroll)</sub>
 
 Select text with the mouse as in any Mac app, by words, by lines or as a rectangle, and copy it. ⌘-click a link or a path to open it, click in the command line to move the cursor, scroll back through what programs printed, and drop files from the Finder to paste their paths.
 
@@ -21,7 +21,7 @@ Double-click the word `usr` in the listing, press ⌘C, then ⌘V: the word past
 - **⌘-click** on a link, a URL or a path opens it, a path with a line at that line in your editor.
 - **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md). · Since 1.3
 - **A context menu**, from a right click or a ⌃-click, to open a link or a man page, look up or search a word, and copy, paste or select.
-- **Scrolling** through the scrollback with the wheel or the trackpad.
+- **Scrolling** through the scrollback with the wheel or the trackpad, by pixels with [`smooth-scroll`](CONFIGURATION.md#smooth-scroll) · not released yet.
 - **Programs that take the mouse**, such as vim or htop, get your clicks, and ⇧ keeps them for the selection.
 - **Files dropped** from the Finder paste their paths, ready for a command.
 
@@ -87,6 +87,24 @@ The wheel and the trackpad scroll through the scrollback, the rows that went up 
 
 **Try it**: run `seq 1 500` and scroll up with the trackpad: the earlier numbers come back. Then run `man ls` and scroll: the manual's page moves. Press `q` to quit it.
 
+### Scroll by pixels
+
+<sub>Platforms: macOS · off by default · not released yet</sub>
+
+With [`[window] smooth-scroll`](CONFIGURATION.md#smooth-scroll) on, the text follows your fingers on a trackpad or a Magic Mouse pixel by pixel, rather than a row at a time, and keeps gliding when you lift them. A mouse wheel's step glides over its rows instead of jumping. A click, a selection and a ⌘-click take the text where you see it, even halfway through a row.
+
+- **The keys** still scroll by whole rows, such as Page Up and Page Down and the jumps between prompts.
+- **A program that takes the wheel**, such as `less` or vim, still gets whole steps. Hold ⇧ to scroll the scrollback by pixels anyway.
+- **The ends**: the text stops at the top of the scrollback and at the screen, with no bounce.
+- **Dragging a selection** past the window's top or bottom scrolls by whole rows, keeping the part of a row where you left the text.
+
+```toml
+[window]
+smooth-scroll = true   # the trackpad and the wheel scroll by pixels
+```
+
+**Try it**: turn `smooth-scroll` on, run `seq 1 500`, and scroll up slowly with two fingers: the numbers move by pixels. Flick and lift your fingers: the text glides to a stop.
+
 ## Programs that take the mouse
 
 A program can ask for the mouse, such as vim with `set mouse=a`, htop or tmux. It then gets your clicks, the right button's too, and the wheel, and the pointer becomes an arrow over its window. Hold ⇧ to select, open the menu or scroll the scrollback anyway.
@@ -110,9 +128,12 @@ click-to-move = true         # a click in the command line moves the shell's cur
 
 [plugins.splits]
 focus-follows-mouse = false  # true gives the keyboard to the pane under the pointer
+
+[window]
+smooth-scroll = false        # true scrolls by pixels with the trackpad and the wheel
 ```
 
-[`[clipboard]`](CONFIGURATION.md#clipboard), [`click-to-move`](CONFIGURATION.md#click-to-move) and [`focus-follows-mouse`](CONFIGURATION.md#focus-follows-mouse) tell more. [`[keys]`](CONFIGURATION.md#bindings) can bind the wheel and ⌘-click to other commands too.
+[`[clipboard]`](CONFIGURATION.md#clipboard), [`click-to-move`](CONFIGURATION.md#click-to-move), [`focus-follows-mouse`](CONFIGURATION.md#focus-follows-mouse) and [`smooth-scroll`](CONFIGURATION.md#smooth-scroll) tell more. [`[keys]`](CONFIGURATION.md#bindings) can bind the wheel and ⌘-click to other commands too.
 
 ## Limits
 

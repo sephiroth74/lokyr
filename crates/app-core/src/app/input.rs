@@ -15,7 +15,7 @@ use lokyr_platform_core::{
     Dropped, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point,
     ScrollDelta, ScrollPhase, WindowId,
 };
-use lokyr_ui_core::pane::Preedit;
+use lokyr_ui_core::pane::{Preedit, rows_up};
 use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
     MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow,
@@ -23,7 +23,7 @@ use lokyr_vt_core::terminal::{
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
 use crate::drawing::Backend;
-use crate::mouse::{Pointer, Spot};
+use crate::mouse::{Glide, Pointer, Spot};
 use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
 
@@ -482,7 +482,9 @@ impl<B: Backend> App<B> {
         self.pointer_in(platform, window, self.focused(window)?, position)
     }
 
-    /// Where `position` is in the cells of `pane`, one of `window`'s.
+    /// Where `position` is in the cells of `pane`, one of `window`'s, as the
+    /// drawn frame showed them: of its rows a share of a row up, while its
+    /// view is scrolled by one.
     fn pointer_in(
         &self,
         platform: &dyn Platform,
@@ -492,11 +494,14 @@ impl<B: Backend> App<B> {
     ) -> Option<Pointer> {
         let pane = self.workspace.pane(id)?;
         let size = platform.window_size(window)?;
+        let grid = pane.grid();
+        let up = rows_up(pane.snapshot(), u32::from(grid.cell_height));
         Some(mouse::pointer(
             position,
             size.scale,
             self.pane_origin(window, id, size),
-            pane.grid(),
+            grid,
+            u32::try_from(up).unwrap_or(0),
         ))
     }
 
@@ -998,6 +1003,7 @@ impl<B: Backend> App<B> {
     pub(super) fn scroll_selections(&mut self, platform: &mut dyn Platform) {
         self.scroll_timer = None;
         let mut scrolled = false;
+        let by_pixels = self.config.window.smooth_scroll;
         for (&window, state) in &mut self.windows {
             let Some(selecting) = &mut state.selecting else {
                 continue;
@@ -1012,20 +1018,31 @@ impl<B: Backend> App<B> {
                 .unwrap_or(usize::MAX)
                 .min(SELECTION_SCROLL_ROWS);
             let before = pane.view_offset();
-            pane.scroll(if selecting.beyond < 0 {
-                Scroll::Up(rows)
+            if by_pixels {
+                // By whole rows, the view's share of a row kept.
+                // Far fewer rows than an `f64` holds exactly.
+                let rows = rows as f64;
+                pane.scroll_by(if selecting.beyond < 0 { rows } else { -rows });
             } else {
-                Scroll::Down(rows)
-            });
+                pane.scroll(if selecting.beyond < 0 {
+                    Scroll::Up(rows)
+                } else {
+                    Scroll::Down(rows)
+                });
+            }
             let offset = pane.view_offset();
             // The pointer stays past the edge, on the row that the view
-            // brings under it.
+            // brings under it: at the bottom, the row past the view's last
+            // while the view is a share of a row up.
             let edge = if selecting.beyond < 0 {
                 0
             } else {
                 pane.grid().rows.saturating_sub(1)
             };
-            selecting.last.row = pane.shown_row_now(edge).map_or(0, ShownRow::row);
+            let below =
+                selecting.beyond > 0 && pane.scrolled_place().is_some_and(|(_, share)| share > 0.0);
+            selecting.last.row =
+                pane.shown_row_now(edge).map_or(0, ShownRow::row) + i64::from(below);
             show_selection(pane, selecting);
             platform.request_frame(window);
             scrolled |= offset != before;
@@ -1093,7 +1110,7 @@ impl<B: Backend> App<B> {
         let snapshot = self.workspace.pane(id)?.snapshot();
         let (command, prompt) = snapshot
             .sticky()
-            .filter(|sticky| pointer.row < sticky.rows())
+            .filter(|sticky| pointer.band_row < sticky.rows())
             .and(snapshot.sticky_prompt())?;
         Some((id, command, prompt))
     }
@@ -1248,7 +1265,7 @@ impl<B: Backend> App<B> {
             let snapshot = self.workspace.pane(pane)?.snapshot();
             let pinned = snapshot
                 .sticky()
-                .is_some_and(|sticky| pointer.row < sticky.rows());
+                .is_some_and(|sticky| pointer.band_row < sticky.rows());
             let row = snapshot.shown_row(pointer.row)?.row();
             Some((pane, (!pinned).then_some((pointer.col, row)), command))
         });
@@ -1276,7 +1293,9 @@ impl<B: Backend> App<B> {
     /// The wheel or the trackpad scrolled over `window`, by `scroll`'s delta
     /// in its phase: each whole step goes to a program that takes the
     /// wheel, as the cursor keys on the alternate screen; otherwise, and
-    /// with Shift, it moves the view through the scrollback.
+    /// with Shift, it moves the view through the scrollback, by pixels with
+    /// `smooth-scroll`: a trackpad's points as they come, its momentum's
+    /// too, and a wheel's lines in a glide.
     pub(super) fn scroll(
         &mut self,
         platform: &mut dyn Platform,
@@ -1305,7 +1324,6 @@ impl<B: Backend> App<B> {
             return;
         };
         let row_points = f64::from(pane.grid().cell_height) / scale;
-        let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
         // A step that the program takes over the scrollback goes to it at
         // the screen's top row.
         let pointer = on_screen(pane, pointer).unwrap_or(mouse::at_top(pointer));
@@ -1321,6 +1339,51 @@ impl<B: Backend> App<B> {
             Resolved::Run(invocation) => Some(invocation),
             _ => None,
         };
+        // By pixels, the view takes the scroll up and down as it comes,
+        // where neither a binding nor the program takes the wheel's steps.
+        let (_, rows) = mouse::rows(delta, row_points, mods.shift);
+        let wheel = if rows > 0.0 { Wheel::Up } else { Wheel::Down };
+        let by_pixels = self.config.window.smooth_scroll
+            && rows != 0.0
+            && rows.is_finite()
+            && bound(wheel).is_none()
+            && !(to_program
+                && pane.takes_mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer)));
+        let (across, mut up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        if by_pixels {
+            state.mouse.settle_up();
+            up = 0;
+            let moved = match delta {
+                // A frame as the view moves, none at its ends, where the
+                // momentum goes on a while.
+                ScrollDelta::Points { .. } => {
+                    let before = pane.scrolled_place();
+                    pane.scroll_by(rows);
+                    pane.scrolled_place() != before
+                }
+                ScrollDelta::Lines { .. } => {
+                    let now = Instant::now();
+                    let place = pane.scrolled_place();
+                    match &mut state.mouse.glide {
+                        Some(glide) if glide.pane == target => glide.add(rows, now, place),
+                        slot => {
+                            // Another pane's glide goes to its rows at once.
+                            if let Some(glide) = slot.take()
+                                && let Some(other) = self.workspace.pane(glide.pane)
+                                && other.scrolled_place() == glide.left
+                            {
+                                other.scroll_by(glide.left());
+                            }
+                            *slot = Some(Glide::new(target, rows, now, place));
+                        }
+                    }
+                    true
+                }
+            };
+            if moved {
+                platform.request_frame(window);
+            }
+        }
         let mut runs = Vec::new();
         let mut view: i64 = 0;
         let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
@@ -1359,6 +1422,41 @@ impl<B: Backend> App<B> {
         }
         for invocation in runs {
             self.run(platform, &invocation.command, invocation.args);
+        }
+    }
+
+    /// Moves the view that the wheel glides over `window` by its step at
+    /// `now`, as a frame starts, before the frame takes the panes' screens,
+    /// and asks for the next frame while the glide goes on; a view that
+    /// moved another way since its last step, as a key moves it, or output
+    /// that brings it back to the screen, ends it.
+    pub(super) fn glide_view(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(glide) = &mut state.mouse.glide else {
+            return;
+        };
+        let Some(pane) = self
+            .workspace
+            .pane(glide.pane)
+            .filter(|pane| pane.scrolled_place() == glide.left)
+        else {
+            state.mouse.glide = None;
+            return;
+        };
+        let (rows, on) = glide.step(now);
+        pane.scroll_by(rows);
+        glide.left = pane.scrolled_place();
+        if on {
+            platform.request_frame(window);
+        } else {
+            state.mouse.glide = None;
         }
     }
 }

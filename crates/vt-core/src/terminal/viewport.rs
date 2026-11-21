@@ -297,7 +297,12 @@ impl Terminal {
         // row's index and the share past it.
         // Far fewer rows than an `f64` holds exactly.
         let place = (scrollback - offset) as f64 + f64::from(self.viewport_fraction());
-        let place = (place - rows).clamp(0.0, scrollback as f64);
+        let mut place = (place - rows).clamp(0.0, scrollback as f64);
+        // A share within the least of a whole row, either side, is that
+        // row, as steps that add up to whole rows leave a float's rounding.
+        if (place - place.round()).abs() < LEAST_FRACTION {
+            place = place.round();
+        }
         let top = place.floor();
         let share = place - top;
         // Within the list, as the clamp keeps it.

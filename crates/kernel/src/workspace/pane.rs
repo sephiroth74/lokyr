@@ -827,6 +827,14 @@ impl Pane {
             .is_some_and(|session| session.mouse(event))
     }
 
+    /// Whether the program would take the mouse's `event`, as
+    /// [`Pane::mouse`] tells, sending nothing.
+    pub fn takes_mouse(&self, event: &MouseEvent) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.takes_mouse(event))
+    }
+
     /// The modes that the program set of what the keys, the mouse and a
     /// paste send, as they are now, under the lock.
     pub fn input_modes(&self) -> Option<InputModes> {
@@ -1352,6 +1360,14 @@ impl Pane {
         if let Some(session) = &self.session {
             session.drop_fraction();
         }
+    }
+
+    /// Where the view is now while it is above the screen, which only a
+    /// scroll moves while output comes: its rows' origin and its share of a
+    /// row; none at the screen, where output moves the view, and for a pane
+    /// whose program did not start.
+    pub fn scrolled_place(&self) -> Option<(Origin, f32)> {
+        self.session.as_ref()?.scrolled_place()
     }
 
     /// Whether the program's output brings the view back to the screen.

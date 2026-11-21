@@ -80,6 +80,11 @@ fn a_scroll_of_a_share_of_a_row_moves_whole_rows_and_keeps_the_rest() {
     terminal.scroll_viewport_by(f64::NAN);
     assert_eq!(terminal.origin().top, 12);
     assert!(near(terminal.viewport_fraction(), 0.5));
+    // Nor is a share just short of a whole row: that row, as a glide's
+    // steps that add up to whole rows leave it.
+    terminal.scroll_viewport_by(0.5 + 1.0 / 4096.0);
+    assert_eq!(terminal.origin().top, 12);
+    assert_eq!(terminal.viewport_fraction(), 0.0);
 }
 
 #[test]
