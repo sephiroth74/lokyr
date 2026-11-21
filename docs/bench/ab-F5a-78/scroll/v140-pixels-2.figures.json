@@ -1,0 +1,1 @@
+{"kind": "scroll", "farthest": 600.0, "seconds": 9.4, "display": "Built-In Display", "frames_per_second": 61.0, "refresh_ms": 16.49, "missed": 3, "delay_p50_ms": 2.16, "delay_p95_ms": 3.52, "windowserver_cpu": 21.7, "app_cpu": 7.5, "app_frames_per_second": 60.8, "refreshes_with_a_frame": 0.989, "app_frame_gaps": {"1": 571}}

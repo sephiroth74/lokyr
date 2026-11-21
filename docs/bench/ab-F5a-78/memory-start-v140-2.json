@@ -1,0 +1,748 @@
+{
+  "pid": 65800,
+  "name": "lokyr",
+  "interval_ms": 20,
+  "duration_s": 2.0,
+  "windows": [
+    {
+      "width": 968.0,
+      "height": 660.0
+    }
+  ],
+  "samples": [
+    {
+      "elapsed_ms": 0,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 50,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 94,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 141,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 187,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 233,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 269,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 308,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 346,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 389,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 429,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 471,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 520,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 562,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 605,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 645,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 692,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 735,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 777,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 819,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 861,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 904,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 944,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 984,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1021,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1057,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1093,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1129,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1166,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1202,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1240,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1278,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1315,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1352,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1391,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1430,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1467,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1504,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1542,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1581,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1621,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1657,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1694,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1733,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1768,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1804,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1840,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1878,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1914,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1950,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 1989,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2027,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2063,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2099,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2134,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2170,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2205,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2241,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2277,
+      "footprint": 64849120,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34292960,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2313,
+      "footprint": 64799968,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34243808,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2348,
+      "footprint": 64799968,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34243808,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2382,
+      "footprint": 64799968,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34243808,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2417,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2452,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2486,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2520,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2558,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2598,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2639,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2680,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2725,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2765,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2811,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2847,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2885,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2921,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2957,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 2993,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3029,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3065,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3103,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3139,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3175,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3212,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3251,
+      "footprint": 64783584,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34227424,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3288,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3325,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3362,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3403,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3444,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3483,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3521,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3561,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3603,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3645,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3687,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3729,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3771,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3809,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3851,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    },
+    {
+      "elapsed_ms": 3893,
+      "footprint": 64734432,
+      "gpu": 30556160,
+      "footprint_without_gpu": 34178272,
+      "lifetime_peak": 229229792
+    }
+  ],
+  "summary": {
+    "footprint": {
+      "min": 64734432,
+      "median": 64849120,
+      "max": 64849120,
+      "last": 64734432
+    },
+    "footprint_without_gpu": {
+      "min": 34178272,
+      "median": 34292960,
+      "max": 34292960,
+      "last": 34178272
+    },
+    "gpu": {
+      "min": 30556160,
+      "median": 30556160,
+      "max": 30556160,
+      "last": 30556160
+    },
+    "gpu_categories": {
+      "IOAccelerator": 65536,
+      "IOAccelerator (graphics)": 6651904,
+      "IOSurface": 20856832,
+      "Owned physical footprint (unmapped) (graphics)": 2981888
+    },
+    "lifetime_peak": 229229792
+  }
+}

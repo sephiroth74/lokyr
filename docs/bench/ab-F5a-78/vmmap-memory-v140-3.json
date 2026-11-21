@@ -1,0 +1,118 @@
+{
+  "pid": 67797,
+  "name": "lokyr",
+  "interval_ms": 1000,
+  "duration_s": 10.0,
+  "windows": [
+    {
+      "width": 968.0,
+      "height": 660.0
+    }
+  ],
+  "samples": [
+    {
+      "elapsed_ms": 0,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 1010,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 2002,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 3010,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 4003,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 5003,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 6010,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 7005,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 8007,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 9010,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    },
+    {
+      "elapsed_ms": 10007,
+      "footprint": 59294896,
+      "gpu": 30556160,
+      "footprint_without_gpu": 28738736,
+      "lifetime_peak": 229016752
+    }
+  ],
+  "summary": {
+    "footprint": {
+      "min": 59294896,
+      "median": 59294896,
+      "max": 59294896,
+      "last": 59294896
+    },
+    "footprint_without_gpu": {
+      "min": 28738736,
+      "median": 28738736,
+      "max": 28738736,
+      "last": 28738736
+    },
+    "gpu": {
+      "min": 30556160,
+      "median": 30556160,
+      "max": 30556160,
+      "last": 30556160
+    },
+    "gpu_categories": {
+      "IOAccelerator": 65536,
+      "IOAccelerator (graphics)": 6651904,
+      "IOSurface": 20856832,
+      "Owned physical footprint (unmapped) (graphics)": 2981888
+    },
+    "lifetime_peak": 229016752
+  }
+}
