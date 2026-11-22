@@ -47,6 +47,7 @@ tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.
 tip-tab-groups = Right-click a tab and choose New Group with Tab to gather tabs under a name and a color. Click the group's pill to fold it, or drag a tab right after it to put it in.
+tip-restore-scrollback = Set restore-windows = "always" in your config's [app], and your windows open again as you left them, each pane showing what it showed when you quit, its commands too.
 tip-hints = Press { $keys } to label the links, paths and hashes on the screen, then type a label to open it; a capital copies it.
 tip-themes = View › Choose Theme… previews each theme as you move through the list.
 tip-themes-folder = Put a .toml or .itermcolors theme in the folder that View › Open Themes Folder shows in the Finder, and Choose Theme… lists it.

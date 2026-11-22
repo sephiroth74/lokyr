@@ -252,9 +252,9 @@ fn a_workspace_kept_opens_again_as_it_was() {
     let mut opened: Vec<(WindowId, Option<Frame>)> = Vec::new();
     for window in &kept.windows {
         let id = window
-            .open(&mut workspace, |directory| {
+            .open(&mut workspace, |kept| {
                 let pane = pane();
-                directories.insert(pane.id(), directory.map(Path::to_path_buf));
+                directories.insert(pane.id(), kept.directory.map(Path::to_path_buf));
                 pane
             })
             .unwrap();

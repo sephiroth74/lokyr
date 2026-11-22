@@ -156,6 +156,18 @@ pub enum Layout {
     },
 }
 
+/// A pane of a kept layout, as its spawn takes it: the directory that its
+/// program worked in, and the name of its scrollback's file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeptPane<'a> {
+    /// The directory that its program worked in; none for the home
+    /// directory.
+    pub directory: Option<&'a Path>,
+    /// The name of its scrollback's file in the state's folder of the
+    /// panes' scrollback, if it kept one.
+    pub scrollback: Option<&'a str>,
+}
+
 /// How a kept split lays its two parts out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -325,19 +337,20 @@ impl Kept {
 impl Window {
     /// Opens the window in `workspace`, of its tabs, the one that it showed
     /// shown, each pane of `spawn`, of the id that the workspace gives it,
-    /// in the directory that it kept; `None` for a window of no tab.
+    /// of the directory and the scrollback that it kept; `None` for a
+    /// window of no tab.
     pub fn open(
         &self,
         workspace: &mut Workspace,
-        mut spawn: impl FnMut(Option<&Path>) -> Pane,
+        mut spawn: impl FnMut(KeptPane<'_>) -> Pane,
     ) -> Option<workspace::WindowId> {
         let (first, rest) = self.tabs.split_first()?;
-        let window = workspace.open_window(spawn(first.layout.first_directory()));
+        let window = workspace.open_window(spawn(first.layout.first_pane()));
         let tab = workspace.window(window)?.active_tab();
         first.lay_out(workspace, tab, &mut spawn);
         let mut tabs = vec![(tab, first.group)];
         for (index, kept) in rest.iter().enumerate() {
-            let pane = spawn(kept.layout.first_directory());
+            let pane = spawn(kept.layout.first_pane());
             if let Some(tab) = workspace.open_tab(window, pane, index + 1) {
                 kept.lay_out(workspace, tab, &mut spawn);
                 tabs.push((tab, kept.group));
@@ -401,7 +414,7 @@ impl Tab {
         &self,
         workspace: &mut Workspace,
         tab: workspace::TabId,
-        spawn: &mut impl FnMut(Option<&Path>) -> Pane,
+        spawn: &mut impl FnMut(KeptPane<'_>) -> Pane,
     ) {
         let Some(first) = workspace.tab(tab).map(workspace::Tab::active_pane) else {
             return;
@@ -476,11 +489,17 @@ impl Layout {
         }
     }
 
-    /// The directory of its first pane, the left or top one.
-    pub fn first_directory(&self) -> Option<&Path> {
+    /// Its first pane, the left or top one.
+    pub fn first_pane(&self) -> KeptPane<'_> {
         match self {
-            Self::Pane { directory, .. } => directory.as_deref().map(Path::new),
-            Self::Split { first, .. } => first.first_directory(),
+            Self::Pane {
+                directory,
+                scrollback,
+            } => KeptPane {
+                directory: directory.as_deref().map(Path::new),
+                scrollback: scrollback.as_deref(),
+            },
+            Self::Split { first, .. } => first.first_pane(),
         }
     }
 
@@ -494,7 +513,7 @@ impl Layout {
         tab: workspace::TabId,
         pane: workspace::PaneId,
         path: &mut Vec<Side>,
-        spawn: &mut impl FnMut(Option<&Path>) -> Pane,
+        spawn: &mut impl FnMut(KeptPane<'_>) -> Pane,
     ) {
         let Self::Split {
             direction,
@@ -509,7 +528,7 @@ impl Layout {
             Direction::Horizontal => workspace::Direction::Horizontal,
             Direction::Vertical => workspace::Direction::Vertical,
         };
-        let new = spawn(second.first_directory());
+        let new = spawn(second.first_pane());
         let Some(new) = workspace.split(pane, direction, new, Side::Second) else {
             return;
         };

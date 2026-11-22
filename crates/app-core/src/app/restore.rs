@@ -5,12 +5,15 @@
 //! within `[scrollback] limit`, which it shows again.
 
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::diagnostics::{About, Diagnostic};
+use lokyr_kernel::l10n::{Arg, Texts};
+use lokyr_kernel::plugins::host::LocalTime;
 use lokyr_kernel::state::scrollback;
 use lokyr_kernel::state::windows::{self, Kept};
-use lokyr_kernel::workspace::{self, Environment, PaneId};
+use lokyr_kernel::workspace::{self, Environment, PaneId, Restored};
 use lokyr_platform_core::{Platform, ScreenRect, WindowAttributes, WindowId, WindowSize};
 
 use super::{App, TITLE, WINDOW_SIZE, spawn};
@@ -127,6 +130,13 @@ impl<B: Backend> App<B> {
         let Some(state) = self.state.clone() else {
             return false;
         };
+        // What the panes showed, which no pane shows again, goes at once.
+        if !self.benched
+            && !(self.restores_windows(platform) && self.config.app.restore_scrollback)
+            && let Err(error) = scrollback::forget(&state)
+        {
+            eprintln!("lokyr: the panes' scrollback kept cannot be forgotten: {error}");
+        }
         if !self.restores_windows(platform) {
             return false;
         }
@@ -207,8 +217,17 @@ impl<B: Backend> App<B> {
         let program = self.program.clone();
         let (environment, texts, config) = (&self.environment, &self.texts, &self.config);
         let wakes = &mut self.pane_wakes;
-        let shown = kept.open(&mut self.workspace, |directory| {
-            let directory = directory.filter(|directory| {
+        // The panes' scrollback kept, as the config shows it again.
+        let state = self
+            .state
+            .as_deref()
+            .filter(|_| config.app.restore_scrollback);
+        let offset = crate::clock::local_time().offset;
+        let shown = kept.open(&mut self.workspace, |pane| {
+            let restored = state
+                .zip(pane.scrollback)
+                .and_then(|(state, name)| restored(state, name, grid.columns, texts, offset));
+            let directory = pane.directory.filter(|directory| {
                 let there = directory.is_dir();
                 if !there {
                     eprintln!(
@@ -220,6 +239,7 @@ impl<B: Backend> App<B> {
             });
             let environment = Environment {
                 directory: directory.map(Path::to_path_buf),
+                restored,
                 ..environment.clone()
             };
             spawn::Start {
@@ -242,6 +262,59 @@ impl<B: Backend> App<B> {
         self.show_title(platform, window);
         Some(window)
     }
+}
+
+/// What the pane of the scrollback's file `name` in `state` shows again, as
+/// it opens: its rows, and the line under them of when they were kept,
+/// across `columns`, of the local time zone of `offset`; none of no such
+/// file, or of one left aside, as the log tells.
+fn restored(
+    state: &Path,
+    name: &str,
+    columns: u16,
+    texts: &Texts,
+    offset: i32,
+) -> Option<Restored> {
+    match scrollback::take(state, name) {
+        Ok(kept) => kept.map(|kept| Restored {
+            rows: kept.rows,
+            line: restored_line(texts, kept.time, offset, columns),
+        }),
+        Err(unread) => {
+            eprintln!(
+                "lokyr: a pane's scrollback does not show again, as its file is left aside: {unread}"
+            );
+            None
+        }
+    }
+}
+
+/// The line under a pane's restored scrollback: `── Restored from <date and
+/// time>`, of `time` in the local time zone of `offset`, as 2026-11-22
+/// 09:31, then a rule to `columns`.
+fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> String {
+    let millis = time.duration_since(UNIX_EPOCH).map_or(0, |since| {
+        u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+    });
+    let at = LocalTime {
+        time: millis,
+        offset,
+    }
+    .civil(millis);
+    let when = format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        at.year, at.month, at.day, at.hour, at.minute
+    );
+    let mut line = format!(
+        "── {} ",
+        texts.text_with("scrollback-restored", &[("when", Arg::Text(&when))])
+    );
+    let shown = line.chars().count();
+    line.extend(std::iter::repeat_n(
+        '─',
+        usize::from(columns).saturating_sub(shown),
+    ));
+    line
 }
 
 /// The frame of `kept` on the screens, if it is one that a window can

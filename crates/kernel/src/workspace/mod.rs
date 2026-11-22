@@ -39,8 +39,8 @@ use agent::{HOOKED, Told};
 pub use groups::Group;
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
-    ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
-    TOLD_PACE, directory_name, is_shell, place_label,
+    ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Restored, Settings,
+    TITLE_DASH, TOLD_PACE, directory_name, is_shell, place_label,
 };
 
 /// The last id that the process gave, to a window, a tab or a pane.

@@ -7,3 +7,6 @@ program-ended = the program ended; a key closes the window
 # The line of a window whose program could not start, with the system's
 # error.
 program-cannot-start = the program cannot start: { $error }
+# The line under a pane's scrollback that opened again with its window,
+# of the date and time that it was kept, as 2026-11-22 09:31.
+scrollback-restored = Restored from { $when }

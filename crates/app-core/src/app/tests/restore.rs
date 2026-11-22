@@ -483,13 +483,79 @@ fn each_pane_s_scrollback_is_kept_at_the_quit_of_its_owner_alone() {
                 assert_eq!(mode(&folder), 0o700);
                 assert_eq!(mode(&folder.join("0.scrollback")), 0o600);
             }
-            let rows = scrollback::take(&state, "0.scrollback").unwrap().unwrap();
-            assert!(String::from_utf8_lossy(&rows).contains("a line kept"));
+            let kept = scrollback::take(&state, "0.scrollback").unwrap().unwrap();
+            assert!(String::from_utf8_lossy(&kept.rows).contains("a line kept"));
         } else {
             // Off, the next quit keeps none, and takes those kept away.
             assert_eq!(name, &None);
             assert!(!scrollback::folder(&state).exists());
         }
     }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// The rows of the screen of the first pane of `app`.
+fn first_rows(app: &App) -> Vec<String> {
+    let pane = app.workspace.panes().next().unwrap();
+    let terminal = pane.terminal().unwrap();
+    (0..terminal.rows()).map(|y| terminal.row_text(y)).collect()
+}
+
+#[test]
+fn a_pane_s_scrollback_shows_again_above_its_new_program() {
+    let base = real_directory("restore-shows");
+    let state = base.join("state");
+    // A run whose pane printed a line, kept as it quits.
+    let kept_run = |config: Config| {
+        let mut fake = Fake::default();
+        let mut app = app(config, shell("printf 'a line kept\\n'; exec sleep 30"))
+            .with_state(Some(state.clone()));
+        fake.start(&mut app);
+        run_until(&mut fake, &mut app, |_, app| {
+            first_rows(app)
+                .iter()
+                .any(|row| row.contains("a line kept"))
+        });
+        app.quit(&mut fake);
+    };
+    kept_run(restoring());
+    // The next start shows it, then the line of when it was kept, then the
+    // new program's output.
+    let mut fake = Fake::default();
+    let mut app = app(restoring(), shell("printf 'the new run\\n'; exec sleep 30"))
+        .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |_, app| {
+        first_rows(app)
+            .iter()
+            .any(|row| row.contains("the new run"))
+    });
+    let rows = first_rows(&app);
+    assert_eq!(rows[0], "a line kept");
+    assert!(rows[1].starts_with("── Restored from 20"), "{rows:?}");
+    assert!(rows[1].ends_with('─'), "{rows:?}");
+    assert_eq!(rows[2], "the new run");
+    // Read once: its file went.
+    assert!(!scrollback::folder(&state).join("0.scrollback").exists());
+    app.quit(&mut fake);
+    // Off as the app starts, what was kept goes at once, and shows not.
+    kept_run(restoring());
+    let mut config = restoring();
+    config.app.restore_scrollback = false;
+    let mut fake = Fake::default();
+    let mut app = app_of(config, shell("printf 'the new run\\n'; exec sleep 30"))
+        .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    assert!(!scrollback::folder(&state).exists());
+    run_until(&mut fake, &mut app, |_, app| {
+        first_rows(app)
+            .iter()
+            .any(|row| row.contains("the new run"))
+    });
+    assert!(
+        !first_rows(&app)
+            .iter()
+            .any(|row| row.contains("a line kept"))
+    );
     let _ = std::fs::remove_dir_all(base);
 }

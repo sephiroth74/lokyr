@@ -12,6 +12,7 @@ use std::fmt;
 use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// The folder of the files, in the state's directory.
 pub const FOLDER: &str = "scrollback";
@@ -23,6 +24,16 @@ const HEADER: &[u8] = b"lokyr-scrollback 1\n";
 /// The most bytes that a file holds, past which it is left aside, as no
 /// pane's scrollback of a limit that the config takes reaches them.
 pub const MOST_BYTES: u64 = 1 << 30;
+
+/// A pane's scrollback kept: the bytes that write its rows again, and when
+/// it was kept.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Kept {
+    /// The bytes that write its rows again.
+    pub rows: Vec<u8>,
+    /// When its file was written, as the app quit.
+    pub time: SystemTime,
+}
 
 /// Why a pane's file is left aside.
 #[derive(Debug)]
@@ -83,22 +94,26 @@ pub fn write(state: &Path, kept: &[(String, Vec<u8>)]) -> io::Result<()> {
     Ok(())
 }
 
-/// The bytes of the file `name` in `state`'s folder, its header taken off,
-/// and the file removed, as a pane reads it once; `None` of no such file.
-pub fn take(state: &Path, name: &str) -> Result<Option<Vec<u8>>, Unread> {
+/// The pane's scrollback of the file `name` in `state`'s folder, its
+/// header taken off, and the file removed, as a pane reads it once; `None`
+/// of no such file.
+pub fn take(state: &Path, name: &str) -> Result<Option<Kept>, Unread> {
     if !is_name(name) {
         return Err(Unread::Invalid(format!("{name} is no pane's file")));
     }
     let path = folder(state).join(name);
     let read = read_bounded(&path);
     let _ = fs::remove_file(&path);
-    let bytes = match read {
-        Ok(bytes) => bytes,
+    let (bytes, time) = match read {
+        Ok(read) => read,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Unread::Invalid(error.to_string())),
     };
     match bytes.strip_prefix(HEADER) {
-        Some(rows) => Ok(Some(rows.to_vec())),
+        Some(rows) => Ok(Some(Kept {
+            rows: rows.to_vec(),
+            time,
+        })),
         None => Err(Unread::Version),
     }
 }
@@ -112,16 +127,19 @@ pub fn forget(state: &Path) -> io::Result<()> {
     }
 }
 
-/// The bytes of the file at `path`, up to [`MOST_BYTES`].
-fn read_bounded(path: &Path) -> io::Result<Vec<u8>> {
-    let size = fs::metadata(path)?.len();
+/// The bytes of the file at `path`, up to [`MOST_BYTES`], and the time
+/// that it was written.
+fn read_bounded(path: &Path) -> io::Result<(Vec<u8>, SystemTime)> {
+    let metadata = fs::metadata(path)?;
+    let size = metadata.len();
     if size > MOST_BYTES {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("it holds {size} bytes, past the {MOST_BYTES} that a pane's may"),
         ));
     }
-    fs::read(path)
+    let time = metadata.modified().unwrap_or_else(|_| SystemTime::now());
+    Ok((fs::read(path)?, time))
 }
 
 /// Makes the folder at `path`, of its owner alone.
@@ -186,9 +204,16 @@ mod tests {
         let state = state("once");
         let kept = vec![(name(0), b"rows".to_vec()), (name(1), b"more".to_vec())];
         write(&state, &kept).unwrap();
-        assert_eq!(take(&state, &name(1)).unwrap(), Some(b"more".to_vec()));
+        let rows = |kept: Option<Kept>| kept.map(|kept| kept.rows);
+        assert_eq!(
+            rows(take(&state, &name(1)).unwrap()),
+            Some(b"more".to_vec())
+        );
         assert_eq!(take(&state, &name(1)).unwrap(), None);
-        assert_eq!(take(&state, &name(0)).unwrap(), Some(b"rows".to_vec()));
+        let kept = take(&state, &name(0)).unwrap().unwrap();
+        assert_eq!(kept.rows, b"rows".to_vec());
+        // Its time, the file's, as the app quit.
+        assert!(kept.time.elapsed().unwrap_or_default().as_secs() < 60);
         let _ = fs::remove_dir_all(&state);
     }
 
@@ -214,7 +239,10 @@ mod tests {
         .unwrap();
         write(&state, &[(name(0), b"new".to_vec())]).unwrap();
         assert_eq!(take(&state, &name(1)).unwrap(), None);
-        assert_eq!(take(&state, &name(0)).unwrap(), Some(b"new".to_vec()));
+        assert_eq!(
+            take(&state, &name(0)).unwrap().map(|kept| kept.rows),
+            Some(b"new".to_vec())
+        );
         // Nothing to keep: the folder goes.
         write(&state, &[]).unwrap();
         assert!(!folder(&state).exists());

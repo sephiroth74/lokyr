@@ -55,6 +55,21 @@ pub struct Options {
     /// The size of a cell in pixels, which CSI 14 t and 16 t report, held
     /// alike from the start, if it is known.
     pub cell_size: Option<(u16, u16)>,
+    /// What the terminal shows before the program's first output, as a
+    /// pane that opens again shows what it showed as the app quit.
+    pub restored: Option<Restored>,
+}
+
+/// What a pane showed as the app quit, which it shows again as it opens,
+/// above its new program's output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Restored {
+    /// The bytes that write its rows again, as [`Terminal::archive`] gave
+    /// them.
+    pub rows: Vec<u8>,
+    /// The line under them that tells when they were kept, across the
+    /// terminal's width, which the terminal dims.
+    pub line: String,
 }
 
 impl Options {
@@ -67,6 +82,7 @@ impl Options {
             sync_timeout: Duration::from_secs(1),
             colors: None,
             cell_size: None,
+            restored: None,
         }
     }
 }
@@ -228,6 +244,9 @@ impl Session {
         }
         if let Some((width, height)) = options.cell_size {
             terminal.set_cell_size(width, height);
+        }
+        if let Some(restored) = &options.restored {
+            restore(&mut terminal, restored);
         }
         let shared = Arc::new(Shared {
             terminal: FairMutex::new(terminal),
@@ -672,6 +691,24 @@ impl Drop for Session {
         // the output, and with it the I/O thread.
         self.shared.queue.close();
     }
+}
+
+/// Writes `restored` in `terminal` before the program's first output: its
+/// rows, read as though a program printed them, then its line, dimmed,
+/// from a row's start, the cursor on the row after. What the reading told,
+/// as the commands' starts and ends, is past, and dropped.
+fn restore(terminal: &mut Terminal, restored: &Restored) {
+    let mut parser = Parser::new();
+    parser.advance(terminal, &restored.rows);
+    let mut line = String::new();
+    if terminal.cursor_cell().0 > 0 {
+        line.push_str("\r\n");
+    }
+    line.push_str("\x1b[0;2m");
+    line.push_str(&restored.line);
+    line.push_str("\x1b[0m\r\n");
+    parser.advance(terminal, line.as_bytes());
+    terminal.take_events();
 }
 
 /// The I/O thread: parses the program's output, a slice at a time, until it
