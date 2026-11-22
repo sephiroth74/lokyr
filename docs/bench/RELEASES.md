@@ -177,6 +177,7 @@ Every session's report, the newest first.
 
 | Date | Report |
 |---|---|
+| 22 November 2026 | [The restored scrollback's cost at the quit and the start](scrollback-F5b-04.md) |
 | 22 November 2026 | [Lokyr against the other terminals, of 1.4.0's code](compare-F5a-78.md) |
 | 21 November 2026 | [1.4.0 against 1.3.0](ab-F5a-78.md) |
 | 18 November 2026 | [1.3.0 against 1.2.0](ab-F5a-17.md) |
