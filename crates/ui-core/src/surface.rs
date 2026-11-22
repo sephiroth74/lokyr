@@ -735,6 +735,7 @@ mod tests {
                 (0..100)
                     .map(|index| ListItem {
                         texts: vec![format!("{index}")],
+                        ..ListItem::default()
                     })
                     .collect(),
             ),

@@ -835,8 +835,29 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         };
         let fields = Fields::new();
         let lists = Lists::new();
+        let divider = self.tokens.get("separator");
         for (index, top) in state.visible(list) {
             let y = frame.y + top * scale;
+            // A line over the row of an item that starts a group, in the
+            // room above its band, as wide as the bands.
+            let starts_group = index
+                .checked_sub(list.first)
+                .and_then(|at| list.items.get(at))
+                .is_some_and(|item| item.divider);
+            if starts_group && let Some(line) = divider {
+                let inset = if list.menu {
+                    (MENU_INSET * scale).round()
+                } else {
+                    0.0
+                };
+                let above = Frame {
+                    x: (frame.x + inset).round(),
+                    y: y.round(),
+                    width: (frame.width - 2.0 * inset).max(0.0).round(),
+                    height: scale.round().max(1.0),
+                };
+                self.push_shape(Shape::filled(rect(above), line));
+            }
             let selected = state.selected() == Some(index);
             let hovered = state.hovered() == Some(index);
             let fill = if selected {
@@ -1647,7 +1668,12 @@ impl<'a, B: FontBackend> Painter<'a, B> {
         } else {
             widget::GAP * scale
         };
-        let across = widget::padding(label, size);
+        // A link shows no box, and no room before its label.
+        let across = if underlined {
+            0.0
+        } else {
+            widget::padding(label, size)
+        };
         let room = (frame.width - 2.0 * across * scale - side - gap).max(0.0);
         let width = (natural * scale).min(room);
         let left = (frame.x + (frame.width - (side + gap + width)) / 2.0).round();
@@ -4651,12 +4677,91 @@ mod tests {
     }
 
     #[test]
+    fn a_list_s_item_that_starts_a_group_has_a_line_above_its_row() {
+        use lokyr_plugin_sdk::view::ListItem;
+        // Four rows of 20 points, the third starting a group.
+        let items = (0..4)
+            .map(|index| ListItem {
+                texts: vec![format!("{index}")],
+                divider: index == 2,
+            })
+            .collect();
+        let mut node = Node::list(Node::text(""), 4, (0, items))
+            .key("rows")
+            .layout(view::Layout {
+                height: view::Length::Points(80.0),
+                ..view::Layout::default()
+            });
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &mut node.kind {
+            list.row_height = Some(20.0);
+            list.menu = true;
+        }
+        let root = Node::container(vec![node]).layout(view::Layout {
+            direction: view::Direction::Column,
+            padding: Edges::all(10.0),
+            ..view::Layout::default()
+        });
+        let mut font = Font::new(Blocks, FontConfig::default(), 1.0).unwrap();
+        let mut tree = Tree::new();
+        let changes = tree.update(&root).unwrap();
+        let mut layout = Layout::new(1.0);
+        layout.update(&tree, &changes);
+        layout.compute(&tree, Some(200.0), None, &mut font);
+        let mut lists = Lists::new();
+        lists.lay_out(&tree, &layout, &mut font);
+        let tokens = &Theme::builtin().dark.tokens;
+        let fields = Fields::new();
+        let items = paint(
+            &tree,
+            &layout,
+            &mut font,
+            tokens,
+            (0.0, 0.0),
+            Shown {
+                dark: true,
+                focused: None,
+                fields: &fields,
+                hovered: None,
+                pressed: None,
+                lists: &lists,
+                motion: None,
+                fills: Fills::All,
+                pictures: &crate::paint::NO_PICTURES,
+                previews: &crate::paint::NO_PREVIEWS,
+            },
+        );
+        let separator = tokens.get("separator").unwrap();
+        let lines: Vec<Rect> = items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Shapes(shapes) => Some(shapes.iter()),
+                _ => None,
+            })
+            .flatten()
+            .filter(|shape| shape.fill == separator)
+            .map(|shape| shape.rect)
+            .collect();
+        // One line, at the third row's top, as wide as a menu's bands,
+        // within the list's edges inset by 6 points.
+        assert_eq!(
+            lines,
+            [Rect {
+                x: 16,
+                y: 50,
+                width: 168,
+                height: 1
+            }]
+        );
+    }
+
+    #[test]
     fn a_list_paints_its_rows_that_show_its_selection_and_its_scroll() {
         use lokyr_plugin_sdk::view::ListItem;
         // 100 rows of 20 points in 100, at a scale of 1: 5 show.
         let items = (0..100)
             .map(|index| ListItem {
                 texts: vec![format!("{index:03}")],
+                ..ListItem::default()
             })
             .collect();
         let mut node = Node::list(Node::text(""), 100, (0, items))
@@ -4855,6 +4960,7 @@ mod tests {
         let items = (0..5)
             .map(|index| ListItem {
                 texts: vec![format!("{index:03}")],
+                ..ListItem::default()
             })
             .collect();
         let mut node = Node::list(Node::text(""), 5, (0, items))
@@ -4952,6 +5058,7 @@ mod tests {
             let items = (0..3)
                 .map(|index| ListItem {
                     texts: vec![format!("row {index}"), "⌘N".to_owned()],
+                    ..ListItem::default()
                 })
                 .collect();
             let mut node = Node::list(row, 3, (0, items))
@@ -5847,6 +5954,7 @@ mod tests {
         let items = (0..3)
             .map(|index| ListItem {
                 texts: vec![format!("{index}")],
+                ..ListItem::default()
             })
             .collect();
         let mut node = Node::list(Node::text(""), 3, (0, items))

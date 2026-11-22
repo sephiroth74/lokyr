@@ -670,6 +670,7 @@ fn palette(open: &Open, texts: &Texts) -> Node {
                 open.commands[at].title.clone(),
                 open.commands[at].keys.clone().unwrap_or_default(),
             ],
+            ..ListItem::default()
         })
         .collect();
     let shown = open.ranked.len().min(MOST_ROWS);

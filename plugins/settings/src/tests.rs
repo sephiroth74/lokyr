@@ -2029,6 +2029,59 @@ fn sidebar_of(tree: &Node) -> Vec<String> {
         .collect()
 }
 
+/// Whether each of the sidebar's items in `tree` has a line above it.
+fn dividers_of(tree: &Node) -> Vec<bool> {
+    let Kind::List(list) = &find_node(tree, SECTIONS).expect("the sidebar's list").kind else {
+        panic!("a list");
+    };
+    list.items.iter().map(|item| item.divider).collect()
+}
+
+#[test]
+fn the_other_plugins_sections_come_after_lokyr_s_own_past_a_line() {
+    let mut settings = settings();
+    let section = |name: &str, plugin: &str| SettingsSection {
+        name: name.to_owned(),
+        plugin: Some(plugin.to_owned()),
+        replaced_by: None,
+        enabled: None,
+        description: String::new(),
+        keys: vec![key(
+            &format!("{name}-key"),
+            None,
+            None,
+            SettingKind::Text {
+                min_length: None,
+                max_length: Some(256),
+                examples: Vec::new(),
+            },
+        )],
+    };
+    // Another's plugin before one of Lokyr's own in the settings' order.
+    settings.sections.push(section("zeta", "acme/zeta"));
+    settings.sections.push(section("blocks", "lokyr/blocks"));
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    let titles = sidebar_of(&tree);
+    let at = |title: &str| titles.iter().position(|shown| shown == title).unwrap();
+    assert!(at("blocks") < at("zeta"), "{titles:?}");
+    assert_eq!(at("zeta"), titles.len() - 1);
+    let dividers = dividers_of(&tree);
+    assert_eq!(dividers.iter().filter(|&&line| line).count(), 1);
+    assert!(dividers[at("zeta")]);
+    // A search that shows another's sections alone draws no line.
+    host.ui_event(&mut plugin, &search("zeta-key")).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(sidebar_of(&tree), ["zeta"]);
+    assert_eq!(dividers_of(&tree), [false]);
+}
+
 /// The search's text `text`, as it is typed.
 fn search(text: &str) -> UiEvent {
     on(
@@ -3119,6 +3172,11 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     assert_eq!(
         sidebar_of(&tree),
         ["font", "window", "theme", "links", "tabs", "window", "font"]
+    );
+    // A line divides Lokyr's own sections from another plugin's.
+    assert_eq!(
+        dividers_of(&tree),
+        [false, false, false, false, false, false, true]
     );
     host.ui_event(&mut plugin, &choose(3)).unwrap();
     let _ = written(&mut host);

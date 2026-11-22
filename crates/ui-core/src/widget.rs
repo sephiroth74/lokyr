@@ -283,6 +283,19 @@ pub fn size(
     (glyph.0 + gap + text.0 + 2.0 * across(size), tall)
 }
 
+/// The size of a link of `label` and `icon`, as a button's of `size` but of
+/// no room before and after them, as it shows no box, so that its text
+/// lines up with the text above and below it.
+pub fn link_size(
+    label: &str,
+    icon: &str,
+    sizes: ((f32, f32), (f32, f32)),
+    size: ControlSize,
+) -> (f32, f32) {
+    let (width, height) = self::size(label, icon, sizes, size);
+    (width - 2.0 * padding(label, size), height)
+}
+
 /// The room inside the edges of a button of `label` and of `size`, in
 /// points, before and after its content: none past its icon's square of an
 /// icon alone, which sits in its middle.
@@ -435,6 +448,12 @@ mod tests {
         assert_eq!(size("Replace", "", small, ControlSize::Small), (76.0, 20.0));
         assert_eq!(size("Replace", "", small, ControlSize::Mini), (72.0, 16.0));
         assert_eq!(size("", "add", small, ControlSize::Mini), (16.0, 16.0));
+        // A link, of no box, of no room before and after its label.
+        assert_eq!(
+            link_size("More info", "", small, ControlSize::Small),
+            (60.0, 20.0)
+        );
+        assert_eq!(link_size("", "add", small, ControlSize::Mini), (16.0, 16.0));
     }
 
     /// A button, a toggle that is on, a disabled one, and a text, of keys.

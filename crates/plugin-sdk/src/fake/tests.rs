@@ -741,9 +741,11 @@ fn a_render_s_tree_stays_and_its_snapshot_tells_its_content() {
                 vec![
                     ListItem {
                         texts: vec!["ten".to_owned()],
+                        ..ListItem::default()
                     },
                     ListItem {
                         texts: vec!["eleven".to_owned(), "11".to_owned()],
+                        ..ListItem::default()
                     },
                 ],
             ),

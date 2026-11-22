@@ -1140,6 +1140,7 @@ impl Gallery {
                     format!("Row {index}"),
                     format!("{:08x}", (index as u64).wrapping_mul(2_654_435_761) as u32),
                 ],
+                ..ListItem::default()
             })
             .collect();
         let mut list = Node::list(row, ROWS, (first, items))

@@ -7,7 +7,7 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
 ## The page
 
 - **Lokyr › Open Settings Window** opens the settings window at the page, its first; the window's tab Settings shows it too.
-- **Its sidebar** lists the config's sections, as Font, Window or Theme, each of an icon of its own, then the sections of the plugins that have settings, as Tabs or Find; a click or the arrows choose one, and the page opens at the first.
+- **Its sidebar** lists the config's sections, as Font, Window or Theme, each of an icon of its own, then the sections of Lokyr's own plugins that have settings, as Tabs or Find, then, after a line, those of the plugins that you installed · not released yet; a click or the arrows choose one, and the page opens at the first.
 - **A search that finds nothing** says so in the middle of the page, of words to try · Since 1.4.
 - **Its search field**, at the sidebar's top, which has the keyboard as the window opens, shows the sections, and in each the keys, that hold every word typed, whatever its case, in a key's name, in what it does or in its section's title; the bindings of keys are the Keys page's, of its own filter. The section chosen stays while it holds them, else the first that does; the button at the field's end empties it, as Escape does while the field holds text · Since 1.4.
 - **The keys** of a section show in a group box, as System Settings groups its rows: a rounded fill, a hairline between each two keys · Since 1.4.
