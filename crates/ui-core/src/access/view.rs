@@ -769,6 +769,7 @@ mod tests {
         let items = (first..first + 10)
             .map(|index| ListItem {
                 texts: vec![format!("row {index}"), "of the list".to_owned()],
+                ..ListItem::default()
             })
             .collect();
         let mut list = ViewNode::list(

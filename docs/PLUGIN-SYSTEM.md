@@ -472,7 +472,7 @@ type View = Node
 -- A list's item: the texts that its row's template shows, by their places
 -- in it, its texts' and its icons' in the tree's order; its index tells it
 -- apart.
-type ListItem = { texts: { string } }
+type ListItem = { texts: { string }, divider: boolean? } -- `divider`: a line above its row, which divides the items before it from it, as a sidebar's groups · not released yet
 
 -- A row's text, by its number, without the spaces that end it, but where it wraps into the next.
 type Line = { row: number, text: string, wrapped: boolean }

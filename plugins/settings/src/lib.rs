@@ -358,7 +358,8 @@ const OWN_PLUGINS: &str = "lokyr/";
 
 /// The parts of the page, as its sidebar lists them, the sections of
 /// `settings`: the app's, each with Lokyr's own plugins' of its name whose
-/// keys none of its own has, then the other plugins'.
+/// keys none of its own has, then Lokyr's own plugins' other sections,
+/// then the other plugins', which the sidebar divides from them.
 fn parts(settings: &Settings) -> Vec<Part<'_>> {
     let (app, plugins): (Vec<&SettingsSection>, Vec<&SettingsSection>) = settings
         .sections
@@ -392,17 +393,27 @@ fn parts(settings: &Settings) -> Vec<Part<'_>> {
             Part { section, joined }
         })
         .collect();
-    parts.extend(
-        plugins
-            .into_iter()
-            .zip(taken)
-            .filter(|(_, taken)| !taken)
-            .map(|(section, _)| Part {
-                section,
-                joined: Vec::new(),
-            }),
-    );
+    let mut rest: Vec<&SettingsSection> = plugins
+        .into_iter()
+        .zip(taken)
+        .filter(|(_, taken)| !taken)
+        .map(|(section, _)| section)
+        .collect();
+    // Lokyr's own first, in their order, then the others.
+    rest.sort_by_key(|section| !is_own(section));
+    parts.extend(rest.into_iter().map(|section| Part {
+        section,
+        joined: Vec::new(),
+    }));
     parts
+}
+
+/// Whether `section` is the app's or one of Lokyr's own plugins'.
+fn is_own(section: &SettingsSection) -> bool {
+    section
+        .plugin
+        .as_deref()
+        .is_none_or(|name| name.starts_with(OWN_PLUGINS))
 }
 
 /// The page's view.
@@ -2126,11 +2137,22 @@ fn sidebar(cx: &mut Cx<'_>, settings: &Settings, shown: &[usize]) -> Node {
         ..Layout::default()
     });
     let parts = parts(settings);
-    let items: Vec<ListItem> = shown
+    let shown_parts: Vec<&Part<'_>> = shown.iter().filter_map(|&at| parts.get(at)).collect();
+    // A line between Lokyr's own sections and the other plugins', over the
+    // first of those, where one of Lokyr's shows before it.
+    let first_other = shown_parts
         .iter()
-        .filter_map(|&at| parts.get(at))
-        .map(|part| ListItem {
-            texts: vec![icon_of(part.section).to_owned(), title(cx, part.section)],
+        .position(|part| !is_own(part.section))
+        .filter(|&at| at > 0);
+    let items: Vec<ListItem> = shown_parts
+        .iter()
+        .enumerate()
+        .map(|(at, part)| {
+            let divider = first_other == Some(at);
+            ListItem {
+                texts: vec![icon_of(part.section).to_owned(), title(cx, part.section)],
+                divider,
+            }
         })
         .collect();
     let mut list = Node::list(row, items.len(), (0, items))

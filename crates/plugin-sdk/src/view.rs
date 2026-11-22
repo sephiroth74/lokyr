@@ -489,6 +489,10 @@ pub struct List {
 pub struct ListItem {
     /// Its texts.
     pub texts: Vec<String>,
+    /// Whether a line above its row divides the items before it from it
+    /// and those after, as a sidebar's groups.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub divider: bool,
 }
 
 /// A text field's own properties.
@@ -2271,6 +2275,7 @@ mod tests {
                 20,
                 vec![ListItem {
                     texts: vec!["row 20".to_owned()],
+                    ..ListItem::default()
                 }],
             ),
         )

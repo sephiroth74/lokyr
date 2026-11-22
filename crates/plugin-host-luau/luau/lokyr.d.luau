@@ -700,6 +700,7 @@ export type LineText = {
 
 export type ListItem = {
     texts: { string }?,
+    divider: boolean?,
 }
 
 export type LocalTime = {
