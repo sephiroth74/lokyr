@@ -119,7 +119,10 @@ def run(argv, **kwargs):
 # The setup, and the user's settings back.
 
 
-def setup(configs):
+def setup(configs, names=None):
+    """The terminals' configs, iTerm2's profile, and Terminal.app's where
+    `names`, the terminals measured, take it or are none, as its profile
+    quits it and asks to control it."""
     if os.path.exists(XDG):
         shutil.rmtree(XDG)
     for name in ["lokyr", "ghostty", "alacritty", "kitty", "wezterm"]:
@@ -140,7 +143,8 @@ def setup(configs):
     os.makedirs(os.path.dirname(ITERM_DYNAMIC), exist_ok=True)
     shutil.copy(os.path.join(configs, "iterm2-profile.json"), ITERM_DYNAMIC)
     run(["defaults", "write", "com.googlecode.iterm2", "Default Bookmark Guid", ITERM_GUID])
-    setup_terminal()
+    if names is None or "terminal" in names:
+        setup_terminal()
 
 
 def setup_terminal():
@@ -648,7 +652,7 @@ def main():
     chosen = [t for t in TERMINALS if names is None or t[0] in names]
     os.makedirs(out, exist_ok=True)
     if measure == "setup":
-        setup(configs)
+        setup(configs, names)
         return
     refuse_running(chosen)
     {

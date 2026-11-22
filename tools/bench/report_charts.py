@@ -70,17 +70,24 @@ def median(values):
 # The comparison: every terminal of its versions of then, in one session,
 # the latency at 60 Hz by Typometer too; at 120 Hz, the first comparison's,
 # of 1 November 2026, of the versions of then, not measured again yet.
-COMPARE = "compare-F3-268"
-COMPARE_DATE = "13 November 2026"
+COMPARE = "compare-F5a-78"
+COMPARE_DATE = "21 and 22 November 2026"
 FIRST = "compare-F2-134"
 FIRST_TYPOMETER_DATE = "1 November 2026"
+
+
+def terminals_of(root):
+    """The terminals that the comparison of `root` measured, of their
+    startup's results, in `TERMINALS`' order."""
+    return [(key, name) for key, name in TERMINALS
+            if os.path.exists(os.path.join(BENCH, root, "startup", f"startup-{key}-1.json"))]
 
 
 def compare_figures(root=COMPARE):
     """Each terminal's figures in the comparison of `root`, from its raw
     results."""
     figures = {}
-    for key, _ in TERMINALS:
+    for key, _ in terminals_of(root):
         runs = [run["from_start_ms"] for round_ in (1, 2)
                 for run in load(f"{root}/startup/startup-{key}-{round_}.json")["runs"]]
         idle = load(f"{root}/idle/idle-{key}.json")
@@ -139,8 +146,9 @@ def compare():
     subtitle tells. The README shows the charts one under another, of one
     height, the tallest's."""
     figures = compare_figures()
+    measured = terminals_of(COMPARE)
     rows = lambda measure: [(name, figures[key][measure], key == "lokyr")
-                            for key, name in TERMINALS]
+                            for key, name in measured]
     of = f"; measured on {COMPARE_DATE}"
     bars = [
         ("startup", "Startup", "From the process's start to its first window, median of 10 runs; "
@@ -158,7 +166,7 @@ def compare():
     latency_of = lambda cases, rate: [
         (name, statistics.median(cases[rate][key]), nearest_rank(cases[rate][key], 99),
          key == "lokyr")
-        for key, name in TERMINALS if key in cases[rate]]
+        for key, name in measured if key in cases[rate]]
     latency = [
         ("60", "Latency at 60 Hz",
          "A key to its echo on screen, in ms, of 200 keys of Typometer's, the window alone; "

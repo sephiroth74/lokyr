@@ -63,16 +63,16 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 
 ## Performance
 
-Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Every terminal was measured of its version of 13 November 2026, in one session, beside Lokyr of 1.0.0's code, as [the full report](docs/bench/compare-F3-268.md) tells, with every measure, its method and its limits; the latency at 120 Hz, by Typometer, is of 1 November, of the versions of then ([its report](docs/bench/compare-F2-134.md)). Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
+Lokyr against Ghostty, Alacritty, kitty and iTerm2, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Every terminal was measured of its version of 21 November 2026, in one session, beside Lokyr of 1.4.0's code, as [the full report](docs/bench/compare-F5a-78.md) tells, with every measure, its method and its limits; the latency at 120 Hz, by Typometer, is of 1 November, of the versions of then ([its report](docs/bench/compare-F2-134.md)). Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
 
 <p align="center">
-  <img src="docs/bench/compare-F3-268/charts/startup.svg" alt="Startup to the first window: Lokyr 238 ms, Alacritty 274, Terminal.app 283, Ghostty 296, WezTerm 355, kitty 628, iTerm2 814" width="680">
-  <img src="docs/bench/compare-F3-268/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 27.8 MB, Alacritty 31.1, Terminal.app 34.2, WezTerm 36.6, Ghostty 40.3, kitty 99.3, iTerm2 147.9" width="680">
-  <img src="docs/bench/compare-F3-268/charts/wakeups.svg" alt="Wakeups at rest a second: Lokyr 0.35, Alacritty 0.37, Terminal.app 0.37, WezTerm 1.38, iTerm2 7.62, Ghostty 14.72, kitty 21.05" width="680">
-  <img src="docs/bench/compare-F3-268/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 328 MiB/s, Lokyr 318, Alacritty 174, kitty 145, iTerm2 60, Terminal.app 44, WezTerm 43" width="680">
-  <img src="docs/bench/compare-F3-268/charts/energy.svg" alt="The CPU's energy to show cat of 1 GiB: Lokyr 16.9 J, Alacritty 40.2, Ghostty 40.8, kitty 42.5, Terminal.app 116.7, WezTerm 193.6, iTerm2 201.4" width="680">
-  <img src="docs/bench/compare-F3-268/charts/latency-60hz.svg" alt="Latency at 60 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 20.3 and 46.0 ms, kitty 19.7 and 47.3, Lokyr 18.5 and 48.2, iTerm2 32.2 and 48.7, Terminal.app 18.4 and 48.9, Ghostty 19.8 and 49.5, WezTerm 63.3 and 75.7" width="680">
-  <img src="docs/bench/compare-F3-268/charts/latency-120hz.svg" alt="Latency at 120 Hz on 1 November 2026, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.6 and 25.8 ms, kitty 21.8 and 29.6, Lokyr 21.2 and 32.2, iTerm2 21.3 and 45.0, Ghostty 24.8 and 47.7" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/startup.svg" alt="Startup to the first window: Lokyr 253 ms, Alacritty 271, Ghostty 304, iTerm2 598, kitty 644" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 28.6 MB, Alacritty 31.3, Ghostty 39.6, kitty 99.6, iTerm2 144.0" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/wakeups.svg" alt="Wakeups at rest a second: Alacritty 0.33, Lokyr 0.35, iTerm2 7.48, Ghostty 15.22, kitty 20.07" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 306 MiB/s, Lokyr 294, Alacritty 170, kitty 140, iTerm2 100" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/energy.svg" alt="The CPU's energy to show cat of 1 GiB: Lokyr 16.8 J, kitty 42.2, Ghostty 43.5, Alacritty 43.7, iTerm2 201.6" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/latency-60hz.svg" alt="Latency at 60 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Lokyr 22.4 and 29.5 ms, kitty 23.9 and 33.1, Alacritty 23.6 and 40.3, Ghostty 24.2 and 44.0, iTerm2 25.3 and 50.8" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/latency-120hz.svg" alt="Latency at 120 Hz on 1 November 2026, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.6 and 25.8 ms, kitty 21.8 and 29.6, Lokyr 21.2 and 32.2, iTerm2 21.3 and 45.0, Ghostty 24.8 and 47.7" width="680">
 </p>
 
 ## What works today

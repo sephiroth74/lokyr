@@ -17,7 +17,7 @@ import report_charts
 
 NAME = sys.argv[1] if len(sys.argv) > 1 else report_charts.COMPARE
 ROOT = os.path.join(report_charts.BENCH, NAME)
-TERMINALS = report_charts.TERMINALS
+TERMINALS = report_charts.terminals_of(NAME)
 KITTEN_TESTS = ["Only ASCII chars", "Unicode chars", "Unique multi-codepoint Unicode cells",
                 "CSI codes with few chars", "Long escape codes", "Images"]
 UNICODE = ["unicode_wide_results", "emoji_zwj_results", "emoji_vs16_results",

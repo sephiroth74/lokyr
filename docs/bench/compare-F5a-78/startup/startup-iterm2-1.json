@@ -1,0 +1,49 @@
+{
+  "app": "/Applications/iTerm.app",
+  "executable": "/Applications/iTerm.app/Contents/MacOS/iTerm2",
+  "warmup": 1,
+  "runs": [
+    {
+      "pid": 60998,
+      "from_start_ms": 608.2,
+      "from_request_ms": 645.1
+    },
+    {
+      "pid": 61009,
+      "from_start_ms": 573.3,
+      "from_request_ms": 591.3
+    },
+    {
+      "pid": 61025,
+      "from_start_ms": 591.5,
+      "from_request_ms": 629.7
+    },
+    {
+      "pid": 61035,
+      "from_start_ms": 603.1,
+      "from_request_ms": 638.8
+    },
+    {
+      "pid": 61053,
+      "from_start_ms": 596.1,
+      "from_request_ms": 623.4
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 573.3,
+      "p10": 573.3,
+      "median": 596.1,
+      "p90": 608.2,
+      "max": 608.2
+    },
+    "from_request_ms": {
+      "min": 591.3,
+      "p10": 591.3,
+      "median": 629.7,
+      "p90": 645.1,
+      "max": 645.1
+    },
+    "spread": 0.059
+  }
+}
