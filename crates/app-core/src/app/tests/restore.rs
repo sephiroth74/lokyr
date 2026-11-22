@@ -571,15 +571,13 @@ fn a_pane_s_scrollback_shows_again_above_its_new_program() {
 
 /// The bytes of the files in `folder`, none of a folder that is not there.
 fn folder_bytes(folder: &std::path::Path) -> u64 {
-    std::fs::read_dir(folder)
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter_map(|entry| entry.metadata().ok())
-                .map(|metadata| metadata.len())
-                .sum()
-        })
-        .unwrap_or(0)
+    std::fs::read_dir(folder).map_or(0, |entries| {
+        entries
+            .flatten()
+            .filter_map(|entry| entry.metadata().ok())
+            .map(|metadata| metadata.len())
+            .sum()
+    })
 }
 
 /// The panes' scrollback's cost at the quit and at the next start, of 1,
