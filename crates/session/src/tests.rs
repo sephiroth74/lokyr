@@ -925,30 +925,39 @@ fn a_restored_scrollback_shows_above_the_program_s_output_of_no_event() {
         &mut kept,
         b"\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\make\x1b]133;C;cmdline_url=make\x1b\\\r\nbuilt\r\n\x1b]133;D;0\x1b\\",
     );
-    let mut options = sh("sleep 0.3; printf 'the new shell'; exec sleep 30");
+    // A program that writes at once, whose output waits for the rows.
+    let mut options = sh("printf 'the new shell'; exec sleep 30");
     options.pty.size = Size {
         cols: 40,
         rows: 10,
         ..options.pty.size
     };
-    options.restored = Some(Restored {
-        rows: kept.archive(usize::MAX),
-        line: "── Restored ──".to_owned(),
-    });
-    let session = Session::spawn(&options, || {}).unwrap();
-    {
-        let mut terminal = session.lock();
-        // Read before the program wrote anything: the rows, then the line,
-        // the cursor on the row after, and nothing told of the command.
-        assert_eq!(terminal.row_text(0), "$ make");
-        assert_eq!(terminal.row_text(1), "built");
-        assert_eq!(terminal.row_text(2), "── Restored ──");
-        assert_eq!(terminal.cursor_cell().0, 0);
-        assert!(terminal.take_events().is_empty());
-        assert_eq!(terminal.commands().len(), 1);
-        assert_eq!(terminal.commands()[0].status, Some(0));
-    }
+    options.restored = Some(Restored::of(
+        kept.archive(usize::MAX),
+        "── Restored ──".to_owned(),
+    ));
+    let woken = Arc::new(AtomicBool::new(false));
+    let session = {
+        let woken = Arc::clone(&woken);
+        Session::spawn(&options, move || woken.store(true, Ordering::SeqCst)).unwrap()
+    };
+    // Read on the output's thread: the rows, then the line, then what the
+    // program wrote, on the row after.
     wait_for(&session, "the program's output", |terminal| {
         terminal.row_text(3) == "the new shell"
     });
+    let mut terminal = session.lock();
+    assert_eq!(terminal.row_text(0), "$ make");
+    assert_eq!(terminal.row_text(1), "built");
+    assert_eq!(terminal.row_text(2), "── Restored ──");
+    // Nothing told of the command that the rows hold, which is past.
+    assert!(
+        !terminal
+            .take_events()
+            .iter()
+            .any(|event| matches!(event, terminal::Event::CommandEnded { .. }))
+    );
+    assert_eq!(terminal.commands().len(), 1);
+    assert_eq!(terminal.commands()[0].status, Some(0));
+    assert!(woken.load(Ordering::SeqCst));
 }

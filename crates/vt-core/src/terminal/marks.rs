@@ -183,6 +183,12 @@ impl Terminal {
         self.block_spacing = on;
     }
 
+    /// Whether the terminal puts a blank row before each prompt that
+    /// follows a command, as [`Terminal::set_block_spacing`] asks.
+    pub fn block_spacing(&self) -> bool {
+        self.block_spacing
+    }
+
     /// Whether the prompt's mark that comes now has a blank row before it,
     /// as [`Terminal::set_block_spacing`] tells.
     fn spaces_prompt(&self) -> bool {

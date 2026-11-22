@@ -118,6 +118,17 @@ pub fn take(state: &Path, name: &str) -> Result<Option<Kept>, Unread> {
     }
 }
 
+/// When the file `name` in `state`'s folder was written, as the app quit,
+/// without reading it; `None` of no such file, or of a name that names
+/// none.
+pub fn time(state: &Path, name: &str) -> Option<SystemTime> {
+    if !is_name(name) {
+        return None;
+    }
+    let metadata = fs::metadata(folder(state).join(name)).ok()?;
+    Some(metadata.modified().unwrap_or_else(|_| SystemTime::now()))
+}
+
 /// Forgets the panes' scrollback that `state` keeps: every file of its
 /// folder, and the folder.
 pub fn forget(state: &Path) -> io::Result<()> {
@@ -204,6 +215,8 @@ mod tests {
         let state = state("once");
         let kept = vec![(name(0), b"rows".to_vec()), (name(1), b"more".to_vec())];
         write(&state, &kept).unwrap();
+        assert!(time(&state, &name(1)).is_some());
+        assert_eq!(time(&state, "../windows.json"), None);
         let rows = |kept: Option<Kept>| kept.map(|kept| kept.rows);
         assert_eq!(
             rows(take(&state, &name(1)).unwrap()),
@@ -214,6 +227,7 @@ mod tests {
         assert_eq!(kept.rows, b"rows".to_vec());
         // Its time, the file's, as the app quit.
         assert!(kept.time.elapsed().unwrap_or_default().as_secs() < 60);
+        assert_eq!(time(&state, &name(0)), None);
         let _ = fs::remove_dir_all(&state);
     }
 

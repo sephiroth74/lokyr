@@ -585,7 +585,8 @@ fn folder_bytes(folder: &std::path::Path) -> u64 {
 /// default limit and budget, `restore-scrollback` off and on, as
 /// `cargo test --release -p lokyr-app-core --lib scrollback_costs --
 /// --ignored --nocapture --test-threads 1` prints them: the windows' keep,
-/// the next start's, and the files' bytes.
+/// the next start's, the time until every pane shows its rows again, read
+/// on the panes' own threads, and the files' bytes.
 #[test]
 #[ignore = "a measure, of a release build"]
 fn scrollback_costs() {
@@ -599,7 +600,7 @@ fn scrollback_costs() {
             "text ".repeat(14)
         )
     };
-    println!("panes\tfill\tkept\tquit ms\tstart ms\tfiles MB");
+    println!("panes\tfill\tkept\tquit ms\tstart ms\trows ms\tfiles MB");
     for panes in [1_usize, 10, 50] {
         for (fill, lines) in [("empty", 0_usize), ("half", 6_000), ("full", 20_000)] {
             for keep in [false, true] {
@@ -637,8 +638,25 @@ fn scrollback_costs() {
                 fake.start(&mut app);
                 let start = started.elapsed();
                 assert_eq!(app.workspace.panes().count(), panes);
+                // Each pane's rows, then the line of when they were kept.
+                let shown = |app: &App| {
+                    app.workspace.panes().all(|pane| {
+                        let terminal = pane.terminal().unwrap();
+                        (0..terminal.rows())
+                            .any(|y| terminal.row_text(y).starts_with("── Restored from"))
+                    })
+                };
+                let rows = if keep && lines > 0 {
+                    while !shown(&app) {
+                        assert!(started.elapsed().as_secs() < 60, "the rows never came");
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    format!("{:.1}", started.elapsed().as_secs_f64() * 1000.0)
+                } else {
+                    "-".to_owned()
+                };
                 println!(
-                    "{panes}\t{fill}\t{keep}\t{:.1}\t{:.1}\t{:.2}",
+                    "{panes}\t{fill}\t{keep}\t{:.1}\t{:.1}\t{rows}\t{:.2}",
                     quit.as_secs_f64() * 1000.0,
                     start.as_secs_f64() * 1000.0,
                     files as f64 / 1e6

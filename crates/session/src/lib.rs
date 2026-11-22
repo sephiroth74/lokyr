@@ -9,6 +9,7 @@
 mod lock;
 mod queue;
 
+use std::fmt;
 use std::io::{self, Write};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -62,15 +63,44 @@ pub struct Options {
 
 /// What a pane showed as the app quit, which it shows again as it opens,
 /// above its new program's output.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub struct Restored {
-    /// The bytes that write its rows again, as [`Terminal::archive`] gave
-    /// them.
-    pub rows: Vec<u8>,
+    /// Gives the bytes that write its rows again, as [`Terminal::archive`]
+    /// gave them, on the output's thread, as reading them, as of a file,
+    /// may take a while; none of rows that cannot be read, which shows
+    /// nothing, not even the line.
+    pub rows: Arc<dyn Fn() -> Option<Vec<u8>> + Send + Sync>,
     /// The line under them that tells when they were kept, across the
     /// terminal's width, which the terminal dims.
     pub line: String,
 }
+
+impl Restored {
+    /// What shows `rows` again, already read, then `line`.
+    pub fn of(rows: Vec<u8>, line: String) -> Self {
+        Self {
+            rows: Arc::new(move || Some(rows.clone())),
+            line,
+        }
+    }
+}
+
+impl fmt::Debug for Restored {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Restored")
+            .field("line", &self.line)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for Restored {
+    /// The same rows, of the same reader, and the same line.
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.rows, &other.rows) && self.line == other.line
+    }
+}
+
+impl Eq for Restored {}
 
 impl Options {
     /// Options for `pty`, with the terminal's defaults and a second for
@@ -245,9 +275,6 @@ impl Session {
         if let Some((width, height)) = options.cell_size {
             terminal.set_cell_size(width, height);
         }
-        if let Some(restored) = &options.restored {
-            restore(&mut terminal, restored);
-        }
         let shared = Arc::new(Shared {
             terminal: FairMutex::new(terminal),
             queue: Queue::default(),
@@ -264,11 +291,12 @@ impl Session {
             printed_woken: AtomicBool::new(false),
         });
         let sync_timeout = options.sync_timeout;
+        let restored = options.restored.clone();
         {
             let shared = Arc::clone(&shared);
             thread::Builder::new()
                 .name("session-io".into())
-                .spawn(move || read_output(&shared, output, sync_timeout))
+                .spawn(move || read_output(&shared, output, sync_timeout, restored.as_ref()))
                 .map_err(Error::Threads)?;
         }
         {
@@ -693,29 +721,55 @@ impl Drop for Session {
     }
 }
 
-/// Writes `restored` in `terminal` before the program's first output: its
-/// rows, read as though a program printed them, then its line, dimmed,
-/// from a row's start, the cursor on the row after. What the reading told,
-/// as the commands' starts and ends, is past, and dropped.
-fn restore(terminal: &mut Terminal, restored: &Restored) {
-    let mut parser = Parser::new();
-    parser.advance(terminal, &restored.rows);
+/// Reads `restored`'s rows and writes them in the terminal before the
+/// program's first output, a slice at a time under the lock, as output is, so that the main thread
+/// waits for a slice at most, its frames showing the rows as they come:
+/// its rows, read as though a program printed them, then its line, dimmed,
+/// from a row's start, the cursor on the row after. The archive's prompts
+/// tell their own blank rows, so that each slice reads of the blocks'
+/// spacing off, which the main thread may turn on meanwhile. What the
+/// reading told, as the commands' starts and ends, is past, and dropped.
+fn replay(shared: &Shared, parser: &mut Parser, restored: &Restored) {
+    let Some(rows) = (restored.rows)() else {
+        return;
+    };
+    let read = |parser: &mut Parser, bytes: &[u8]| {
+        let mut terminal = shared.terminal.lock_in_turn();
+        let spacing = terminal.block_spacing();
+        terminal.set_block_spacing(false);
+        parser.advance(&mut *terminal, bytes);
+        terminal.set_block_spacing(spacing);
+        terminal.take_events();
+        terminal.take_replies();
+    };
+    for part in rows.chunks(SLICE) {
+        read(parser, part);
+    }
+    let after_text = shared.terminal.lock_in_turn().cursor_cell().0 > 0;
     let mut line = String::new();
-    if terminal.cursor_cell().0 > 0 {
+    if after_text {
         line.push_str("\r\n");
     }
     line.push_str("\x1b[0;2m");
     line.push_str(&restored.line);
     line.push_str("\x1b[0m\r\n");
-    parser.advance(terminal, line.as_bytes());
-    terminal.take_events();
+    read(parser, line.as_bytes());
+    shared.changed(false);
 }
 
-/// The I/O thread: parses the program's output, a slice at a time, until it
-/// ends.
-fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
+fn read_output(
+    shared: &Shared,
+    mut output: ReadAhead,
+    sync_timeout: Duration,
+    restored: Option<&Restored>,
+) {
     let _ending = Ending(shared);
     let mut parser = Parser::new();
+    // What the pane showed as the app quit, before what its program
+    // writes, which waits in the reader meanwhile.
+    if let Some(restored) = restored {
+        replay(shared, &mut parser, restored);
+    }
     // The synchronized update under way, by its number, and its deadline.
     let mut update = 0;
     let mut deadline = None;

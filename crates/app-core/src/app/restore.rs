@@ -5,6 +5,7 @@
 //! within `[scrollback] limit`, which it shows again.
 
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use lokyr_kernel::commands::Code;
@@ -265,9 +266,11 @@ impl<B: Backend> App<B> {
 }
 
 /// What the pane of the scrollback's file `name` in `state` shows again, as
-/// it opens: its rows, and the line under them of when they were kept,
-/// across `columns`, of the local time zone of `offset`; none of no such
-/// file, or of one left aside, as the log tells.
+/// it opens: its rows, which the pane's own thread reads, as reading a
+/// file of a full pane's takes milliseconds that the first frame need not
+/// wait for, and the line under them of when they were kept, across
+/// `columns`, of the local time zone of `offset`; none of no such file. A
+/// file left aside shows nothing, as the log tells.
 fn restored(
     state: &Path,
     name: &str,
@@ -275,18 +278,20 @@ fn restored(
     texts: &Texts,
     offset: i32,
 ) -> Option<Restored> {
-    match scrollback::take(state, name) {
-        Ok(kept) => kept.map(|kept| Restored {
-            rows: kept.rows,
-            line: restored_line(texts, kept.time, offset, columns),
+    let time = scrollback::time(state, name)?;
+    let (state, name) = (state.to_path_buf(), name.to_owned());
+    Some(Restored {
+        rows: Arc::new(move || match scrollback::take(&state, &name) {
+            Ok(kept) => kept.map(|kept| kept.rows),
+            Err(unread) => {
+                eprintln!(
+                    "lokyr: a pane's scrollback does not show again, as its file is left aside: {unread}"
+                );
+                None
+            }
         }),
-        Err(unread) => {
-            eprintln!(
-                "lokyr: a pane's scrollback does not show again, as its file is left aside: {unread}"
-            );
-            None
-        }
-    }
+        line: restored_line(texts, time, offset, columns),
+    })
 }
 
 /// The line under a pane's restored scrollback: `── Restored from <date and
