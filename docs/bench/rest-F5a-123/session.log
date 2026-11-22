@@ -1,0 +1,153 @@
+06:22:27 v140 of f25e3ffb
+06:22:28 v130: 1.3.0 (202611181532), stapled
+06:22:28 tag130: 1.3.0 (202611181532), not stapled
+06:22:28 v140: 1.3.0 (202611220022), not stapled
+06:26:53 session
+--- start
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	83%; charging; 0:56 remaining present: true
+ 6:26  up 9 days, 19:04, 311 users, load averages: 2.47 3.97 3.54
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+52756  top              12.6
+49509  wdavdaemon_unpri 11.6
+634    WindowServer     9.8 
+0      kernel_task      7.7 
+589    mds              5.5 
+759    backgroundtaskma 5.1 
+891    dlpdaemon        3.0 
+883    wdavdaemon       3.0 
+27172  JamfDaemon       2.7 
+52738  mdworker_shared  2.3 
+52735  mdworker_shared  2.2 
+1      launchd          2.2 
+06:26:55 40 starts of v130
+06:27:05 40 starts of tag130
+06:27:15 40 starts of v140
+06:27:27 startup v130 1
+06:27:45 startup tag130 1
+06:28:02 startup v140 1
+06:28:20 startup floor 1
+06:28:35 load { 5.33 4.68 3.87 }
+06:28:37 startup tag130 2
+06:28:55 startup v140 2
+06:29:12 startup v130 2
+06:29:30 startup floor 2
+06:29:45 load { 6.18 5.10 4.09 }
+06:29:47 startup v140 3
+06:30:04 startup v130 3
+06:30:22 startup tag130 3
+06:30:39 startup floor 3
+06:30:55 load { 4.30 4.73 4.03 }
+06:30:57 startup v140 4
+06:31:14 startup tag130 4
+06:31:32 startup v130 4
+06:31:49 startup floor 4
+06:32:05 load { 3.97 4.54 4.01 }
+06:32:07 startup v130 5
+06:32:24 startup v140 5
+06:32:42 startup tag130 5
+06:32:59 startup floor 5
+06:33:15 load { 4.37 4.54 4.05 }
+06:33:17 startup tag130 6
+06:33:34 startup v130 6
+06:33:52 startup v140 6
+06:34:09 startup floor 6
+06:34:25 load { 4.31 4.47 4.06 }
+06:34:27 startup v130 7
+06:34:44 startup tag130 7
+06:35:02 startup v140 7
+06:35:20 startup floor 7
+06:35:35 load { 3.33 4.17 3.98 }
+06:35:37 startup tag130 8
+06:35:55 startup v140 8
+06:36:12 startup v130 8
+06:36:30 startup floor 8
+06:36:45 load { 2.84 3.86 3.87 }
+06:36:47 startup v140 9
+06:37:05 startup v130 9
+06:37:22 startup tag130 9
+06:37:40 startup floor 9
+06:37:55 load { 4.08 3.93 3.89 }
+06:37:57 startup v140 10
+06:38:15 startup tag130 10
+06:38:33 startup v130 10
+06:38:50 startup floor 10
+06:39:05 load { 5.70 4.45 4.09 }
+06:39:08 startup v130 11
+06:39:25 startup v140 11
+06:39:43 startup tag130 11
+06:40:01 startup floor 11
+06:40:16 load { 6.55 4.85 4.26 }
+06:40:18 startup tag130 12
+06:40:36 startup v130 12
+06:40:53 startup v140 12
+06:41:11 startup floor 12
+06:41:26 load { 6.42 5.23 4.45 }
+06:41:28 throughput ascii v130 1
+06:41:38 throughput ascii v140 1
+06:41:47 throughput ascii v140 2
+06:41:56 throughput ascii v130 2
+06:42:05 throughput ascii v140 3
+06:42:14 throughput ascii v130 3
+06:42:23 throughput ascii v130 4
+06:42:32 throughput ascii v140 4
+06:42:41 throughput ascii v130 5
+06:42:51 throughput ascii v140 5
+06:43:00 throughput ascii v140 6
+06:43:10 throughput ascii v130 6
+06:43:19 throughput ascii v140 7
+06:43:29 throughput ascii v130 7
+06:43:38 throughput ascii v130 8
+06:43:48 throughput ascii v140 8
+06:43:55 load { 4.60 4.85 4.41 }
+06:43:57 throughput seq v130 1
+06:44:00 throughput seq v140 1
+06:44:03 throughput seq v140 2
+06:44:07 throughput seq v130 2
+06:44:10 throughput seq v140 3
+06:44:13 throughput seq v130 3
+06:44:16 throughput seq v130 4
+06:44:19 throughput seq v140 4
+06:44:21 load { 5.14 4.95 4.46 }
+06:44:23 throughput sgr v130 1
+06:44:26 throughput sgr v140 1
+06:44:29 throughput sgr v140 2
+06:44:33 throughput sgr v130 2
+06:44:36 throughput sgr v140 3
+06:44:40 throughput sgr v130 3
+06:44:43 throughput sgr v130 4
+06:44:46 throughput sgr v140 4
+06:44:48 load { 5.36 5.01 4.50 }
+06:44:50 throughput cjk v130 1
+06:44:54 throughput cjk v140 1
+06:44:57 throughput cjk v140 2
+06:45:01 throughput cjk v130 2
+06:45:05 throughput cjk v140 3
+06:45:08 throughput cjk v130 3
+06:45:12 throughput cjk v130 4
+06:45:16 throughput cjk v140 4
+06:45:17 load { 6.84 5.38 4.65 }
+--- end
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	94%; charging; 0:27 remaining present: true
+ 6:45  up 9 days, 19:23, 311 users, load averages: 6.84 5.38 4.65
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+589    mds              92.7
+634    WindowServer     18.0
+0      kernel_task      13.7
+46691  mds_stores       12.9
+69897  top              12.6
+600    contextstored    6.9 
+69836  mdworker_shared  4.4 
+69649  mdworker_shared  4.3 
+69648  mdworker_shared  4.3 
+69660  mdworker_shared  4.2 
+69839  mdworker_shared  4.1 
+55911  wdavdaemon_unpri 4.1 
+06:45:19 session done
