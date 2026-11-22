@@ -494,6 +494,13 @@ fn each_pane_s_scrollback_is_kept_at_the_quit_of_its_owner_alone() {
     let _ = std::fs::remove_dir_all(base);
 }
 
+/// The config that keeps the windows and their panes' scrollback.
+fn restoring_scrollback() -> Config {
+    let mut config = restoring();
+    config.app.restore_scrollback = true;
+    config
+}
+
 /// The rows of the screen of the first pane of `app`.
 fn first_rows(app: &App) -> Vec<String> {
     let pane = app.workspace.panes().next().unwrap();
@@ -518,12 +525,15 @@ fn a_pane_s_scrollback_shows_again_above_its_new_program() {
         });
         app.quit(&mut fake);
     };
-    kept_run(restoring());
+    kept_run(restoring_scrollback());
     // The next start shows it, then the line of when it was kept, then the
     // new program's output.
     let mut fake = Fake::default();
-    let mut app = app(restoring(), shell("printf 'the new run\\n'; exec sleep 30"))
-        .with_state(Some(state.clone()));
+    let mut app = app(
+        restoring_scrollback(),
+        shell("printf 'the new run\\n'; exec sleep 30"),
+    )
+    .with_state(Some(state.clone()));
     fake.start(&mut app);
     run_until(&mut fake, &mut app, |_, app| {
         first_rows(app)
@@ -539,9 +549,8 @@ fn a_pane_s_scrollback_shows_again_above_its_new_program() {
     assert!(!scrollback::folder(&state).join("0.scrollback").exists());
     app.quit(&mut fake);
     // Off as the app starts, what was kept goes at once, and shows not.
-    kept_run(restoring());
-    let mut config = restoring();
-    config.app.restore_scrollback = false;
+    kept_run(restoring_scrollback());
+    let config = restoring();
     let mut fake = Fake::default();
     let mut app = app_of(config, shell("printf 'the new run\\n'; exec sleep 30"))
         .with_state(Some(state.clone()));

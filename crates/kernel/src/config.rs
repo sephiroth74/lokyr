@@ -64,7 +64,7 @@
 //! appearance = "system"     # system | light | dark
 //! quit-after-last-window-closed = false  # stays open without windows
 //! restore-windows = "system"  # system | always | never
-//! restore-scrollback = true  # the panes show again what they showed
+//! restore-scrollback = false  # true: the panes show again what they showed
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -346,7 +346,7 @@ impl Default for AppConfig {
             appearance: AppearanceMode::System,
             quit_after_last_window_closed: false,
             restore_windows: RestoreWindows::System,
-            restore_scrollback: true,
+            restore_scrollback: false,
         }
     }
 }

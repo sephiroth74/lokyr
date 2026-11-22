@@ -170,7 +170,7 @@ language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
 restore-windows = "always"           # system | always | never: the windows open again as Lokyr starts
-restore-scrollback = false           # true | false: the panes show again what they showed as Lokyr quit
+restore-scrollback = true            # true | false: the panes show again what they showed as Lokyr quit
 
 [updates]
 check = false                        # true | false: a check for a newer version, once a day at most
@@ -1582,13 +1582,13 @@ Whether the panes that open again with your windows show what they showed as you
 
 | Values | Default |
 |---|---|
-| `true`, `false` | `true` |
+| `true`, `false` | `false` |
 
 - It applies while the windows open again, as [`restore-windows`](#restore-windows) says: with no window kept, there is no scrollback to show either.
 - Each pane shows its scrollback and its screen as they were, up to the prompt where you typed, then a line that tells when they were kept, then a new shell's prompt. The commands' marks in the gutter, the blocks and the jumps between prompts work on the restored commands too, of their exit status, their command line and their times.
 - Lokyr keeps all that the pane held within its [`[scrollback] limit`](#limit), in a file of each pane in `~/Library/Application Support/lokyr/state/scrollback/` on macOS, readable by your account alone. A pane full at the default limit takes some 2 MB on disk, and some 16 ms of the quit.
 - What a program showed on its own screen, as vim or less, is not kept: the pane shows what the shell had printed before it. Images are not kept either.
-- What the panes showed may hold what you would not keep, as a token that a command printed: `false` keeps none, and takes away what was kept at the next quit.
+- It is off by default, as what the panes showed may hold what you would not keep, such as a token that a command printed. Turned off again, it keeps none, and takes away at once what was kept.
 - It applies as you quit, and at the next start.
 
 ## `[updates]`
