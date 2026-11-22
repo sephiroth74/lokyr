@@ -1,0 +1,32 @@
+== startup, warm, first frame, 10 runs after 2
+round 1: v130 238.6 (p90 256.6, spread 9.2%); tag130 260.4 (p90 270.8, spread 7.6%); v140 251.8 (p90 270.6, spread 12.3%); floor 217.8
+round 2: v130 252.9 (p90 256.1, spread 7.2%); tag130 268.7 (p90 283.5, spread 11.9%); v140 251.8 (p90 284.8, spread 13.3%); floor 217.1
+round 3: v130 252.9 (p90 271.8, spread 12.9%); tag130 253.2 (p90 269.3, spread 7.2%); v140 268.0 (p90 282.0, spread 11.5%); floor 223.9
+round 4: v130 251.6 (p90 255.2, spread 8.2%); tag130 254.8 (p90 274.6, spread 9.2%); v140 268.1 (p90 286.1, spread 13.2%); floor 224.9
+round 5: v130 250.6 (p90 264.6, spread 7.2%); tag130 250.3 (p90 282.1, spread 14.5%); v140 263.6 (p90 280.0, spread 12.7%); floor 228.8
+round 6: v130 251.8 (p90 265.6, spread 13.6%); tag130 265.1 (p90 282.8, spread 11.2%); v140 264.9 (p90 282.0, spread 13.4%); floor 221.4
+round 7: v130 261.6 (p90 265.4, spread 5.1%); tag130 280.6 (p90 282.2, spread 12.5%); v140 274.8 (p90 282.0, spread 10.7%); floor 230.4
+round 8: v130 261.6 (p90 264.9, spread 12.7%); tag130 271.2 (p90 298.3, spread 18.2%); v140 265.8 (p90 281.1, spread 10.2%); floor 225.9
+round 9: v130 257.9 (p90 265.7, spread 7.4%); tag130 279.1 (p90 296.4, spread 14.8%); v140 258.4 (p90 277.5, spread 11.9%); floor 227.0
+round 10: v130 255.6 (p90 264.1, spread 12.2%); tag130 273.4 (p90 296.6, spread 16.5%); v140 280.2 (p90 297.7, spread 18.1%); floor 221.1
+round 11: v130 254.3 (p90 282.4, spread 20.6%); tag130 267.1 (p90 284.0, spread 14.0%); v140 279.4 (p90 281.6, spread 6.6%); floor 220.8
+round 12: v130 263.9 (p90 281.2, spread 12.6%); tag130 279.6 (p90 282.2, spread 6.9%); v140 279.3 (p90 282.1, spread 9.5%); floor 225.6
+
+floor: median 224.4, mean 223.7 (sd 4.0), from 217.1 to 230.4
+v130: median of rounds 253.6, mean 254.4 (sd 6.4); gap median 31.0, mean 30.7 (sd 5.2)
+tag130: median of rounds 267.9, mean 267.0 (sd 10.1); gap median 45.8, mean 43.2 (sd 10.2)
+v140: median of rounds 266.9, mean 267.2 (sd 9.5); gap median 43.3, mean 43.5 (sd 9.0)
+
+v140 − v130 by round: +13.2, -1.1, +15.1, +16.6, +13.0, +13.0, +13.1, +4.2, +0.6, +24.6, +25.1, +15.4; mean +12.7 (sd 7.8), median +13.2; v140 longer in 11 of 12
+v140 − tag130 by round: -8.5, -16.8, +14.8, +13.3, +13.3, -0.2, -5.9, -5.4, -20.7, +6.8, +12.3, -0.3; mean +0.2 (sd 11.6), median -0.3; v140 longer in 5 of 12
+tag130 − v130 by round: +21.8, +15.8, +0.3, +3.2, -0.2, +13.3, +19.0, +9.6, +21.2, +17.8, +12.8, +15.8; mean +12.5 (sd 7.4), median +14.5; tag130 longer in 11 of 12
+
+== throughput on screen
+ascii v130: median 303.7 MiB/s of 16 runs, from 286.4 to 315.4; frame total p50 median 0.287 ms
+ascii v140: median 304.4 MiB/s of 16 runs, from 287.9 to 317.5; frame total p50 median 0.297 ms
+seq v130: median 218.4 MiB/s of 8 runs, from 211.6 to 226.6; frame total p50 median 0.275 ms
+seq v140: median 216.8 MiB/s of 8 runs, from 199.4 to 222.9; frame total p50 median 0.279 ms
+sgr v130: median 271.8 MiB/s of 8 runs, from 264.9 to 284.3; frame total p50 median 0.536 ms
+sgr v140: median 281.1 MiB/s of 8 runs, from 264.9 to 286.2; frame total p50 median 0.550 ms
+cjk v130: median 217.2 MiB/s of 8 runs, from 213.7 to 219.1; frame total p50 median 0.754 ms
+cjk v140: median 216.1 MiB/s of 8 runs, from 214.7 to 218.5; frame total p50 median 0.750 ms

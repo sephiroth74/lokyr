@@ -2,7 +2,7 @@
 
 The last eight releases' measures, at a glance and in one table, each column of the A/B that measured it against the release before, at the conditions of [compare-F2-134](compare-F2-134.md): Menlo at 13 points, 120 × 40 cells, an opaque window, the main display at 60 Hz. Each release's notes tell the features that it brought and what they cost, as its session found. Each release's session adds its values, the window's motion among them, and its cells of the table of every measure with their notes, to [releases.json](releases.json), the data of the summary, the charts and the table below, which `just release-charts` draws again, and its features and their costs here; and takes the oldest release's away, which that release's own report keeps.
 
-From 1.1.0 the sessions run of [a config of the least work](ab-F3b-20/config.toml) beside the terminal's own, no blinking nor ligatures, an opaque window, no quick tip, the same for every release from there, and 1.1.0's of the built-in display at 120 Hz: its column tells its latency, throughput and startup against 1.0.0's of its session, and the summary and the charts take its measures at rest alone, which neither the config nor the display moves. 1.2.0's session is of the display at 60 Hz again, of that config: its latency and its throughput join the charts, of a config that does less than the one before 1.1.0, as no blinking, which the releases before do not share; the startup's gap stays out of them, of a minimal app some 15 to 30 ms faster in the sessions from 1.1.0 on than before. 1.3.0's session is of a Dell U3417W at 60 Hz and a scale of 1, which halves the GPU's memory of both versions and takes away some of a live resize's missed refreshes, 1.2.0's 20 and 15 there against 33 and 31 in its own session; its minimal app started in 207 to 218 ms, as in the sessions before 1.1.0's, and its startup's gap joins the charts again. 1.4.0's session is of a Dell P2721Q at 60 Hz and a scale of 2, as 1.2.0's; its minimal app started in 170 to 195 ms, 15 to 40 ms quicker than before, which took the startup's gap of both versions past its budget, and its output on screen was slower for both, `cat` 266 and 270 MiB/s against 315 for both on that display in 1.2.0's session: the startup and the throughput at rest take them again.
+From 1.1.0 the sessions run of [a config of the least work](ab-F3b-20/config.toml) beside the terminal's own, no blinking nor ligatures, an opaque window, no quick tip, the same for every release from there, and 1.1.0's of the built-in display at 120 Hz: its column tells its latency, throughput and startup against 1.0.0's of its session, and the summary and the charts take its measures at rest alone, which neither the config nor the display moves. 1.2.0's session is of the display at 60 Hz again, of that config: its latency and its throughput join the charts, of a config that does less than the one before 1.1.0, as no blinking, which the releases before do not share; the startup's gap stays out of them, of a minimal app some 15 to 30 ms faster in the sessions from 1.1.0 on than before. 1.3.0's session is of a Dell U3417W at 60 Hz and a scale of 1, which halves the GPU's memory of both versions and takes away some of a live resize's missed refreshes, 1.2.0's 20 and 15 there against 33 and 31 in its own session; its minimal app started in 207 to 218 ms, as in the sessions before 1.1.0's, and its startup's gap joins the charts again. 1.4.0's session is of a Dell P2721Q at 60 Hz and a scale of 2, as 1.2.0's; its minimal app started in 170 to 195 ms, 15 to 40 ms quicker than before, which took the startup's gap of both versions past its budget, and its output on screen was slower for both, `cat` 266 and 270 MiB/s against 315 for both on that display in 1.2.0's session. [The startup and the output at rest](rest-F5a-123.md) took them again, and its values are the summary's, the charts' and the table's: its minimal app started in 217 to 230 ms, 1.3.0's notarized app's gap 30.7 ms; 1.4.0's startup is of its bundle, not notarized, against 1.3.0's tag's bundle, signed alike, as a copy not notarized started 12.5 ms later in that session.
 
 Measures of different sessions compare within a few percent alone: a session's load and display move them, as each report tells; the A/B of a release against the one before, in one session of balanced orders, is what tells a cost. The window's motion, a drag by the titlebar and a live resize along a sine of 200 points, is measured as [motion-F3-152](motion-F3-152.md) measures it, of its config, Menlo at 20 points, 88 × 27 cells.
 
@@ -14,16 +14,16 @@ Measures of different sessions compare within a few percent alone: a session's l
 
 | Measure | 1.3.0 | 1.4.0 | Change | Budget | The best of the others | |
 |---|---|---|---|---|---|---|
-| Startup, its gap to the minimal app's first window | 53.4 ms | 60.9 ms | +7.5 ms, +14 % | ≤ 35 ms, 174 % of it | — | ❌ Over its budget |
+| Startup, its gap to the minimal app's first window, of [the startup at rest, of bundles not notarized](rest-F5a-123.md)'s session | 43.2 ms | 43.5 ms | +0.3 ms, +1 % | ≤ 35 ms, 124 % of it | — | ❌ Over its budget |
 | Latency, a key to its echo, p50 | 14.5 ms | 13.6 ms | −0.9 ms, −6 % | ≤ 33.3 ms, 41 % of it | Alacritty 23.6, Lokyr 22.4 then | ✔ As before |
 | Latency, a key to its echo, p99 | 29.8 ms | 27.5 ms | −2.3 ms, −8 % | ≤ 75 ms, 37 % of it | kitty 33.1, Lokyr 29.5 then | ✔ As before |
 | Memory at rest, without the GPU's | 28.7 MB | 28.7 MB | ±0.0 MB, ±0 % | ≤ 35 MB, 82 % of it | Alacritty 31.3, Lokyr 28.6 then | ✔ As before |
 | Idle, interrupt wakeups | 0.35/s | 0.35/s | +0.00/s, +1 % | ≤ 0.5/s, 70 % of it | Alacritty 0.33, Lokyr 0.35 then | ✔ As before |
 | Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | — | ✔ As before |
-| `cat` of 1 GiB of ASCII on screen | 265.6 MiB/s | 269.5 MiB/s | +3.9 MiB/s, +1 % | ≥ 275 MiB/s | Ghostty 305.5, Lokyr 293.5 then | ❌ Over its budget |
-| `seq 1 10000000` | 159.4 MiB/s | 185.9 MiB/s | +26.5 MiB/s, +17 % | — | — | ✔ Better |
-| Colored text, SGR | 195.1 MiB/s | 191.9 MiB/s | −3.2 MiB/s, −2 % | — | — | ✔ As before |
-| CJK and emoji | 203.3 MiB/s | 204.6 MiB/s | +1.3 MiB/s, +1 % | — | — | ✔ As before |
+| `cat` of 1 GiB of ASCII on screen, of [the output at rest](rest-F5a-123.md)'s session | 303.7 MiB/s | 304.4 MiB/s | +0.7 MiB/s, +0 % | ≥ 275 MiB/s | Ghostty 305.5, Lokyr 293.5 then | ✔ As before |
+| `seq 1 10000000`, of [the output at rest](rest-F5a-123.md)'s session | 218.4 MiB/s | 216.8 MiB/s | −1.6 MiB/s, −1 % | — | — | ✔ As before |
+| Colored text, SGR, of [the output at rest](rest-F5a-123.md)'s session | 271.8 MiB/s | 281.1 MiB/s | +9.3 MiB/s, +3 % | — | — | ✔ As before |
+| CJK and emoji, of [the output at rest](rest-F5a-123.md)'s session | 217.2 MiB/s | 216.1 MiB/s | −1.1 MiB/s, −1 % | — | — | ✔ As before |
 | A frame on the CPU, ASCII, p50 | 0.319 ms | 0.323 ms | +0.004 ms, +1 % | — | — | ✔ As before |
 | A frame on the CPU, ASCII, p99 | 0.425 ms | 0.445 ms | +0.020 ms, +5 % | ≤ 2 ms, 22 % of it | — | ✔ As before |
 | A frame on the CPU, CJK and emoji, p50 | 0.68 ms | 0.68 ms | −0.01 ms, −1 % | — | — | ✔ As before |
@@ -63,8 +63,8 @@ Each release's measures in its own session: ▲ better and ▼ worse than the re
 | Measure | Budget | [0.7.0](ab-F3-77.md) | [0.8.0](ab-F4-25.md) | [0.9.0](ab-F4-42.md) | [1.0.0](ab-F3-85.md) | [1.1.0](ab-F3b-20.md) | [1.2.0](ab-F3b-29.md) | [1.3.0](ab-F5a-17.md) | [1.4.0](ab-F5a-78.md) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | **Startup** | | | | | | | | | |
-| Startup, warm, first frame, ms |  | 270.3 ¹ | 241.1 ² | 248.5 ³ | 237.3 ⁴ | 245.6 ⁵ | 254.3 ⁶ | 238.6 ⁷ | 240.5 ⁸ |
-| Its gap to the minimal app's first window, ms | ≤ 35 | 18.8 ⁹ | 24.9 ▼ ¹⁰ | 25.4 ¹¹ | 26.7 ¹² | 52.2 ✖ ¹³ | 58.5 ✖ ¹⁴ | 27.2 ¹⁵ | 60.9 ✖ ¹⁶ |
+| Startup, warm, first frame, ms |  | 270.3 ¹ | 241.1 ² | 248.5 ³ | 237.3 ⁴ | 245.6 ⁵ | 254.3 ⁶ | 238.6 ⁷ | 267.2 ⁸ |
+| Its gap to the minimal app's first window, ms | ≤ 35 | 18.8 ⁹ | 24.9 ▼ ¹⁰ | 25.4 ¹¹ | 26.7 ¹² | 52.2 ✖ ¹³ | 58.5 ✖ ¹⁴ | 27.2 ¹⁵ | 43.5 ✖ ¹⁶ |
 | **Latency** | | | | | | | | | |
 | A key to its echo, p50, ms | ≤ 33.3 ¹⁷ | 20.2 | 19.6 | 20.6 | 19.2 | 13.9 ¹⁸ | 16.6 ▲ | 17.3 | 13.6 |
 | A key to its echo, p99, ms | ≤ 75 ¹⁹ | 44.0 | 47.3 | 42.0 | 48.7 | 32.0 ¹⁸ | 31.5 | 31.5 | 27.5 |
@@ -75,33 +75,33 @@ Each release's measures in its own session: ▲ better and ▼ worse than the re
 | Footprint without the GPU's, MB | ≤ 35 | 26.8 | 27.2 ▲ | 28.6 ²¹ | 27.6 | 28.3 | 28.4 ²² | 27.6 ²³ | 28.7 ²⁴ |
 | GPU memory, MB |  | 30.1 | 30.1 | 30.1 | 30.1 | 30.6 | 30.6 | 14.2 ²⁵ | 30.6 ²⁶ |
 | **Output on screen** | | | | | | | | | |
-| `cat` of 1 GiB of ASCII, MiB/s | ≥ 275.0 ²⁷ | 314.3 | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁸ | 314.9 | 308.6 | 269.5 ✖ ²⁸ |
-| `seq 1 10000000`, MiB/s |  | 220.3 | 222.1 | 223.8 | 220.9 | 192.6 ¹⁸ | 217.9 | 218.3 | 185.9 ▲ |
-| Colored text, SGR, MiB/s |  | 285.5 | 285.6 | 288.9 | 284.7 | 234.7 ¹⁸ | 286.3 | 285.2 | 191.9 |
-| CJK and emoji, MiB/s |  | 217.4 | 215.3 | 216.5 | 214.9 | 207.8 ¹⁸ | 214.9 | 213.2 | 204.6 |
+| `cat` of 1 GiB of ASCII, MiB/s | ≥ 275.0 ²⁷ | 314.3 | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁸ | 314.9 | 308.6 | 304.4 ²⁸ |
+| `seq 1 10000000`, MiB/s |  | 220.3 | 222.1 | 223.8 | 220.9 | 192.6 ¹⁸ | 217.9 | 218.3 | 216.8 ²⁹ |
+| Colored text, SGR, MiB/s |  | 285.5 | 285.6 | 288.9 | 284.7 | 234.7 ¹⁸ | 286.3 | 285.2 | 281.1 ³⁰ |
+| CJK and emoji, MiB/s |  | 217.4 | 215.3 | 216.5 | 214.9 | 207.8 ¹⁸ | 214.9 | 213.2 | 216.1 ³¹ |
 | **A frame on the CPU** | | | | | | | | | |
 | ASCII, p50, ms |  | 0.283 | 0.296 | 0.288 | 0.282 | 0.385 ¹⁸ | 0.298 | 0.277 | 0.323 |
 | ASCII, p99, ms | ≤ 2 | 0.401 | 0.427 | 0.429 | 0.403 | 0.463 ¹⁸ | 0.423 | 0.418 | 0.445 |
 | CJK and emoji, p50, ms |  | 0.71 | 0.72 | 0.73 | 0.73 | 0.79 ¹⁸ | 0.78 | 0.73 | 0.68 |
 | **The window's motion** | | | | | | | | | |
-| A drag, opaque, frames a second |  | 58.0 | — ²⁹ | — ³⁰ | — ³¹ | 57.7 ³² | 57.1 | 58.3 ³³ | 58.4 ³⁴ |
+| A drag, opaque, frames a second |  | 58.0 | — ³² | — ³³ | — ³⁴ | 57.7 ³⁵ | 57.1 | 58.3 ³⁶ | 58.4 ³⁷ |
 | A drag, with a blur, frames a second |  | 58.0 | — | — | — | 58.1 | 58.0 | 58.5 | 58.7 ▲ |
 | A drag, opaque, refreshes missed of 600 |  | 16.0 | — | — | — | 16.0 | 23.0 | 7.5 | 11.5 |
 | A drag, with a blur, refreshes missed of 600 |  | 16.5 | — | — | — | 15.0 | 16.0 | 9.0 | 9.5 |
 | A live resize, opaque, frames a second |  | 56.3 | — | — | — | 56.2 | 55.7 | 57.4 | 55.5 |
 | A live resize, with a blur, frames a second |  | 55.6 | — | — | — | 55.8 | 56.3 | 57.6 | 56.8 |
-| A live resize, opaque, refreshes missed of 600 |  | 33.5 | — | — | — | 31.5 | 33.0 | 15.0 ³⁵ | 36.0 ³⁶ |
+| A live resize, opaque, refreshes missed of 600 |  | 33.5 | — | — | — | 31.5 | 33.0 | 15.0 ³⁸ | 36.0 ³⁹ |
 | A live resize, with a blur, refreshes missed of 600 |  | 39.5 | — | — | — | 36.5 | 31.0 | 13.7 | 23.5 |
 | A live resize, opaque, the window server's CPU, % |  | 39 | — | — | — | 35 | 34 | 35 | 35 |
 | A live resize, opaque, the app's CPU, % |  | 19 | — | — | — | 16 | 16 | 15 | 17 |
 | A live resize, with a blur, the window server's CPU, % |  | 42 | — | — | — | 31 | 34 | 38 | 37 |
 | A live resize, with a blur, the app's CPU, % |  | 20 | — | — | — | 15 | 15 | 15 | 16 |
-| A live resize, opaque, the compositor's delay, p95, ms |  | 20.2 | — | — | — | 20.6 | 28.3 ³⁷ | 21.0 ³⁸ | 13.4 |
-| A live resize, with a blur, the compositor's delay, p95, ms |  | 19.7 | — | — | — | 20.8 | 19.8 | 18.4 | 28.4 ³⁹ |
+| A live resize, opaque, the compositor's delay, p95, ms |  | 20.2 | — | — | — | 20.6 | 28.3 ⁴⁰ | 21.0 ⁴¹ | 13.4 |
+| A live resize, with a blur, the compositor's delay, p95, ms |  | 19.7 | — | — | — | 20.8 | 19.8 | 18.4 | 28.4 ⁴² |
 | **Scrolling by pixels** | | | | | | | | | |
-| A trackpad's scroll, the app's frames a second, at 60 Hz |  | — | — | — | — | — | — | — | 60.8 ⁴⁰ |
+| A trackpad's scroll, the app's frames a second, at 60 Hz |  | — | — | — | — | — | — | — | 60.8 ⁴³ |
 | Its refreshes with a frame, % |  | — | — | — | — | — | — | — | 99 |
-| Its app's CPU, % |  | — | — | — | — | — | — | — | 6.9 ⁴¹ |
+| Its app's CPU, % |  | — | — | — | — | — | — | — | 6.9 ⁴⁴ |
 | Package idle wakeups after it, a second |  | — | — | — | — | — | — | — | 0 |
 
 Notes:
@@ -113,7 +113,7 @@ Notes:
 5. 1.1.0 · Startup, warm, first frame, ms: the mean of eight rounds of copies started as often as 1.0.0's, 242.9; a new copy's four rounds 245.5, 243.8, 252.2 and 246.8.
 6. 1.2.0 · Startup, warm, first frame, ms: the mean of eight rounds of copies started as often as 1.1.0's, 248.9; a new copy's four rounds 254.1, 262.8, 237.3 and 252.3.
 7. 1.3.0 · Startup, warm, first frame, ms: the mean of eight rounds of copies started 60 times, 1.2.0's 240.0; four rounds of copies started 30 times 239.3, 270.6, 263.2 and 284.4.
-8. 1.4.0 · Startup, warm, first frame, ms: the mean of eight rounds of copies started 60 times, 1.3.0's 233.0; four rounds of copies started 30 times 249.2, 235.1, 236.0 and 235.8.
+8. 1.4.0 · Startup, warm, first frame, ms: the mean of twelve rounds at rest, of a bundle not notarized, as 1.3.0's tag's 267.0, and 1.3.0's notarized app 254.4, in the same session, [rest-F5a-123](rest-F5a-123.md#results); 240.5 in the A/B, against 1.3.0's notarized app's 233.0.
 9. 0.7.0 · Its gap to the minimal app's first window, ms: at rest, [startup-F3-228](startup-F3-228.md); 46.9 ms in the A/B, of a new copy.
 10. 0.8.0 · Its gap to the minimal app's first window, ms: of a new copy started once before; 20.4 ms at rest against 0.7.0's 26.9, within the rounds' spread, [rest-F4-58](rest-F4-58.md#the-startup-at-rest).
 11. 0.9.0 · Its gap to the minimal app's first window, ms: of a copy new out of its build started once before, against 0.8.0's 23.8 in the session.
@@ -121,7 +121,7 @@ Notes:
 13. 1.1.0 · Its gap to the minimal app's first window, ms: of a new copy against 1.0.0's 42.5 in the session, of a minimal app 15 ms faster than before; the startup 2.7 ms longer than 1.0.0's of copies started as often, [ab-F3b-20](ab-F3b-20.md#the-startup).
 14. 1.2.0 · Its gap to the minimal app's first window, ms: of eight rounds against 1.1.0's 53.2, of a minimal app of 179 to 210 ms; the startup 5.3 ms longer, within the rounds' spread, [ab-F3b-29](ab-F3b-29.md#results).
 15. 1.3.0 · Its gap to the minimal app's first window, ms: of eight rounds against 1.2.0's 28.6, of a minimal app of 207 to 218 ms, as before 1.1.0's sessions.
-16. 1.4.0 · Its gap to the minimal app's first window, ms: of eight rounds against 1.3.0's 53.4, of a minimal app of 170 to 195 ms, 15 to 40 ms quicker than in the sessions before, [ab-F5a-78](ab-F5a-78.md#results).
+16. 1.4.0 · Its gap to the minimal app's first window, ms: of twelve rounds at rest, of a bundle not notarized, past the budget of that alone: 1.3.0's tag's bundle 43.2 and 1.3.0's notarized app 30.7, of a minimal app of 217 to 230 ms, [rest-F5a-123](rest-F5a-123.md#results); 60.9 in the A/B, of a minimal app of 170 to 195 ms.
 17. The budget · A key to its echo, p50, ms: 2 refreshes at 60 Hz, as the budget of 2 at 120 Hz.
 18. 1.1.0: of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session.
 19. The budget · A key to its echo, p99, ms: 4.5 refreshes at 60 Hz, as the budget of 4.5 at 120 Hz.
@@ -133,20 +133,23 @@ Notes:
 25. 1.3.0 · GPU memory, MB: of a display at a scale of 1, as 1.2.0's in the same session.
 26. 1.4.0 · GPU memory, MB: of a display at a scale of 2, as 1.3.0's in the same session.
 27. The budget · `cat` of 1 GiB of ASCII, MiB/s: Ghostty's 305.5 MiB/s of the comparison of 21 and 22 November 2026 less 10 %; 294.9 of the comparison of 13 November 2026 before, 275 of the first comparison's before that.
-28. 1.4.0 · `cat` of 1 GiB of ASCII, MiB/s: 1.3.0's 265.6 in the same session, both below the budget, of runs of 199 to 285 MiB/s, [ab-F5a-78](ab-F5a-78.md#results).
-29. 0.8.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [rest-F4-58](rest-F4-58.md#the-windows-motion-on-the-m1).
-30. 0.9.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings: 0.8.0's within that noise, [ab-F4-42](ab-F4-42.md#the-windows-motion).
-31. 1.0.0 · A drag, opaque, frames a second: not measured.
-32. 1.1.0 · A drag, opaque, frames a second: measured in 1.2.0's session.
-33. 1.3.0 · A drag, opaque, frames a second: of 1.3.0's session on a Dell U3417W at 60 Hz, of two rounds of the opaque look and three of the blur.
-34. 1.4.0 · A drag, opaque, frames a second: of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look.
-35. 1.3.0 · A live resize, opaque, refreshes missed of 600: fewer on a display at a scale of 1, 1.2.0's 20.0 there.
-36. 1.4.0 · A live resize, opaque, refreshes missed of 600: 1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2.
-37. 1.2.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F3b-29](ab-F3b-29.md#the-windows-motion).
-38. 1.3.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion).
-39. 1.4.0 · A live resize, with a blur, the compositor's delay, p95, ms: of runs of 28 ms, 1.3.0's of 13 in the same session, of the two values that every session finds.
-40. 1.4.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels).
-41. 1.4.0 · Its app's CPU, %: by rows 4.8.
+28. 1.4.0 · `cat` of 1 GiB of ASCII, MiB/s: at rest, 1.3.0's 303.7 in the same session, [rest-F5a-123](rest-F5a-123.md#results); 269.5 in the A/B, of a session's slower output for both.
+29. 1.4.0 · `seq 1 10000000`, MiB/s: at rest, 1.3.0's 218.4, [rest-F5a-123](rest-F5a-123.md#results); 185.9 in the A/B.
+30. 1.4.0 · Colored text, SGR, MiB/s: at rest, 1.3.0's 271.8, [rest-F5a-123](rest-F5a-123.md#results); 191.9 in the A/B.
+31. 1.4.0 · CJK and emoji, MiB/s: at rest, 1.3.0's 217.2, [rest-F5a-123](rest-F5a-123.md#results); 204.6 in the A/B.
+32. 0.8.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [rest-F4-58](rest-F4-58.md#the-windows-motion-on-the-m1).
+33. 0.9.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings: 0.8.0's within that noise, [ab-F4-42](ab-F4-42.md#the-windows-motion).
+34. 1.0.0 · A drag, opaque, frames a second: not measured.
+35. 1.1.0 · A drag, opaque, frames a second: measured in 1.2.0's session.
+36. 1.3.0 · A drag, opaque, frames a second: of 1.3.0's session on a Dell U3417W at 60 Hz, of two rounds of the opaque look and three of the blur.
+37. 1.4.0 · A drag, opaque, frames a second: of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look.
+38. 1.3.0 · A live resize, opaque, refreshes missed of 600: fewer on a display at a scale of 1, 1.2.0's 20.0 there.
+39. 1.4.0 · A live resize, opaque, refreshes missed of 600: 1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2.
+40. 1.2.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F3b-29](ab-F3b-29.md#the-windows-motion).
+41. 1.3.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion).
+42. 1.4.0 · A live resize, with a blur, the compositor's delay, p95, ms: of runs of 28 ms, 1.3.0's of 13 in the same session, of the two values that every session finds.
+43. 1.4.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels).
+44. 1.4.0 · Its app's CPU, %: by rows 4.8.
 
 <!-- The end of the table that tools/bench/releases.py writes. -->
 
@@ -161,7 +164,7 @@ The window's motion was first measured of 0.5.0, in [a motion session of 6 Novem
 - **1.1.0**, the settings in a window of their own: every key of the config, the keys' bindings, the themes' previews and the plugins, without editing a file. Against 1.0.0 in [1.1.0's sessions](ab-F3b-20.md), of the new config and the built-in display at 120 Hz, no measure is worse beyond its spread: the latency's p50 0.5 ms shorter and its p99 1.0.0's; idle 1.0.0's; the footprint 0.4 MB larger, of a binary 1 MB larger; the throughputs within their runs' spread; a frame of ASCII 0.018 ms longer on the CPU, 5 %, of no throughput lost. The startup is 2.7 ms longer, of copies started as often, within the rounds' spread: the sessions found 6.6 and 9.7 ms of a new copy, which a binary that the system has seen little of starts slower, as 1.0.0 rebuilt of its tag did by 16 ms. The startup's gap to the minimal app and `cat`'s throughput held for neither version, of a minimal app 15 ms faster than in the sessions before and of the display at 120 Hz. The window's motion was not measured.
 - **1.2.0**, themes made in the app: the Theme Editor of every color of a theme, its values edited of a field or the system's color panel and written into the theme's file, and its previews of a window and of a plugin's panel in the theme edited; themes made, duplicated, converted and imported in the app; the interface's colors of rules that follow the theme's own; faint text, the cursor guide and the HDR cursor; the settings' Keys page; the settings window of Lokyr's own themes. Against 1.1.0 in [1.2.0's sessions](ab-F3b-29.md), of the display at 60 Hz, every budget holds but the startup's gap, which holds for neither version, and no measure is worse beyond its spread: the latency's p50 1.1 ms shorter, in seven rounds of eight, and its p99 1.1.0's; idle, the throughputs and the frames 1.1.0's; the footprint 0.5 MB larger, in each of four rounds, of the app's heap, of a binary 0.7 MB larger. The startup is 5.3 ms longer, of copies started as often, within the rounds' spread. The window's motion, measured of both in its session, is 1.1.0's: as many frames a second of a drag and of a resize, as many refreshes missed, the same CPU; the compositor's delay at the 95th percentile a refresh longer in more of 1.2.0's runs, in a session whose load rose, its median 13 ms for both.
 - **1.3.0**, the programs' status, the prompt's click and the tabs: a program's status of OSC 7501 on its tab, a session's status of OSC 21337 and the notifications of OSC 99; a click in the command line that moves the shell's cursor, and a selection there that typing replaces; ⌃Tab of the tabs used last, pinned tabs, tab groups and a closed tab reopened; hints of the screen's URLs, paths, hashes and addresses, labeled to open or copy; the quick terminal of a double-tapped modifier; Use Transparency; the settings' editor of the hints' patterns; and the text fields' keys and context menu. Against 1.2.0 in [1.3.0's session](ab-F5a-17.md), of a display at a scale of 1, every budget holds and no measure is worse beyond its spread: the latency's p50 1.2.0's and its p99 0.9 ms shorter; the startup 1.5 ms shorter, of copies started as often, its gap to the minimal app 27.2 ms, within the budget; the footprint 0.2 MB larger, of a binary 0.7 MB larger; idle 1.2.0's, of no package idle wakeup over four minutes of each, the two of 1.3.0's in the rounds of 60 s chance of the same interrupt wakeups; `cat` 3 % faster and CJK and emoji 1.8 % slower, within their tolerance of 5 %, of the same frames' CPU. The window's motion is 1.2.0's, as many frames a second of a drag and of a resize, the compositor's delay at the 95th percentile of runs of 13 or 28 ms for both.
-- **1.4.0**, the commands' blocks and smooth scrolling: Blocks, off by default, each command and its output a block, its prompt rows pinned at the view's top while its output scrolls, selected by a click or the keys, copied, run again or told of in Block Details; smooth scrolling, off by default, the trackpad's and the Magic Mouse's scroll pixel by pixel at every refresh, a wheel's step gliding, the scroll bar's knob by pixels; the status bar's three sides; a plugin that stands in for another; the controls of macOS 27's sizes, switches, checkboxes and radio buttons, pop-up buttons, search fields, group boxes, key caps, callouts and tags; `open-in-editor` and `git-folder` in the registry. Against 1.3.0 in [1.4.0's session](ab-F5a-78.md), the latency, idle, the memory, the throughputs and the frames are 1.3.0's within their spread, and the window's motion too; the startup's gap and `cat`'s throughput held for neither version, of a minimal app 15 to 40 ms quicker than before and of a session's slower output for both, and **the startup is 7.5 ms longer** in one step's eight rounds, 0.9 ms in the other's four, which the startup at rest takes again. **Scrolling by pixels draws a frame at every refresh while the view moves**, 60.8 a second against 32 by rows, of 99 % of the refreshes, the app's CPU 6.9 % against 4.8 % and the window server's 20 % against 13 %; none at rest. Blocks and smooth scrolling off, as by default, cost nothing measured; the commands' folds that the VT core keeps cost nothing that counts. The app's binary 0.5 MB larger, the bundle 45.0 MB.
+- **1.4.0**, the commands' blocks and smooth scrolling: Blocks, off by default, each command and its output a block, its prompt rows pinned at the view's top while its output scrolls, selected by a click or the keys, copied, run again or told of in Block Details; smooth scrolling, off by default, the trackpad's and the Magic Mouse's scroll pixel by pixel at every refresh, a wheel's step gliding, the scroll bar's knob by pixels; the status bar's three sides; a plugin that stands in for another; the controls of macOS 27's sizes, switches, checkboxes and radio buttons, pop-up buttons, search fields, group boxes, key caps, callouts and tags; `open-in-editor` and `git-folder` in the registry. Against 1.3.0 in [1.4.0's session](ab-F5a-78.md), the latency, idle, the memory, the throughputs and the frames are 1.3.0's within their spread, and the window's motion too; the startup's gap and `cat`'s throughput held for neither version there, of a minimal app 15 to 40 ms quicker than before and of a session's slower output for both, and the startup was 7.5 ms longer in one step's eight rounds, 0.9 ms in the other's four. [At rest](rest-F5a-123.md), `cat` runs at 304 MiB/s for both and the other workloads at 1.3.0's own session's rates; **1.4.0's code starts as 1.3.0's**, 0.2 ms apart of bundles built and signed alike; the A/B's 7.5 ms, and the bundles' gap of 43 ms, are of a copy that is not notarized, 12.5 ms slower to start than the same code notarized in that session, whose gap is 30.7 ms. **Scrolling by pixels draws a frame at every refresh while the view moves**, 60.8 a second against 32 by rows, of 99 % of the refreshes, the app's CPU 6.9 % against 4.8 % and the window server's 20 % against 13 %; none at rest. Blocks and smooth scrolling off, as by default, cost nothing measured; the commands' folds that the VT core keeps cost nothing that counts. The app's binary 0.5 MB larger, the bundle 45.0 MB.
 
 ## Every report
 
