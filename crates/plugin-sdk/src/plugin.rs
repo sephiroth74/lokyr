@@ -806,6 +806,15 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The folders that the sessions' switcher lists: the config's, and
+    /// those that the panes' shells told last, of `process-read`.
+    pub fn session_folders(&mut self) -> Result<crate::host::SessionFolders, Error> {
+        match self.request(Request::SessionFolders) {
+            Response::SessionFolders(folders) => Ok(folders),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub fn day(&mut self) -> Result<u64, Error> {
         match self.request(Request::Day) {

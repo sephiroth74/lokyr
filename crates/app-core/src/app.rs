@@ -203,6 +203,9 @@ const RENAME_SESSION: &str = "window.rename-session";
 /// The command that closes the active session's windows, once the user
 /// confirms it while a program runs in one of them.
 const CLOSE_SESSION: &str = "window.close-session";
+/// The command that switches to the session of its `name`, for keys of the
+/// user's own.
+const SWITCH_SESSION: &str = "window.switch-session";
 /// The sessions' commands, which the Window menu's Sessions shows.
 const SESSIONS: [&str; 4] = [NEW_SESSION, LAST_SESSION, RENAME_SESSION, CLOSE_SESSION];
 
@@ -3548,6 +3551,7 @@ impl<B: Backend> App<B> {
                     self.ask_close_session(platform);
                     Ok(())
                 }
+                SWITCH_SESSION => self.switch_session_named(platform, &args),
                 CLOSE_WINDOW => {
                     if let Some(window) = platform.focused_window() {
                         self.ask_close(platform, window);
@@ -5954,6 +5958,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (RENAME_SESSION, "window-rename-session", Category::Windows),
         (CLOSE_SESSION, "window-close-session", Category::Windows),
+        (SWITCH_SESSION, "window-switch-session", Category::Windows),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -5975,6 +5980,12 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             vec![Param {
                 name: "index".to_owned(),
                 kind: Kind::Integer,
+                default: None,
+            }]
+        } else if name == SWITCH_SESSION {
+            vec![Param {
+                name: "name".to_owned(),
+                kind: Kind::String,
                 default: None,
             }]
         } else if name == NEW_THEME {

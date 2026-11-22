@@ -159,6 +159,9 @@ done-after = 3                       # seconds, 0.5 to 60, without work before a
 notify = true                        # true | false: a notification as an agent waits for you or is done
 dock-badge = true                    # true | false: the Dock's icon counts the agents that wait for you
 
+[sessions]
+folders = ["~/src/*", "~/.config"]   # the folders that the sessions' switcher lists
+
 [theme]
 light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
 dark = "Nightfall"                   # the dark appearance's theme
@@ -1403,6 +1406,26 @@ Whether the Dock's icon counts the agents that wait for you, in every window, in
 - The badge goes once none waits.
 - It applies as you save the file.
 
+## `[sessions]`
+
+The sessions' switcher, ⌃⌘S, lists the sessions open, then folders: those that `folders` names, and the folders where your panes' shells worked last. Choosing a folder opens a session there, or shows the one opened there already.
+
+### `folders`
+
+<sub>Platforms: macOS · not released yet</sub>
+
+The folders that the sessions' switcher lists, ⌃⌘S or Window › Sessions › Switch Session…, beside the sessions open and the folders where your panes' shells worked last.
+
+| Values | Default |
+|---|---|
+| a list of paths | `[]` |
+
+- Each is a path from `/` or `~`, as `"~/.config"`, or of a last part `*`, as `"~/src/*"`, which lists every folder in it, of one level, but those whose names start with a dot.
+- Choosing a folder opens a session there, named after the folder, its first window's shell in it; a session opened there already shows instead.
+- A path that is no folder lists nothing. The switcher lists 500 folders of them at most.
+- The recent folders are those that your shells told last, as your shell's integration tells them, the last 50, which Lokyr keeps in `~/Library/Application Support/lokyr/state/recent-folders` on macOS.
+- It applies as the switcher opens next.
+
 ## `[theme]`
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
@@ -1725,6 +1748,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `` cmd+` `` | `window.next` | Brings forward your next window of the session that shows, in the order that they opened, the settings window too and not the quick terminal, the first after the last: the key left of 1 by its place, as macOS's, ⌘\ on the Italian layout; Window › Cycle Through Windows runs it too |
 | `` cmd+shift+` `` | `window.previous` | Brings forward the previous window, the last before the first |
+| `ctrl+cmd+s` | `command-palette.sessions` | Opens the sessions' switcher in the palette: the sessions open, the one that shows marked Current, then the folders of [`[sessions] folders`](#sessions) and those where your shells worked last; Return switches to the session, or opens one in the folder, named after it, or switches to the one opened there already; Window › Sessions › Switch Session… runs it too · not released yet |
 | `ctrl+cmd+l` | `window.switch-to-last-session` | Switches to the session that you used before the one that shows: its windows show where they were, the one that you used last in front, and the others hide, their programs running; Window › Sessions › Switch to Last Session runs it too · not released yet |
 | `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other window of its session has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
 | `shift+alt+cmd+a` | `command-palette.agents` | Opens the palette's list of the AI agents of every window, the most urgent first, of each one's message or tab, its state and how long it has been in it; Return brings the chosen one's pane forward; Window › Show Agents… runs it too |

@@ -2238,6 +2238,7 @@ fn icon_of(section: &SettingsSection) -> &'static str {
         "bell" => "bell",
         "notifications" => "megaphone",
         "agents" => "hubot",
+        "sessions" => "folder",
         "theme" => "symbol-color",
         "app" => "rocket",
         "updates" => "cloud-download",

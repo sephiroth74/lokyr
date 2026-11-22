@@ -43,6 +43,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
 | [`command-palette.agents`](plugins/command-palette.md) | Show Agents… |  | ⌥⇧⌘A (`cmd+alt+shift+a`) |
+| [`command-palette.sessions`](plugins/command-palette.md) | Switch Session… |  | ⌃⌘S (`cmd+ctrl+s`) · not released yet |
 | [`links.new-window`](plugins/links.md) | New Window at Folder | `column`, whole number; `row`, whole number |  |
 | `pane.man-page` | Open man Page |  |  |
 | `pane.man-search` | Search man Page Index |  |  |
@@ -56,6 +57,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.previous` | Cycle Back Through Windows |  | ⇧⌘\` (`` cmd+shift+` ``) |
 | `window.rename-session` | Rename Session… |  | · not released yet |
 | `window.set-title` | Set Title… |  | ⇧⌘I (`cmd+shift+i`) |
+| `window.switch-session` | Switch to Session | `name`, text | · not released yet |
 | `window.switch-to-last-session` | Switch to Last Session |  | ⌃⌘L (`cmd+ctrl+l`) · not released yet |
 | `window.toggle-float-on-top` | Float on Top |  |  |
 | [`window.toggle-quick-terminal`](plugins/quick-terminal.md) | Quick Terminal |  |  |

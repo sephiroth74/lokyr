@@ -1215,11 +1215,12 @@ fn kind(request: &Request) -> usize {
         Request::Sessions => 152,
         Request::NewSession { .. } => 153,
         Request::SwitchSession(_) => 154,
+        Request::SessionFolders => 155,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 155;
+const KINDS: usize = 156;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

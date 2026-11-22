@@ -93,6 +93,7 @@ section-links = Link
 section-bell = Campanello
 section-notifications = Notifiche
 section-agents = Agenti
+section-sessions = Sessioni
 section-theme = Tema
 section-app = App
 section-updates = Aggiornamenti

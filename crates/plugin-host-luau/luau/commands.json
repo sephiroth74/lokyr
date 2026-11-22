@@ -383,6 +383,15 @@
   },
   {
     "capabilities": [],
+    "category": "windows",
+    "name": "command-palette.sessions",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Switch Session…",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "view",
     "name": "command-palette.theme",
     "params": [],
@@ -1348,6 +1357,21 @@
     "params": [],
     "plugin": null,
     "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.switch-session",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Switch to Session",
     "when": null
   },
   {

@@ -4867,6 +4867,8 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 directory,
             } => {
                 if context.workspace.new_session_as(id, &name).is_some() {
+                    let folder = directory.as_deref().map(host::home_expanded);
+                    context.workspace.set_session_folder(id, folder);
                     requests.push(Request::OpenWindow(directory));
                 }
                 continue;
@@ -6331,6 +6333,7 @@ impl Host<'_, '_> {
                             id: session.id().into(),
                             name: session.name().to_owned(),
                             active: session.id() == active,
+                            folder: session.folder().map(str::to_owned),
                             windows: workspace
                                 .session_windows(session.id())
                                 .into_iter()
@@ -6460,6 +6463,30 @@ impl Host<'_, '_> {
                     sections,
                     keys,
                     error: self.context.config_error.cloned(),
+                })
+            }
+            // The config's folders, and the recent ones that are there still.
+            Asked::SessionFolders => {
+                let home = std::env::home_dir();
+                let configured = crate::session_folders::listed(
+                    &self.context.config.sessions.folders,
+                    home.as_deref(),
+                )
+                .into_iter()
+                .map(|folder| folder.to_string_lossy().into_owned())
+                .collect();
+                let recent = self
+                    .context
+                    .workspace
+                    .recent_folders()
+                    .iter()
+                    .filter(|folder| std::path::Path::new(folder).is_dir())
+                    .cloned()
+                    .collect();
+                Response::SessionFolders(host::SessionFolders {
+                    configured,
+                    recent,
+                    home: home.map(|home| home.to_string_lossy().into_owned()),
                 })
             }
             Asked::Agents => {

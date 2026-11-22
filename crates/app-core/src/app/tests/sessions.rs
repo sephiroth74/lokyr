@@ -113,6 +113,7 @@ fn the_window_menu_s_sessions_rename_and_close_a_session() {
     assert_eq!(
         titles,
         [
+            "Switch Session… ⌨",
             "New Session",
             "Switch to Last Session ⌨",
             "Rename Session…",
@@ -199,4 +200,53 @@ fn the_quick_terminal_and_a_man_page_s_window_show_in_every_session() {
             None
         );
     }
+}
+
+#[test]
+fn a_binding_of_a_session_s_name_switches_to_it() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    let home = app.workspace.active_session();
+    command(&mut fake, &mut app, NEW_SESSION);
+    let work = app.workspace.active_session();
+    assert!(app.workspace.rename_session(work, "work"));
+    assert!(app.workspace.rename_session(home, "home"));
+    let named = |name: &str| {
+        lokyr_kernel::commands::Args::from([(
+            "name".to_owned(),
+            lokyr_kernel::commands::Value::String(name.to_owned()),
+        )])
+    };
+    app.run(&mut fake, SWITCH_SESSION, named("home"));
+    assert_eq!(app.workspace.active_session(), home);
+    assert!(!hidden(&fake, first));
+    // A name of no session switches nothing.
+    app.run(&mut fake, SWITCH_SESSION, named("gone"));
+    assert_eq!(app.workspace.active_session(), home);
+    app.run(&mut fake, SWITCH_SESSION, named("work"));
+    assert_eq!(app.workspace.active_session(), work);
+    assert!(hidden(&fake, first));
+}
+
+#[test]
+fn the_recent_folders_are_kept_for_the_next_start() {
+    let base = real_directory("recent-folders");
+    let state = base.join("state");
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    app.workspace
+        .set_recent_folders(vec!["/tmp/a".to_owned(), "/tmp/b".to_owned()]);
+    app.quit(&mut fake);
+    // The next start lists them again.
+    let mut fake = Fake::default();
+    let mut app = app_of_state(state.clone());
+    fake.start(&mut app);
+    assert_eq!(app.workspace.recent_folders(), ["/tmp/a", "/tmp/b"]);
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// An app of the default config of the state's directory `state`.
+fn app_of_state(state: std::path::PathBuf) -> App {
+    app(Config::default(), quiet()).with_state(Some(state))
 }

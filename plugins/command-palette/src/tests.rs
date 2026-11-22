@@ -136,7 +136,7 @@ fn ran(requests: &[Request]) -> Vec<String> {
 fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_arguments() {
     let (mut host, mut plugin) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, THEME, AGENTS, MOVE]);
+    assert_eq!(commands, [OPEN, THEME, AGENTS, SESSIONS, MOVE]);
     run(&mut host, &mut plugin, OPEN, Args::new());
     let options = host
         .panels()
@@ -155,8 +155,8 @@ fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_argume
     );
     assert!(options.close_escape && options.close_outside);
     // In the registry's order, but those of an argument, the dimmed ones
-    // and its own opening; its theme picker and its agents' list last,
-    // its own.
+    // and its own opening; its theme picker, its agents' list and its
+    // sessions' switcher last, its own.
     assert_eq!(
         shown(&mut host, &mut plugin),
         [
@@ -165,7 +165,8 @@ fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_argume
             "Paste",
             "New Tab",
             "Choose Theme…",
-            "Show Agents…"
+            "Show Agents…",
+            "Switch Session…"
         ]
     );
 }
@@ -211,7 +212,7 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
     );
     // Not past the ends.
     run(&mut host, &mut plugin, MOVE, delta(10));
-    assert_eq!(plugin.open.as_ref().unwrap().selected, 5);
+    assert_eq!(plugin.open.as_ref().unwrap().selected, 6);
     run(&mut host, &mut plugin, MOVE, delta(-10));
     assert_eq!(plugin.open.as_ref().unwrap().selected, 0);
     run(&mut host, &mut plugin, MOVE, delta(2));
@@ -314,7 +315,8 @@ fn the_recent_commands_come_first_and_the_state_keeps_them() {
             "New Window",
             "New Tab",
             "Choose Theme…",
-            "Show Agents…"
+            "Show Agents…",
+            "Switch Session…"
         ]
     );
     let Data::Map(state) = host.state() else {
@@ -576,4 +578,98 @@ fn the_agents_list_is_one_of_the_palette_s_commands() {
     let (host, _) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
     assert!(commands.contains(&AGENTS));
+}
+
+/// Submits the palette's field, as Return does, and returns the requests.
+fn submit(host: &mut FakeHost, plugin: &mut Palette) -> Vec<Request> {
+    on_panel(
+        host,
+        plugin,
+        FIELD,
+        UiEventKind::Submit {
+            text: String::new(),
+            shift: false,
+        },
+    )
+}
+
+#[test]
+fn the_switcher_lists_the_sessions_then_the_folders_of_no_session() {
+    let (mut host, mut plugin) = host();
+    let home = "/Users/me".to_owned();
+    host.set_session_folders(lokyr_plugin_sdk::host::SessionFolders {
+        configured: vec![
+            "/Users/me/src/api".to_owned(),
+            "/Users/me/src/web".to_owned(),
+        ],
+        recent: vec!["/Users/me/src/api".to_owned(), "/tmp/scratch".to_owned()],
+        home: Some(home),
+    });
+    run(&mut host, &mut plugin, SESSIONS, Args::new());
+    // The session that the host starts in, of no name, then the config's
+    // folders, then the recent ones not listed already.
+    assert_eq!(
+        shown(&mut host, &mut plugin),
+        ["Untitled Session", "api", "web", "scratch"]
+    );
+    let keys: Vec<Option<String>> = {
+        let open = plugin.open.as_ref().unwrap();
+        open.ranked
+            .iter()
+            .map(|&at| open.commands[at].keys.clone())
+            .collect()
+    };
+    assert_eq!(
+        keys,
+        [
+            Some("Current".to_owned()),
+            Some("~/src".to_owned()),
+            Some("~/src".to_owned()),
+            Some("Recent · /tmp".to_owned()),
+        ]
+    );
+    // A folder opens a session there, named after it.
+    typed(&mut host, &mut plugin, "web");
+    assert_eq!(shown(&mut host, &mut plugin), ["web"]);
+    let requests = submit(&mut host, &mut plugin);
+    assert!(
+        requests.contains(&Request::NewSession {
+            name: "web".to_owned(),
+            directory: Some("/Users/me/src/web".to_owned()),
+        }),
+        "{requests:?}"
+    );
+    // Then it is a session, its folder no longer among the folders, the
+    // sessions first.
+    run(&mut host, &mut plugin, SESSIONS, Args::new());
+    assert_eq!(
+        shown(&mut host, &mut plugin),
+        ["web", "Untitled Session", "api", "scratch"]
+    );
+    // A session switches.
+    typed(&mut host, &mut plugin, "untitled");
+    let requests = submit(&mut host, &mut plugin);
+    assert!(
+        requests
+            .iter()
+            .any(|request| matches!(request, Request::SwitchSession(_))),
+        "{requests:?}"
+    );
+}
+
+#[test]
+fn a_folder_s_parent_shows_of_the_home_directory() {
+    assert_eq!(
+        parts("/Users/me/src/api", Some("/Users/me")),
+        ("~/src".to_owned(), "api".to_owned())
+    );
+    assert_eq!(
+        parts("/Users/me/src", Some("/Users/me")),
+        ("~".to_owned(), "src".to_owned())
+    );
+    assert_eq!(
+        parts("/Users/meow/x", Some("/Users/me")),
+        ("/Users/meow".to_owned(), "x".to_owned())
+    );
+    assert_eq!(parts("/tmp", None), ("/".to_owned(), "tmp".to_owned()));
 }

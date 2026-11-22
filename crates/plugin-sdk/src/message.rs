@@ -255,6 +255,9 @@ pub enum Request {
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
     Agents,
+    /// The folders that the sessions' switcher lists, of `process-read`, as
+    /// the panes' shells told them.
+    SessionFolders,
     /// The plugins, built in and installed, in the order of their
     /// activation: each one's state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.
@@ -1339,9 +1342,10 @@ impl Request {
             | Self::ScreenCells(_)
             | Self::RowCells { .. }
             | Self::EditedLine(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) | Self::Agents | Self::GitBranch { .. } => {
-                Some(Capability::ProcessRead)
-            }
+            Self::WorkingDirectory(_)
+            | Self::Agents
+            | Self::SessionFolders
+            | Self::GitBranch { .. } => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. }
             | Self::CommandLine { .. }
@@ -1532,6 +1536,7 @@ impl Request {
             | Self::TempFile { .. }
             | Self::GitBranch { .. }
             | Self::Agents
+            | Self::SessionFolders
             | Self::Plugins
             | Self::Settings
             | Self::FontStyles(_)
@@ -1687,6 +1692,8 @@ pub enum Response {
     Now(crate::host::LocalTime),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
+    /// The folders that the sessions' switcher lists.
+    SessionFolders(crate::host::SessionFolders),
     /// The plugins, built in and installed.
     Plugins(Vec<crate::host::PluginInfo>),
     /// The settings, of their sections and keys.
@@ -2283,6 +2290,7 @@ impl Request {
             Self::Day { .. } => "day",
             Self::Now { .. } => "now",
             Self::Agents { .. } => "agents",
+            Self::SessionFolders => "session-folders",
             Self::Plugins { .. } => "plugins",
             Self::Settings { .. } => "settings",
             Self::ClipboardText { .. }

@@ -56,6 +56,20 @@ pub fn check_session_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `path`, a path absolute or from `~`, of the home directory for `~`, as
+/// a session opened in a folder keeps it; as it is without a home
+/// directory.
+pub fn home_expanded(path: &str) -> String {
+    let rest = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => return path.to_owned(),
+    };
+    match std::env::home_dir() {
+        Some(home) => format!("{}{rest}", home.to_string_lossy()),
+        None => path.to_owned(),
+    }
+}
+
 /// A session, as a read of the sessions gives it: a group of windows, of
 /// which the active session's show and the others' are hidden, their
 /// programs running.
@@ -71,6 +85,26 @@ pub struct SessionInfo {
     /// Its windows, in the order they opened; none of a session whose
     /// first window has yet to open.
     pub windows: Vec<WindowId>,
+    /// The folder that it was opened in, an absolute path, as the
+    /// sessions' switcher opens one of a folder; none of another.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+/// The folders that the sessions' switcher lists, each an absolute path:
+/// those of the config's `[sessions] folders`, in their order, and those
+/// that the panes' shells told last, the latest first, of this machine and
+/// there still.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionFolders {
+    /// The config's.
+    pub configured: Vec<String>,
+    /// The recent ones.
+    pub recent: Vec<String>,
+    /// The home directory, which a switcher shows the folders under as of
+    /// `~`, if there is one.
+    #[serde(default)]
+    pub home: Option<String>,
 }
 
 /// Whether a group's `name` and `color` are a group's: a name of

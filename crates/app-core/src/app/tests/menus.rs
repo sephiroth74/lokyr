@@ -341,7 +341,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 140);
+    assert_eq!(app.keymap.bindings().len(), 141);
 }
 
 #[test]
@@ -444,6 +444,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::Windows
             ),
             ("window.set-title", "Set Title…", Category::Windows),
+            (
+                "window.switch-session",
+                "Switch to Session",
+                Category::Windows
+            ),
             (
                 "window.switch-to-last-session",
                 "Switch to Last Session",

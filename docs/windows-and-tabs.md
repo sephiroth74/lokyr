@@ -1,6 +1,6 @@
 # Windows and tabs
 
-<sub>macOS · on by default · the [`tabs`](plugins/tabs.md) plugin · [`[window]`](CONFIGURATION.md#window), [`[plugins.tabs]`](CONFIGURATION.md#pluginstabs), [`[app] restore-windows`](CONFIGURATION.md#restore-windows)</sub>
+<sub>macOS · on by default · the [`tabs`](plugins/tabs.md) plugin · [`[window]`](CONFIGURATION.md#window), [`[plugins.tabs]`](CONFIGURATION.md#pluginstabs), [`[app] restore-windows`](CONFIGURATION.md#restore-windows), [`[sessions]`](CONFIGURATION.md#sessions)</sub>
 
 Open as many windows as you need, each with its own tabs, and move between them from the keyboard. Drag tabs to reorder them, to move them to another window or to split a pane, give them titles and colors of your own, and have your windows open again where you left them.
 
@@ -49,6 +49,7 @@ Each window takes a number when it opens, the lowest that no other open window o
 
 A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide. The programs in hidden windows keep running, and hidden windows draw nothing. · not released yet
 
+- **Window › Sessions › Switch Session…**, ⌃⌘S, lists your sessions, then folders: those that [`[sessions] folders`](CONFIGURATION.md#sessions) names, such as every project in `~/src`, and those where your shells worked last. Choose a session to switch to it, or a folder to open a session there, named after the folder. A folder that has a session already switches to it. The [command palette's page](plugins/command-palette.md#the-sessions-switcher) tells more.
 - **Window › Sessions › New Session** opens a session with one window of a new shell, and hides the windows you had.
 - **Window › Sessions › Switch to Last Session**, ⌃⌘L, switches to the session you used before. Press it again to come back.
 - **Window › Sessions › Rename Session…** names the session. The name shows in the titlebar of its windows, before their keys, such as `api · ⌥⌘1`.
@@ -56,7 +57,14 @@ A session is a group of windows, such as one for each project. One session shows
 
 Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in.
 
-**Try it**: choose Window › Sessions › New Session: your windows hide and a new one opens. Press ⌃⌘L: your windows come back.
+Bind a key to a session of your own with `window.switch-session`, which switches to the session of its `name`:
+
+```toml
+[keys]
+"ctrl+cmd+1" = { command = "window.switch-session", args = { name = "api" } }
+```
+
+**Try it**: choose Window › Sessions › New Session: your windows hide and a new one opens. Press ⌃⌘L: your windows come back. Then add `folders = ["~/src/*"]` to a `[sessions]` section of your config, and press ⌃⌘S: your projects show after your sessions.
 
 ## Float a window or use full screen
 
@@ -251,6 +259,7 @@ close-button = "hover"            # "always" or "never"
 | ⌥⌘1 to ⌥⌘9 | `cmd+alt+1` to `cmd+alt+9` | Bring that window forward |
 | ⌘\`, ⇧⌘\` | `` cmd+` ``, `` cmd+shift+` `` | Bring the next or the previous window forward |
 | ⇧⌘I | `cmd+shift+i` | Give the window a title |
+| ⌃⌘S | `cmd+ctrl+s` | Switch to a session, or open one in a folder · not released yet |
 | ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |

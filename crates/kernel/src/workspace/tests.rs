@@ -3051,3 +3051,42 @@ fn closing_a_session_closes_its_windows() {
     assert!(workspace.window(window).is_none());
     assert_eq!(session_ids(&workspace), [first]);
 }
+
+#[test]
+fn the_folders_that_the_shells_tell_are_the_recent_ones_the_latest_first() {
+    let mut workspace = Workspace::new();
+    // A remote shell's folder is no recent one; the same folder told again
+    // goes first once. A shell tells its folder at each prompt, a while
+    // apart, as the terminal keeps the last of a batch.
+    workspace.open_window(pane(concat!(
+        "printf '\\033]7;file:///tmp/one\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file://elsewhere.example/far\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file://localhost/tmp/two\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file:///tmp/one\\033\\\\'; exec sleep 30"
+    )));
+    let start = Instant::now();
+    while workspace.recent_folders().first().map(String::as_str) != Some("/tmp/one")
+        || workspace.recent_folders().len() < 2
+    {
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
+        workspace.take_events();
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            workspace.recent_folders()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(workspace.recent_folders(), ["/tmp/one", "/tmp/two"]);
+    // Those of a run before come after this run's, each once, 50 at most.
+    let before: Vec<String> = (0..60).map(|n| format!("/kept/{n}")).collect();
+    workspace.set_recent_folders(
+        std::iter::once("/tmp/two".to_owned())
+            .chain(before)
+            .collect(),
+    );
+    let recent = workspace.recent_folders();
+    assert_eq!(recent.len(), MOST_RECENT_FOLDERS);
+    assert_eq!(recent[..3], ["/tmp/one", "/tmp/two", "/kept/0"]);
+}

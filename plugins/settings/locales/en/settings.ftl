@@ -94,6 +94,7 @@ section-links = Links
 section-bell = Bell
 section-notifications = Notifications
 section-agents = Agents
+section-sessions = Sessions
 section-theme = Theme
 section-app = App
 section-updates = Updates

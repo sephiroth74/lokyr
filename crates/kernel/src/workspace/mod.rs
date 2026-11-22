@@ -503,7 +503,13 @@ pub struct Workspace {
     groups: BTreeMap<GroupId, Group>,
     /// The sessions, and the active one.
     sessions: sessions::Sessions,
+    /// The folders that the panes' shells told last, by OSC 7, of this
+    /// machine, the latest first, [`MOST_RECENT_FOLDERS`] at most.
+    recent_folders: Vec<String>,
 }
+
+/// The most recent folders that the workspace keeps.
+pub const MOST_RECENT_FOLDERS: usize = 50;
 
 /// A tab closed that the workspace keeps, out of every window, its panes'
 /// programs running and their output read, until its time is up.
@@ -620,6 +626,35 @@ impl Workspace {
         {
             self.group_changed(group, window);
         }
+    }
+
+    /// The folders that the panes' shells told last, the latest first.
+    pub fn recent_folders(&self) -> &[String] {
+        &self.recent_folders
+    }
+
+    /// Gives the workspace the recent folders that a run before kept, the
+    /// latest first, each once, [`MOST_RECENT_FOLDERS`] at most, before
+    /// those of this run.
+    pub fn set_recent_folders(&mut self, folders: Vec<String>) {
+        let mut kept: Vec<String> = Vec::new();
+        for folder in self.recent_folders.drain(..).chain(folders) {
+            if !folder.is_empty() && !kept.contains(&folder) {
+                kept.push(folder);
+            }
+        }
+        kept.truncate(MOST_RECENT_FOLDERS);
+        self.recent_folders = kept;
+    }
+
+    /// Puts `folder` first among the recent folders.
+    fn saw_folder(&mut self, folder: String) {
+        if folder.is_empty() || self.recent_folders.first() == Some(&folder) {
+            return;
+        }
+        self.recent_folders.retain(|kept| *kept != folder);
+        self.recent_folders.insert(0, folder);
+        self.recent_folders.truncate(MOST_RECENT_FOLDERS);
     }
 
     /// Records `event`, for the embedder.
@@ -1004,6 +1039,7 @@ impl Workspace {
             let before = active.and_then(|tab| self.tabs.get(&tab)).map(Tab::look);
             let mut tab = active.and_then(|tab| self.tabs.get_mut(&tab));
             let mut retitled = false;
+            let mut recent: Vec<String> = Vec::new();
             for event in happened.events {
                 let event = match event {
                     terminal::Event::TitleChanged => {
@@ -1049,6 +1085,16 @@ impl Workspace {
                     terminal::Event::StatusChanged | terminal::Event::SessionStatusChanged => {
                         continue;
                     }
+                    // The folder that the shell told, among the recent ones.
+                    terminal::Event::WorkingDirectory(told) => {
+                        if sdk::is_local_host(&told.host, &lokyr_pty::host_name()) {
+                            recent.push(told.path.clone());
+                        }
+                        Event::Terminal {
+                            pane: id,
+                            event: terminal::Event::WorkingDirectory(told),
+                        }
+                    }
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
@@ -1059,6 +1105,9 @@ impl Workspace {
                 }
                 retitled = true;
                 self.events.push(Event::TitleChanged(id));
+            }
+            for folder in recent {
+                self.saw_folder(folder);
             }
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);

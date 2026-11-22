@@ -15,6 +15,10 @@ pub mod windows;
 /// The file of the last window's directory, in the state's directory.
 const LAST_DIRECTORY: &str = "last-directory";
 
+/// The file of the recent folders, which the sessions' switcher lists, in
+/// the state's directory: a line each, the latest first.
+const RECENT_FOLDERS: &str = "recent-folders";
+
 /// The directory of the app's state: `~/Library/Application Support/lokyr/
 /// state/` on macOS; `$XDG_STATE_HOME/lokyr/`, or `~/.local/state/lokyr/`,
 /// elsewhere. `None` without a home directory.
@@ -41,6 +45,30 @@ pub fn last_directory(state: &Path) -> Option<PathBuf> {
 /// file written whole, so that a write cut short leaves the one before.
 pub fn keep_last_directory(state: &Path, directory: &Path) -> io::Result<()> {
     write_whole(&state.join(LAST_DIRECTORY), &bytes(directory))
+}
+
+/// The recent folders that `state` keeps, the latest first; none of no
+/// file.
+pub fn recent_folders(state: &Path) -> Vec<String> {
+    fs::read_to_string(state.join(RECENT_FOLDERS))
+        .map(|text| {
+            text.lines()
+                .filter(|line| line.starts_with('/'))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Keeps `folders`, the recent ones, in `state`, which it makes, a line
+/// each, those of a line break left out: a file written whole.
+pub fn keep_recent_folders(state: &Path, folders: &[String]) -> io::Result<()> {
+    let mut text = String::new();
+    for folder in folders.iter().filter(|folder| !folder.contains('\n')) {
+        text.push_str(folder);
+        text.push('\n');
+    }
+    write_whole(&state.join(RECENT_FOLDERS), text.as_bytes())
 }
 
 /// Writes `contents` to the file at `path`, whose directory it makes,
@@ -106,6 +134,21 @@ mod tests {
             .map(|entry| entry.unwrap().file_name())
             .collect();
         assert_eq!(names, [LAST_DIRECTORY]);
+        let _ = fs::remove_dir_all(&state);
+    }
+
+    #[test]
+    fn the_recent_folders_read_back_as_they_were_kept() {
+        let state = std::env::temp_dir().join(format!("lokyr-state-recent-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&state);
+        assert!(recent_folders(&state).is_empty());
+        let folders = [
+            "/tmp/a b".to_owned(),
+            "/tmp/line\nbreak".to_owned(),
+            "/src".to_owned(),
+        ];
+        keep_recent_folders(&state, &folders).unwrap();
+        assert_eq!(recent_folders(&state), ["/tmp/a b", "/src"]);
         let _ = fs::remove_dir_all(&state);
     }
 

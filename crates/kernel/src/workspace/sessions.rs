@@ -18,6 +18,9 @@ use super::{SessionId, WindowId, Workspace};
 pub struct Session {
     id: SessionId,
     name: String,
+    /// The folder that it was opened in, as the sessions' switcher opens
+    /// one of a folder, which finds it there again.
+    folder: Option<String>,
     /// The count of the sessions' uses as it last became active.
     used: u64,
 }
@@ -31,6 +34,11 @@ impl Session {
     /// Its name, empty for none.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The folder that it was opened in, if it was opened in one.
+    pub fn folder(&self) -> Option<&str> {
+        self.folder.as_deref()
     }
 }
 
@@ -50,6 +58,7 @@ impl Default for Sessions {
         let session = Session {
             id,
             name: String::new(),
+            folder: None,
             used: 0,
         };
         Self {
@@ -120,6 +129,7 @@ impl Workspace {
             Session {
                 id,
                 name: name.to_owned(),
+                folder: None,
                 used: 0,
             },
         );
@@ -165,6 +175,24 @@ impl Workspace {
             self.session_changed(id);
         }
         true
+    }
+
+    /// Gives the session `id` the folder that it was opened in; whether it
+    /// is there.
+    pub fn set_session_folder(&mut self, id: SessionId, folder: Option<String>) -> bool {
+        let Some(session) = self.sessions.list.get_mut(&id) else {
+            return false;
+        };
+        session.folder = folder;
+        true
+    }
+
+    /// The session opened in `folder`, the one used last of several.
+    pub fn session_in(&self, folder: &str) -> Option<SessionId> {
+        self.sessions()
+            .into_iter()
+            .find(|session| session.folder.as_deref() == Some(folder))
+            .map(Session::id)
     }
 
     /// Closes the session `id`, with its windows, their tabs and panes,

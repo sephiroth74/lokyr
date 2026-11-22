@@ -45,8 +45,8 @@ use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     self, BarPlace, Binding, Color, DecorationLook, Direction, Edge, GroupId, GroupInfo, Layout,
-    LineText, MOST_STATE, PaneId, ScreenPoint, SessionId, SessionInfo, Side, StyleRun, TabId,
-    TabInfo, WindowId, WindowInfo,
+    LineText, MOST_STATE, PaneId, ScreenPoint, SessionFolders, SessionId, SessionInfo, Side,
+    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{
@@ -444,6 +444,8 @@ struct FakeGroup {
 struct FakeSession {
     id: SessionId,
     name: String,
+    /// The folder that it was opened in, `~` expanded.
+    folder: Option<String>,
     /// The count of the sessions' uses as it last became active.
     used: u64,
 }
@@ -580,6 +582,9 @@ pub struct FakeHost {
     session_uses: u64,
     /// The session of each window but the quick ones.
     window_sessions: BTreeMap<WindowId, SessionId>,
+    /// The folders that the sessions' switcher lists, as the test gave
+    /// them.
+    session_folders: SessionFolders,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
     /// The registry's commands of the app's and of other plugins', before
@@ -755,8 +760,14 @@ impl FakeHost {
             sessions: vec![FakeSession {
                 id: FIRST_SESSION,
                 name: String::new(),
+                folder: None,
                 used: 0,
             }],
+            // The home directory, as the app's.
+            session_folders: SessionFolders {
+                home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
+                ..SessionFolders::default()
+            },
             active_session: FIRST_SESSION,
             session_uses: 0,
             window_sessions: BTreeMap::new(),
@@ -1262,6 +1273,13 @@ impl FakeHost {
     /// last; none of a file that it did not write.
     pub fn temporary_file(&self, name: &str) -> Option<&[u8]> {
         self.temporary_bytes.get(name).map(Vec::as_slice)
+    }
+
+    /// Gives the folders that the sessions' switcher lists, which a read of
+    /// them tells.
+    pub fn set_session_folders(&mut self, folders: SessionFolders) -> &mut Self {
+        self.session_folders = folders;
+        self
     }
 
     /// Makes the folder of the absolute path `folder` a git repository's
@@ -2351,9 +2369,9 @@ impl FakeHost {
                     self.new_group(id, tabs, name, *color);
                 }
             }
-            Request::NewSession { name, .. } => {
+            Request::NewSession { name, directory } => {
                 if let Opened::Session(id) = opened {
-                    self.new_session(id, name);
+                    self.new_session(id, name, directory.as_deref());
                 }
             }
             Request::SwitchSession(session) => self.switch_session(*session),
@@ -2761,6 +2779,7 @@ impl FakeHost {
                 id: session.id,
                 name: session.name.clone(),
                 active: session.id == self.active_session,
+                folder: session.folder.clone(),
                 windows: self
                     .windows
                     .keys()
@@ -2774,13 +2793,14 @@ impl FakeHost {
     /// Makes the session `id` of `name`, of no window, and switches to it,
     /// as the app does, which opens its first window then: the fake host
     /// opens none, as of a request to open a window.
-    fn new_session(&mut self, id: SessionId, name: &str) {
+    fn new_session(&mut self, id: SessionId, name: &str, folder: Option<&str>) {
         if self.sessions.iter().any(|session| session.id == id) {
             return;
         }
         self.sessions.push(FakeSession {
             id,
             name: name.to_owned(),
+            folder: folder.map(crate::host::home_expanded),
             used: 0,
         });
         self.switch_session(id);
@@ -4625,6 +4645,7 @@ impl Calling<'_> {
                 Response::Text(branch.cloned())
             }
             Request::Agents => Response::Agents(host.agents.clone()),
+            Request::SessionFolders => Response::SessionFolders(host.session_folders.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),

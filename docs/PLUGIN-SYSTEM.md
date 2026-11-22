@@ -299,6 +299,14 @@ type SessionInfo = {
     name: string, -- empty for none, 256 characters at most
     active: boolean, -- whether its windows show
     windows: { WindowId }, -- in the order they opened; none of a session whose first window has yet to open
+    folder: string?, -- the absolute path of the folder that it was opened in, as the sessions' switcher opens one
+}
+
+-- The folders that the sessions' switcher lists, each an absolute path, of `process-read` · not released yet.
+type SessionFolders = {
+    configured: { string }, -- those of the config's `[sessions] folders`, in their order
+    recent: { string }, -- those that the panes' shells told last, the latest first, there still
+    home: string?, -- the home directory, which a switcher shows the folders under as of `~`
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the
@@ -913,6 +921,8 @@ type Cx = {
     -- The sessions, in the order of their use, the active one first and the one before it second · not released
     -- yet.
     sessions: () -> ({ SessionInfo }?, Error?),
+    -- The folders that the sessions' switcher lists, of `process-read` · not released yet.
+    session_folders: () -> (SessionFolders?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
     -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane

@@ -15,6 +15,7 @@ command-window-new-session = New Session
 command-window-switch-to-last-session = Switch to Last Session
 command-window-rename-session = Rename Session…
 command-window-close-session = Close Session
+command-window-switch-session = Switch to Session
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…

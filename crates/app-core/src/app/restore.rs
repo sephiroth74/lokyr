@@ -12,8 +12,8 @@ use lokyr_kernel::commands::Code;
 use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::{Arg, Texts};
 use lokyr_kernel::plugins::host::LocalTime;
-use lokyr_kernel::state::scrollback;
 use lokyr_kernel::state::windows::{self, Kept};
+use lokyr_kernel::state::{self, scrollback};
 use lokyr_kernel::workspace::{self, Environment, PaneId, Restored};
 use lokyr_platform_core::{Platform, ScreenRect, WindowAttributes, WindowId, WindowSize};
 
@@ -45,6 +45,11 @@ impl<B: Backend> App<B> {
         };
         if self.benched {
             return;
+        }
+        // The folders that the shells told, which the sessions' switcher
+        // lists at the next start too.
+        if let Err(error) = state::keep_recent_folders(state, self.workspace.recent_folders()) {
+            eprintln!("lokyr: the recent folders cannot be kept for the next start: {error}");
         }
         if self.restores_windows(platform) {
             let mut shown: Vec<(u32, workspace::WindowId, Option<windows::Frame>)> = self
@@ -131,6 +136,11 @@ impl<B: Backend> App<B> {
         let Some(state) = self.state.clone() else {
             return false;
         };
+        // The folders that the shells told in the runs before.
+        if !self.benched {
+            self.workspace
+                .set_recent_folders(state::recent_folders(&state));
+        }
         // What the panes showed, which no pane shows again, goes at once.
         if !self.benched
             && !(self.restores_windows(platform) && self.config.app.restore_scrollback)

@@ -27,9 +27,9 @@ use lokyr_plugin_sdk::host::{
     DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
     MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
     MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
-    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionId,
-    SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport,
-    WindowId, WindowInfo, check_file_name,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionFolders,
+    SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
+    Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -1379,7 +1379,13 @@ fn sessions(world: &World) -> Scenario {
         name: name.to_owned(),
         active,
         windows,
+        folder: None,
     };
+    // The folder of the session made, `~` expanded.
+    let src = format!(
+        "{}/src",
+        std::env::home_dir().unwrap_or_default().to_string_lossy()
+    );
     let new = |name: &str, directory: Option<&str>| Request::NewSession {
         name: name.to_owned(),
         directory: directory.map(str::to_owned),
@@ -1431,7 +1437,10 @@ fn sessions(world: &World) -> Scenario {
                     (
                         Request::Sessions,
                         Response::Sessions(vec![
-                            info(1, "work", true, Vec::new()),
+                            SessionInfo {
+                                folder: Some(src.clone()),
+                                ..info(1, "work", true, Vec::new())
+                            },
                             info(0, "", false, vec![w]),
                         ]),
                     ),
@@ -1440,13 +1449,26 @@ fn sessions(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![changed(1), changed(0)],
             },
-            ask(vec![(
-                Request::Sessions,
-                Response::Sessions(vec![
-                    info(0, "", true, vec![w]),
-                    info(1, "work", false, Vec::new()),
-                ]),
-            )]),
+            ask(vec![
+                (
+                    Request::Sessions,
+                    Response::Sessions(vec![
+                        info(0, "", true, vec![w]),
+                        SessionInfo {
+                            folder: Some(src.clone()),
+                            ..info(1, "work", false, Vec::new())
+                        },
+                    ]),
+                ),
+                // Of the config's folders, none, and no shell told one.
+                (
+                    Request::SessionFolders,
+                    Response::SessionFolders(SessionFolders {
+                        home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
+                        ..SessionFolders::default()
+                    }),
+                ),
+            ]),
         ],
     }
 }

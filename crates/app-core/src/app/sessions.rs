@@ -6,6 +6,7 @@
 //! titlebar. The quick terminal's window, the settings' and a man page's
 //! are of no session, and show whichever is active.
 
+use lokyr_kernel::commands::{Args, Code, Error, Value};
 use lokyr_kernel::l10n::Arg;
 use lokyr_kernel::workspace::{self, Pane, SessionId};
 use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, WindowId};
@@ -37,6 +38,36 @@ impl<B: Backend> App<B> {
         if self.workspace.switch_to_last_session() {
             self.settle_sessions(platform);
         }
+    }
+
+    /// Switches to the session of `args`' `name`, the one used last of
+    /// several; `not-found` of none of that name.
+    pub(super) fn switch_session_named(
+        &mut self,
+        platform: &mut dyn Platform,
+        args: &Args,
+    ) -> Result<(), Error> {
+        let Some(Value::String(name)) = args.get("name") else {
+            return Err(Error::new(
+                Code::MissingArgument,
+                "a session's switch takes its `name`",
+            ));
+        };
+        let found = self
+            .workspace
+            .sessions()
+            .into_iter()
+            .find(|session| session.name() == name.as_str())
+            .map(workspace::Session::id);
+        let Some(session) = found else {
+            return Err(Error::new(
+                Code::NotFound,
+                format!("there is no session `{name}`"),
+            ));
+        };
+        self.workspace.switch_session(session);
+        self.settle_sessions(platform);
+        Ok(())
     }
 
     /// Asks for the active session's name, on the window in front.

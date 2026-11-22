@@ -44,6 +44,7 @@ export type Cx = {
     temp_file: (name: string, bytes: string | buffer) -> (string?, string?, number?),
     git_branch: (folder: string) -> (string?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
+    session_folders: () -> (SessionFolders?, string?, number?),
     plugins: () -> ({ PluginInfo }?, string?, number?),
     settings: () -> (Settings?, string?, number?),
     font_styles: (text: string) -> ({ string }?, string?, number?),
@@ -923,6 +924,12 @@ export type SelectionKind =
     | "lines"
     | "block"
 
+export type SessionFolders = {
+    configured: { string },
+    recent: { string },
+    home: string?,
+}
+
 export type SessionId = number
 
 export type SessionInfo = {
@@ -930,6 +937,7 @@ export type SessionInfo = {
     name: string,
     active: boolean?,
     windows: { WindowId },
+    folder: string?,
 }
 
 export type SettingBinding = {

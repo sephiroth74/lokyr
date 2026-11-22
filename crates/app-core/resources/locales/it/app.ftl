@@ -7,6 +7,7 @@ command-window-new-session = Nuova sessione
 command-window-switch-to-last-session = Passa all'ultima sessione
 command-window-rename-session = Rinomina sessione…
 command-window-close-session = Chiudi sessione
+command-window-switch-session = Passa alla sessione
 command-window-goto = Vai alla finestra
 command-window-next-agent = Vai al prossimo agente
 command-window-next = Passa alla finestra successiva
