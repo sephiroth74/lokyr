@@ -8,6 +8,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-22
+
 ### Added
 
 - Shortcuts drawn as key caps, as ⇧ ⌘ N, in the Keys page and the command palette; callouts, tinted boxes of a level's icon, of a config file that does not read, a value refused and a plugin's failure; tags of the Plugins page's Active, Disabled and Replaced; and an empty state of a search that finds nothing, in the Settings and Keys pages and the plugins' registry. Plugins draw key caps of `kind = "keys"` or a button's `keycaps`, and themes color them of `keycap.bg`, `keycap.fg` and `callout.info`, `.success`, `.warning` and `.error`'s `bg` and `fg`.
@@ -367,7 +369,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - The first numbered version, not distributed: the macOS app, a window of one pane, of Lokyr's own terminal core and Metal renderer, configured by `~/.config/lokyr/config.toml`.
 
-[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/sephiroth74/lokyr/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/sephiroth74/lokyr/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/sephiroth74/lokyr/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/sephiroth74/lokyr/compare/v1.0.0...v1.1.0

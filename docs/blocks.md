@@ -1,6 +1,6 @@
 # Blocks
 
-<sub>macOS · zsh, bash, fish · off by default · the `lokyr/blocks` plugin · [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) · not released yet</sub>
+<sub>macOS · zsh, bash, fish · off by default · the `lokyr/blocks` plugin · [`[plugins.blocks]`](CONFIGURATION.md#pluginsblocks) · Since 1.4</sub>
 
 Lokyr sees each command that your shell runs as a block: its prompt, the command line you typed, and the output that the command printed. Blocks is off until you turn it on. When you scroll up through a long output, the block's prompt and command line stay at the top of the pane, so that you always know what you are reading. One click takes you back to the start of the block.
 
@@ -16,18 +16,18 @@ Scroll up into the numbers. The prompt and `seq 1 500` stay at the top of the pa
 
 ## What it gives you
 
-- **The command you are reading**: as soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, over the rows that scroll under them: its prompt and its command line as your shell drew them, three rows at most, with a thin line under them. When the block's last rows reach the top, the next block pushes them up, so that they never cover its prompt. While a command still runs and you are at the bottom of the pane, nothing is pinned, so that what it draws at the top, such as a pager or a remote shell, stays in sight; its rows pin as you scroll up into its output · not released yet.
+- **The command you are reading**: as soon as the first row of a block's prompt scrolls above the view, the block's prompt rows stay pinned at the pane's top, over the rows that scroll under them: its prompt and its command line as your shell drew them, three rows at most, with a thin line under them. When the block's last rows reach the top, the next block pushes them up, so that they never cover its prompt. While a command still runs and you are at the bottom of the pane, nothing is pinned, so that what it draws at the top, such as a pager or a remote shell, stays in sight; its rows pin as you scroll up into its output · Since 1.4.
 - **The block's start**: a click on the pinned rows scrolls the command's prompt to the top of the pane.
 - **A pill instead**: with `header = "pill"`, the command line shows in a pill on a thin line across the pane's top, as the [command header](plugins/command-header.md) shows it. A click on the pill goes to the prompt, and an arrow beside it goes to the end of the output, with its last row at the bottom of the pane, or, for a command that is still running, to the bottom of the screen, which the view then follows as the output grows.
 - **The command as you typed it**: zsh, and fish 4 or later, report the command line itself, so a right prompt on its row, such as zsh's `RPROMPT`, stays out of the pill.
 - **Long lines stay short**: in the pill, a command line longer than 80 characters is cut with an ellipsis, `…`. The pill's tooltip, and what VoiceOver reads, keep the whole line.
-- **Copy a block's parts**: right-click a block and open **Block** to copy its command line, its output, or both, or to select its output or the whole block · not released yet.
-- **A block's details**: right-click a block and open **Block** to see its exit status, when it started, how long it ran and the folder where it ran · not released yet.
-- **Run a command again**: right-click a block and open **Block** to run its command line again at the prompt · not released yet.
-- **The header's menu**: right-click the pinned prompt rows, or the pill, for a menu of the block's actions alone · not released yet.
-- **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · not released yet.
-- **Room between the blocks**: with `spacing = true`, a blank row comes before each prompt that follows a command, with the line between the blocks through its middle · not released yet.
-- **Select a block**: a click or ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · not released yet.
+- **Copy a block's parts**: right-click a block and open **Block** to copy its command line, its output, or both, or to select its output or the whole block · Since 1.4.
+- **A block's details**: right-click a block and open **Block** to see its exit status, when it started, how long it ran and the folder where it ran · Since 1.4.
+- **Run a command again**: right-click a block and open **Block** to run its command line again at the prompt · Since 1.4.
+- **The header's menu**: right-click the pinned prompt rows, or the pill, for a menu of the block's actions alone · Since 1.4.
+- **Blocks you can tell apart**: a thin line divides each block from the one before, and the gutter's bar of each command runs along its whole block · Since 1.4.
+- **Room between the blocks**: with `spacing = true`, a blank row comes before each prompt that follows a command, with the line between the blocks through its middle · Since 1.4.
+- **Select a block**: a click or ⌘↑ selects a block, ↑ and ↓ move to the block before or after, and ⌘C copies it · Since 1.4.
 
 ## Copy a command or its output
 
@@ -158,15 +158,15 @@ You can also turn on the **Enabled** switch at the top of the Blocks section of 
 
 ## Settings
 
-- [`header`](CONFIGURATION.md#header): the block's prompt rows pinned at the pane's top, or a pill of its command line · not released yet.
+- [`header`](CONFIGURATION.md#header): the block's prompt rows pinned at the pane's top, or a pill of its command line · Since 1.4.
 - [`background`, `text`, `border`, `line` and `hover`](CONFIGURATION.md#background-text-border-line-hover-1): the theme's tokens of the pill's background, its text, its border, the line across the pane, and the color under the pointer.
 - [`font-size`](CONFIGURATION.md#font-size-2) and [`font-weight`](CONFIGURATION.md#font-weight-1): the text's size and weight, in the terminal's font.
 - [`padding-x` and `padding-y`](CONFIGURATION.md#padding-x-padding-y-2): the room around the text in the pill.
 - [`align`](CONFIGURATION.md#align-1): where the pill sits along the line.
 - [`max-length`](CONFIGURATION.md#max-length-1): the most characters of the command line that the pill shows.
-- [`dividers`](CONFIGURATION.md#dividers): the line between the blocks · not released yet.
-- [`failed-tint`](CONFIGURATION.md#failed-tint): a failed block's rows tinted · not released yet.
-- [`spacing`](CONFIGURATION.md#spacing): a blank row before each prompt that follows a command · not released yet.
+- [`dividers`](CONFIGURATION.md#dividers): the line between the blocks · Since 1.4.
+- [`failed-tint`](CONFIGURATION.md#failed-tint): a failed block's rows tinted · Since 1.4.
+- [`spacing`](CONFIGURATION.md#spacing): a blank row before each prompt that follows a command · Since 1.4.
 
 ## Commands and keys
 
@@ -207,8 +207,8 @@ Blocks replaces the command header: while Blocks runs, the command header is off
 - A shell on another host, such as one that you reach over ssh, marks no commands, so its output shows no header.
 - A program's own screen, such as vim's or less's, shows no header.
 - bash, and fish before 4, report no command line, so the pill shows the text of the command's row, a right prompt included.
-- The pinned rows are the prompt as your shell drew it when you ran the command: a prompt that the shell draws again as you press Return, such as a transient prompt, pins as it was drawn last. A prompt of more than three rows pins its first three · not released yet.
-- The blank rows of `spacing` are rows of the scrollback, which a copy of several blocks includes, and they stay when you turn `spacing` off. A full row is more room than a line between the blocks needs: rows all have the same height. A shell whose own config already prints an empty line before each prompt gets two · not released yet.
+- The pinned rows are the prompt as your shell drew it when you ran the command: a prompt that the shell draws again as you press Return, such as a transient prompt, pins as it was drawn last. A prompt of more than three rows pins its first three · Since 1.4.
+- The blank rows of `spacing` are rows of the scrollback, which a copy of several blocks includes, and they stay when you turn `spacing` off. A full row is more room than a line between the blocks needs: rows all have the same height. A shell whose own config already prints an empty line before each prompt gets two · Since 1.4.
 - The times are those at which the shell's marks reach Lokyr, so a command's duration also counts the time the shell took to print its marks, a few milliseconds.
 - A command's folder is the one where it started. A command that changes folder, such as `cd`, shows the folder that it left.
 - Run Command Again and Copy Command take the command line as your shell reported it. bash, and fish before 4, report none, so Lokyr reads it from the block's first row: a command that you typed over several lines, such as a loop, runs again or is copied from its first line alone. Run it again from the shell's history instead, with the Up arrow.

@@ -63,59 +63,59 @@
 "button.hover.bg" = { light = "text / 8%", dark = "text / 10%" }
 # A button pressed.
 "button.pressed.bg" = { light = "text / 16%", dark = "text / 18%" }
-# A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · not released yet.
+# A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · Since 1.4.
 "button.default.bg" = { light = "accent", dark = "mix(accent, #000000, 30%)" }
-# A default button pressed · not released yet.
+# A default button pressed · Since 1.4.
 "button.default.pressed.bg" = "mix(button.default.bg, #000000, 15%)"
-# A default button's label · not released yet.
+# A default button's label · Since 1.4.
 "button.default.fg" = "contrasting(button.default.bg)"
-# A destructive button's label, as Remove's · not released yet.
+# A destructive button's label, as Remove's · Since 1.4.
 "button.destructive.fg" = "readable(red, on: panel.bg)"
 # A toggle that is on.
 "toggle.on.bg" = { light = "accent / 12%", dark = "accent / 20%" }
 # The mark of a toggle that is on.
 "toggle.on.fg" = "accent"
-# A switch's track that is off · not released yet.
+# A switch's track that is off · Since 1.4.
 "switch.off.bg" = "text / 10%"
-# A switch's track that is on · not released yet.
+# A switch's track that is on · Since 1.4.
 "switch.on.bg" = "accent"
-# A switch's knob · not released yet.
+# A switch's knob · Since 1.4.
 "switch.knob.bg" = "#ffffff"
-# A checkbox's box, and a radio button's circle, that is off · not released yet.
+# A checkbox's box, and a radio button's circle, that is off · Since 1.4.
 "check.off.bg" = "text / 10%"
-# A checkbox's box pressed while it is off · not released yet.
+# A checkbox's box pressed while it is off · Since 1.4.
 "check.off.pressed.bg" = "text / 19%"
-# A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet.
+# A checkbox's box, and a radio button's circle, that is on, of the default button's fill · Since 1.4.
 "check.on.bg" = "button.default.bg"
-# A checkbox's box pressed while it is on or mixed · not released yet.
+# A checkbox's box pressed while it is on or mixed · Since 1.4.
 "check.on.pressed.bg" = "mix(check.on.bg, #000000, 10%)"
-# A checkbox's check, and a radio button's dot · not released yet.
+# A checkbox's check, and a radio button's dot · Since 1.4.
 "check.mark" = "button.default.fg"
-# A group box's fill, of grouped rows, as a settings page's · not released yet.
+# A group box's fill, of grouped rows, as a settings page's · Since 1.4.
 "group.bg" = "text / 3%"
-# The hairline between a group box's rows · not released yet.
+# The hairline between a group box's rows · Since 1.4.
 "group.separator" = "text / 5%"
-# A key cap's fill, of a shortcut drawn as key caps · not released yet.
+# A key cap's fill, of a shortcut drawn as key caps · Since 1.4.
 "keycap.bg" = "text / 8%"
-# A key cap's symbol · not released yet.
+# A key cap's symbol · Since 1.4.
 "keycap.fg" = "text.secondary"
-# A callout's and a tag's fill, of something to know · not released yet.
+# A callout's and a tag's fill, of something to know · Since 1.4.
 "callout.info.bg" = "accent / 12%"
-# A callout's icon and a tag's text, of something to know · not released yet.
+# A callout's icon and a tag's text, of something to know · Since 1.4.
 "callout.info.fg" = "accent"
-# A callout's and a tag's fill, of something that went well · not released yet.
+# A callout's and a tag's fill, of something that went well · Since 1.4.
 "callout.success.bg" = "text.success / 12%"
-# A callout's icon and a tag's text, of something that went well · not released yet.
+# A callout's icon and a tag's text, of something that went well · Since 1.4.
 "callout.success.fg" = "text.success"
-# A callout's and a tag's fill, of something to look at · not released yet.
+# A callout's and a tag's fill, of something to look at · Since 1.4.
 "callout.warning.bg" = "text.warning / 12%"
-# A callout's icon and a tag's text, of something to look at · not released yet.
+# A callout's icon and a tag's text, of something to look at · Since 1.4.
 "callout.warning.fg" = "text.warning"
-# A callout's and a tag's fill, of something that failed · not released yet.
+# A callout's and a tag's fill, of something that failed · Since 1.4.
 "callout.error.bg" = "progress.error / 12%"
-# A callout's icon and a tag's text, of something that failed · not released yet.
+# A callout's icon and a tag's text, of something that failed · Since 1.4.
 "callout.error.fg" = "progress.error"
-# The shadow under a switch's knob · not released yet.
+# The shadow under a switch's knob · Since 1.4.
 "switch.knob.shadow" = { light = "#0000001f", dark = "transparent" }
 # The tooltips' background.
 "tooltip.bg" = { light = "mix(background, foreground, 3%)", dark = "mix(background, foreground, 10%)" }
@@ -150,7 +150,7 @@
 # The tab bar.
 "tabs.bar.bg" = "mix(background, foreground, 6%)"
 # The status bar's band across the window's bottom, while a plugin's view
-# fills it · not released yet.
+# fills it · Since 1.4.
 "status-bar.bg" = "tabs.bar.bg"
 # The track of the tab bar's pills.
 "tabs.track.bg" = { light = "text / 7%", dark = "text / 10%" }
@@ -202,9 +202,9 @@
 "hints.label.bg" = "accent"
 # A hint's label's letters · Since 1.3.
 "hints.label.fg" = "contrasting(hints.label.bg)"
-# The line at the top of each command's block, across the pane, as Blocks shows it · not released yet.
+# The line at the top of each command's block, across the pane, as Blocks shows it · Since 1.4.
 "blocks.divider" = "separator"
-# The tint over the rows of the block that the keyboard selects, across the pane · not released yet.
+# The tint over the rows of the block that the keyboard selects, across the pane · Since 1.4.
 "blocks.selected.bg" = { light = "accent / 12%", dark = "accent / 20%" }
-# The tint over the rows of a block whose command failed, as Blocks shows it where asked · not released yet.
+# The tint over the rows of a block whose command failed, as Blocks shows it where asked · Since 1.4.
 "blocks.failed" = { light = "gutter.failed / 8%", dark = "gutter.failed / 12%" }

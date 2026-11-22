@@ -21,7 +21,7 @@ Double-click the word `usr` in the listing, press ⌘C, then ⌘V: the word past
 - **⌘-click** on a link, a URL or a path opens it, a path with a line at that line in your editor.
 - **A click in the command line** moves the shell's cursor there, with [shell integration](shell-integration.md). · Since 1.3
 - **A context menu**, from a right click or a ⌃-click, to open a link or a man page, look up or search a word, and copy, paste or select.
-- **Scrolling** through the scrollback with the wheel or the trackpad, by pixels with [`smooth-scroll`](CONFIGURATION.md#smooth-scroll) · not released yet.
+- **Scrolling** through the scrollback with the wheel or the trackpad, by pixels with [`smooth-scroll`](CONFIGURATION.md#smooth-scroll) · Since 1.4.
 - **Programs that take the mouse**, such as vim or htop, get your clicks, and ⇧ keeps them for the selection.
 - **Files dropped** from the Finder paste their paths, ready for a command.
 
@@ -89,7 +89,7 @@ The wheel and the trackpad scroll through the scrollback, the rows that went up 
 
 ### Scroll by pixels
 
-<sub>Platforms: macOS · off by default · not released yet</sub>
+<sub>Platforms: macOS · off by default · Since 1.4</sub>
 
 With [`[window] smooth-scroll`](CONFIGURATION.md#smooth-scroll) on, the text follows your fingers on a trackpad or a Magic Mouse pixel by pixel, rather than a row at a time, and keeps gliding when you lift them. A mouse wheel's step glides over its rows instead of jumping. A click, a selection and a ⌘-click take the text where you see it, even halfway through a row.
 

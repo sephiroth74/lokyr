@@ -173,33 +173,33 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `button.bg` | A button at rest | light `text / 6%`, dark `text / 8%` |
 | `button.hover.bg` | A button under the pointer | light `text / 8%`, dark `text / 10%` |
 | `button.pressed.bg` | A button pressed | light `text / 16%`, dark `text / 18%` |
-| `button.default.bg` | A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · not released yet | light `accent`, dark `mix(accent, #000000, 30%)` |
-| `button.default.pressed.bg` | A default button pressed · not released yet | `mix(button.default.bg, #000000, 15%)` |
-| `button.default.fg` | A default button's label · not released yet | `contrasting(button.default.bg)` |
-| `button.destructive.fg` | A destructive button's label, as Remove's · not released yet | `readable(red, on: panel.bg)` |
+| `button.default.bg` | A view's default button, which Return presses, of a deeper accent in the dark, so that white reads on it · Since 1.4 | light `accent`, dark `mix(accent, #000000, 30%)` |
+| `button.default.pressed.bg` | A default button pressed · Since 1.4 | `mix(button.default.bg, #000000, 15%)` |
+| `button.default.fg` | A default button's label · Since 1.4 | `contrasting(button.default.bg)` |
+| `button.destructive.fg` | A destructive button's label, as Remove's · Since 1.4 | `readable(red, on: panel.bg)` |
 | `toggle.on.bg` | A toggle that is on | light `accent / 12%`, dark `accent / 20%` |
 | `toggle.on.fg` | The mark of a toggle that is on | `accent` |
-| `switch.off.bg` | A switch's track that is off · not released yet | `text / 10%` |
-| `switch.on.bg` | A switch's track that is on · not released yet | `accent` |
-| `switch.knob.bg` | A switch's knob · not released yet | `#ffffff` |
-| `check.off.bg` | A checkbox's box, and a radio button's circle, that is off · not released yet | `text / 10%` |
-| `check.off.pressed.bg` | A checkbox's box pressed while it is off · not released yet | `text / 19%` |
-| `check.on.bg` | A checkbox's box, and a radio button's circle, that is on, of the default button's fill · not released yet | `button.default.bg` |
-| `check.on.pressed.bg` | A checkbox's box pressed while it is on or mixed · not released yet | `mix(check.on.bg, #000000, 10%)` |
-| `check.mark` | A checkbox's check, and a radio button's dot · not released yet | `button.default.fg` |
-| `group.bg` | A group box's fill, of grouped rows, as a settings page's · not released yet | `text / 3%` |
-| `group.separator` | The hairline between a group box's rows · not released yet | `text / 5%` |
-| `keycap.bg` | A key cap's fill, of a shortcut drawn as key caps · not released yet | `text / 8%` |
-| `keycap.fg` | A key cap's symbol · not released yet | `text.secondary` |
-| `callout.info.bg` | A callout's and a tag's fill, of something to know · not released yet | `accent / 12%` |
-| `callout.info.fg` | A callout's icon and a tag's text, of something to know · not released yet | `accent` |
-| `callout.success.bg` | A callout's and a tag's fill, of something that went well · not released yet | `text.success / 12%` |
-| `callout.success.fg` | A callout's icon and a tag's text, of something that went well · not released yet | `text.success` |
-| `callout.warning.bg` | A callout's and a tag's fill, of something to look at · not released yet | `text.warning / 12%` |
-| `callout.warning.fg` | A callout's icon and a tag's text, of something to look at · not released yet | `text.warning` |
-| `callout.error.bg` | A callout's and a tag's fill, of something that failed · not released yet | `progress.error / 12%` |
-| `callout.error.fg` | A callout's icon and a tag's text, of something that failed · not released yet | `progress.error` |
-| `switch.knob.shadow` | The shadow under a switch's knob · not released yet | light `#0000001f`, dark `transparent` |
+| `switch.off.bg` | A switch's track that is off · Since 1.4 | `text / 10%` |
+| `switch.on.bg` | A switch's track that is on · Since 1.4 | `accent` |
+| `switch.knob.bg` | A switch's knob · Since 1.4 | `#ffffff` |
+| `check.off.bg` | A checkbox's box, and a radio button's circle, that is off · Since 1.4 | `text / 10%` |
+| `check.off.pressed.bg` | A checkbox's box pressed while it is off · Since 1.4 | `text / 19%` |
+| `check.on.bg` | A checkbox's box, and a radio button's circle, that is on, of the default button's fill · Since 1.4 | `button.default.bg` |
+| `check.on.pressed.bg` | A checkbox's box pressed while it is on or mixed · Since 1.4 | `mix(check.on.bg, #000000, 10%)` |
+| `check.mark` | A checkbox's check, and a radio button's dot · Since 1.4 | `button.default.fg` |
+| `group.bg` | A group box's fill, of grouped rows, as a settings page's · Since 1.4 | `text / 3%` |
+| `group.separator` | The hairline between a group box's rows · Since 1.4 | `text / 5%` |
+| `keycap.bg` | A key cap's fill, of a shortcut drawn as key caps · Since 1.4 | `text / 8%` |
+| `keycap.fg` | A key cap's symbol · Since 1.4 | `text.secondary` |
+| `callout.info.bg` | A callout's and a tag's fill, of something to know · Since 1.4 | `accent / 12%` |
+| `callout.info.fg` | A callout's icon and a tag's text, of something to know · Since 1.4 | `accent` |
+| `callout.success.bg` | A callout's and a tag's fill, of something that went well · Since 1.4 | `text.success / 12%` |
+| `callout.success.fg` | A callout's icon and a tag's text, of something that went well · Since 1.4 | `text.success` |
+| `callout.warning.bg` | A callout's and a tag's fill, of something to look at · Since 1.4 | `text.warning / 12%` |
+| `callout.warning.fg` | A callout's icon and a tag's text, of something to look at · Since 1.4 | `text.warning` |
+| `callout.error.bg` | A callout's and a tag's fill, of something that failed · Since 1.4 | `progress.error / 12%` |
+| `callout.error.fg` | A callout's icon and a tag's text, of something that failed · Since 1.4 | `progress.error` |
+| `switch.knob.shadow` | The shadow under a switch's knob · Since 1.4 | light `#0000001f`, dark `transparent` |
 | `tooltip.bg` | The tooltips' background | light `mix(background, foreground, 3%)`, dark `mix(background, foreground, 10%)` |
 | `tooltip.fg` | The tooltips' text | `text` |
 | `tooltip.border` | The tooltips' border | `text / 15%` |
@@ -216,7 +216,7 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `progress.error` | A program's progress that failed | `red` |
 | `progress.paused` | A program's progress paused | `yellow` |
 | `tabs.bar.bg` | The tab bar | `mix(background, foreground, 6%)` |
-| `status-bar.bg` | The status bar's band across the window's bottom, while a plugin's view fills it · not released yet | `tabs.bar.bg` |
+| `status-bar.bg` | The status bar's band across the window's bottom, while a plugin's view fills it · Since 1.4 | `tabs.bar.bg` |
 | `tabs.track.bg` | The track of the tab bar's pills | light `text / 7%`, dark `text / 10%` |
 | `tabs.active.bg` | The tab that shows | `background` |
 | `tabs.active.fg` | The title of the tab that shows | `text` |
@@ -242,9 +242,9 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `cursor.guide` | The band across the cursor's row, as the cursor guide shows it | `foreground / 10%` |
 | `hints.label.bg` | A hint's label, over the first cells of what it picks · Since 1.3 | `accent` |
 | `hints.label.fg` | A hint's label's letters · Since 1.3 | `contrasting(hints.label.bg)` |
-| `blocks.divider` | The line at the top of each command's block, across the pane, as Blocks shows it · not released yet | `separator` |
-| `blocks.selected.bg` | The tint over the rows of the block that the keyboard selects, across the pane · not released yet | light `accent / 12%`, dark `accent / 20%` |
-| `blocks.failed` | The tint over the rows of a block whose command failed, as Blocks shows it where asked · not released yet | light `gutter.failed / 8%`, dark `gutter.failed / 12%` |
+| `blocks.divider` | The line at the top of each command's block, across the pane, as Blocks shows it · Since 1.4 | `separator` |
+| `blocks.selected.bg` | The tint over the rows of the block that the keyboard selects, across the pane · Since 1.4 | light `accent / 12%`, dark `accent / 20%` |
+| `blocks.failed` | The tint over the rows of a block whose command failed, as Blocks shows it where asked · Since 1.4 | light `gutter.failed / 8%`, dark `gutter.failed / 12%` |
 
 <!-- The tokens' table's end. -->
 
@@ -264,7 +264,7 @@ background = "blocks.pill"
 
 A theme that lacks the token leaves the header the color of the name's first part, then none; [the guide of `[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks) tells its keys, which [the command header](../CONFIGURATION.md#pluginscommand-header) shares while Blocks is off.
 
-The `[blocks]` section holds Lokyr's own tokens of the blocks too, `divider`, `selected` and `failed`, of the table above, beside the plugin's: a name there that Lokyr doesn't know is the plugin's, so no notice tells of it · not released yet.
+The `[blocks]` section holds Lokyr's own tokens of the blocks too, `divider`, `selected` and `failed`, of the table above, beside the plugin's: a name there that Lokyr doesn't know is the plugin's, so no notice tells of it · Since 1.4.
 
 ### `extends`
 

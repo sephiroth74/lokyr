@@ -5,14 +5,14 @@
 The command whose output you are looking at, at the top of its pane, once its line has scrolled above the view: a pill of the command as you typed it, in the terminal's font, on a thin line across the pane.
 
 > [!NOTE]
-> [Blocks](../blocks.md), off by default, replaces this plugin while it runs: it shows the block's own prompt rows at the pane's top, or the same header with an arrow to the end of the command's output, and its keys are in [`[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks). The command header comes back when you turn Blocks off, with the keys of `[plugins.command-header]` · not released yet
+> [Blocks](../blocks.md), off by default, replaces this plugin while it runs: it shows the block's own prompt rows at the pane's top, or the same header with an arrow to the end of the command's output, and its keys are in [`[plugins.blocks]`](../CONFIGURATION.md#pluginsblocks). The command header comes back when you turn Blocks off, with the keys of `[plugins.command-header]` · Since 1.4
 
 ## The header
 
 - **It shows** while the pane's first row shows a command's output and the command's line is above the view, as when you scroll up through a long output, or as a running command's output pushes its line off the top.
 - **It follows the scroll**: as the view reaches the command's line, the header goes; above it, the command before takes its place once that one's line is above the view; down, the next one does.
 - **The command as you typed it**: zsh, and fish 4 or later, tell Lokyr the line itself, so that a right prompt on its row, as zsh's `RPROMPT`, stays out of the pill; bash's, and an older fish's, is the text of its row.
-- **A long line** is cut at its end of an ellipsis, `…`, past `max-length`'s characters, 80 by default, and wherever the pane is narrower than the pill, which stays within it; its tooltip, and what VoiceOver reads, keep it whole · not released yet.
+- **A long line** is cut at its end of an ellipsis, `…`, past `max-length`'s characters, 80 by default, and wherever the pane is narrower than the pill, which stays within it; its tooltip, and what VoiceOver reads, keep it whole · Since 1.4.
 - **A click on it** scrolls the view to the command's prompt, at the top.
 - **It lies over the pane's first row**, taking none of the grid's rows, so that the program's grid keeps its size as the header comes and goes. A scroll over it scrolls the pane, and it takes no keys.
 - **It shows nothing** on a program's own screen, as vim's or less's, and hides with its pane, behind another tab or a zoomed pane.
@@ -30,7 +30,7 @@ Its keys go in [`[plugins.command-header]`](../CONFIGURATION.md#pluginscommand-h
 | `font-weight` | `"light"`, `"regular"`, `"medium"`, `"semibold"`, `"bold"`, `"heavy"` | `"regular"` | The text's weight, the terminal's font's face nearest to it; `regular` the terminal's own face |
 | `padding-x`, `padding-y` | points, `0` to `40` and `0` to `20` | `8`, `1` | The room in the pill left and right of the text, and above and below it |
 | `align` | `"left"`, `"center"`, `"right"` | `"left"` | Where the pill sits along the line across the pane |
-| `max-length` | characters, `1` to `1000` | `80` | The most characters of the line that the pill shows, cut of an ellipsis past them · not released yet |
+| `max-length` | characters, `1` to `1000` | `80` | The most characters of the line that the pill shows, cut of an ellipsis past them · Since 1.4 |
 
 ```toml
 [plugins.command-header]
@@ -52,7 +52,7 @@ The header's colors are the theme's tokens that its keys name, so that they foll
 enabled = false
 ```
 
-While [Blocks](../blocks.md) runs, the command header is off already, and the Plugins page of the settings window shows it as replaced by Blocks · not released yet.
+While [Blocks](../blocks.md) runs, the command header is off already, and the Plugins page of the settings window shows it as replaced by Blocks · Since 1.4.
 
 ## Permissions
 
