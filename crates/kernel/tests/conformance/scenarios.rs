@@ -27,9 +27,9 @@ use lokyr_plugin_sdk::host::{
     DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
     MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
     MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
-    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
-    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
-    check_file_name,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionId,
+    SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport,
+    WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -135,6 +135,13 @@ pub const fn group(k: u64) -> GroupId {
     GroupId(5 * SYMBOL + k)
 }
 
+/// The session that the trace meets as the `k`th of those that the
+/// scenario reads or makes, the session that the host starts in among
+/// them.
+pub const fn session(k: u64) -> SessionId {
+    SessionId(6 * SYMBOL + k)
+}
+
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
 /// text and cells as the pane reads them, the commands of [`COMMAND`], the
@@ -231,6 +238,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         workspace(world),
         tabs(world),
         groups(world),
+        sessions(world),
         tab_changes(world, true),
         tab_changes(world, false),
         window_titles(world, true),
@@ -1351,6 +1359,97 @@ fn tabs(world: &World) -> Scenario {
 
 /// A group that no host holds.
 const NO_GROUP: GroupId = GroupId(999_999);
+
+/// A session that no host holds.
+const NO_SESSION: SessionId = SessionId(999_999);
+
+/// The sessions: the one that the host starts in, of the world's window; a
+/// session made, active as it is made, of its first window to come, which
+/// a later write of the same call switches to; what is refused; and a
+/// switch back, each session's change told, the one left first.
+fn sessions(world: &World) -> Scenario {
+    let w = world.window;
+    let changed = |k| {
+        Event::Workspace(WorkspaceEvent::SessionChanged {
+            session: session(k),
+        })
+    };
+    let info = |k, name: &str, active, windows| SessionInfo {
+        id: session(k),
+        name: name.to_owned(),
+        active,
+        windows,
+    };
+    let new = |name: &str, directory: Option<&str>| Request::NewSession {
+        name: name.to_owned(),
+        directory: directory.map(str::to_owned),
+    };
+    Scenario {
+        name: "the sessions".to_owned(),
+        capabilities: None,
+        subscriptions: vec!["session-changed".to_owned()],
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![info(0, "", true, vec![w])]),
+                    ),
+                    (new("work", Some("~/src")), Response::Session(session(1))),
+                    (Request::SwitchSession(session(1)), Response::Done),
+                    (
+                        new(&"x".repeat(257), None),
+                        failed(
+                            Code::Failed,
+                            "a session's name is 256 characters at most, not 257",
+                        ),
+                    ),
+                    (
+                        new("a\nb", None),
+                        failed(Code::Failed, "a session's name holds no control character"),
+                    ),
+                    (
+                        new("", Some("src")),
+                        failed(
+                            Code::Failed,
+                            "`src` is not a path that is absolute or from `~`",
+                        ),
+                    ),
+                    (
+                        Request::SwitchSession(NO_SESSION),
+                        failed(Code::NotFound, "there is no session 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(1)],
+            },
+            // The session made first, of no window yet; back to the first.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![
+                            info(1, "work", true, Vec::new()),
+                            info(0, "", false, vec![w]),
+                        ]),
+                    ),
+                    (Request::SwitchSession(session(0)), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(1), changed(0)],
+            },
+            ask(vec![(
+                Request::Sessions,
+                Response::Sessions(vec![
+                    info(0, "", true, vec![w]),
+                    info(1, "work", false, Vec::new()),
+                ]),
+            )]),
+        ],
+    }
+}
 
 /// A window's groups of tabs: one made of two tabs apart, which come next
 /// to one another, renamed by a later write of the same call; a tab added

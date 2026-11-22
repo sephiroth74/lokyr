@@ -2500,3 +2500,56 @@ fn a_closed_window_s_and_a_reopened_tab_s_events_come_in_the_app_s_order() {
     assert_eq!(last("window-closed"), Some(names.len() - 1), "{names:?}");
     let _ = group;
 }
+
+#[test]
+fn the_fake_s_sessions_hold_their_windows_as_the_app_s() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![Capability::WorkspaceWrite]);
+    let window = WindowId(1);
+    host.pane(PaneId(1)).window = window;
+    let read = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&read);
+    let mut look = Probe::new(move |cx, _| {
+        *seen.borrow_mut() = cx.sessions()?;
+        Ok(())
+    });
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    let first = read.borrow()[0].clone();
+    assert_eq!((first.active, first.windows.clone()), (true, vec![window]));
+    // A session made is the active one, of the windows that open then.
+    let made = Rc::new(RefCell::new(None));
+    let kept = Rc::clone(&made);
+    let mut new = Probe::new(move |cx, _| {
+        *kept.borrow_mut() = Some(cx.new_session("work", Some("~/src"))?);
+        Ok(())
+    });
+    host.command(&mut new, "probe.go", Args::new()).unwrap();
+    let work = made.borrow().unwrap();
+    let shell = WindowId(50);
+    let pane = host.pane(PaneId(50));
+    (pane.window, pane.tab) = (shell, TabId(50));
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    let sessions: Vec<(SessionId, bool, Vec<WindowId>)> = read
+        .borrow()
+        .iter()
+        .map(|session| (session.id, session.active, session.windows.clone()))
+        .collect();
+    assert_eq!(
+        sessions,
+        [(work, true, vec![shell]), (first.id, false, vec![window])]
+    );
+    // Its last window gone, it goes, the one before it active again.
+    host.close_window(shell);
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    let ids: Vec<(SessionId, bool)> = read
+        .borrow()
+        .iter()
+        .map(|session| (session.id, session.active))
+        .collect();
+    assert_eq!(ids, [(first.id, true)]);
+    // One not there is refused.
+    let mut wrong = Probe::new(move |cx, _| cx.switch_session(work));
+    let error = host
+        .command(&mut wrong, "probe.go", Args::new())
+        .unwrap_err();
+    assert_eq!(error.code, Code::NotFound);
+}

@@ -51,8 +51,8 @@ use crate::command::{Args, Code, Command, Error};
 use crate::host::{
     BarPlace, Binding, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
     GroupId, GroupInfo, Host, Layout, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
-    WindowInfo,
+    SearchQuery, SelectionKind, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
+    TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::message::{Call, Data, Event, Request, Response};
 use crate::ui::{PanelId, PanelOptions, UiEvent, ViewId};
@@ -1346,6 +1346,34 @@ impl<'a> Cx<'a> {
             Response::Groups(groups) => Ok(groups),
             other => Err(failed(other)),
         }
+    }
+
+    /// The sessions, in the order of their use, the active one first and
+    /// the one before it second.
+    pub fn sessions(&mut self) -> Result<Vec<SessionInfo>, Error> {
+        match self.request(Request::Sessions) {
+            Response::Sessions(sessions) => Ok(sessions),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Makes a session of `name`, switches to it and opens its first
+    /// window, its pane in `directory`, as [`Request::NewSession`] says: its
+    /// id, which the call's later writes take, as the session is made once
+    /// the call returns.
+    pub fn new_session(&mut self, name: &str, directory: Option<&str>) -> Result<SessionId, Error> {
+        match self.request(Request::NewSession {
+            name: name.to_owned(),
+            directory: directory.map(str::to_owned),
+        }) {
+            Response::Session(session) => Ok(session),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Switches to `session`, as [`Request::SwitchSession`] says.
+    pub fn switch_session(&mut self, session: SessionId) -> Result<(), Error> {
+        self.done(Request::SwitchSession(session))
     }
 
     /// The layout of `tab`.

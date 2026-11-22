@@ -119,6 +119,7 @@ struct Symbols {
     panes: Vec<u64>,
     timers: Vec<u64>,
     groups: Vec<u64>,
+    sessions: Vec<u64>,
 }
 
 impl Symbols {
@@ -130,6 +131,7 @@ impl Symbols {
             panes: Vec::new(),
             timers: Vec::new(),
             groups: Vec::new(),
+            sessions: Vec::new(),
         }
     }
 
@@ -146,7 +148,8 @@ impl Symbols {
                             2 => &symbols.tabs,
                             3 => &symbols.panes,
                             4 => &symbols.timers,
-                            _ => &symbols.groups,
+                            5 => &symbols.groups,
+                            _ => &symbols.sessions,
                         };
                         let id = ids.get(k).unwrap_or_else(|| {
                             panic!(
@@ -209,6 +212,10 @@ impl Symbols {
 
     fn group(&mut self, id: host::GroupId) -> host::GroupId {
         host::GroupId(Self::symbol(&mut self.groups, id.0, 5))
+    }
+
+    fn session(&mut self, id: host::SessionId) -> host::SessionId {
+        host::SessionId(Self::symbol(&mut self.sessions, id.0, 6))
     }
 
     fn layout(&mut self, layout: Layout) -> Layout {
@@ -283,6 +290,17 @@ impl Symbols {
                         id: self.group(info.id),
                         window: self.window(info.window),
                         tabs: info.tabs.into_iter().map(|id| self.tab(id)).collect(),
+                        ..info
+                    })
+                    .collect(),
+            ),
+            Response::Session(session) => Response::Session(self.session(session)),
+            Response::Sessions(sessions) => Response::Sessions(
+                sessions
+                    .into_iter()
+                    .map(|info| host::SessionInfo {
+                        id: self.session(info.id),
+                        windows: info.windows.into_iter().map(|id| self.window(id)).collect(),
                         ..info
                     })
                     .collect(),
@@ -400,6 +418,9 @@ impl Symbols {
                 W::GroupChanged { group, window } => W::GroupChanged {
                     group: self.group(group),
                     window: self.window(window),
+                },
+                W::SessionChanged { session } => W::SessionChanged {
+                    session: self.session(session),
                 },
             }),
             other => other,
@@ -1191,11 +1212,14 @@ fn kind(request: &Request) -> usize {
         Request::TempFile { .. } => 149,
         Request::GitBranch { .. } => 150,
         Request::SetStatusBarSide(_) => 151,
+        Request::Sessions => 152,
+        Request::NewSession { .. } => 153,
+        Request::SwitchSession(_) => 154,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 152;
+const KINDS: usize = 155;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

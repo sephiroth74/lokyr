@@ -204,6 +204,7 @@ type WindowId = number
 type TabId = number
 type PaneId = number
 type GroupId = number
+type SessionId = number
 
 -- Command arguments: named values of a flat schema, each a string, an
 -- integer, a number or a boolean.
@@ -289,6 +290,15 @@ type GroupInfo = {
     color: Color?, -- an RGB one
     folded: boolean, -- its tabs hidden behind its name in the bar
     tabs: { TabId }, -- in their order, one at least
+}
+
+-- A session, a group of windows, as a read of the sessions gives it: the active session's windows show, the others'
+-- are hidden, their programs running · not released yet.
+type SessionInfo = {
+    id: SessionId,
+    name: string, -- empty for none, 256 characters at most
+    active: boolean, -- whether its windows show
+    windows: { WindowId }, -- in the order they opened; none of a session whose first window has yet to open
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the
@@ -573,6 +583,8 @@ type Event =
     -- A group of tabs was made, or changed: its name, its color, its fold or its tabs, or it went, taken apart or of no
     -- tab left; its window, or the one that it was in.
     | { kind: "group-changed", group: GroupId, window: WindowId }
+    -- A session was made, renamed, switched to or from, or went, of no window left or closed · not released yet.
+    | { kind: "session-changed", session: SessionId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
     -- A window took the keyboard's focus, or lost it, as a click goes to another app or another window; not as a question of
@@ -898,6 +910,9 @@ type Cx = {
     recent_tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
     -- A window's groups of tabs, in the order of their tabs.
     groups: (window: WindowId) -> ({ GroupInfo }?, Error?),
+    -- The sessions, in the order of their use, the active one first and the one before it second · not released
+    -- yet.
+    sessions: () -> ({ SessionInfo }?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
     -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane
@@ -932,6 +947,12 @@ type Cx = {
     set_group_color: (group: GroupId, color: Color?) -> (boolean, Error?),
     fold_group: (group: GroupId, folded: boolean) -> (boolean, Error?),
     ungroup: (group: GroupId) -> (boolean, Error?),
+    -- A session of a name, which it switches to, the windows of the active one hidden, their programs running, then
+    -- its first window, its pane in `directory`, a path absolute or from `~`, if given: its id, given at once. A
+    -- session goes as its last window closes, unless it is the only one; the active one that goes leaves the one
+    -- used before it active · not released yet.
+    new_session: (name: string?, directory: string?) -> (SessionId?, Error?),
+    switch_session: (session: SessionId) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),

@@ -2,8 +2,8 @@
 //! the panes with their sessions.
 //!
 //! ```text
-//! Workspace
-//! └── Window (its tabs, in their order, and the one that it shows)
+//! Workspace (its sessions, and the active one, whose windows show)
+//! └── Window (its session, its tabs, in their order, and the one that it shows)
 //!     └── Tab (title, color, active pane, zoomed pane)
 //!         └── Layout: Split { direction, ratio, first, second } | Leaf
 //!             └── Pane ──▶ Session
@@ -22,6 +22,7 @@ pub mod agent;
 mod groups;
 mod layout;
 mod pane;
+mod sessions;
 #[cfg(test)]
 mod tests;
 
@@ -42,6 +43,7 @@ pub use pane::{
     ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Restored, Settings,
     TITLE_DASH, TOLD_PACE, directory_name, is_shell, place_label,
 };
+pub use sessions::Session;
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
@@ -90,6 +92,24 @@ id!(
     /// A group of a window's tabs.
     GroupId
 );
+id!(
+    /// A session of windows.
+    SessionId
+);
+
+impl SessionId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no session's.
+    pub fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<SessionId> for sdk::SessionId {
+    fn from(id: SessionId) -> Self {
+        Self(id.0)
+    }
+}
 
 impl WindowId {
     /// The id of the number `id`, as a plugin's handle gives it, which may
@@ -160,6 +180,9 @@ pub struct Window {
     title: String,
     quick: bool,
     hidden: bool,
+    /// Its session; none of a quick window or the settings', which show
+    /// whichever session is active.
+    session: Option<SessionId>,
 }
 
 impl Window {
@@ -209,6 +232,12 @@ impl Window {
     /// Whether it is hidden, as a quick window hides.
     pub fn hidden(&self) -> bool {
         self.hidden
+    }
+
+    /// Its session; none of a quick window or the settings', which show
+    /// whichever session is active.
+    pub fn session(&self) -> Option<SessionId> {
+        self.session
     }
 }
 
@@ -367,8 +396,9 @@ enum Left {
     Kept,
     /// The window shows this tab, as it showed the one that left.
     Shows(WindowId, TabId),
-    /// The window closed, as it has no tab left.
-    Closed(WindowId),
+    /// The window closed, as it has no tab left, and the session that it
+    /// was of.
+    Closed(WindowId, Option<SessionId>),
 }
 
 /// What happened in the workspace, for the embedder to act on.
@@ -471,6 +501,8 @@ pub struct Workspace {
     closed: Vec<Closed>,
     /// The groups of the windows' tabs, each of one tab at least.
     groups: BTreeMap<GroupId, Group>,
+    /// The sessions, and the active one.
+    sessions: sessions::Sessions,
 }
 
 /// A tab closed that the workspace keeps, out of every window, its panes'
@@ -513,6 +545,7 @@ impl Workspace {
         let window = self.window_of_id(tab, window);
         if let Some(shown) = self.windows.get_mut(&window) {
             shown.quick = true;
+            shown.session = None;
         }
         self.created(tab, &[id]);
         window
@@ -540,6 +573,7 @@ impl Workspace {
         self.changed(WorkspaceEvent::WindowClosed {
             window: window.into(),
         });
+        self.session_lost_window(closed.session);
         true
     }
 
@@ -721,6 +755,9 @@ impl Workspace {
         self.settings = Some((tab, window));
         self.settings_window = true;
         self.window_of_id(tab, window);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.session = None;
+        }
         self.changed(WorkspaceEvent::TabCreated {
             tab: tab.into(),
             window: window.into(),
@@ -1329,6 +1366,7 @@ impl Workspace {
     /// A window of the id `window`, of `tab` alone, as [`Workspace::window_for`]
     /// opens one.
     fn window_of_id(&mut self, tab: TabId, window: WindowId) -> WindowId {
+        let session = self.session_for(self.window_of_tab(tab));
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
@@ -1349,6 +1387,7 @@ impl Workspace {
                 title: String::new(),
                 quick: false,
                 hidden: false,
+                session,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {
@@ -1387,8 +1426,9 @@ impl Workspace {
         };
         window.tabs.remove(index);
         if window.tabs.is_empty() {
+            let session = window.session;
             self.windows.remove(&window_id);
-            return Left::Closed(window_id);
+            return Left::Closed(window_id, session);
         }
         if window.active != tab {
             return Left::Kept;
@@ -1409,9 +1449,12 @@ impl Workspace {
                 });
                 self.tab_shown(tab);
             }
-            Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed {
-                window: window.into(),
-            }),
+            Left::Closed(window, session) => {
+                self.changed(WorkspaceEvent::WindowClosed {
+                    window: window.into(),
+                });
+                self.session_lost_window(session);
+            }
         }
     }
 
@@ -2422,9 +2465,16 @@ impl Workspace {
         if self.tabs.get(&tab)?.layout.panes().len() == 1 {
             return self.tab_to_new_window(tab);
         }
+        let session = self
+            .window_of_tab(tab)
+            .and_then(|from| self.windows.get(&from));
+        let session = session.and_then(|from| from.session);
         self.detach_pane(pane);
         let created = self.new_tab(pane);
         let window = self.window_for(created);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.session = session;
+        }
         self.created(created, &[]);
         self.changed(WorkspaceEvent::PaneMoved {
             pane: pane.into(),

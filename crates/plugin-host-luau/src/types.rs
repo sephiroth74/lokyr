@@ -569,6 +569,7 @@ fn param_name(ty: &str, at: usize) -> String {
         "TabId" => "tab",
         "WindowId" => "window",
         "GroupId" => "group",
+        "SessionId" => "session",
         "Modifier" | "Modifier?" => "modifier",
         "PanelId" => "panel",
         "ViewId" => "view",

@@ -33,6 +33,46 @@ pub struct GroupId(pub u64);
 /// The most characters of a group's name.
 pub const MOST_GROUP_NAME: usize = 256;
 
+/// A session of windows, by the host's id, which no other session of the
+/// process has had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub u64);
+
+/// The most characters of a session's name.
+pub const MOST_SESSION_NAME: usize = 256;
+
+/// Whether `name` is a session's: of [`MOST_SESSION_NAME`] characters at
+/// most and of no control character; why not otherwise.
+pub fn check_session_name(name: &str) -> Result<(), String> {
+    let length = name.chars().count();
+    if length > MOST_SESSION_NAME {
+        return Err(format!(
+            "a session's name is {MOST_SESSION_NAME} characters at most, not {length}"
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("a session's name holds no control character".to_owned());
+    }
+    Ok(())
+}
+
+/// A session, as a read of the sessions gives it: a group of windows, of
+/// which the active session's show and the others' are hidden, their
+/// programs running.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    /// The session.
+    pub id: SessionId,
+    /// Its name, empty for none.
+    pub name: String,
+    /// Whether it is the active one, whose windows show.
+    #[serde(default)]
+    pub active: bool,
+    /// Its windows, in the order they opened; none of a session whose
+    /// first window has yet to open.
+    pub windows: Vec<WindowId>,
+}
+
 /// Whether a group's `name` and `color` are a group's: a name of
 /// [`MOST_GROUP_NAME`] characters at most and of no control character, and
 /// an RGB color; why not otherwise.

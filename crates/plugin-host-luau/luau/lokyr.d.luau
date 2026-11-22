@@ -132,6 +132,9 @@ export type Cx = {
     set_group_color: (group: GroupId, color: Color?) -> (true?, string?, number?),
     fold_group: (group: GroupId, folded: boolean) -> (true?, string?, number?),
     ungroup: (group: GroupId) -> (true?, string?, number?),
+    sessions: () -> ({ SessionInfo }?, string?, number?),
+    new_session: (name: string?, directory: string?) -> (SessionId?, string?, number?),
+    switch_session: (session: SessionId) -> (true?, string?, number?),
     set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
@@ -189,6 +192,7 @@ export type Event =
     | { kind: "tab-changed", tab: TabId }
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
+    | { kind: "session-changed", session: SessionId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
     | { kind: "click", pane: PaneId, at: { number } }
     | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
@@ -918,6 +922,15 @@ export type SelectionKind =
     | "words"
     | "lines"
     | "block"
+
+export type SessionId = number
+
+export type SessionInfo = {
+    id: SessionId,
+    name: string,
+    active: boolean?,
+    windows: { WindowId },
+}
 
 export type SettingBinding = {
     keys: string,

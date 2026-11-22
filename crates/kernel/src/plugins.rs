@@ -60,7 +60,8 @@ use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
 use crate::workspace::{
-    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
+    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, SessionId, Side, TabId, WindowId,
+    Workspace,
 };
 
 mod search;
@@ -1297,6 +1298,13 @@ enum Write {
         tabs: Vec<TabId>,
         name: String,
         color: Option<Rgb>,
+    },
+    /// A session, of the id that the host gave it, and the folder of its
+    /// first window's pane.
+    NewSession {
+        id: SessionId,
+        name: String,
+        directory: Option<String>,
     },
     /// A render of one of the call's plugin's views.
     Render(ViewId),
@@ -4851,6 +4859,18 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.new_group_as(id, &tabs, &name, color);
                 continue;
             }
+            // The session, active as it is made, then its first window,
+            // which the app opens in it.
+            Write::NewSession {
+                id,
+                name,
+                directory,
+            } => {
+                if context.workspace.new_session_as(id, &name).is_some() {
+                    requests.push(Request::OpenWindow(directory));
+                }
+                continue;
+            }
             // A tab or a split of a window or a pane that an earlier write
             // of the call closed starts no program.
             Write::NewTab {
@@ -5123,6 +5143,9 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             }
             Asked::Ungroup(group) => {
                 context.workspace.ungroup(GroupId::of(group.0));
+            }
+            Asked::SwitchSession(session) => {
+                context.workspace.switch_session(SessionId::of(session.0));
             }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
@@ -5827,6 +5850,28 @@ impl Host<'_, '_> {
         Ok(shown.window().into())
     }
 
+    /// Whether the session `session` is there, or the call's writes so far
+    /// make it; `not-found` otherwise.
+    fn known_session(&self, session: host::SessionId) -> Result<(), Error> {
+        let made = self
+            .writes
+            .iter()
+            .any(|write| matches!(write, Write::NewSession { id, .. } if id.get() == session.0));
+        if made
+            || self
+                .context
+                .workspace
+                .session(SessionId::of(session.0))
+                .is_some()
+        {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::NotFound,
+            format!("there is no session {}", session.0),
+        ))
+    }
+
     /// Whether the group `group` is there, or the call's writes so far make
     /// it; `not-found` otherwise.
     fn known_group(&self, group: host::GroupId) -> Result<(), Error> {
@@ -6272,6 +6317,26 @@ impl Host<'_, '_> {
                         .groups_of(WindowId::of(window.0))
                         .into_iter()
                         .map(|group| group_info(workspace, group))
+                        .collect(),
+                )
+            }
+            Asked::Sessions => {
+                let workspace = &*self.context.workspace;
+                let active = workspace.active_session();
+                Response::Sessions(
+                    workspace
+                        .sessions()
+                        .into_iter()
+                        .map(|session| host::SessionInfo {
+                            id: session.id().into(),
+                            name: session.name().to_owned(),
+                            active: session.id() == active,
+                            windows: workspace
+                                .session_windows(session.id())
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                        })
                         .collect(),
                 )
             }
@@ -6728,6 +6793,22 @@ impl Host<'_, '_> {
                 self.known_group(*group)?;
             }
             Asked::FoldGroup { group, .. } | Asked::Ungroup(group) => self.known_group(*group)?,
+            Asked::NewSession { name, directory } => {
+                host::check_session_name(name)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let id = SessionId::new();
+                self.writes.push(Write::NewSession {
+                    id,
+                    name: name.clone(),
+                    directory: directory.clone(),
+                });
+                return Ok(Response::Session(id.into()));
+            }
+            Asked::SwitchSession(session) => self.known_session(*session)?,
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;
                 if matches!(color, Some(host::Color::Palette(_))) {

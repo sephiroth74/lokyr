@@ -28,8 +28,8 @@ use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Bytes, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
     GroupId, GroupInfo, Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
-    WindowInfo,
+    SearchQuery, SelectionKind, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
+    TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -901,6 +901,27 @@ pub enum Request {
     },
     /// Takes a group apart, its tabs staying where they are.
     Ungroup(GroupId),
+    /// The sessions, in the order of their use, the active one first and
+    /// the one before it second.
+    Sessions,
+    /// Makes a session of `name` and switches to it, the windows of the
+    /// session left hidden, their programs running, then opens its first
+    /// window, its pane in `directory`, a path absolute or from `~`, if
+    /// given: the session's id, given at once, which the call's later
+    /// writes take.
+    NewSession {
+        /// Its name, empty for none,
+        /// [`MOST_SESSION_NAME`](crate::host::MOST_SESSION_NAME) characters
+        /// at most.
+        #[serde(default)]
+        name: String,
+        /// The folder of its first window's pane.
+        #[serde(default)]
+        directory: Option<String>,
+    },
+    /// Switches to a session: the active one's windows hidden, their
+    /// programs running, and this one's shown.
+    SwitchSession(SessionId),
     /// Puts the plugin's view of the status bar on `side`, in place of its
     /// manifest's side, or of the one asked before, until the plugin stops;
     /// no capability, as it moves the plugin's own view within the bar.
@@ -1373,6 +1394,8 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
             | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
@@ -1413,6 +1436,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1488,6 +1512,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1548,6 +1573,8 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
@@ -1713,6 +1740,10 @@ pub enum Response {
     Group(GroupId),
     /// A window's groups of tabs.
     Groups(Vec<GroupInfo>),
+    /// A session that is made as the call returns.
+    Session(SessionId),
+    /// The sessions.
+    Sessions(Vec<SessionInfo>),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -2214,6 +2245,7 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
+            | Self::SwitchSession { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
@@ -2289,6 +2321,8 @@ impl Request {
             Self::Tabs { .. } | Self::RecentTabs { .. } => "tabs",
             Self::Groups { .. } => "groups",
             Self::NewGroup { .. } => "group",
+            Self::Sessions => "sessions",
+            Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
