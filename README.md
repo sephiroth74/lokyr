@@ -28,6 +28,10 @@
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
+<p align="center">
+  <a href="https://www.buymeacoffee.com/sephiroth74"><img alt="Buy me a coffee" src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=sephiroth74&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00"></a>
+</p>
+
 > [!NOTE]
 > **Lokyr 1.4.0 is out**, of commands as blocks, smooth scrolling, and controls as macOS 27's: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
@@ -176,12 +180,6 @@ Lokyr shows the progress that a program reports on its tab, round its outline, a
 - [Writing a plugin](docs/plugins/authoring.md) and [making a theme](docs/themes/authoring.md): the guides for their authors.
 - [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
 - [Performance](docs/PERFORMANCE.md): the budgets, and the [measures](docs/bench/).
-
-## Supporting Lokyr
-
-If you like Lokyr, or what it aims for, a coffee helps to keep it going:
-
-<a href="https://www.buymeacoffee.com/sephiroth74"><img alt="Buy me a coffee" src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=sephiroth74&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00"></a>
 
 ## Contributing
 
