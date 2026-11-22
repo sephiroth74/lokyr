@@ -73,7 +73,7 @@
         "0.9.0": 25.35,
         "1.0.0": 26.72,
         "1.3.0": 27.15,
-        "1.4.0": 43.5
+        "1.4.0": 20.8
       },
       "baseline": {
         "0.7.0": 15.1,
@@ -81,7 +81,7 @@
         "0.9.0": 23.81,
         "1.0.0": 28.86,
         "1.3.0": 28.6,
-        "1.4.0": 43.2
+        "1.4.0": 21.7
       },
       "sessions": {
         "0.7.0": {
@@ -89,8 +89,8 @@
           "report": "startup-F3-228.md"
         },
         "1.4.0": {
-          "title": "the startup at rest, of bundles not notarized",
-          "report": "rest-F5a-123.md"
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5a-79.md"
         }
       }
     },
@@ -857,8 +857,8 @@
                 "the mean of eight rounds of copies started 60 times, 1.2.0's 240.0; four rounds of copies started 30 times 239.3, 270.6, 263.2 and 284.4"
               ],
               "1.4.0": [
-                "267.2",
-                "the mean of twelve rounds at rest, of a bundle not notarized, as 1.3.0's tag's 267.0, and 1.3.0's notarized app 254.4, in the same session, [rest-F5a-123](rest-F5a-123.md#results); 240.5 in the A/B, against 1.3.0's notarized app's 233.0"
+                "249.2",
+                "the mean of twelve rounds of the release's DMG, notarized, 1.3.0's DMG 250.1 in the same session, [startup-F5a-79](startup-F5a-79.md#results); 240.5 in the A/B and 267.2 at rest, of a bundle not notarized"
               ]
             }
           },
@@ -900,8 +900,8 @@
                 "of eight rounds against 1.2.0's 28.6, of a minimal app of 207 to 218 ms, as before 1.1.0's sessions"
               ],
               "1.4.0": [
-                "43.5",
-                "of twelve rounds at rest, of a bundle not notarized, past the budget of that alone: 1.3.0's tag's bundle 43.2 and 1.3.0's notarized app 30.7, of a minimal app of 217 to 230 ms, [rest-F5a-123](rest-F5a-123.md#results); 60.9 in the A/B, of a minimal app of 170 to 195 ms"
+                "20.8",
+                "of twelve rounds of the releases' notarized DMGs, 1.3.0's 21.7, of a minimal app of 222 to 243 ms, [startup-F5a-79](startup-F5a-79.md#results); 60.9 in the A/B and 43.5 at rest, of a bundle not notarized"
               ]
             }
           }

@@ -57,4 +57,5 @@ Every run had the same pause of 2 s before it, of [the releases' config](ab-F3b-
   - 12.5 ms here.
 - **The notarized app holds the startup's gap at rest**, at 30.7 ms of 35. The minimal app started in 217 to 230 ms, as before 1.4.0's A/B: 207 to 218 ms in 1.3.0's. That A/B's 170 to 195 ms had made both versions' gaps 53 to 61 ms. The bundles' gaps of 43 ms are past the budget because they are not notarized, 1.3.0's code as much as 1.4.0's.
 - **`cat` holds at rest**, at 303.7 and 304.4 MiB/s, above the budget of 275, as in 1.3.0's own A/B. `seq`, SGR and CJK are back at that session's rates too. 1.4.0's output matches 1.3.0's within the tolerance of 5 %, SGR 3.4 % faster. The A/B's slower output was the session's, the same for both versions.
+- **The releases' own disk images**, both notarized, were measured once 1.4.0's was made: [1.4.0 starts 0.8 ms quicker than 1.3.0](startup-F5a-79.md), its gap 20.8 ms against 21.7.
 - **From here, an A/B compares the startup of copies signed the same way.** Either it builds the earlier release's tag into a bundle beside its notarized app, as this session did, or it notarizes both.
