@@ -1,11 +1,14 @@
 //! The windows kept as the app quits, which open again as it starts, as
 //! `[app] restore-windows` says: their frames, tabs, splits and the
-//! directories of their panes, whose programs start anew.
+//! directories of their panes, whose programs start anew; and, as
+//! `[app] restore-scrollback` says, what each pane showed, its scrollback
+//! within `[scrollback] limit`, which it shows again.
 
 use std::path::Path;
 
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::diagnostics::{About, Diagnostic};
+use lokyr_kernel::state::scrollback;
 use lokyr_kernel::state::windows::{self, Kept};
 use lokyr_kernel::workspace::{self, Environment, PaneId};
 use lokyr_platform_core::{Platform, ScreenRect, WindowAttributes, WindowId, WindowSize};
@@ -27,7 +30,9 @@ impl<B: Backend> App<B> {
     }
 
     /// Keeps the windows open now, in the order of their numbers, for the
-    /// next start, or, as the config keeps none, forgets those kept. A
+    /// next start, and, as the config says, each pane's scrollback beside
+    /// them, of no file for a pane that shows nothing; or, as the config
+    /// keeps no window, forgets those kept and their panes' scrollback. A
     /// quick window and a man page's window are not kept. A bench's app,
     /// of the user's state, neither keeps nor forgets the user's windows.
     pub(super) fn keep_windows(&self, platform: &dyn Platform) {
@@ -64,13 +69,40 @@ impl<B: Backend> App<B> {
                 .and_then(|front| self.windows.get(&front))
                 .map(|open| open.window);
             let host = lokyr_pty::host_name();
+            let keeps_scrollback = self.config.app.restore_scrollback;
+            let bound = self.config.scrollback.limit.bytes();
+            let mut archives: Vec<(String, Vec<u8>)> = Vec::new();
             // The directory that its shell told last, of this machine, as a
             // new pane's; its program's otherwise.
-            let kept = Kept::of(&self.workspace, &shown, front, |pane| {
-                pane.told_directory(&host)
-                    .or_else(|| pane.working_directory())
-            });
+            let kept = Kept::of(
+                &self.workspace,
+                &shown,
+                front,
+                |pane| {
+                    pane.told_directory(&host)
+                        .or_else(|| pane.working_directory())
+                },
+                |pane, index| {
+                    if !keeps_scrollback {
+                        return None;
+                    }
+                    let bytes = pane.terminal()?.archive(bound);
+                    if bytes.is_empty() {
+                        return None;
+                    }
+                    let name = scrollback::name(index);
+                    archives.push((name.clone(), bytes));
+                    Some(name)
+                },
+            );
             if !kept.windows.is_empty() {
+                // The panes' files first, so that the windows name none that
+                // is not there.
+                if let Err(error) = scrollback::write(state, &archives) {
+                    eprintln!(
+                        "lokyr: the panes' scrollback cannot be kept for the next start: {error}"
+                    );
+                }
                 if let Err(error) = windows::write(state, &kept) {
                     eprintln!("lokyr: the windows cannot be kept for the next start: {error}");
                 }
@@ -79,6 +111,11 @@ impl<B: Backend> App<B> {
         }
         if let Err(error) = windows::forget(state) {
             eprintln!("lokyr: the windows kept for the next start cannot be forgotten: {error}");
+        }
+        if let Err(error) = scrollback::forget(state) {
+            eprintln!(
+                "lokyr: the panes' scrollback kept for the next start cannot be forgotten: {error}"
+            );
         }
     }
 

@@ -2,6 +2,7 @@
 //! frames, tabs, splits and directories, on a screen that is there.
 
 use lokyr_kernel::config::RestoreWindows;
+use lokyr_kernel::state::scrollback;
 use lokyr_kernel::state::windows::{self, Kept};
 use lokyr_kernel::workspace::Ratio;
 use lokyr_platform_core::ScreenRect;
@@ -163,13 +164,15 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
     assert_eq!(
         **left,
         windows::Layout::Pane {
-            directory: place(&a)
+            directory: place(&a),
+            scrollback: None,
         }
     );
     assert_eq!(
         **right,
         windows::Layout::Pane {
-            directory: place(&b)
+            directory: place(&b),
+            scrollback: None,
         }
     );
     assert_eq!(one.tabs[1].title.as_deref(), Some("logs"));
@@ -177,7 +180,8 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
     assert_eq!(
         one.tabs[1].layout,
         windows::Layout::Pane {
-            directory: place(&c)
+            directory: place(&c),
+            scrollback: None,
         }
     );
     assert_eq!(two.tabs[0].zoomed, Some(0));
@@ -217,7 +221,10 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                 tabs: vec![windows::Tab {
                     title: None,
                     color: None,
-                    layout: windows::Layout::Pane { directory: None },
+                    layout: windows::Layout::Pane {
+                        directory: None,
+                        scrollback: None,
+                    },
                     active: 0,
                     zoomed: None,
                     pinned: false,
@@ -436,5 +443,53 @@ fn the_windows_open_again_as_the_config_and_the_system_s_setting_say() {
     }
     assert!(fake.has_quit());
     assert!(windows::read(&state).unwrap().is_none());
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn each_pane_s_scrollback_is_kept_at_the_quit_of_its_owner_alone() {
+    let base = real_directory("restore-scrollback");
+    let state = base.join("state");
+    for keeps in [true, false] {
+        let mut config = restoring();
+        config.app.restore_scrollback = keeps;
+        let mut fake = Fake::default();
+        let mut app = app(config, shell("printf 'a line kept\\n'; exec sleep 30"))
+            .with_state(Some(state.clone()));
+        fake.start(&mut app);
+        run_until(&mut fake, &mut app, |_, app| {
+            app.workspace.panes().any(|pane| {
+                pane.terminal()
+                    .is_some_and(|terminal| terminal.row_text(0).contains("a line kept"))
+            })
+        });
+        app.quit(&mut fake);
+        let kept = kept(&state);
+        let windows::Layout::Pane {
+            scrollback: name, ..
+        } = &kept.windows[0].tabs[0].layout
+        else {
+            panic!("{:?}", kept.windows[0].tabs[0].layout);
+        };
+        if keeps {
+            assert_eq!(name.as_deref(), Some("0.scrollback"));
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = |path: &std::path::Path| {
+                    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+                };
+                let folder = scrollback::folder(&state);
+                assert_eq!(mode(&folder), 0o700);
+                assert_eq!(mode(&folder.join("0.scrollback")), 0o600);
+            }
+            let rows = scrollback::take(&state, "0.scrollback").unwrap().unwrap();
+            assert!(String::from_utf8_lossy(&rows).contains("a line kept"));
+        } else {
+            // Off, the next quit keeps none, and takes those kept away.
+            assert_eq!(name, &None);
+            assert!(!scrollback::folder(&state).exists());
+        }
+    }
     let _ = std::fs::remove_dir_all(base);
 }

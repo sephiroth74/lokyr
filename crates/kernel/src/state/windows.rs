@@ -1,8 +1,9 @@
 //! The windows that were open as the app quit, which it opens again as it
 //! starts: their frames, their tabs, each tab's title and color of its own,
 //! its splits and their ratios, the pane that has its keyboard and the one
-//! zoomed, and each pane's directory; and the groups of their tabs. Their programs start anew, of the
-//! app's program; what the panes held is not kept.
+//! zoomed, and each pane's directory and the file of its scrollback, which
+//! [`super::scrollback`] keeps; and the groups of their tabs. Their
+//! programs start anew, of the app's program.
 //!
 //! A file of its own in the state's directory, of JSON, of a format's
 //! version, which a file of a newer version, as a later Lokyr writes, or
@@ -134,6 +135,11 @@ pub enum Layout {
         /// directory, where the app starts it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// The name of the file of its scrollback in the state's folder of
+        /// the panes' scrollback, if it kept one, which an earlier Lokyr
+        /// reads past.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scrollback: Option<String>,
     },
     /// Two parts that share the room.
     Split {
@@ -239,14 +245,22 @@ pub fn forget(state: &Path) -> io::Result<()> {
 impl Kept {
     /// The windows `shown` of `workspace`, in their order, each of its
     /// frame, of `front` the one in front, and of each pane's directory,
-    /// as `directory` finds it. A window that the workspace does not hold
-    /// is left out.
+    /// as `directory` finds it, and the name of its scrollback's file, as
+    /// `scrollback` keeps it, of the pane and its index among the panes
+    /// kept, in their order. A window that the workspace does not hold is
+    /// left out.
     pub fn of(
         workspace: &Workspace,
         shown: &[(workspace::WindowId, Option<Frame>)],
         front: Option<workspace::WindowId>,
         directory: impl Fn(&Pane) -> Option<PathBuf>,
+        mut scrollback: impl FnMut(&Pane, usize) -> Option<String>,
     ) -> Self {
+        let mut index = 0;
+        let mut scrollback = |pane: &Pane| {
+            index += 1;
+            scrollback(pane, index - 1)
+        };
         let mut windows = Vec::new();
         let mut front_index = None;
         for &(id, frame) in shown {
@@ -262,7 +276,7 @@ impl Kept {
                     group: tab
                         .group()
                         .and_then(|group| groups.iter().position(|kept| kept.id() == group)),
-                    ..Tab::of(workspace, tab, &directory)
+                    ..Tab::of(workspace, tab, &directory, &mut scrollback)
                 })
                 .collect();
             if tabs.is_empty() {
@@ -364,13 +378,14 @@ impl Tab {
         workspace: &Workspace,
         tab: &workspace::Tab,
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
+        scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
         let panes = tab.layout().panes();
         let index = |pane| panes.iter().position(|&id| id == pane);
         Self {
             title: tab.own_title().map(str::to_owned),
             color: tab.own_color().map(hex),
-            layout: Layout::of(workspace, tab.layout(), directory),
+            layout: Layout::of(workspace, tab.layout(), directory, scrollback),
             active: index(tab.active_pane()).unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
             pinned: tab.marks().pinned,
@@ -417,11 +432,13 @@ impl Tab {
 
 impl Layout {
     /// The layout `layout` of `workspace`, of each pane's directory as
-    /// `directory` finds it.
+    /// `directory` finds it and its scrollback's file as `scrollback`
+    /// keeps it.
     fn of(
         workspace: &Workspace,
         layout: &workspace::Layout,
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
+        scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
         match layout {
             workspace::Layout::Leaf(pane) => Self::Pane {
@@ -432,6 +449,7 @@ impl Layout {
                     .pane(*pane)
                     .and_then(directory)
                     .map(|path| path.to_string_lossy().into_owned()),
+                scrollback: workspace.pane(*pane).and_then(&mut *scrollback),
             },
             workspace::Layout::Split {
                 direction,
@@ -444,8 +462,8 @@ impl Layout {
                     workspace::Direction::Vertical => Direction::Vertical,
                 },
                 ratio: ratio.map(Ratio::get),
-                first: Box::new(Self::of(workspace, first, directory)),
-                second: Box::new(Self::of(workspace, second, directory)),
+                first: Box::new(Self::of(workspace, first, directory, scrollback)),
+                second: Box::new(Self::of(workspace, second, directory, scrollback)),
             },
         }
     }
@@ -461,7 +479,7 @@ impl Layout {
     /// The directory of its first pane, the left or top one.
     pub fn first_directory(&self) -> Option<&Path> {
         match self {
-            Self::Pane { directory } => directory.as_deref().map(Path::new),
+            Self::Pane { directory, .. } => directory.as_deref().map(Path::new),
             Self::Split { first, .. } => first.first_directory(),
         }
     }

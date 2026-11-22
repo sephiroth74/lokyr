@@ -628,7 +628,7 @@ mod tests {
         assert!(written.contains("\nlimit = 10\nbudget = 100\n"));
         assert!(
             written.ends_with(
-                "\n[app]\nicon = \"jormungandr\"\nlanguage = \"system\"\nappearance = \"system\"\nquit-after-last-window-closed = false\nrestore-windows = \"system\"\n\n[updates]\ncheck = true\n\n[debug]\nperformance-overlay = false\nperformance-corner = \"top-right\"\n\n[keys]\n"
+                "\n[app]\nicon = \"jormungandr\"\nlanguage = \"system\"\nappearance = \"system\"\nquit-after-last-window-closed = false\nrestore-windows = \"system\"\nrestore-scrollback = true\n\n[updates]\ncheck = true\n\n[debug]\nperformance-overlay = false\nperformance-corner = \"top-right\"\n\n[keys]\n"
             )
         );
         // Without the docs, the only comments are of the keys left unset.

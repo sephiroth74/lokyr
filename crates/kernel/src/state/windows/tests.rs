@@ -43,6 +43,7 @@ fn pane() -> Pane {
 fn sample() -> Kept {
     let pane = |directory: &str| Layout::Pane {
         directory: Some(directory.to_owned()),
+        scrollback: None,
     };
     Kept {
         version: VERSION,
@@ -124,7 +125,10 @@ fn sample() -> Kept {
                     layout: Layout::Split {
                         direction: Direction::Vertical,
                         ratio: Some(0.75),
-                        first: Box::new(Layout::Pane { directory: None }),
+                        first: Box::new(Layout::Pane {
+                            directory: None,
+                            scrollback: None,
+                        }),
                         second: Box::new(pane("/e")),
                     },
                     active: 0,
@@ -206,7 +210,10 @@ fn a_newer_or_unreadable_file_is_left_aside() {
         .map(|_| Tab {
             title: None,
             color: None,
-            layout: Layout::Pane { directory: None },
+            layout: Layout::Pane {
+                directory: None,
+                scrollback: None,
+            },
             active: 0,
             zoomed: None,
             pinned: false,
@@ -255,9 +262,13 @@ fn a_workspace_kept_opens_again_as_it_was() {
     }
     // Each pane spawned in its directory, in the layout's order.
     assert_eq!(directories.len(), 8);
-    let again = Kept::of(&workspace, &opened, Some(opened[1].0), |pane| {
-        directories.get(&pane.id()).cloned().flatten()
-    });
+    let again = Kept::of(
+        &workspace,
+        &opened,
+        Some(opened[1].0),
+        |pane| directories.get(&pane.id()).cloned().flatten(),
+        |_, _| None,
+    );
     assert_eq!(again, kept);
     // The workspace's own: the second split's ratio is the parts' weights',
     // the keyboard on the third pane, the second tab shown.
@@ -325,20 +336,20 @@ fn the_settings_tab_is_not_kept_and_its_window_keeps_the_tab_before_it() {
     let first = opened[0].0;
     let tabs = workspace.window(first).unwrap().tabs().to_vec();
     workspace.open_settings(first, "Settings").unwrap();
-    let again = Kept::of(&workspace, &opened, None, |_| None);
+    let again = Kept::of(&workspace, &opened, None, |_| None, |_, _| None);
     assert_eq!(again.windows[0].tabs.len(), 4);
     assert_eq!(again.windows[0].active, 1);
     // The settings tab, between two tabs of a group, splits it not.
     assert_eq!(again.windows[0].groups, kept.windows[0].groups);
     // Shown from before the settings tab: the first tab's place.
     workspace.activate_tab(tabs[0]);
-    let again = Kept::of(&workspace, &opened, None, |_| None);
+    let again = Kept::of(&workspace, &opened, None, |_| None, |_, _| None);
     assert_eq!(again.windows[0].active, 0);
     // Moved first: the tab that the window shows keeps its place.
     let (settings, _) = workspace.settings_tab().unwrap();
     assert!(workspace.move_tab(settings, first, 0));
     workspace.activate_tab(tabs[1]);
-    let again = Kept::of(&workspace, &opened, None, |_| None);
+    let again = Kept::of(&workspace, &opened, None, |_| None, |_, _| None);
     assert_eq!(again.windows[0].active, 1);
 }
 
@@ -351,6 +362,7 @@ fn a_window_of_another_workspace_or_of_no_tab_is_left_out() {
         &[(WindowId::of(u64::MAX), None), (shown, None)],
         Some(WindowId::of(u64::MAX)),
         |_| None,
+        |_, _| None,
     );
     assert_eq!(kept.windows.len(), 1);
     assert_eq!(kept.front, None);
@@ -378,4 +390,52 @@ fn a_color_is_kept_as_six_hex_digits() {
     ] {
         assert_eq!(rgb(wrong), None, "{wrong}");
     }
+}
+
+#[test]
+fn each_pane_names_its_scrollback_s_file_in_the_layout_s_order() {
+    let kept = sample();
+    let mut workspace = Workspace::new();
+    let mut opened: Vec<(WindowId, Option<Frame>)> = Vec::new();
+    for window in &kept.windows {
+        let id = window.open(&mut workspace, |_| pane()).unwrap();
+        opened.push((id, window.frame));
+    }
+    // Every pane but the fourth keeps a scrollback.
+    let again = Kept::of(
+        &workspace,
+        &opened,
+        None,
+        |_| None,
+        |_, index| (index != 3).then(|| super::super::scrollback::name(index)),
+    );
+    let mut names = Vec::new();
+    fn collect(layout: &Layout, names: &mut Vec<Option<String>>) {
+        match layout {
+            Layout::Pane { scrollback, .. } => names.push(scrollback.clone()),
+            Layout::Split { first, second, .. } => {
+                collect(first, names);
+                collect(second, names);
+            }
+        }
+    }
+    for tab in again.windows.iter().flat_map(|window| &window.tabs) {
+        collect(&tab.layout, &mut names);
+    }
+    let expected: Vec<Option<String>> = (0..8)
+        .map(|index| (index != 3).then(|| format!("{index}.scrollback")))
+        .collect();
+    assert_eq!(names, expected);
+    // Written, it names the file; a pane of none, and a file of an earlier
+    // Lokyr, read none.
+    let text = serde_json::to_string(&again).unwrap();
+    assert!(text.contains(r#""scrollback":"0.scrollback""#));
+    let earlier: Layout = serde_json::from_str(r#"{"pane":{"directory":"/tmp"}}"#).unwrap();
+    assert_eq!(
+        earlier,
+        Layout::Pane {
+            directory: Some("/tmp".to_owned()),
+            scrollback: None
+        }
+    );
 }

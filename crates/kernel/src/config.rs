@@ -64,6 +64,7 @@
 //! appearance = "system"     # system | light | dark
 //! quit-after-last-window-closed = false  # stays open without windows
 //! restore-windows = "system"  # system | always | never
+//! restore-scrollback = true  # the panes show again what they showed
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -275,6 +276,10 @@ pub struct AppConfig {
     /// Whether the windows open again as the app starts, as they were as
     /// it quit: their frames, tabs, splits and directories.
     pub restore_windows: RestoreWindows,
+    /// Whether the panes that open again show what they showed as the app
+    /// quit, their scrollback kept within `[scrollback] limit`, while the
+    /// windows open again.
+    pub restore_scrollback: bool,
 }
 
 /// Whether the windows that were open as the app quit open again as it
@@ -341,6 +346,7 @@ impl Default for AppConfig {
             appearance: AppearanceMode::System,
             quit_after_last_window_closed: false,
             restore_windows: RestoreWindows::System,
+            restore_scrollback: true,
         }
     }
 }
@@ -3829,7 +3835,8 @@ long-command = 0
                 "language",
                 "appearance",
                 "quit-after-last-window-closed",
-                "restore-windows"
+                "restore-windows",
+                "restore-scrollback"
             ]
         );
         assert_eq!(OptionAsMeta::default().sides(), (false, false));
