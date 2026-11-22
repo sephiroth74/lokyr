@@ -1,0 +1,23 @@
+== the scroll at 120 Hz
+v130 rows round 1: app 33.6 frames/s, refreshes with a frame 0.28, gaps {'1': 11, '2': 60, '3': 57, '4': 15, '5': 6, '6': 19}; display 41.8/s, missed 61; window server 24.4%, app 6.3% (5.03 s, 20.6 ms); then idle, package 0.000/s, interrupt 0.333/s
+v130 rows round 2: app 34.3 frames/s, refreshes with a frame 0.285, gaps {'1': 23, '2': 97, '3': 112, '4': 39, '5': 12, '6': 38}; display 34.4/s, missed 131; window server 15.9%, app 7.1% (9.4 s, 21.34 ms); then idle, package 0.000/s, interrupt 0.333/s
+v130 rows: app frames mean 34.0/s, refreshes with a frame mean 0.282, app CPU mean 6.7%, window server's 20.1%
+
+v140 rows round 1: app 34.3 frames/s, refreshes with a frame 0.285, gaps {'1': 21, '2': 118, '3': 86, '4': 48, '5': 10, '6': 38}; display 42.7/s, missed 122; window server 27.0%, app 6.8% (9.4 s, 20.59 ms); then idle, package 0.000/s, interrupt 0.333/s
+v140 rows round 2: app 34.3 frames/s, refreshes with a frame 0.285, gaps {'1': 27, '2': 103, '3': 108, '4': 35, '5': 11, '6': 37}; display 34.4/s, missed 137; window server 14.6%, app 6.8% (9.4 s, 21.09 ms); then idle, package 0.000/s, interrupt 0.333/s
+v140 rows: app frames mean 34.3/s, refreshes with a frame mean 0.285, app CPU mean 6.8%, window server's 20.8%
+
+v140 pixels round 1: app 123.7 frames/s, refreshes with a frame 0.991, gaps {'1': 1162}; display 125.9/s, missed 65; window server 39.4%, app 10.8% (9.4 s, 8.22 ms); then idle, package 0.000/s, interrupt 0.333/s
+v140 pixels round 2: app 123.0 frames/s, refreshes with a frame 0.98, gaps {'1': 1125}; display 125.8/s, missed 98; window server 42.0%, app 10.6% (9.15 s, 8.22 ms); then idle, package 0.000/s, interrupt 0.333/s
+v140 pixels: app frames mean 123.3/s, refreshes with a frame mean 0.986, app CPU mean 10.7%, window server's 40.7%
+
+== by hand
+hand-1.log: 16 stretches moving, 18.0 s; 2159 refreshes, 2064 of a frame (96 %)
+  the events' gaps, ms: {0: 25, 1: 6, 2: 26, 3: 31, 4: 99, 5: 59, 6: 109, 7: 176, 8: 998, 9: 294, 10: 83, 11: 25, 12: 26, 13: 12, 14: 6, 15: 9, 16: 16, 17: 45, 18: 4, 19: 4, 20: 5, 21: 1, 22: 1, 23: 1, 24: 2, 25: 4, 29: 1, 31: 1, 32: 5, 33: 6, 34: 6, 35: 2, 37: 1, 39: 1, 41: 1, 44: 1, 45: 1}
+  events of the momentum: {'false': 1044, 'true': 1071}
+  the gaps between frames, in refreshes: {0: 7, 1: 2054, 2: 55, 3: 8, 4: 1, 6: 1}
+
+== by hand, by the scroll's speed, points a 60th of a second
+fast >8    : draw gaps in refreshes {0: 2, 1: 975, 2: 2, 4: 1}; refreshes with a frame 99%
+medium 2-8 : draw gaps in refreshes {0: 1, 1: 865}; refreshes with a frame 100%
+slow <2    : draw gaps in refreshes {0: 6, 1: 227, 2: 54, 3: 8, 4: 1, 6: 2}; refreshes with a frame 78%

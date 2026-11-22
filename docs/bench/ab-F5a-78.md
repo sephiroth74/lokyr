@@ -81,7 +81,23 @@ The synthetic swipes and their momentum at 60 Hz, a round of each in two steps, 
 - **By pixels, the view moves at every refresh**: 1142 frames of the two rounds, each a refresh after the last, 60.8 a second as the frames are paced a quarter of a millisecond quicker than the refresh, the later of two shown where they meet within one. By rows, a frame comes only as the view crosses a row, 32 a second, of 1.3.0 and 1.4.0 alike.
 - **The cost is a frame a refresh while the view moves**: the app's CPU 6.9 % against 4.8 % by rows, and the window server's 20 % against 13 %, of twice the frames. **None at rest**: over 30 s after the scroll, the view a share of a row up, neither copy woke the package, of the same interrupt wakeups as by rows.
 - Of 1.4.0's bundle before it, of commit 216113d7, the same swipes by pixels, of a momentum that slowed to none, gave 40 frames a second on the display, as each frame waited for the display link's next tick after a trackpad's event, which macOS paces by the events while they come, its ticks 8 to 33 ms apart, so that a refresh that no event reached drew nothing. A trackpad's scroll by hand, measured of the app's own log of its frames, went from 93 % of the refreshes with a frame of a fast scroll, 83 % of a medium one and 58 % of a slow one, to 100 %, 100 % and 91 %, the rest where the view rests between a slow momentum's events.
-- **At 120 Hz the scroll is not measured yet**, as the session had the Dell alone: a step of the built-in display at 120 Hz takes it before the release.
+### At 120 Hz
+
+The same two steps on 22 November 2026, between 07:08 and 07:23, on the built-in display at 120 Hz. Its refresh runs from 8.3 to 41.7 ms as the content asks. The Dell stayed connected beside it, and the windows opened on the built-in display. The copies were 1.4.0's bundle of f25e3ffb and 1.3.0's DMG. The reports, the script, [`run.sh`](scroll-F5a-124/run.sh), its analysis, [`analyze.py`](scroll-F5a-124/analyze.py), and the tables, [`analysis.txt`](scroll-F5a-124/analysis.txt), are in [scroll-F5a-124](scroll-F5a-124/).
+
+| Measure | 1.3.0, by rows | 1.4.0, by rows | 1.4.0, by pixels |
+|---|---|---|---|
+| The app's frames a second | 34.0 | 34.3 | 123.3 |
+| The display's refreshes with a frame of the app's | 28.3 % | 28.5 % | 98.6 % |
+| The gaps between the app's frames of one refresh, of all | 7 % | 7 % | 100 % |
+| The app's CPU | 6.7 % | 6.8 % | 10.7 % |
+| The window server's CPU | 20 % | 21 % | 41 % |
+| Idle after the scroll, package and interrupt wakeups a second | 0 and 0.33 | 0 and 0.33 | 0 and 0.33 |
+
+- **By pixels, the view moves at every refresh at 120 Hz too.** The two rounds drew 2287 frames, each a refresh after the last, and 98.6 % of the refreshes had one. By rows, a frame still comes only as the view crosses a row: 34 a second, as at 60 Hz, which is 28 % of the refreshes at 120 Hz.
+- **The app draws 3 % more frames than the refreshes**, 123.3 a second. The frames are paced a quarter of a millisecond quicker than the refresh, and at 120 Hz that quarter is twice the share it is at 60 Hz, where the frames ran 1.5 % ahead. Where two frames meet within one refresh, the later one is shown, and the other, about 4 a second, is drawn for nothing.
+- **The cost grows with the frames**: the app's CPU is 10.7 % against 6.8 % by rows, and the window server's 41 % against 21 %. Nothing is spent at rest: in the 30 s after the scroll, no copy woke the package.
+- **A trackpad's scroll by hand** was 25 s of fast, medium and slow swipes, measured from the app's own log of its frames, of a copy of temporary logs. It had a frame at 99 % of the refreshes in the fast swipes, 100 % in the medium ones and 78 % in the slow ones, against 100 %, 100 % and 91 % at 60 Hz. A slow swipe moves the view less than a point a refresh, and the view rests between its events once it has reached where each one took it.
 
 ## The binary's size
 
