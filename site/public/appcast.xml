@@ -6,6 +6,54 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <channel>
         <title>Lokyr</title>
         <item>
+            <title>1.4.0</title>
+            <pubDate>Sun, 22 Nov 2026 08:44:19 +0100</pubDate>
+            <sparkle:version>202611220721</sparkle:version>
+            <sparkle:shortVersionString>1.4.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[Commands as blocks that you can select, copy and run again, scrolling that follows your fingers pixel by pixel, and controls that look like macOS 27's.
+
+## What's new since 1.3.0
+
+- **Blocks**: turn on Blocks in the settings window's Plugins page, or with `[plugins.blocks] enabled = true`. Each command and its output is then a block. While you scroll through a long output, the block's prompt and command line stay pinned at the pane's top, and a click on them goes to the prompt. A thin line divides the blocks, and the gutter's bar runs along each one.
+- **Select a block**: click it, or press ⌘↑ for the last one, then ↑ and ↓ to move. ⌘C copies its command and output, and Escape ends the selection.
+- **A block's menu**: right-click a block and open Block to copy its command, its output or both, to select them, or to see Block Details: its exit status, when it started, how long it ran and its folder. Run Command Again types the command at the prompt and runs it.
+- **Smooth scrolling**: set `[window] smooth-scroll = true`, and the text follows your fingers on a trackpad or a Magic Mouse pixel by pixel, at every refresh of the display, and keeps gliding as you lift them. A mouse wheel's step glides, and the scroll bar's knob moves the text by pixels.
+- **The status bar has three sides**, start, center and end, each plugin's view at its own width.
+- **Controls as macOS 27's**: on-or-off settings are switches, menus of values are pop-up buttons, and the Settings, Keys and Plugins pages show their rows in rounded groups. Shortcuts show as key caps, problems as callouts, and search fields as capsules. Buttons have macOS's sizes, and a dialog's main button is filled with the accent.
+- **New plugins in the registry**: `sephiroth74/open-in-editor` opens a pane's scrollback, or a command's output, in your text editor, its long lines whole. `sephiroth74/git-folder` shows the focused pane's folder and its git branch in the status bar. `sephiroth74/snap` 0.3.0 makes an image of a command and its output too. Install them with `sleip add`, or from the settings window's Plugins page.
+- **Plugins**: a plugin can stand in for another, such as a tab bar of its own in place of Lokyr's. The plugin API 0.1.6 draws the commands' blocks, selects them, reads the command line and runs a command at the prompt. It also writes temporary files, reads a folder's git branch and a range of rows, and tells the time of day. Plugins can draw macOS 27's controls too.
+
+## Changed
+
+- The pane's context menu is shorter: splitting, moving and closing the pane are in its Pane submenu.
+- Buttons, toggles, fields and segmented controls are 24 points high, as macOS's, with rounder corners, and a disabled control dims whole.
+- The Settings page's on-or-off keys are switches, and its menus of values are pop-up buttons, which open over the button with the value ticked.
+
+## Fixed
+
+- Show Hints labels the links and paths of a long line of no spaces, such as minified JSON wrapped over more rows than the pane shows.
+- A text field that has the keyboard, such as the find bar's, leaves ⌥⌘ and an arrow, and ⇧⌘C, to Lokyr.
+- In zsh, with a plugin that switches the history as you type, the command's header no longer shows the right prompt.
+- A program that prints the shell's mark of a command's start, such as `cat` of a file that holds one, no longer changes the command's header nor its marks.
+- A plugin that starts while the view stays still sees the view at once.
+- A Luau plugin that hands back an empty list hands back a list, not an empty map.
+
+## Before you update
+
+- Plugins installed for 1.3.0 keep working: the plugin API is 0.1.6, which takes 0.1.5's plugins.
+- Blocks and smooth scrolling are off by default. Blocks take the command header's place while they run: move what you set in `[plugins.command-header]` to `[plugins.blocks]` to keep the header's look.
+]]></description>
+            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.4.0/Lokyr-1.4.0.dmg" length="19240289" type="application/octet-stream" sparkle:edSignature="rMGVhe0xasJjXQoEridqBPzDYqS4v3DwqUlZT1EjiQ1YWh8MEsx9d9cblPogr5WuFud/1ZC6PnKE36mWUQsEDg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.4.0/Lokyr202611220721-202611181532.delta" sparkle:deltaFrom="202611181532" length="2261630" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="i7XFEVKgwPzTvYJuXX+mbwa66d0iYTlHJL6KkWN4FgyQ9rAK/GTuWcwROqW8A0+GkUSv0UtyzFte7NAVSlEtCg=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.4.0/Lokyr202611220721-202611161031.delta" sparkle:deltaFrom="202611161031" length="2835834" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ZxCGvN3pQ5ht3a+CnpTzx8CaFxJlNH2jdiKKSsUdRkZNm0GKsOgSsqecRU7oIeBTJDGwR+1SnmjBjCVQY/bgCg=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.4.0/Lokyr202611220721-202611142210.delta" sparkle:deltaFrom="202611142210" length="3288458" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="BMA3L42o/cPcxOEW3fVQ3S0LsHwHUu2IF2dof/NSJAexn03VV0gYB4V/zGIHl3YvZ/Kv7tGyFVpiK7QMfamRBA=="/>
+                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.4.0/Lokyr202611220721-202611131033.delta" sparkle:deltaFrom="202611131033" length="3626578" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qd1etcbZINWCNxk4bbiBYMeOk1Np2va/6jBuQ//2QktEmfEfXga6I+z60JTN42WTcEPUKnzIgLagMft5PaP6Aw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>1.3.0</title>
             <pubDate>Wed, 18 Nov 2026 17:24:58 +0100</pubDate>
             <sparkle:version>202611181532</sparkle:version>
@@ -106,49 +154,9 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
                 <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.2.0/Lokyr202611161031-202611131033.delta" sparkle:deltaFrom="202611131033" length="2738546" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="KCrtITkDh79TGjU/D+WQanQUrtMYfhtffSJAvrB7BnbxqIwiamhsizR1exfz4QQLc3W3PdwtIiLoD+CDJun9DQ=="/>
             </sparkle:deltas>
         </item>
-        <item>
-            <title>1.1.0</title>
-            <pubDate>Sat, 14 Nov 2026 23:32:38 +0100</pubDate>
-            <sparkle:version>202611142210</sparkle:version>
-            <sparkle:shortVersionString>1.1.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <description sparkle:format="markdown"><![CDATA[Lokyr's settings, in a window of their own: every key of the config, the keys' bindings, the themes and the plugins, changed without editing a file, the config file staying yours, its comments kept.
-
-## What's new since 1.0.0
-
-- **The settings window**: Lokyr › Open Settings Window, or the command palette, opens the settings in a window of their own, of the size of System Settings', its pages as tabs across the top: Settings, Themes and Plugins. Settings…, ⌘,, still opens your config file.
-- **Every key of the config**: the Settings page lists every key of the config and of the bundled plugins' sections, by section in a sidebar, each of what it does, its value and a More info link to its text in the config guide. A toggle, a menu or a field changes a key at once, written into your `config.toml` as typing pauses, its comments kept; Reset takes a key back to its default, and a value that a key does not take says why. A search field finds the keys, the sections and the bindings by their words.
-- **Fonts, previewed**: a font's family and its styles are picked from menus of the system's fonts, the panes showing each one as its item rests highlighted, until the menu closes; a family chosen comments out the styles of your config that it lacks.
-- **Your shortcuts**: the Keys part lists every binding, Lokyr's defaults and yours, by category. A click on a binding's keys records the shortcut that you press next; Remove and Restore take a default away and give it back; Add records a new shortcut and offers every command by category. A shortcut that another binding takes says which, and macOS's own, as ⌘Q, stay as they are.
-- **Themes, at a glance**: the Themes page shows every theme, the built-in ones, the collection's and yours, as a sample terminal in its colors, the light and the dark ones apart; a click uses one for its appearance.
-- **Plugins, without the command line**: Lokyr › Plugins… lists every plugin, with its state and its capabilities, to disable, enable, update or remove; and the registry's plugins, to install without restarting.
-- **View › Open Themes Folder** opens the folder of your own themes in the Finder, making it first if it is not there.
-- **Plugins**: the plugin API 0.1.3 lets a plugin show a notice in Lokyr's card, of an icon of its level, as info, success, warning or error, and show a theme's preview in its views.
-
-## Changed
-
-- The config's texts have bounds: a name, as a font's family or a theme's, 256 characters at most, a path or an address 1024; a longer one is an error at its line.
-
-## Fixed
-
-- With the tab bar out of the titlebar and two tabs or more, the window's title stands centred and no longer lies over the plugins' buttons beside the window's buttons.
-- A single tab's title in the titlebar is the window's title, in the system title's look, and dims as the window loses the focus.
-- Choosing in a font picker the family that the config names already, after previewing another, shows it again.
-- A file of the themes' folder that is no regular file, or of more than 1 MiB, or an `.itermcolors` file whose property list nests or repeats its values past what a color preset holds, is refused as a theme that does not read, where it could hold Lokyr or make it quit.
-
-## Before you update
-
-- Plugins installed for 1.0.0 keep working: the plugin API is 0.1.3, which takes 0.1.2's plugins.
-]]></description>
-            <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr-1.1.0.dmg" length="18538438" type="application/octet-stream" sparkle:edSignature="3sLyTa9H1BHqRIdTfKwejct1P0oH7NxPJTTcWNSiKY8pOIUpNwzcL0ZoejCmUvYzo9gmvGPQrvWgyyEK2naBDA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/sephiroth74/lokyr/releases/download/v1.1.0/Lokyr202611142210-202611131033.delta" sparkle:deltaFrom="202611131033" length="2208006" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="976432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="LVH1q+Ly7U9anGVv/+jLCt46hr6qboM/2Pf5kfTPVThtWAShMs71ikj/gyqD2lfCX98Tv1Z3ZIbfJ2qfU2nUAg=="/>
-            </sparkle:deltas>
-        </item>
     </channel>
 </rss>
 <!-- sparkle-signatures:
-edSignature: efeymIK/5Ve59pl7riiMwJLxkzueW068+d87GK63Vc+WmPhbOhemoGDNnwY49vAHD9p1dZH6R0LuKQAMRncLAw==
-length: 17649
+edSignature: xnMxXKi7CZaecTx7pgU4qSiUL0IDOs3L5F/vwbJBgS3MrBEqK/0xmDuOKZHJRX30LM/XYkRKpftPHPA3CaWNBA==
+length: 19459
 -->
