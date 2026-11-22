@@ -197,8 +197,13 @@ impl<B: Backend> App<B> {
     /// Follows the keyboard's focus that `window` took: it is its session's
     /// window in front; one of a session that is not active, as a
     /// notification's click or an agent's key brings it forward, switches
-    /// to its session.
-    pub(super) fn session_focused(&mut self, window: WindowId) {
+    /// to its session. A focus that a window took for a moment, which it
+    /// no longer has, as the system gives it to another window of a session
+    /// that hides, one at a time, tells nothing.
+    pub(super) fn session_focused(&mut self, platform: &dyn Platform, window: WindowId) {
+        if platform.focused_window() != Some(window) {
+            return;
+        }
         let Some(session) = self
             .windows
             .get(&window)

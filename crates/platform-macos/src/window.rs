@@ -451,6 +451,17 @@ impl Window {
     /// that it does not show; shown, it draws at once.
     pub(crate) fn set_hidden(&self, hidden: bool) {
         self.ns_window.setExcludedFromWindowsMenu(hidden);
+        // In full screen it has a Space of its own, which shows it alone and
+        // which ordering it out would take away: it stays there, drawing as
+        // the system tells that it shows, and comes forward as it takes the
+        // keyboard, its Space with it.
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        if full_screen {
+            return;
+        }
         if hidden {
             self.ns_window.orderOut(None);
         } else {

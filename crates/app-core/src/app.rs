@@ -5665,7 +5665,7 @@ impl<B: Backend> App<B> {
                 }
                 self.settle_recording(platform);
                 if focused {
-                    self.session_focused(window);
+                    self.session_focused(platform, window);
                     self.show_floating(platform, Some(window));
                     self.show_opacity(platform, Some(window));
                 }

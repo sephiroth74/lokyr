@@ -663,7 +663,10 @@ pub trait Platform {
     /// nothing, as [`WindowEvent::Occluded`] tells, the frames that it asks
     /// for meanwhile held until it shows; or shows it again where it was, in
     /// front of the app's others, without the keyboard, which
-    /// [`Platform::focus_window`] gives. A quick window takes nothing.
+    /// [`Platform::focus_window`] gives. A window in full screen stays in
+    /// the Space of its own that shows it alone, out of the Window menu
+    /// while hidden, and draws as long as that Space shows. A quick window
+    /// takes nothing.
     fn set_window_hidden(&mut self, window: WindowId, hidden: bool);
 
     /// The window that has the keyboard's focus, if one of the
