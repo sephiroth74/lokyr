@@ -1,0 +1,10 @@
+# A command run of its own at the first prompt, so that a block ends.
+autoload -Uz add-zle-hook-widget
+_bench_first() {
+  if [[ -z $_bench_ran ]]; then
+    _bench_ran=1
+    BUFFER='ls /'
+    zle accept-line
+  fi
+}
+add-zle-hook-widget line-init _bench_first

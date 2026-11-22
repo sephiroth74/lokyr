@@ -47,6 +47,7 @@ Instruments' recording hung as it saved, now and then, the session's first steps
 - **1.4.0's startup is 0.9 ms longer in the first step's four rounds and 7.5 ms in the second step's eight**, of copies started as often: the eight rounds' differences run from −4.9 to +20.8 ms, of a deviation of 8.6 ms, past the tolerance of 5 ms. [At rest](rest-F5a-123.md), it was of the signature: 1.4.0's bundle starts as 1.3.0's tag's, signed alike, 0.2 ms apart, and a copy that is not notarized, as 1.4.0's bundle here, 12.5 ms later than the same code notarized.
 - **The throughputs are 1.3.0's within their runs' spread**, CJK and emoji 0.6 % faster and SGR 1.6 % slower; `seq` 17 % faster, of its second step's two rounds, 222.2 against 191.6 MiB/s, its first's 147.9 against 154.7. The frames on the CPU are 1.3.0's, the ASCII p99 0.02 ms longer, within the rounds' spread.
 - **The commands' folds, which the VT core keeps of no command that folds them, cost nothing that counts**: the throughputs and the frames, of the rows that every output pushes into the scrollback, are 1.3.0's.
+- **Blocks on cost nothing at rest either**, measured on 22 November 2026 in [idle-blocks-F5a-79](idle-blocks-F5a-79/): 1.4.0's bundle of the releases' config, Blocks on and off, its shell running a command of its own at the first prompt so that a block has ended, four rounds of 60 s, each window in the background. Neither woke the package once; the interrupt wakeups were 0.39 and 0.38 a second, and the memory at rest 29.0 and 28.9 MB.
 
 ## The window's motion
 
