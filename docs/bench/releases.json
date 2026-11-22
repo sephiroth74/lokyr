@@ -1488,6 +1488,30 @@
             "cells": {
               "1.4.0": "0"
             }
+          },
+          {
+            "name": "The same at 120 Hz, the app's frames a second",
+            "cells": {
+              "1.4.0": [
+                "123.3",
+                "of the built-in display, 3 % more than its refreshes, as at 60 Hz the frames are paced a quarter of a millisecond quicker than the refresh; by rows 34.3, as 1.3.0's 34.0, [ab-F5a-78](ab-F5a-78.md#at-120-hz)"
+              ]
+            }
+          },
+          {
+            "name": "Its refreshes with a frame at 120 Hz, %",
+            "cells": {
+              "1.4.0": "98.6"
+            }
+          },
+          {
+            "name": "Its app's CPU at 120 Hz, %",
+            "cells": {
+              "1.4.0": [
+                "10.7",
+                "by rows 6.8"
+              ]
+            }
           }
         ]
       }

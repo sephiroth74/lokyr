@@ -1,0 +1,59 @@
+--- scroll-1, 120 Hz
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; 0:05 remaining present: true
+ powermode            2
+ 7:08  up 9 days, 19:46, 309 users, load averages: 1.69 2.62 3.38
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        Color LCD:
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+          Connection Type: Internal
+        DELL P2721Q:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 1920 x 1080 @ 60.00Hz
+07:08:17 step scroll-1
+07:08:18 scroll v130 rows 1
+07:10:10 scroll v140 rows 1
+07:11:54 scroll v140 pixels 1
+07:13:44 recordings done: the Mac is free, the figures follow
+07:16:44 step scroll-1 done
+--- scroll-2, 120 Hz
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; finishing charge; 0:02 remaining present: true
+ powermode            2
+ 7:16  up 9 days, 19:54, 309 users, load averages: 6.28 9.59 7.83
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        Color LCD:
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+          Connection Type: Internal
+        DELL P2721Q:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 1920 x 1080 @ 60.00Hz
+07:16:45 step scroll-2
+07:16:45 scroll v140 pixels 2
+07:18:41 scroll v140 rows 2
+07:20:17 scroll v130 rows 2
+07:21:51 recordings done: the Mac is free, the figures follow
+07:24:34 step scroll-2 done
+--- hand 1, 120 Hz
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ powermode            2
+ 7:50  up 9 days, 20:28, 309 users, load averages: 1.36 1.43 3.17
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        Color LCD:
+          Resolution: 3456 x 2234 Retina
+          Main Display: Yes
+          Connection Type: Internal
+        DELL P2721Q:
+          Resolution: 3840 x 2160 (2160p/4K UHD 1 - Ultra High Definition)
+          UI Looks like: 1920 x 1080 @ 60.00Hz
+07:50:29 hand 1: scroll over the window for 25 s
+07:50:55 hand 1: 2115 events
