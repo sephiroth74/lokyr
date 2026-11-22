@@ -814,6 +814,49 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, which a time of day is of.
+    pub fn now(&mut self) -> Result<crate::host::LocalTime, Error> {
+        match self.request(Request::Now) {
+            Response::Now(now) => Ok(now),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Puts the plugin's view of the status bar on `side`, in place of its
+    /// manifest's side, until it stops.
+    pub fn set_status_bar_side(&mut self, side: crate::host::StatusBarSide) -> Result<(), Error> {
+        match self.request(Request::SetStatusBarSide(side)) {
+            Response::Done => Ok(()),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Writes `bytes` as the plugin's temporary file `name`, in a folder of
+    /// its own that the host empties at the quit and at the start, marked
+    /// as come from elsewhere: its path, as an editor opens it.
+    pub fn temp_file(&mut self, name: &str, bytes: Vec<u8>) -> Result<String, Error> {
+        match self.request(Request::TempFile {
+            name: name.to_owned(),
+            bytes: crate::host::Bytes(bytes),
+        }) {
+            Response::Text(Some(path)) => Ok(path),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The branch of the git repository that holds the folder of the
+    /// absolute path `folder`, as its `HEAD` tells: a detached head's short
+    /// hash; none out of a repository.
+    pub fn git_branch(&mut self, folder: &str) -> Result<Option<String>, Error> {
+        match self.request(Request::GitBranch {
+            folder: folder.to_owned(),
+        }) {
+            Response::Text(branch) => Ok(branch),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Whether a notice of the app's shows, which a plugin's card of its
     /// own yields to.
     pub fn notice_shows(&mut self) -> Result<bool, Error> {
@@ -897,6 +940,32 @@ impl<'a> Cx<'a> {
         self.text(Request::CommandLine { pane, command })
     }
 
+    /// `pane`'s command of the id `command`, as
+    /// [`shell_commands`](Self::shell_commands) gives it; `None` for a
+    /// command not kept. Requires `history-read`.
+    pub fn shell_command(
+        &mut self,
+        pane: PaneId,
+        command: u64,
+    ) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::ShellCommand { pane, command }) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// `pane`'s command whose block holds the row numbered `row`: from its
+    /// prompt, or the pane's oldest row of a prompt that left the
+    /// scrollback, to its end, or to the next command of one that has not
+    /// ended; `None` of a row above every command's, or past an end before
+    /// the next command. Requires `history-read`.
+    pub fn command_at(&mut self, pane: PaneId, row: i64) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::CommandAt { pane, row }) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
     /// The view of `pane`, the rows that it shows by their numbers, as its
     /// last frame showed it, which `viewport-changed` tells the changes
     /// of.
@@ -939,6 +1008,22 @@ impl<'a> Cx<'a> {
     pub fn screen_cells(&mut self, pane: PaneId) -> Result<Vec<crate::image::CellRow>, Error> {
         match self.request(Request::ScreenCells(pane)) {
             Response::Cells(rows) => Ok(rows.unwrap_or_default()),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The cells of `count` rows of `pane` from the row numbered `first`,
+    /// whole, as an image draws them, as many as the pane holds from it,
+    /// [`MOST_ROWS`](crate::image::MOST_ROWS) at most; none of a first row
+    /// that it does not hold.
+    pub fn row_cells(
+        &mut self,
+        pane: PaneId,
+        first: i64,
+        count: usize,
+    ) -> Result<Option<Vec<crate::image::CellRow>>, Error> {
+        match self.request(Request::RowCells { pane, first, count }) {
+            Response::Cells(rows) => Ok(rows),
             other => Err(failed(other)),
         }
     }
@@ -1081,6 +1166,25 @@ impl<'a> Cx<'a> {
         self.done(Request::SendText {
             pane,
             text: text.to_owned(),
+        })
+    }
+
+    /// The command line that `pane`'s shell edits at its prompt, as its
+    /// cells show it, of no right prompt; empty of nothing typed; `None`
+    /// while a command runs, a program's own screen shows, or the shell
+    /// marks no prompt. Requires `terminal-read`.
+    pub fn edited_line(&mut self, pane: PaneId) -> Result<Option<String>, Error> {
+        self.text(Request::EditedLine(pane))
+    }
+
+    /// Runs `line` in `pane`'s shell, as this call returns: pasted at its
+    /// prompt, bracketed as the program asks, and Return, while the shell
+    /// edits an empty command line; `unavailable` otherwise, now. Requires
+    /// `pty-write`.
+    pub fn run_line(&mut self, pane: PaneId, line: &str) -> Result<(), Error> {
+        self.done(Request::RunLine {
+            pane,
+            line: line.to_owned(),
         })
     }
 
@@ -1389,6 +1493,32 @@ impl<'a> Cx<'a> {
     /// more, while the plugin runs, as this call returns.
     pub fn set_focus_follows_mouse(&mut self, on: bool) -> Result<(), Error> {
         self.done(Request::SetFocusFollowsMouse(on))
+    }
+
+    /// Selects the block of `pane`'s command of the id `command`, or none,
+    /// as this call returns: the host tints its rows, and the keys' context
+    /// holds `<namespace>.selected` while the pane has the keyboard, until
+    /// another selection, a key that the program takes, a text typed or a
+    /// click in the pane. Requires `pane-view`.
+    pub fn select_block(&mut self, pane: PaneId, command: Option<u64>) -> Result<(), Error> {
+        self.done(Request::SelectBlock { pane, command })
+    }
+
+    /// The command whose block the plugin selected in `pane`, while the
+    /// selection lasts, as [`shell_commands`](Self::shell_commands) gives
+    /// it. Requires `history-read`.
+    pub fn selected_block(&mut self, pane: PaneId) -> Result<Option<ShellCommand>, Error> {
+        match self.request(Request::SelectedBlock(pane)) {
+            Response::ShellCommand(command) => Ok(command.map(|command| *command)),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Draws the commands' blocks of every pane of `looks`, while the
+    /// plugin runs, as this call returns: their gutter's bars along them,
+    /// their dividers, a failed one's tint. Requires `pane-view`.
+    pub fn set_block_looks(&mut self, looks: crate::host::BlockLooks) -> Result<(), Error> {
+        self.done(Request::SetBlockLooks(looks))
     }
 
     /// Puts the plugin's tab bar of `window` at `place`, over its place in

@@ -10,6 +10,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 ## Use
 
 - [Shell integration](shell-integration.md)
+- [Blocks](blocks.md)
 - [AI agents](agents.md)
 - [Progress and status](progress-and-status.md)
 - [Notifications](notifications.md)

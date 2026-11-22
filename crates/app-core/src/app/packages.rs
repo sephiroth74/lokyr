@@ -146,8 +146,9 @@ impl<B: Backend> App<B> {
         namespace: &str,
         enabled: bool,
     ) {
+        let default = self.plugins.enabled_by_default(namespace);
         let written = match &self.config_file {
-            Some(file) => config::set_plugin_enabled(&file.path, namespace, enabled)
+            Some(file) => config::set_plugin_enabled(&file.path, namespace, enabled, default)
                 .map_err(|error| error.to_string()),
             None => Err(self.texts.text("settings-no-home")),
         };
@@ -250,7 +251,7 @@ impl<B: Backend> App<B> {
         let Some(file) = &self.config_file else {
             return;
         };
-        match config::set_plugin_enabled(&file.path, namespace, true) {
+        match config::set_plugin_enabled(&file.path, namespace, true, true) {
             Ok(()) => self.reload(platform),
             Err(error) => eprintln!("lokyr: {error}"),
         }

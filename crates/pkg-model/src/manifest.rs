@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{self, Capability, Category};
+use lokyr_plugin_sdk::host::StatusBarSide;
 use lokyr_plugin_sdk::keys;
 use lokyr_plugin_sdk::ui::Slot;
 use serde::Deserialize;
@@ -53,6 +54,11 @@ pub struct Manifest {
     /// The plugins that it needs, by their names, with their versions'
     /// constraints.
     pub dependencies: BTreeMap<String, String>,
+    /// Whether it runs where the config says nothing of it, of its
+    /// section's `enabled`: a plugin of Lokyr's own may start off, until
+    /// the config or the Plugins page turns it on; any other runs once
+    /// installed.
+    pub enabled_by_default: bool,
 }
 
 /// What a package holds.
@@ -128,6 +134,14 @@ struct RawContributes {
     #[serde(default)]
     pages: Vec<toml::Spanned<RawPage>>,
     config_schema: Option<toml::Spanned<String>>,
+    status_bar: Option<toml::Spanned<RawStatusBar>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawStatusBar {
+    #[serde(default)]
+    side: StatusBarSide,
 }
 
 #[derive(Deserialize)]
@@ -258,6 +272,8 @@ struct Plugin {
     platforms: Vec<String>,
     #[serde(default)]
     replaces: Vec<toml::Spanned<String>>,
+    #[serde(rename = "enabled-by-default")]
+    enabled_by_default: Option<toml::Spanned<bool>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -292,6 +308,10 @@ pub struct Contributes {
     pub pages: Vec<Page>,
     /// The file of its config's schema, in the package.
     pub config_schema: Option<String>,
+    /// The side of the status bar where its view goes, of
+    /// `[contributes.status-bar] side`, until it asks for another: the
+    /// start of none.
+    pub status_bar_side: StatusBarSide,
 }
 
 /// A page of the settings tab that a plugin of Lokyr's own shows: its id,
@@ -469,6 +489,16 @@ impl Manifest {
             }
             capabilities.push(Capability::Replaces(other.clone()));
         }
+        // A plugin that the user installs runs once installed: Lokyr's own
+        // alone may start off.
+        if let Some(enabled) = &plugin.enabled_by_default
+            && kind != Kind::Builtin
+        {
+            return Err(fail(
+                enabled.span(),
+                "`enabled-by-default` is Lokyr's own plugins' alone: a plugin that you install runs once installed".to_owned(),
+            ));
+        }
         for pattern in &file.uses.commands {
             if !is_pattern(pattern.get_ref()) {
                 return Err(fail(
@@ -556,6 +586,9 @@ impl Manifest {
                 .collect(),
             contributes,
             dependencies,
+            enabled_by_default: plugin
+                .enabled_by_default
+                .is_none_or(toml::Spanned::into_inner),
         })
     }
 
@@ -725,6 +758,20 @@ fn contributed(
             id: page.id.into_inner(),
             icon: page.icon.into_inner(),
         });
+    }
+    if let Some(status_bar) = raw.status_bar {
+        if !contributes
+            .slots
+            .iter()
+            .any(|slot| slot == Slot::StatusBar.name())
+        {
+            return Err(fail(
+                status_bar.span(),
+                "`[contributes.status-bar]` is of a plugin that fills the `status-bar` slot, in `slots`"
+                    .to_owned(),
+            ));
+        }
+        contributes.status_bar_side = status_bar.into_inner().side;
     }
     if let Some(schema) = raw.config_schema {
         use std::path::{Component, Path};
@@ -1209,6 +1256,42 @@ config-schema = "schema.json"
     }
 
     #[test]
+    fn a_status_bar_s_side_is_its_manifest_s_of_the_slot_that_it_fills() {
+        let luau = "[plugin]\nname = \"acme/x\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n";
+        let parse = |rest: &str| Manifest::parse(&format!("{luau}{rest}"));
+        // The start of none; the side that it names.
+        let none = parse("[contributes]\nslots = [\"status-bar\"]\n").unwrap();
+        assert_eq!(none.contributes.status_bar_side, StatusBarSide::Start);
+        for (named, side) in [
+            ("start", StatusBarSide::Start),
+            ("center", StatusBarSide::Center),
+            ("end", StatusBarSide::End),
+        ] {
+            let manifest = parse(&format!(
+                "[contributes]\nslots = [\"status-bar\"]\n[contributes.status-bar]\nside = \"{named}\"\n"
+            ))
+            .unwrap();
+            assert_eq!(manifest.contributes.status_bar_side, side);
+        }
+        // A side of no slot of the status bar, or of another name, refused.
+        let unfilled = parse(
+            "[contributes]\nslots = [\"tab-bar\"]\n[contributes.status-bar]\nside = \"end\"\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            unfilled.contains("fills the `status-bar` slot"),
+            "{unfilled}"
+        );
+        let left = parse(
+            "[contributes]\nslots = [\"status-bar\"]\n[contributes.status-bar]\nside = \"left\"\n",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(left.contains("left"), "{left}");
+    }
+
+    #[test]
     fn a_package_s_contributions_dependencies_and_uses_are_checked_at_their_places() {
         let wrong = |text: &str| Manifest::parse(text).unwrap_err().to_string();
         let luau = "[plugin]\nname = \"acme/x\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n";
@@ -1283,6 +1366,23 @@ config-schema = "schema.json"
         // A built-in plugin contributes the app's commands.
         let builtin = "[plugin]\nname = \"lokyr/quick\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\ncommands = [{ name = \"window.toggle-quick\", title = \"Quick\" }]\n";
         assert!(Manifest::parse(builtin).is_ok());
+    }
+
+    #[test]
+    fn lokyr_s_own_plugins_alone_start_off() {
+        let builtin = |more: &str| {
+            format!(
+                "[plugin]\nname = \"lokyr/blocks\"\nkind = \"builtin\"\nlicense = \"MIT\"\n{more}"
+            )
+        };
+        assert!(Manifest::parse(&builtin("")).unwrap().enabled_by_default);
+        let off = Manifest::parse(&builtin("enabled-by-default = false\n")).unwrap();
+        assert!(!off.enabled_by_default);
+        let luau = "[plugin]\nname = \"acme/hello\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\nenabled-by-default = false\n";
+        assert_eq!(
+            Manifest::parse(luau).unwrap_err().to_string(),
+            "7:22: `enabled-by-default` is Lokyr's own plugins' alone: a plugin that you install runs once installed"
+        );
     }
 
     #[test]

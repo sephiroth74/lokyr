@@ -388,3 +388,68 @@ fn no_arrows_cross_a_grapheme_of_several_code_points() {
     assert_eq!(replaced(&mut terminal, (3, 3), 0), None);
     assert_eq!(replaced(&mut terminal, (4, 4), 0), Some((None, 1)));
 }
+
+#[test]
+fn the_edited_command_line_is_the_input_typed_at_the_prompt_alone() {
+    // An empty one, of zsh's, bash's and fish's prompts, and one typed.
+    for options in ["", ";cl=line", ";click_events=1"] {
+        let terminal = fed(40, &prompt(options, ""));
+        assert_eq!(
+            terminal.edited_command_line().as_deref(),
+            Some(""),
+            "{options}"
+        );
+    }
+    let terminal = fed(40, &prompt("", "ls -l"));
+    assert_eq!(terminal.edited_command_line().as_deref(), Some("ls -l"));
+    // Spaces alone are nothing typed, and those that end a line go.
+    let terminal = fed(40, &prompt("", "  "));
+    assert_eq!(terminal.edited_command_line().as_deref(), Some(""));
+    let terminal = fed(40, &prompt("", " ls  "));
+    assert_eq!(terminal.edited_command_line().as_deref(), Some(" ls"));
+    // Of no right prompt, typed or not.
+    assert_eq!(
+        with_right_prompt(true).edited_command_line().as_deref(),
+        Some("echo hello")
+    );
+    let empty = fed(
+        40,
+        &format!(
+            "{}\x1b[33C\x1b]133;P;k=r\x07main\x1b]133;B\x07\x1b[37D",
+            prompt("", "")
+        ),
+    );
+    assert_eq!(empty.cursor().x, 2);
+    assert_eq!(empty.edited_command_line().as_deref(), Some(""));
+    // fish 4's, of its right prompt drawn first.
+    assert_eq!(fish("").edited_command_line().as_deref(), Some(""));
+    assert_eq!(
+        fish("echo hi").edited_command_line().as_deref(),
+        Some("echo hi")
+    );
+    // A wide character, and the lines of a line editor's continuation.
+    let terminal = fed(40, &prompt("", "echo 漢"));
+    assert_eq!(terminal.edited_command_line().as_deref(), Some("echo 漢"));
+    let terminal = fed(40, &prompt("", "for i in 1\r\n  echo $i"));
+    assert_eq!(
+        terminal.edited_command_line().as_deref(),
+        Some("for i in 1\n  echo $i")
+    );
+}
+
+#[test]
+fn no_command_line_is_edited_while_a_command_runs_nor_off_the_prompt() {
+    // A shell that marks no prompt.
+    assert_eq!(fed(40, "$ ls").edited_command_line(), None);
+    // A command that runs, then its end and the next prompt.
+    let mut terminal = fed(40, &format!("{}\r\n\x1b]133;C\x07", prompt("", "sleep 9")));
+    assert_eq!(terminal.edited_command_line(), None);
+    Parser::new().advance(&mut terminal, b"\x1b]133;D;0\x07");
+    Parser::new().advance(&mut terminal, prompt("", "").as_bytes());
+    assert_eq!(terminal.edited_command_line().as_deref(), Some(""));
+    // A program's own screen, over the prompt.
+    Parser::new().advance(&mut terminal, b"\x1b[?1049h");
+    assert_eq!(terminal.edited_command_line(), None);
+    Parser::new().advance(&mut terminal, b"\x1b[?1049l");
+    assert_eq!(terminal.edited_command_line().as_deref(), Some(""));
+}

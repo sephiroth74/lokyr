@@ -882,14 +882,14 @@ fn the_settings_page_shows_every_section_of_the_config_and_of_the_plugins_of_its
         panic!("a list");
     };
     // The config's 18 sections, the links' hints in the config's Links,
-    // then the 6 other plugins of a schema, the bindings of keys a page of
+    // then the 7 other plugins of a schema, the bindings of keys a page of
     // their own.
     let titles: Vec<&str> = sections
         .items
         .iter()
         .map(|item| item.texts[1].as_str())
         .collect();
-    assert_eq!(titles.len(), 24, "{titles:?}");
+    assert_eq!(titles.len(), 25, "{titles:?}");
     assert_eq!(&titles[..3], ["Font", "Text", "Cursor"]);
     // The plugins' in the order that they register.
     assert_eq!(&titles[18..20], ["Tabs", "Splits"]);

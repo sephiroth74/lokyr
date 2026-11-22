@@ -144,6 +144,9 @@ hover.bg = "#ffffff0f"
 seamless.line = "#ffffff1f"
 seamless.veil = "#000000 / 27%"
 
+[status-bar]                        # the status bar's band, while a plugin fills it
+bg = "tabs.bar.bg"
+
 [segments]                          # the segmented controls
 bg = "#ffffff14"
 chosen.bg = "#2462c4"
@@ -163,8 +166,12 @@ running = "accent"
 succeeded = "#ffffff40"
 failed = "#ff5f57"
 
-# A plugin's tokens, of a section of its own name: [command-header]'s
-# "pill" is the token "command-header.pill", which the plugin's config
-# names, as [plugins.command-header] background = "command-header.pill".
-[command-header]
+# The commands' blocks, as Blocks shows them, and a plugin's tokens, of a
+# section of its own name: [blocks]'s "pill" is the token "blocks.pill",
+# which the plugin's config names, as [plugins.blocks] background =
+# "blocks.pill".
+[blocks]
+divider = "separator"               # the line at the top of each block
+selected.bg = "accent / 20%"        # the tint over the selected block's rows
+failed = "gutter.failed / 12%"      # the tint over a failed block's rows
 pill = "#2a2a2d"

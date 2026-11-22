@@ -5,7 +5,9 @@
 //! bold, faint, italic, underlined, curly, struck and inverse text, a
 //! selection, the find's matches, a hint's label over the link, an error
 //! and a warning, and a block cursor over a character on the cursor guide's
-//! row.
+//! row; the commands' blocks as Blocks shows them, the gutter's bars along
+//! them, a divider at each block's top, a failed block's tint, and the
+//! first block's outline, as the keyboard selects it.
 
 use lokyr_render_core::{CellBatch, Shape};
 use lokyr_text_core::CellMetrics;
@@ -112,8 +114,9 @@ fn snapshot(colors: &Colors) -> Snapshot {
 
 /// The specimen of `specimen`'s theme: its cells, its grid's top left
 /// corner at `origin`, in pixels, of `cell`, its glyphs of `glyphs`; and the
-/// gutter's bars of its commands, in the `padding` at its cells' left, of
-/// `tokens`, on a display of `scale`.
+/// gutter's bars of its commands along their blocks, in the `padding` at
+/// its cells' left and right, a failed block's tint and the blocks'
+/// dividers across it, of `tokens`, on a display of `scale`.
 pub fn cells(
     specimen: &Specimen,
     cell: &CellMetrics,
@@ -151,9 +154,37 @@ pub fn cells(
     }
     pane::decorate(&mut batch, &snapshot, cell);
     pane::labels(&mut batch, &snapshot, cell, specimen.labels, glyphs);
-    let bars =
-        pane::gutter_marks(&snapshot, origin, (padding, cell.height), scale, tokens).collect();
-    (batch, bars)
+    let looks = lokyr_plugin_sdk::host::BlockLooks {
+        bars: true,
+        dividers: true,
+        failed_tint: true,
+        prompt_rows: false,
+        spacing: false,
+    };
+    let across = (
+        origin.0 - i32::try_from(padding).unwrap_or(0),
+        u32::from(COLUMNS) * cell.width + 2 * padding,
+    );
+    // The first block selected, as the keyboard selects one.
+    let selected = snapshot.blocks().first().map(|block| block.id);
+    let mut shapes = pane::block_shapes(
+        &snapshot,
+        origin.1,
+        cell.height,
+        across,
+        scale,
+        tokens,
+        (looks, selected),
+    );
+    shapes.extend(pane::gutter_marks(
+        &snapshot,
+        origin,
+        (padding, cell.height),
+        scale,
+        tokens,
+        looks.bars,
+    ));
+    (batch, shapes)
 }
 
 #[cfg(test)]

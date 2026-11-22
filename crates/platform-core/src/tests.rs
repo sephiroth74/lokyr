@@ -290,6 +290,27 @@ fn a_frame_answers_the_request_for_it() {
 }
 
 #[test]
+fn a_frame_asked_for_at_a_time_keeps_the_earliest_until_it_comes() {
+    let (mut fake, mut app, window) = started();
+    let now = Instant::now();
+    let later = now + Duration::from_millis(16);
+    fake.request_frame_at(window, later);
+    fake.request_frame_at(window, now);
+    fake.request_frame_at(window, later);
+    let state = fake.window(window).unwrap();
+    assert!(state.frame_requested);
+    assert_eq!(state.frame_at, Some(now));
+    assert!(fake.send(&mut app, window, WindowEvent::Frame));
+    assert_eq!(fake.window(window).unwrap().frame_at, None);
+    // Hidden, it waits for the window to show, as a frame of the display's.
+    fake.send(&mut app, window, WindowEvent::Occluded(true));
+    fake.request_frame_at(window, later);
+    let state = fake.window(window).unwrap();
+    assert!(state.frame_held && !state.frame_requested);
+    assert_eq!(state.frame_at, None);
+}
+
+#[test]
 fn quitting_from_the_menu_ends_the_application() {
     let (mut fake, mut app, window) = started();
     fake.send_app(&mut app, command("quit"));

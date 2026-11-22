@@ -6,7 +6,7 @@ This guide makes a plugin from nothing, runs it in Lokyr as you edit it, gives i
 
 ## What you need
 
-- **Lokyr 1.3 or later**, of the plugin API 0.1.5, which `lokyr --api-version` tells.
+- **Lokyr 1.4 or later**, of the plugin API 0.1.6, which `lokyr --api-version` tells.
 - **Sleip on your `PATH`**: Lokyr › Install Command Line Tools… links `lokyr` and `sleip` into `/usr/local/bin`.
 - **An editor.** In VS Code, the [Luau Language Server](https://marketplace.visualstudio.com/items?itemName=JohnnyMorganz.luau-lsp) extension completes and checks the API's types, of the settings that `sleip new` writes.
 - **For publishing**: a GitHub account, a public repository of the plugin, and, best, [GitHub's CLI](https://cli.github.com), `gh`, signed in.
@@ -41,7 +41,7 @@ The manifest:
 name = "acme/hello"
 version = "0.1.0"
 kind = "luau"
-api = "^0.1.5"
+api = "^0.1.6"
 license = "MIT"
 description = "A plugin of Lokyr, made by `sleip new`."
 
@@ -249,17 +249,17 @@ A new version is a new `version` in the manifest, a new tag, and `sleip publish`
 |---|---|
 | Declarations | `register_command`, `bind`, `subscribe`, `add_menu_item`, `emit` |
 | The commands | `run_command`, `commands` |
-| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `working_directory`, `shell_commands`, `command_line`, `viewport` |
+| The panes' text | `selection_text`, `line_text`, `link_at`, `read_lines`, `styles`, `selection_cells`, `screen_cells`, `row_cells` · Since 1.4, `working_directory`, `git_branch` · Since 1.4, `shell_commands`, `command_line`, `shell_command`, `command_at`, `edited_line` · Since 1.4, `viewport` |
 | Search | `search`, `end_search`, `search_matches`, `current_match`, `show_matches` |
-| Writing to a pane | `paste`, `send_text`, `clear`, `clear_scrollback`, `scroll`, `select_all`, `select_cells`, `deselect`, `show_cursor`, `cursor_cell` |
-| Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter` |
+| Writing to a pane | `paste`, `send_text`, `run_line` · Since 1.4, `clear`, `clear_scrollback`, `scroll`, `select_all`, `select_cells`, `deselect`, `show_cursor`, `cursor_cell` |
+| Drawing over a pane | `decorate`, `undecorate`, `mark_gutter`, `unmark_gutter`, `set_block_looks`, `select_block`, `selected_block` · Since 1.4 |
 | Windows, tabs and panes | `windows`, `tabs`, `agents`, `layout`, `pane_grid`, `pane_title`, `open_window`, `close_window`, `new_tab`, `close_tab`, `split`, `close_pane`, `activate_tab`, `focus_pane`, `move_tab`, `swap_panes`, `zoom`, `resize_pane`, `set_ratio`, `equalize`, `set_tab_title`, `set_tab_color`, and the rest of their family |
-| Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node` |
-| Questions, opening and texts | `notify`, `ask_text`, `save_file`, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
+| Views and panels | `open_panel`, `close_panel`, `request_render`, `set_text`, `select`, `reveal`, `focus_node`, `set_status_bar_side` · Since 1.4 |
+| Questions, opening and texts | `notify`, `ask_text`, `save_file`, `temp_file` · Since 1.4, `open`, `open_at`, `opens`, `message`, `keys_of`, `notice_shows` |
 | The clipboard | `clipboard_text`, `set_clipboard_text`, `set_clipboard_image` |
 | Images | `render_image`, `drop_image` |
 | Settings and state | `config`, `state`, `set_state`, `keeps_state` |
-| Time and the modifiers | `start_timer`, `cancel_timer`, `day`, and `watch_double_tap` · Since 1.3 |
+| Time and the modifiers | `start_timer`, `cancel_timer`, `day`, `watch_double_tap` · Since 1.3, and `now` · Since 1.4 |
 | The Mac | `keep_awake` |
 | Themes and the font | `themes`, `preview_theme`, `set_theme`, `fonts`, `preview_font`, `set_font`, `font_size`, `set_font_size` |
 
@@ -281,7 +281,7 @@ cx.notify(cx.message("snap-copied") or "Snap copied to clipboard", "success")
 
 **The sandbox.** Luau's `string`, `table`, `math`, `bit32`, `utf8` and `buffer`, and `require` of the plugin's own modules, as `require("./look")` of `src/look.luau`: no files, no network, no processes.
 
-**Versions.** The plugin API is `0.1.5`, of Lokyr 1.3: a patch adds calls and events, and the API is experimental until its own 1.0, which keeps the calls' names. The manifest's `api` is the least that the plugin needs: `^0.1.2` takes every Lokyr of the API 0.1.2 or a later 0.1, and `sleip new` writes the API of its Lokyr, `^0.1.5`.
+**Versions.** The plugin API is `0.1.6`, of Lokyr 1.4: a patch adds calls and events, and the API is experimental until its own 1.0, which keeps the calls' names. The manifest's `api` is the least that the plugin needs: `^0.1.2` takes every Lokyr of the API 0.1.2 or a later 0.1, and `sleip new` writes the API of its Lokyr, `^0.1.6`.
 
 ## When something goes wrong
 

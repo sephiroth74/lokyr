@@ -39,7 +39,7 @@ use lokyr_ui_core::theme::Theme;
 use lokyr_ui_core::tree::{NodeId, Tree};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    MatchCells, Options, SelectionShape, SelectionUnit, Snapshot, Terminal,
+    MatchCells, Options, Scroll, SelectionShape, SelectionUnit, Snapshot, Terminal,
 };
 
 /// The pixels around the cells, as a window's padding.
@@ -80,6 +80,9 @@ struct Scene {
     fade: Option<f32>,
     /// A search's matches that it highlights, if any.
     highlights: Option<Highlights>,
+    /// The commands' blocks that it draws, as Blocks asks the panes, in
+    /// the light variant or the dark one, if any.
+    blocks: Option<(lokyr_plugin_sdk::host::BlockLooks, bool)>,
 }
 
 /// A search's matches highlighted over a scene's cells, of the theme's
@@ -122,6 +125,15 @@ impl Drawing {
         })
     }
 
+    /// The snapshot of `scene`'s terminal, fed its text.
+    fn snapshot(&self, scene: &Scene) -> Snapshot {
+        let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
+        Parser::new().advance(&mut terminal, scene.text.as_bytes());
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        snapshot
+    }
+
     /// The cells of `scene`'s screen, from `(x, y)`, in the dark variant of
     /// the built-in theme, as a frame lays them out.
     fn batch(
@@ -130,7 +142,8 @@ impl Drawing {
         (x, y): (i32, i32),
     ) -> (CellBatch, lokyr_render_core::Color) {
         let theme = Theme::builtin();
-        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light);
+        let light = scene.highlights.as_ref().is_some_and(|shown| shown.light)
+            || scene.blocks.is_some_and(|(_, light)| light);
         let variant = theme.variant(!light);
         let mut terminal = Terminal::new(scene.columns, scene.rows, Options::default());
         terminal.set_default_colors(variant.colors.clone());
@@ -193,10 +206,42 @@ impl Drawing {
             if let Some(share) = scene.fade {
                 cells::fade(&mut batch, color, share);
             }
-            width = width.max(u32::from(scene.columns) * batch.cell_width);
-            y += u32::from(scene.rows) * batch.cell_height;
+            let (columns, cell_height) = (
+                u32::from(scene.columns) * batch.cell_width,
+                batch.cell_height,
+            );
+            width = width.max(columns);
             background.get_or_insert(color);
+            let blocks = scene.blocks.map(|(looks, light)| {
+                // The blocks across the scene and its margins, and their
+                // bars in the margin at the cells' left, as a pane's
+                // padding.
+                let tokens = Theme::builtin().variant(!light).tokens.clone();
+                let snapshot = self.snapshot(scene);
+                let scale = f64::from(self.font.scale());
+                let top = y as i32;
+                let mut shapes = cells::block_shapes(
+                    &snapshot,
+                    top,
+                    cell_height,
+                    (0, columns + 2 * MARGIN),
+                    scale,
+                    &tokens,
+                    (looks, None),
+                );
+                shapes.extend(cells::gutter_marks(
+                    &snapshot,
+                    (MARGIN as i32, top),
+                    (MARGIN, cell_height),
+                    scale,
+                    &tokens,
+                    looks.bars,
+                ));
+                Item::Shapes(shapes)
+            });
+            y += u32::from(scene.rows) * cell_height;
             items.push(Item::Cells(batch));
+            items.extend(blocks);
         }
         let (width, height) = (width + 2 * MARGIN, y + MARGIN);
         let list = DisplayList {
@@ -233,6 +278,7 @@ fn text() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -271,6 +317,7 @@ fn colors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -293,6 +340,7 @@ fn decorations() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -317,6 +365,7 @@ fn cursors() -> Vec<Scene> {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     })
     .collect()
@@ -344,6 +393,7 @@ fn highlights(light: bool) -> Vec<Scene> {
         selection: Some(((10, 0), (12, 0))),
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: Some(Highlights {
             matches: vec![
                 ((9, 0), (14, 0)),
@@ -354,6 +404,41 @@ fn highlights(light: bool) -> Vec<Scene> {
             current: Some(((17, 1), (22, 1))),
             light,
         }),
+    }]
+}
+
+/// The commands' blocks as Blocks shows them, in the light variant or the
+/// dark one: `ls`, which succeeded, `make`, which failed, of its rows
+/// tinted, and `seq`, which runs, each of its gutter's bar along it and a
+/// divider at its top, and the prompt where the user types.
+fn blocks(light: bool) -> Vec<Scene> {
+    vec![Scene {
+        name: if light { "blocks-light" } else { "blocks-dark" },
+        columns: 32,
+        rows: 10,
+        text: concat!(
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07src  docs  README.md\r\n",
+            "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07make\r\n\x1b]133;C\x07",
+            "error: build failed\r\nmake: *** [all] Error 1\r\n",
+            "\x1b]133;D;2\x07\x1b]133;A\x07$ \x1b]133;B\x07seq 3\r\n\x1b]133;C\x071\r\n2\r\n3\r\n",
+            "\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+        )
+        .to_owned(),
+        cursor: None,
+        selection: None,
+        shapes: false,
+        fade: None,
+        highlights: None,
+        blocks: Some((
+            lokyr_plugin_sdk::host::BlockLooks {
+                bars: true,
+                dividers: true,
+                failed_tint: true,
+                prompt_rows: false,
+                spacing: false,
+            },
+            light,
+        )),
     }]
 }
 
@@ -369,6 +454,7 @@ fn selection() -> Vec<Scene> {
         selection: Some(((2, 0), (5, 1))),
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: None,
     }]
 }
@@ -389,6 +475,7 @@ fn dimmed() -> Vec<Scene> {
             selection: None,
             shapes: false,
             fade,
+            blocks: None,
             highlights: None,
         })
         .collect()
@@ -416,6 +503,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        blocks: None,
         highlights: None,
     })
     .collect();
@@ -431,6 +519,7 @@ fn shapes() -> Vec<Scene> {
         selection: None,
         shapes: true,
         fade: None,
+        blocks: None,
         highlights: None,
     });
     scenes
@@ -1362,6 +1451,7 @@ fn check_bars(light: bool, scale: u32) {
         selection: None,
         shapes: false,
         fade: None,
+        blocks: None,
         highlights: Some(Highlights {
             matches: Vec::new(),
             current: None,
@@ -1372,6 +1462,7 @@ fn check_bars(light: bool, scale: u32) {
     let rows = |top: u64| Rows {
         total: 400,
         top,
+        share: 0.0,
         shown: 8,
     };
     let mark = |at: f32, current: bool| Mark { at, current };
@@ -1466,6 +1557,15 @@ fn a_search_s_matches_draw_highlighted_as_their_golden_images() {
 }
 
 #[test]
+fn the_commands_blocks_draw_as_their_golden_images() {
+    for light in [false, true] {
+        for scale in [1, 2] {
+            check(&blocks(light), scale);
+        }
+    }
+}
+
+#[test]
 fn the_cursor_s_shapes_draw_as_their_golden_image() {
     for scale in [1, 2] {
         check(&cursors(), scale);
@@ -1501,6 +1601,7 @@ fn inline_images_draw_under_the_text_and_over_it_as_their_golden_images() {
             selection: None,
             shapes: false,
             fade: None,
+            blocks: None,
             highlights: None,
         };
         let origin = (MARGIN as i32, MARGIN as i32);
@@ -1572,6 +1673,7 @@ fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images
             selection: None,
             shapes: false,
             fade: None,
+            blocks: None,
             highlights: None,
         };
         let origin = (MARGIN as i32, MARGIN as i32);
@@ -1622,6 +1724,184 @@ fn an_image_under_the_text_draws_over_the_cells_backgrounds_as_its_golden_images
             (width, height, &pixels),
             most,
         );
+    }
+}
+
+/// The pane of a scene of the commands' blocks, 16 columns by 4 rows, in
+/// the built-in theme's dark variant: `seq 1 6`, which failed, then the
+/// prompt's row, a selection over `6` and the prompt; scrolled as `scroll`
+/// moves its view, then drawn as a frame draws a pane, within a margin as
+/// its padding: through where its rows draw as the view is scrolled a share
+/// of a row, `scrolled`, or in their place as before, which draw the same
+/// at no share. Its rows' cells, its blocks' tint and dividers, their bars
+/// in the margin, an image over the view's first two rows' last cells, and
+/// the cursor's layer, a block, at its place, as much of it as shows.
+fn draw_scrolled(
+    drawing: &mut Drawing,
+    scroll: impl FnOnce(&mut Terminal),
+    scrolled: bool,
+) -> (u32, u32, Vec<u8>) {
+    let variant = Theme::builtin().variant(true).clone();
+    let mut terminal = Terminal::new(16, 4, Options::default());
+    terminal.set_default_colors(variant.colors.clone());
+    let mut text = String::from("\x1b]133;A\x07$ \x1b]133;B\x07seq 1 6\r\n\x1b]133;C\x07");
+    for at in 1..=6 {
+        text.push_str(&format!("{at}\r\n"));
+    }
+    text.push_str("\x1b]133;D;1\x07\x1b]133;A\x07$ \x1b]133;B\x07");
+    Parser::new().advance(&mut terminal, text.as_bytes());
+    terminal.select(
+        (0, 6),
+        (1, 7),
+        SelectionShape::Cells,
+        SelectionUnit::Cell,
+        "",
+    );
+    scroll(&mut terminal);
+    let mut snapshot = Snapshot::default();
+    terminal.snapshot(&mut snapshot);
+    drawing.font.begin_frame();
+    let cell = *drawing.font.cell();
+    let (cell_width, cell_height) = (cell.width, cell.height);
+    let width = 16 * cell_width + 2 * MARGIN;
+    let height = 4 * cell_height + 2 * MARGIN;
+    let corner = (MARGIN as i32, MARGIN as i32);
+    let rows = if scrolled {
+        cells::rows_at(&snapshot, &cell, corner, (0, width))
+    } else {
+        cells::Rows::default()
+    };
+    let at = rows.corner(corner);
+    let selected = snapshot.selection();
+    let contains =
+        |column: u16, row: u16| selected.is_some_and(|shown| shown.contains(column, row));
+    let selection = selected.map(|_| Selection {
+        colors: variant.selection,
+        contains: &contains,
+    });
+    let batch = cells::cells_with(
+        &snapshot,
+        &cell,
+        at,
+        selection.as_ref(),
+        None,
+        TextLook::default(),
+        &mut drawing.font,
+    );
+    let look = CursorLook {
+        shape: CursorShape::Block,
+        thickness: cell.underline_thickness.max(1),
+        length: 1.0,
+    };
+    let cursor = cells::cursor_cells(&batch, &snapshot, look, &cell, None);
+    let picture = drawing
+        .renderer
+        .picture_of_pixels(&IMAGE, 2, 2)
+        .unwrap()
+        .expect("a picture");
+    let image = Item::Picture {
+        rect: lokyr_render_core::Rect {
+            x: at.0 + (11 * cell_width) as i32,
+            y: at.1,
+            width: 4 * cell_width,
+            height: 2 * cell_height,
+        },
+        picture,
+    };
+    let tokens = &variant.tokens;
+    let looks = lokyr_plugin_sdk::host::BlockLooks {
+        bars: true,
+        dividers: true,
+        failed_tint: true,
+        prompt_rows: false,
+        spacing: false,
+    };
+    let scale = f64::from(drawing.font.scale());
+    let mut shapes = cells::block_shapes(
+        &snapshot,
+        at.1,
+        cell_height,
+        (0, width),
+        scale,
+        tokens,
+        (looks, None),
+    );
+    shapes.extend(cells::gutter_marks(
+        &snapshot,
+        at,
+        (MARGIN, cell_height),
+        scale,
+        tokens,
+        true,
+    ));
+    let mut items = rows.clipped(vec![Item::Cells(batch), image]);
+    items.extend(rows.clipped(vec![Item::Shapes(shapes)]));
+    // The cursor's layer over the frame, of the part of it that shows, as
+    // its own list draws it.
+    if let Some((column, row, mut cells)) = cursor {
+        let place = (
+            f64::from(at.0) + f64::from(u32::from(column) * cell_width),
+            f64::from(at.1) + f64::from(u32::from(row) * cell_height),
+        );
+        let size = (
+            u32::from(cells.columns) * cell_width,
+            u32::from(cells.rows) * cell_height,
+        );
+        (cells.x, cells.y) = (place.0 as i32, place.1 as i32);
+        match rows.layer(place, size) {
+            cells::Shows::All => items.push(Item::Cells(cells)),
+            cells::Shows::Part(part) => items.extend([
+                Item::PushClip(lokyr_render_core::Rect {
+                    x: part.x + cells.x,
+                    y: part.y + cells.y,
+                    ..part
+                }),
+                Item::Cells(cells),
+                Item::PopClip,
+            ]),
+            cells::Shows::Nothing => {}
+        }
+    }
+    let list = DisplayList {
+        background: cells::background(&snapshot),
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    (width, height, pixels)
+}
+
+#[test]
+fn a_pane_scrolled_a_share_of_a_row_draws_as_its_golden_images() {
+    for scale in [1, 2] {
+        let Some(mut drawing) = Drawing::new(scale as f32) else {
+            return;
+        };
+        // Half a row up from the screen: the rows of `3` to `6` half a row
+        // up, the top one cut, the prompt's row below them, half of it, its
+        // selection and the cursor's layer too.
+        let (width, height, pixels) = draw_scrolled(
+            &mut drawing,
+            |terminal| terminal.scroll_viewport_by(0.5),
+            true,
+        );
+        let most = (f64::from(width * height) * SHARE) as usize;
+        compare(
+            &format!("scrolled-fraction-{scale}x"),
+            (width, height, &pixels),
+            most,
+        );
+        // Of no share, as the view scrolls by whole rows, the rows draw as
+        // they did before, to the pixel.
+        let whole = |terminal: &mut Terminal| terminal.scroll_viewport(Scroll::Up(1));
+        let (_, _, through) = draw_scrolled(&mut drawing, whole, true);
+        let (_, _, before) = draw_scrolled(&mut drawing, whole, false);
+        assert!(through == before, "a view of whole rows draws as before");
     }
 }
 

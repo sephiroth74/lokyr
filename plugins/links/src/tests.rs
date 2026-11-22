@@ -743,6 +743,35 @@ fn hints_label_what_the_screen_shows_the_nearest_the_cursor_first_and_a_label_pi
 }
 
 #[test]
+fn hints_label_the_rows_after_a_fold_and_none_of_its_own() {
+    // A view of three rows from the row 0, whose second is the placeholder
+    // of the rows 1 to 38: it shows the rows 0 and 39.
+    let mut lines = vec!["commit 4482b9e9 above"];
+    lines.extend(std::iter::repeat_n("folded c0ffee11 away", 38));
+    lines.push("after https://lokyr.dev/x");
+    let mut host = screen(&lines);
+    host.pane(PANE).viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 3,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+        folds: vec![lokyr_plugin_sdk::host::ViewFold {
+            command: 1,
+            whole: false,
+            first: 1,
+            last: 38,
+        }],
+    });
+    let mut links = Links::default();
+    host.take_done();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let cells: Vec<(u16, i64)> = labels(&host).into_iter().map(|(cell, _)| cell).collect();
+    assert_eq!(cells, [(6, 39), (7, 0)]);
+}
+
+#[test]
 fn letters_narrow_the_labels_of_two_and_escape_leaves() {
     // Thirty hashes: 25 labels of one letter, and five of two of the last.
     let lines: Vec<String> = (0..30).map(|at| format!("c0ffee{at:02}a")).collect();
@@ -1351,6 +1380,7 @@ fn a_hint_at_the_edge_of_a_read_is_whole_of_the_next_read() {
         oldest: 0,
         epoch: 0,
         alternate: false,
+        folds: Vec::new(),
     });
     wrapped(&mut host, PANE, 0, 80, &text);
     let mut links = Links::default();
@@ -1391,6 +1421,7 @@ fn a_hint_cut_after_a_full_stop_at_a_read_s_edge_opens_nothing_cut() {
         oldest: 0,
         epoch: 0,
         alternate: false,
+        folds: Vec::new(),
     });
     wrapped(&mut host, PANE, 0, 80, &text);
     let mut links = Links::default();
@@ -1431,6 +1462,7 @@ fn a_hint_across_two_reads_of_a_tall_view_is_found_once() {
         oldest: 0,
         epoch: 0,
         alternate: false,
+        folds: Vec::new(),
     });
     wrapped(&mut host, PANE, 0, 80, &text);
     let mut links = Links::default();
@@ -1444,4 +1476,42 @@ fn a_hint_across_two_reads_of_a_tall_view_is_found_once() {
     texts.sort();
     let long = format!("https://lokyr.dev/{}", "b".repeat(40));
     assert_eq!(texts, ["https://lokyr.dev/a".to_owned(), long]);
+}
+
+#[test]
+fn a_wrapped_line_of_no_space_past_the_read_keeps_its_hints_but_those_at_its_edges() {
+    // A minified document of 100 rows, of no space, two URLs in the view's
+    // rows: both hinted, the read cut past the view.
+    let mut text = String::from("{\"a\":\"");
+    text.push_str(&"x".repeat(80 * 2));
+    text.push_str("\",\"one\":\"https://lokyr.dev/one\",\"b\":\"");
+    text.push_str(&"x".repeat(80 * 2));
+    text.push_str("\",\"two\":\"https://lokyr.dev/two\",\"c\":\"");
+    text.push_str(&"y".repeat(80 * 100 - text.chars().count() - 2));
+    text.push_str("\"}");
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.focus(Some(PANE));
+    let pane = host.pane(PANE);
+    pane.grid = (80, 10);
+    pane.held = 0..100;
+    pane.viewport = Some(lokyr_plugin_sdk::host::Viewport {
+        top: 0,
+        rows: 10,
+        screen: 0,
+        oldest: 0,
+        epoch: 0,
+        alternate: false,
+        folds: Vec::new(),
+    });
+    wrapped(&mut host, PANE, 0, 80, &text);
+    let mut links = Links::default();
+    host.activate(&mut links).unwrap();
+    host.command(&mut links, HINTS, Args::new()).unwrap();
+    let mut texts: Vec<String> = links
+        .hints
+        .iter()
+        .flat_map(|shown| shown.hints.iter().map(|hint| hint.text.clone()))
+        .collect();
+    texts.sort();
+    assert_eq!(texts, ["https://lokyr.dev/one", "https://lokyr.dev/two"]);
 }

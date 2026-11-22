@@ -79,6 +79,7 @@ pub const LIGHT_TOKENS: &[TokenColor] = &[
     ("progress.error", 0xd63b3b, 1.0),
     ("progress.paused", 0xd99a00, 1.0),
     ("tabs.bar.bg", 0xf4f4f6, 1.0),
+    ("status-bar.bg", 0xf4f4f6, 1.0),
     ("tabs.track.bg", 0x000000, 0.07),
     ("tabs.active.bg", 0xffffff, 1.0),
     ("tabs.active.fg", 0x1e1e20, 1.0),
@@ -102,6 +103,9 @@ pub const LIGHT_TOKENS: &[TokenColor] = &[
     ("cursor.guide", 0x1e1e20, 0.1),
     ("hints.label.bg", 0x0a64d8, 1.0),
     ("hints.label.fg", 0xffffff, 1.0),
+    ("blocks.divider", 0x000000, 0.1),
+    ("blocks.selected.bg", 0x0a64d8, 0.12),
+    ("blocks.failed", 0xd63b3b, 0.08),
 ];
 
 /// The interface's colors in the dark variant.
@@ -169,6 +173,7 @@ pub const DARK_TOKENS: &[TokenColor] = &[
     ("progress.error", 0xff5f57, 1.0),
     ("progress.paused", 0xffbd2e, 1.0),
     ("tabs.bar.bg", 0x232326, 1.0),
+    ("status-bar.bg", 0x232326, 1.0),
     ("tabs.track.bg", 0x000000, 0.3),
     ("tabs.active.bg", 0x404044, 1.0),
     ("tabs.active.fg", 0xf4f4f6, 1.0),
@@ -192,6 +197,9 @@ pub const DARK_TOKENS: &[TokenColor] = &[
     ("cursor.guide", 0xe6e6e6, 0.1),
     ("hints.label.bg", 0x4c9bff, 1.0),
     ("hints.label.fg", 0x000000, 1.0),
+    ("blocks.divider", 0xffffff, 0.1),
+    ("blocks.selected.bg", 0x4c9bff, 0.2),
+    ("blocks.failed", 0xff5f57, 0.12),
 ];
 
 /// The sixteen colors of a variant, from black to bright white.
@@ -270,6 +278,10 @@ pub const LIGHT_RULED: &[&str] = &[
     "cursor.guide",
     "hints.label.bg",
     "hints.label.fg",
+    "blocks.divider",
+    "blocks.selected.bg",
+    "blocks.failed",
+    "status-bar.bg",
 ];
 
 /// The tokens of [`DARK_TOKENS`] that the dark theme leaves to their
@@ -318,6 +330,10 @@ pub const DARK_RULED: &[&str] = &[
     "cursor.guide",
     "hints.label.bg",
     "hints.label.fg",
+    "blocks.divider",
+    "blocks.selected.bg",
+    "blocks.failed",
+    "status-bar.bg",
 ];
 
 /// The built-in theme of the light appearance: its own tokens, the others

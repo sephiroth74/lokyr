@@ -4,9 +4,12 @@
 //! state. A laid mark holds a pin of its row's first cell, so that it keeps
 //! its row as output scrolls it into the scrollback and a resize reflows
 //! it, and goes with it, as the scrollback's limit or a clearing takes the
-//! row. The snapshot carries the marks of the view's rows.
+//! row. The snapshot carries the marks of the view's rows, and the blocks
+//! of the commands that the view shows, of their rows and states, which an
+//! embedder draws along.
 
 use super::Terminal;
+use super::folds::ViewMap;
 use super::selection::CellPin;
 use crate::page::Rgb;
 
@@ -37,6 +40,29 @@ pub struct GutterMark {
     pub row: u16,
     /// What it shows.
     pub kind: GutterKind,
+}
+
+/// A command's block, as the view shows it: its command's id, its first
+/// row and its last,
+/// by the view's rows from its top, either past the view where the block
+/// goes past it, and its state, none of a command whose output has not
+/// started, as the prompt where the user types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlockMark {
+    /// Its command's id.
+    pub id: u64,
+    /// Its first row, its prompt's, of the view's rows.
+    pub first: i32,
+    /// Its last row, its output's, of the view's rows.
+    pub last: i32,
+    /// Its state, as its prompt's mark shows it.
+    pub kind: Option<GutterKind>,
+    /// Whether the row before its first is the blank row that the terminal
+    /// put before its prompt, as [`Terminal::set_block_spacing`] asks.
+    pub room_above: bool,
+    /// Whether the row after its last is the blank row that the terminal
+    /// put before the next command's prompt.
+    pub room_below: bool,
 }
 
 /// A mark that a terminal keeps laid.
@@ -82,20 +108,35 @@ impl Terminal {
             .collect()
     }
 
-    /// The marks of the gutter that the view shows, by their rows: the
+    /// The marks of the gutter that the view `map` shows, by their rows: the
     /// prompts of the primary screen's commands that ran, and the laid ones
     /// of the active screen, those whose rows left going, after a prompt's
-    /// of their row, so that they show over it.
-    pub(super) fn gutter_view(&mut self) -> Vec<GutterMark> {
-        let top = self.origin().top;
-        let bottom = top + i64::from(self.rows);
-        let row_of = |row: i64| u16::try_from(row - top).ok().filter(|_| row < bottom);
+    /// of their row, so that they show over it; and the blocks of the
+    /// primary screen's commands that the view shows, oldest first. A mark
+    /// of a row that a fold takes shows on its placeholder's row, as a
+    /// block's end in a fold ends on it.
+    pub(super) fn gutter_view(&mut self, map: &ViewMap) -> (Vec<GutterMark>, Vec<BlockMark>) {
+        let (top, bottom) = (map.top(), map.end());
+        let row_of = |row: i64| map.showing(row);
+        let of_view = |row: i64| {
+            let place = map.place(row);
+            i32::try_from(place).unwrap_or(if place < 0 { i32::MIN } else { i32::MAX })
+        };
         let mut marks = Vec::new();
+        let mut blocks = Vec::new();
         if !self.is_alternate_screen() {
-            for (row, kind) in self.prompts_in(top, bottom) {
-                if let Some(row) = row_of(row) {
+            for block in self.blocks_in(top, bottom) {
+                if let (Some(kind), Some(row)) = (block.kind, block.prompt.and_then(row_of)) {
                     marks.push(GutterMark { row, kind });
                 }
+                blocks.push(BlockMark {
+                    id: block.id,
+                    first: of_view(block.first),
+                    last: of_view(block.last),
+                    kind: block.kind,
+                    room_above: block.room_above,
+                    room_below: block.room_below,
+                });
             }
         }
         if !self.gutter.is_empty() {
@@ -119,7 +160,7 @@ impl Terminal {
             }
         }
         marks.sort_by_key(|mark| mark.row);
-        marks
+        (marks, blocks)
     }
 }
 
@@ -143,6 +184,115 @@ mod tests {
             .iter()
             .map(|mark| (mark.row, mark.kind))
             .collect()
+    }
+
+    /// The commands' blocks of a snapshot updated now, as `(first, last,
+    /// kind)`.
+    fn blocks(terminal: &mut Terminal) -> Vec<(i32, i32, Option<GutterKind>)> {
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        snapshot
+            .blocks()
+            .iter()
+            .map(|block| (block.first, block.last, block.kind))
+            .collect()
+    }
+
+    #[test]
+    fn a_command_of_no_end_that_another_followed_ends_its_block_there() {
+        let mut terminal = Terminal::new(20, 10, Options::default());
+        // `bash`, a nested shell, whose own commands mark their prompts,
+        // and whose end's mark never comes: the outer shell's lands on the
+        // inner one's last prompt.
+        feed(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07bash\r\n\x1b]133;C\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07pwd\r\n\x1b]133;C\x07/\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07",
+            ),
+        );
+        use GutterKind::{Running, Succeeded};
+        // `bash` to the row before `ls`' prompt, not over the blocks after.
+        assert_eq!(
+            blocks(&mut terminal),
+            [
+                (0, 0, Some(Running)),
+                (1, 2, Some(Succeeded)),
+                (3, 4, Some(Succeeded)),
+                (5, 5, None),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_view_s_blocks_run_from_their_prompts_to_their_ends() {
+        let mut terminal = Terminal::new(20, 8, Options::default());
+        // `ls` of two rows, `false` of none, then `seq`, which runs.
+        feed(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x071\r\n2",
+            ),
+        );
+        use GutterKind::{Failed, Running, Succeeded};
+        assert_eq!(
+            blocks(&mut terminal),
+            [
+                (0, 2, Some(Succeeded)),
+                (3, 3, Some(Failed)),
+                // To the cursor's row.
+                (4, 6, Some(Running)),
+            ]
+        );
+        // It ends, and the prompt where the user types has no state.
+        feed(
+            &mut terminal,
+            "\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07",
+        );
+        assert_eq!(
+            blocks(&mut terminal)[2..],
+            [(4, 6, Some(Succeeded)), (7, 7, None)]
+        );
+        // Scrolled by three rows: `ls`' block goes, and `false`'s first row
+        // is the view's.
+        feed(&mut terminal, "\r\n\r\n\r\n");
+        assert_eq!(terminal.origin().top, 3);
+        assert_eq!(
+            blocks(&mut terminal),
+            [(0, 0, Some(Failed)), (1, 3, Some(Succeeded)), (4, 4, None)]
+        );
+        // The view two rows up: `ls`' block, whose prompt is above the view,
+        // starts above it.
+        terminal.scroll_viewport(Scroll::Up(2));
+        assert_eq!(
+            blocks(&mut terminal),
+            [
+                (-1, 1, Some(Succeeded)),
+                (2, 2, Some(Failed)),
+                (3, 5, Some(Succeeded)),
+                (6, 6, None)
+            ]
+        );
+        // The alternate screen shows none.
+        terminal.scroll_viewport(Scroll::Bottom);
+        feed(&mut terminal, "\x1b[?1049h");
+        assert_eq!(blocks(&mut terminal), []);
+    }
+
+    #[test]
+    fn a_block_starts_at_its_prompt_s_mark_and_its_bar_at_its_first_text() {
+        let mut terminal = Terminal::new(20, 6, Options::default());
+        // A theme's prompt of an empty line first, as Starship's.
+        feed(
+            &mut terminal,
+            "\x1b]133;A\x07\r\n$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+        );
+        assert_eq!(blocks(&mut terminal), [(0, 2, Some(GutterKind::Succeeded))]);
+        assert_eq!(shown(&mut terminal), [(1, GutterKind::Succeeded)]);
     }
 
     const RED: Rgb = Rgb { r: 255, g: 0, b: 0 };

@@ -2,12 +2,6 @@
   "about": "The last eight releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line. `table` holds RELEASES.md's table of every measure, which releases.py writes: its groups of rows, each row's name of its unit, its budget's text, the measure whose verdicts mark its cells and the limit that marks a cell past its budget, and each release's cell, its value as the table shows it, or its value and a note, which the table numbers under it.",
   "releases": [
     {
-      "id": "0.5.1",
-      "label": "0.5.1",
-      "title": "0.5.1",
-      "report": "ab-F3-190.md"
-    },
-    {
       "id": "0.7.0",
       "label": "0.7.0",
       "title": "0.7.0",
@@ -55,6 +49,13 @@
       "title": "1.3.0",
       "report": "ab-F5a-17.md",
       "against": "1.2.0"
+    },
+    {
+      "id": "1.4.0",
+      "label": "1.4.0",
+      "title": "1.4.0",
+      "report": "ab-F5a-78.md",
+      "against": "1.3.0"
     }
   ],
   "measures": [
@@ -67,25 +68,29 @@
       "tolerance": 5,
       "digits": 1,
       "values": {
-        "0.5.1": 26.6,
         "0.7.0": 18.8,
         "0.8.0": 24.9,
         "0.9.0": 25.35,
         "1.0.0": 26.72,
-        "1.3.0": 27.15
+        "1.3.0": 27.15,
+        "1.4.0": 20.8
       },
       "baseline": {
-        "0.5.1": 13.4,
         "0.7.0": 15.1,
         "0.8.0": 17.9,
         "0.9.0": 23.81,
         "1.0.0": 28.86,
-        "1.3.0": 28.6
+        "1.3.0": 28.6,
+        "1.4.0": 21.7
       },
       "sessions": {
         "0.7.0": {
           "title": "the startup at rest",
           "report": "startup-F3-228.md"
+        },
+        "1.4.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5a-79.md"
         }
       }
     },
@@ -97,30 +102,30 @@
       "tolerance": 1,
       "digits": 1,
       "values": {
-        "0.5.1": 18.9,
         "0.7.0": 20.18,
         "0.8.0": 19.6,
         "0.9.0": 20.58,
         "1.0.0": 19.22,
         "1.2.0": 16.61,
-        "1.3.0": 17.276
+        "1.3.0": 17.276,
+        "1.4.0": 13.59
       },
       "baseline": {
-        "0.5.1": 18.9,
         "0.7.0": 19.59,
         "0.8.0": 19.6,
         "0.9.0": 20.76,
         "1.0.0": 19.19,
         "1.2.0": 17.68,
-        "1.3.0": 17.261
+        "1.3.0": 17.261,
+        "1.4.0": 14.5
       },
       "budget": 33.3,
       "budget_label": "2 refreshes, 33.3",
       "reference": {
-        "name": "Terminal.app",
-        "value": 18.4,
-        "lokyr": 18.5,
-        "source": "compare-F3-268.md",
+        "name": "Alacritty",
+        "value": 23.6,
+        "lokyr": 22.4,
+        "source": "compare-F5a-78.md",
         "how": "Typometer"
       }
     },
@@ -132,30 +137,30 @@
       "tolerance": 8,
       "digits": 1,
       "values": {
-        "0.5.1": 48.6,
         "0.7.0": 44.04,
         "0.8.0": 47.3,
         "0.9.0": 42.04,
         "1.0.0": 48.73,
         "1.2.0": 31.47,
-        "1.3.0": 31.485
+        "1.3.0": 31.485,
+        "1.4.0": 27.45
       },
       "baseline": {
-        "0.5.1": 46.6,
         "0.7.0": 38.45,
         "0.8.0": 39.9,
         "0.9.0": 40.94,
         "1.0.0": 47.63,
         "1.2.0": 31.15,
-        "1.3.0": 32.358
+        "1.3.0": 32.358,
+        "1.4.0": 29.76
       },
       "budget": 75,
       "budget_label": "4.5 refreshes, 75",
       "reference": {
-        "name": "Alacritty",
-        "value": 46.0,
-        "lokyr": 48.2,
-        "source": "compare-F3-268.md",
+        "name": "kitty",
+        "value": 33.1,
+        "lokyr": 29.5,
+        "source": "compare-F5a-78.md",
         "how": "Typometer"
       }
     },
@@ -168,30 +173,30 @@
       "tolerance": 2,
       "digits": 1,
       "values": {
-        "0.5.1": 26.1,
         "0.7.0": 26.8,
         "0.8.0": 27.2,
         "0.9.0": 28.62,
         "1.0.0": 27.63,
         "1.1.0": 28.25,
         "1.2.0": 28.4,
-        "1.3.0": 27.592
+        "1.3.0": 27.592,
+        "1.4.0": 28.7
       },
       "baseline": {
-        "0.5.1": 25.65,
         "0.7.0": 28.05,
         "0.8.0": 29.4,
         "0.9.0": 26.92,
         "1.0.0": 27.12,
         "1.1.0": 27.85,
         "1.2.0": 27.95,
-        "1.3.0": 27.403
+        "1.3.0": 27.403,
+        "1.4.0": 28.7
       },
       "reference": {
         "name": "Alacritty",
-        "value": 31.1,
-        "lokyr": 27.8,
-        "source": "compare-F3-268.md"
+        "value": 31.3,
+        "lokyr": 28.6,
+        "source": "compare-F5a-78.md"
       }
     },
     {
@@ -203,30 +208,30 @@
       "tolerance": 0.05,
       "digits": 2,
       "values": {
-        "0.5.1": 0.35,
         "0.7.0": 0.334,
         "0.8.0": 0.34,
         "0.9.0": 0.383,
         "1.0.0": 0.35,
         "1.1.0": 0.35,
         "1.2.0": 0.342,
-        "1.3.0": 0.3583
+        "1.3.0": 0.3583,
+        "1.4.0": 0.35
       },
       "baseline": {
-        "0.5.1": 0.35,
         "0.7.0": 0.35,
         "0.8.0": 0.35,
         "0.9.0": 0.35,
         "1.0.0": 0.342,
         "1.1.0": 0.35,
         "1.2.0": 0.35,
-        "1.3.0": 0.3583
+        "1.3.0": 0.3583,
+        "1.4.0": 0.346
       },
       "reference": {
         "name": "Alacritty",
-        "value": 0.37,
+        "value": 0.33,
         "lokyr": 0.35,
-        "source": "compare-F3-268.md"
+        "source": "compare-F5a-78.md"
       }
     },
     {
@@ -238,24 +243,24 @@
       "tolerance": 0.02,
       "digits": 2,
       "values": {
-        "0.5.1": 0,
         "0.7.0": 0,
         "0.8.0": 0.0,
         "0.9.0": 0,
         "1.0.0": 0,
         "1.1.0": 0,
         "1.2.0": 0,
-        "1.3.0": 0
+        "1.3.0": 0,
+        "1.4.0": 0
       },
       "baseline": {
-        "0.5.1": 0,
         "0.7.0": 0,
         "0.8.0": 0.0,
         "0.9.0": 0,
         "1.0.0": 0,
         "1.1.0": 0,
         "1.2.0": 0,
-        "1.3.0": 0
+        "1.3.0": 0,
+        "1.4.0": 0
       }
     },
     {
@@ -266,30 +271,36 @@
       "tolerance_pct": 5,
       "digits": 1,
       "values": {
-        "0.5.1": 318.6,
         "0.7.0": 314.3,
         "0.8.0": 315.0,
         "0.9.0": 311.9,
         "1.0.0": 310.9,
         "1.2.0": 314.9,
-        "1.3.0": 308.6
+        "1.3.0": 308.6,
+        "1.4.0": 304.4
       },
       "baseline": {
-        "0.5.1": 330.0,
         "0.7.0": 309.6,
         "0.8.0": 319.0,
         "0.9.0": 314.8,
         "1.0.0": 311.6,
         "1.2.0": 315.6,
-        "1.3.0": 298.6
+        "1.3.0": 298.6,
+        "1.4.0": 303.7
       },
-      "budget": 294.9,
-      "budget_label": "Ghostty's less 10 %, 295",
+      "budget": 275.0,
+      "budget_label": "Ghostty's less 10 %, 275",
       "reference": {
         "name": "Ghostty",
-        "value": 328,
-        "lokyr": 318,
-        "source": "compare-F3-268.md"
+        "value": 305.5,
+        "lokyr": 293.5,
+        "source": "compare-F5a-78.md"
+      },
+      "sessions": {
+        "1.4.0": {
+          "title": "the output at rest",
+          "report": "rest-F5a-123.md"
+        }
       }
     },
     {
@@ -300,22 +311,28 @@
       "tolerance_pct": 5,
       "digits": 1,
       "values": {
-        "0.5.1": 219.6,
         "0.7.0": 220.3,
         "0.8.0": 222.1,
         "0.9.0": 223.8,
         "1.0.0": 220.9,
         "1.2.0": 217.9,
-        "1.3.0": 218.3
+        "1.3.0": 218.3,
+        "1.4.0": 216.8
       },
       "baseline": {
-        "0.5.1": 218.9,
         "0.7.0": 211.0,
         "0.8.0": 214.9,
         "0.9.0": 215.8,
         "1.0.0": 210.8,
         "1.2.0": 213.6,
-        "1.3.0": 220.2
+        "1.3.0": 220.2,
+        "1.4.0": 218.4
+      },
+      "sessions": {
+        "1.4.0": {
+          "title": "the output at rest",
+          "report": "rest-F5a-123.md"
+        }
       }
     },
     {
@@ -326,22 +343,28 @@
       "tolerance_pct": 5,
       "digits": 1,
       "values": {
-        "0.5.1": 287.4,
         "0.7.0": 285.5,
         "0.8.0": 285.6,
         "0.9.0": 288.9,
         "1.0.0": 284.7,
         "1.2.0": 286.3,
-        "1.3.0": 285.15
+        "1.3.0": 285.15,
+        "1.4.0": 281.1
       },
       "baseline": {
-        "0.5.1": 290.5,
         "0.7.0": 285.3,
         "0.8.0": 284.3,
         "0.9.0": 284.7,
         "1.0.0": 287.2,
         "1.2.0": 286.4,
-        "1.3.0": 278.95
+        "1.3.0": 278.95,
+        "1.4.0": 271.8
+      },
+      "sessions": {
+        "1.4.0": {
+          "title": "the output at rest",
+          "report": "rest-F5a-123.md"
+        }
       }
     },
     {
@@ -352,22 +375,28 @@
       "tolerance_pct": 5,
       "digits": 1,
       "values": {
-        "0.5.1": 213.7,
         "0.7.0": 217.4,
         "0.8.0": 215.3,
         "0.9.0": 216.5,
         "1.0.0": 214.9,
         "1.2.0": 214.9,
-        "1.3.0": 213.15
+        "1.3.0": 213.15,
+        "1.4.0": 216.1
       },
       "baseline": {
-        "0.5.1": 218.2,
         "0.7.0": 214.5,
         "0.8.0": 214.0,
         "0.9.0": 217.2,
         "1.0.0": 213.6,
         "1.2.0": 214.6,
-        "1.3.0": 217.2
+        "1.3.0": 217.2,
+        "1.4.0": 217.2
+      },
+      "sessions": {
+        "1.4.0": {
+          "title": "the output at rest",
+          "report": "rest-F5a-123.md"
+        }
       }
     },
     {
@@ -378,22 +407,22 @@
       "tolerance": 0.03,
       "digits": 3,
       "values": {
-        "0.5.1": 0.27,
         "0.7.0": 0.283,
         "0.8.0": 0.296,
         "0.9.0": 0.2875,
         "1.0.0": 0.282,
         "1.2.0": 0.298,
-        "1.3.0": 0.27675
+        "1.3.0": 0.27675,
+        "1.4.0": 0.3225
       },
       "baseline": {
-        "0.5.1": 0.2695,
         "0.7.0": 0.2755,
         "0.8.0": 0.285,
         "0.9.0": 0.285,
         "1.0.0": 0.2785,
         "1.2.0": 0.2945,
-        "1.3.0": 0.28125
+        "1.3.0": 0.28125,
+        "1.4.0": 0.31875
       }
     },
     {
@@ -405,22 +434,22 @@
       "tolerance_pct": 50,
       "digits": 3,
       "values": {
-        "0.5.1": 0.381,
         "0.7.0": 0.401,
         "0.8.0": 0.427,
         "0.9.0": 0.429,
         "1.0.0": 0.4025,
         "1.2.0": 0.4225,
-        "1.3.0": 0.41775
+        "1.3.0": 0.41775,
+        "1.4.0": 0.44525
       },
       "baseline": {
-        "0.5.1": 0.3455,
         "0.7.0": 0.479,
         "0.8.0": 0.398,
         "0.9.0": 0.3985,
         "1.0.0": 0.3955,
         "1.2.0": 0.439,
-        "1.3.0": 0.42925
+        "1.3.0": 0.42925,
+        "1.4.0": 0.42525
       }
     },
     {
@@ -431,22 +460,22 @@
       "tolerance": 0.05,
       "digits": 2,
       "values": {
-        "0.5.1": 0.72,
         "0.7.0": 0.71,
         "0.8.0": 0.716,
         "0.9.0": 0.73,
         "1.0.0": 0.726,
         "1.2.0": 0.783,
-        "1.3.0": 0.7272
+        "1.3.0": 0.7272,
+        "1.4.0": 0.67875
       },
       "baseline": {
-        "0.5.1": 0.4415,
         "0.7.0": 0.7005,
         "0.8.0": 0.729,
         "0.9.0": 0.7255,
         "1.0.0": 0.72,
         "1.2.0": 0.758,
-        "1.3.0": 0.7318
+        "1.3.0": 0.7318,
+        "1.4.0": 0.68475
       }
     },
     {
@@ -457,16 +486,16 @@
       "tolerance": 1,
       "digits": 1,
       "values": {
-        "0.5.1": 58.0,
         "0.7.0": 58.0,
         "1.2.0": 57.1,
-        "1.3.0": 58.3
+        "1.3.0": 58.3,
+        "1.4.0": 58.4
       },
       "baseline": {
-        "0.5.1": 57.4,
         "0.7.0": 57.2,
         "1.2.0": 57.7,
-        "1.3.0": 58.1
+        "1.3.0": 58.1,
+        "1.4.0": 57.5
       },
       "reference": {
         "name": "Ghostty",
@@ -482,16 +511,16 @@
       "tolerance": 1,
       "digits": 1,
       "values": {
-        "0.5.1": 58.0,
         "0.7.0": 58.0,
         "1.2.0": 58.0,
-        "1.3.0": 58.467
+        "1.3.0": 58.467,
+        "1.4.0": 58.65
       },
       "baseline": {
-        "0.5.1": 57.2,
         "0.7.0": 58.1,
         "1.2.0": 58.1,
-        "1.3.0": 58.6
+        "1.3.0": 58.6,
+        "1.4.0": 57.2
       },
       "reference": {
         "name": "Ghostty",
@@ -507,16 +536,16 @@
       "tolerance": 1.5,
       "digits": 1,
       "values": {
-        "0.5.1": 56.2,
         "0.7.0": 56.3,
         "1.2.0": 55.7,
-        "1.3.0": 57.4
+        "1.3.0": 57.4,
+        "1.4.0": 55.5
       },
       "baseline": {
-        "0.5.1": 55.8,
         "0.7.0": 55.2,
         "1.2.0": 56.2,
-        "1.3.0": 57.4
+        "1.3.0": 57.4,
+        "1.4.0": 56.4
       },
       "reference": {
         "name": "Ghostty",
@@ -532,16 +561,16 @@
       "tolerance": 1.5,
       "digits": 1,
       "values": {
-        "0.5.1": 56.5,
         "0.7.0": 55.6,
         "1.2.0": 56.3,
-        "1.3.0": 57.6
+        "1.3.0": 57.6,
+        "1.4.0": 56.85
       },
       "baseline": {
-        "0.5.1": 56.2,
         "0.7.0": 55.9,
         "1.2.0": 55.8,
-        "1.3.0": 57.567
+        "1.3.0": 57.567,
+        "1.4.0": 56.25
       },
       "reference": {
         "name": "Ghostty",
@@ -557,16 +586,16 @@
       "tolerance": 10,
       "digits": 1,
       "values": {
-        "0.5.1": 31.5,
         "0.7.0": 33.5,
         "1.2.0": 33.0,
-        "1.3.0": 15
+        "1.3.0": 15,
+        "1.4.0": 36.0
       },
       "baseline": {
-        "0.5.1": 36.5,
         "0.7.0": 42.0,
         "1.2.0": 31.5,
-        "1.3.0": 20
+        "1.3.0": 20,
+        "1.4.0": 26.0
       },
       "reference": {
         "name": "Ghostty",
@@ -582,16 +611,16 @@
       "tolerance": 10,
       "digits": 1,
       "values": {
-        "0.5.1": 30.0,
         "0.7.0": 39.5,
         "1.2.0": 31.0,
-        "1.3.0": 13.667
+        "1.3.0": 13.667,
+        "1.4.0": 23.5
       },
       "baseline": {
-        "0.5.1": 32.0,
         "0.7.0": 35.0,
         "1.2.0": 36.5,
-        "1.3.0": 15.333
+        "1.3.0": 15.333,
+        "1.4.0": 21.0
       },
       "reference": {
         "name": "Ghostty",
@@ -607,16 +636,16 @@
       "tolerance": 16,
       "digits": 1,
       "values": {
-        "0.5.1": 20.8,
         "0.7.0": 20.2,
         "1.2.0": 28.3,
-        "1.3.0": 21.02
+        "1.3.0": 21.02,
+        "1.4.0": 13.38
       },
       "baseline": {
-        "0.5.1": 14.3,
         "0.7.0": 12.4,
         "1.2.0": 20.6,
-        "1.3.0": 13.18
+        "1.3.0": 13.18,
+        "1.4.0": 21.02
       },
       "reference": {
         "name": "Ghostty",
@@ -632,16 +661,16 @@
       "tolerance": 16,
       "digits": 1,
       "values": {
-        "0.5.1": 28.3,
         "0.7.0": 19.7,
         "1.2.0": 19.8,
-        "1.3.0": 18.393
+        "1.3.0": 18.393,
+        "1.4.0": 28.37
       },
       "baseline": {
-        "0.5.1": 13.0,
         "0.7.0": 26.9,
         "1.2.0": 20.8,
-        "1.3.0": 18.283
+        "1.3.0": 18.283,
+        "1.4.0": 13.42
       },
       "reference": {
         "name": "Ghostty",
@@ -799,10 +828,6 @@
           {
             "name": "Startup, warm, first frame, ms",
             "cells": {
-              "0.5.1": [
-                "235.4",
-                "the median of four rounds, 235.8, 234.8, 234.9 and 235.8"
-              ],
               "0.7.0": [
                 "270.3",
                 "the median of four rounds, 269.6, 272.1, 271.0 and 253.2"
@@ -830,6 +855,10 @@
               "1.3.0": [
                 "238.6",
                 "the mean of eight rounds of copies started 60 times, 1.2.0's 240.0; four rounds of copies started 30 times 239.3, 270.6, 263.2 and 284.4"
+              ],
+              "1.4.0": [
+                "249.2",
+                "the mean of twelve rounds of the release's DMG, notarized, 1.3.0's DMG 250.1 in the same session, [startup-F5a-79](startup-F5a-79.md#results); 240.5 in the A/B and 267.2 at rest, of a bundle not notarized"
               ]
             }
           },
@@ -842,7 +871,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "26.6",
               "0.7.0": [
                 "18.8",
                 "at rest, [startup-F3-228](startup-F3-228.md); 46.9 ms in the A/B, of a new copy"
@@ -870,6 +898,10 @@
               "1.3.0": [
                 "27.2",
                 "of eight rounds against 1.2.0's 28.6, of a minimal app of 207 to 218 ms, as before 1.1.0's sessions"
+              ],
+              "1.4.0": [
+                "20.8",
+                "of twelve rounds of the releases' notarized DMGs, 1.3.0's 21.7, of a minimal app of 222 to 243 ms, [startup-F5a-79](startup-F5a-79.md#results); 60.9 in the A/B and 43.5 at rest, of a bundle not notarized"
               ]
             }
           }
@@ -890,7 +922,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "18.9",
               "0.7.0": "20.2",
               "0.8.0": "19.6",
               "0.9.0": "20.6",
@@ -900,7 +931,8 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "16.6",
-              "1.3.0": "17.3"
+              "1.3.0": "17.3",
+              "1.4.0": "13.6"
             }
           },
           {
@@ -915,7 +947,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "48.6",
               "0.7.0": "44.0",
               "0.8.0": "47.3",
               "0.9.0": "42.0",
@@ -925,13 +956,13 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "31.5",
-              "1.3.0": "31.5"
+              "1.3.0": "31.5",
+              "1.4.0": "27.5"
             }
           },
           {
             "name": "Its samples in the fourth refresh or later",
             "cells": {
-              "0.5.1": "11 of 1592",
               "0.7.0": "7 of 1592",
               "0.8.0": "10 of 1592",
               "0.9.0": "3 of 1592",
@@ -941,7 +972,8 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "0 of 1591",
-              "1.3.0": "0 of 1592"
+              "1.3.0": "0 of 1592",
+              "1.4.0": "0 of 1592"
             }
           }
         ]
@@ -958,7 +990,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "0",
               "0.7.0": "0",
               "0.8.0": "0",
               "0.9.0": "0",
@@ -968,7 +999,8 @@
               "1.3.0": [
                 "0",
                 "over 240 s, two rounds; 0.017 in two of four rounds of 60 s, of the same interrupt wakeups as 1.2.0's, [ab-F5a-17](ab-F5a-17.md#results)"
-              ]
+              ],
+              "1.4.0": "0"
             }
           },
           {
@@ -980,14 +1012,14 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "0.35",
               "0.7.0": "0.33",
               "0.8.0": "0.34",
               "0.9.0": "0.38",
               "1.0.0": "0.35",
               "1.1.0": "0.35",
               "1.2.0": "0.34",
-              "1.3.0": "0.36"
+              "1.3.0": "0.36",
+              "1.4.0": "0.35"
             }
           },
           {
@@ -999,7 +1031,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "26.1",
               "0.7.0": "26.8",
               "0.8.0": "27.2",
               "0.9.0": [
@@ -1015,13 +1046,16 @@
               "1.3.0": [
                 "27.6",
                 "the median of four rounds, one of 31.5"
+              ],
+              "1.4.0": [
+                "28.7",
+                "the median of four rounds"
               ]
             }
           },
           {
             "name": "GPU memory, MB",
             "cells": {
-              "0.5.1": "30.3",
               "0.7.0": "30.1",
               "0.8.0": "30.1",
               "0.9.0": "30.1",
@@ -1031,6 +1065,10 @@
               "1.3.0": [
                 "14.2",
                 "of a display at a scale of 1, as 1.2.0's in the same session"
+              ],
+              "1.4.0": [
+                "30.6",
+                "of a display at a scale of 2, as 1.3.0's in the same session"
               ]
             }
           }
@@ -1042,16 +1080,15 @@
           {
             "name": "`cat` of 1 GiB of ASCII, MiB/s",
             "budget": [
-              "≥ 294.9",
-              "Ghostty's 328 MiB/s of the comparison of 13 November 2026 less 10 %; 275 of the first comparison's before"
+              "≥ 275.0",
+              "Ghostty's 305.5 MiB/s of the comparison of 21 and 22 November 2026 less 10 %; 294.9 of the comparison of 13 November 2026 before, 275 of the first comparison's before that"
             ],
             "measure": "throughput-cat",
             "limit": {
-              "value": 294.9,
+              "value": 275.0,
               "better": "higher"
             },
             "cells": {
-              "0.5.1": "318.6",
               "0.7.0": "314.3",
               "0.8.0": "315.0",
               "0.9.0": "311.9",
@@ -1061,14 +1098,17 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "314.9",
-              "1.3.0": "308.6"
+              "1.3.0": "308.6",
+              "1.4.0": [
+                "304.4",
+                "at rest, 1.3.0's 303.7 in the same session, [rest-F5a-123](rest-F5a-123.md#results); 269.5 in the A/B, of a session's slower output for both"
+              ]
             }
           },
           {
             "name": "`seq 1 10000000`, MiB/s",
             "measure": "throughput-seq",
             "cells": {
-              "0.5.1": "219.6",
               "0.7.0": "220.3",
               "0.8.0": "222.1",
               "0.9.0": "223.8",
@@ -1078,14 +1118,17 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "217.9",
-              "1.3.0": "218.3"
+              "1.3.0": "218.3",
+              "1.4.0": [
+                "216.8",
+                "at rest, 1.3.0's 218.4, [rest-F5a-123](rest-F5a-123.md#results); 185.9 in the A/B"
+              ]
             }
           },
           {
             "name": "Colored text, SGR, MiB/s",
             "measure": "throughput-sgr",
             "cells": {
-              "0.5.1": "287.4",
               "0.7.0": "285.5",
               "0.8.0": "285.6",
               "0.9.0": "288.9",
@@ -1095,14 +1138,17 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "286.3",
-              "1.3.0": "285.2"
+              "1.3.0": "285.2",
+              "1.4.0": [
+                "281.1",
+                "at rest, 1.3.0's 271.8, [rest-F5a-123](rest-F5a-123.md#results); 191.9 in the A/B"
+              ]
             }
           },
           {
             "name": "CJK and emoji, MiB/s",
             "measure": "throughput-cjk",
             "cells": {
-              "0.5.1": "213.7",
               "0.7.0": "217.4",
               "0.8.0": "215.3",
               "0.9.0": "216.5",
@@ -1112,7 +1158,11 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "214.9",
-              "1.3.0": "213.2"
+              "1.3.0": "213.2",
+              "1.4.0": [
+                "216.1",
+                "at rest, 1.3.0's 217.2, [rest-F5a-123](rest-F5a-123.md#results); 204.6 in the A/B"
+              ]
             }
           }
         ]
@@ -1124,7 +1174,6 @@
             "name": "ASCII, p50, ms",
             "measure": "frame-ascii",
             "cells": {
-              "0.5.1": "0.270",
               "0.7.0": "0.283",
               "0.8.0": "0.296",
               "0.9.0": "0.288",
@@ -1134,7 +1183,8 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "0.298",
-              "1.3.0": "0.277"
+              "1.3.0": "0.277",
+              "1.4.0": "0.323"
             }
           },
           {
@@ -1146,7 +1196,6 @@
               "better": "lower"
             },
             "cells": {
-              "0.5.1": "0.381",
               "0.7.0": "0.401",
               "0.8.0": "0.427",
               "0.9.0": "0.429",
@@ -1156,14 +1205,14 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "0.423",
-              "1.3.0": "0.418"
+              "1.3.0": "0.418",
+              "1.4.0": "0.445"
             }
           },
           {
             "name": "CJK and emoji, p50, ms",
             "measure": "frame-cjk",
             "cells": {
-              "0.5.1": "0.72",
               "0.7.0": "0.71",
               "0.8.0": "0.72",
               "0.9.0": "0.73",
@@ -1173,7 +1222,8 @@
                 "of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session"
               ],
               "1.2.0": "0.78",
-              "1.3.0": "0.73"
+              "1.3.0": "0.73",
+              "1.4.0": "0.68"
             }
           }
         ]
@@ -1185,7 +1235,6 @@
             "name": "A drag, opaque, frames a second",
             "measure": "drag-fps-opaque",
             "cells": {
-              "0.5.1": "58.0",
               "0.7.0": "58.0",
               "0.8.0": [
                 "—",
@@ -1207,6 +1256,10 @@
               "1.3.0": [
                 "58.3",
                 "of 1.3.0's session on a Dell U3417W at 60 Hz, of two rounds of the opaque look and three of the blur"
+              ],
+              "1.4.0": [
+                "58.4",
+                "of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look"
               ]
             }
           },
@@ -1214,75 +1267,74 @@
             "name": "A drag, with a blur, frames a second",
             "measure": "drag-fps-blur",
             "cells": {
-              "0.5.1": "58.0",
               "0.7.0": "58.0",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "58.1",
               "1.2.0": "58.0",
-              "1.3.0": "58.5"
+              "1.3.0": "58.5",
+              "1.4.0": "58.7"
             }
           },
           {
             "name": "A drag, opaque, refreshes missed of 600",
             "cells": {
-              "0.5.1": "15.5",
               "0.7.0": "16.0",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "16.0",
               "1.2.0": "23.0",
-              "1.3.0": "7.5"
+              "1.3.0": "7.5",
+              "1.4.0": "11.5"
             }
           },
           {
             "name": "A drag, with a blur, refreshes missed of 600",
             "cells": {
-              "0.5.1": "16.5",
               "0.7.0": "16.5",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "15.0",
               "1.2.0": "16.0",
-              "1.3.0": "9.0"
+              "1.3.0": "9.0",
+              "1.4.0": "9.5"
             }
           },
           {
             "name": "A live resize, opaque, frames a second",
             "measure": "resize-fps-opaque",
             "cells": {
-              "0.5.1": "56.2",
               "0.7.0": "56.3",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "56.2",
               "1.2.0": "55.7",
-              "1.3.0": "57.4"
+              "1.3.0": "57.4",
+              "1.4.0": "55.5"
             }
           },
           {
             "name": "A live resize, with a blur, frames a second",
             "measure": "resize-fps-blur",
             "cells": {
-              "0.5.1": "56.5",
               "0.7.0": "55.6",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "55.8",
               "1.2.0": "56.3",
-              "1.3.0": "57.6"
+              "1.3.0": "57.6",
+              "1.4.0": "56.8"
             }
           },
           {
             "name": "A live resize, opaque, refreshes missed of 600",
             "measure": "resize-missed-opaque",
             "cells": {
-              "0.5.1": "31.5",
               "0.7.0": "33.5",
               "0.8.0": "—",
               "0.9.0": "—",
@@ -1292,6 +1344,10 @@
               "1.3.0": [
                 "15.0",
                 "fewer on a display at a scale of 1, 1.2.0's 20.0 there"
+              ],
+              "1.4.0": [
+                "36.0",
+                "1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2"
               ]
             }
           },
@@ -1299,73 +1355,72 @@
             "name": "A live resize, with a blur, refreshes missed of 600",
             "measure": "resize-missed-blur",
             "cells": {
-              "0.5.1": "30.0",
               "0.7.0": "39.5",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "36.5",
               "1.2.0": "31.0",
-              "1.3.0": "13.7"
+              "1.3.0": "13.7",
+              "1.4.0": "23.5"
             }
           },
           {
             "name": "A live resize, opaque, the window server's CPU, %",
             "cells": {
-              "0.5.1": "36",
               "0.7.0": "39",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "35",
               "1.2.0": "34",
-              "1.3.0": "35"
+              "1.3.0": "35",
+              "1.4.0": "35"
             }
           },
           {
             "name": "A live resize, opaque, the app's CPU, %",
             "cells": {
-              "0.5.1": "18",
               "0.7.0": "19",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "16",
               "1.2.0": "16",
-              "1.3.0": "15"
+              "1.3.0": "15",
+              "1.4.0": "17"
             }
           },
           {
             "name": "A live resize, with a blur, the window server's CPU, %",
             "cells": {
-              "0.5.1": "37",
               "0.7.0": "42",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "31",
               "1.2.0": "34",
-              "1.3.0": "38"
+              "1.3.0": "38",
+              "1.4.0": "37"
             }
           },
           {
             "name": "A live resize, with a blur, the app's CPU, %",
             "cells": {
-              "0.5.1": "18",
               "0.7.0": "20",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "15",
               "1.2.0": "15",
-              "1.3.0": "15"
+              "1.3.0": "15",
+              "1.4.0": "16"
             }
           },
           {
             "name": "A live resize, opaque, the compositor's delay, p95, ms",
             "measure": "resize-delay-opaque",
             "cells": {
-              "0.5.1": "20.8",
               "0.7.0": "20.2",
               "0.8.0": "—",
               "0.9.0": "—",
@@ -1378,21 +1433,84 @@
               "1.3.0": [
                 "21.0",
                 "of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion)"
-              ]
+              ],
+              "1.4.0": "13.4"
             }
           },
           {
             "name": "A live resize, with a blur, the compositor's delay, p95, ms",
             "measure": "resize-delay-blur",
             "cells": {
-              "0.5.1": "28.3",
               "0.7.0": "19.7",
               "0.8.0": "—",
               "0.9.0": "—",
               "1.0.0": "—",
               "1.1.0": "20.8",
               "1.2.0": "19.8",
-              "1.3.0": "18.4"
+              "1.3.0": "18.4",
+              "1.4.0": [
+                "28.4",
+                "of runs of 28 ms, 1.3.0's of 13 in the same session, of the two values that every session finds"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "title": "Scrolling by pixels",
+        "rows": [
+          {
+            "name": "A trackpad's scroll, the app's frames a second, at 60 Hz",
+            "cells": {
+              "1.4.0": [
+                "60.8",
+                "of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels)"
+              ]
+            }
+          },
+          {
+            "name": "Its refreshes with a frame, %",
+            "cells": {
+              "1.4.0": "99"
+            }
+          },
+          {
+            "name": "Its app's CPU, %",
+            "cells": {
+              "1.4.0": [
+                "6.9",
+                "by rows 4.8"
+              ]
+            }
+          },
+          {
+            "name": "Package idle wakeups after it, a second",
+            "cells": {
+              "1.4.0": "0"
+            }
+          },
+          {
+            "name": "The same at 120 Hz, the app's frames a second",
+            "cells": {
+              "1.4.0": [
+                "123.3",
+                "of the built-in display, 3 % more than its refreshes, as at 60 Hz the frames are paced a quarter of a millisecond quicker than the refresh; by rows 34.3, as 1.3.0's 34.0, [ab-F5a-78](ab-F5a-78.md#at-120-hz)"
+              ]
+            }
+          },
+          {
+            "name": "Its refreshes with a frame at 120 Hz, %",
+            "cells": {
+              "1.4.0": "98.6"
+            }
+          },
+          {
+            "name": "Its app's CPU at 120 Hz, %",
+            "cells": {
+              "1.4.0": [
+                "10.7",
+                "by rows 6.8"
+              ]
             }
           }
         ]

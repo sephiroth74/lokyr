@@ -28,8 +28,12 @@
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
+<p align="center">
+  <a href="https://www.buymeacoffee.com/sephiroth74"><img alt="Buy me a coffee" src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=sephiroth74&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00"></a>
+</p>
+
 > [!NOTE]
-> **Lokyr 1.3.0 is out**, of programs' status on their tabs, a click in the command line, pinned and grouped tabs, a closed tab reopened, and hints: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.4.0 is out**, of commands as blocks, smooth scrolling, and controls as macOS 27's: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
@@ -63,16 +67,16 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 
 ## Performance
 
-Lokyr against Ghostty, Alacritty, kitty, WezTerm, iTerm2 and Terminal.app, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Every terminal was measured of its version of 13 November 2026, in one session, beside Lokyr of 1.0.0's code, as [the full report](docs/bench/compare-F3-268.md) tells, with every measure, its method and its limits; the latency at 120 Hz, by Typometer, is of 1 November, of the versions of then ([its report](docs/bench/compare-F2-134.md)). Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
+Lokyr against Ghostty, Alacritty, kitty and iTerm2, under the same conditions: Menlo 13 in 120 × 40 cells, the same plain shell, release builds, on an M5 Pro. Every terminal was measured of its version of 21 November 2026, in one session, beside Lokyr of 1.4.0's code, as [the full report](docs/bench/compare-F5a-78.md) tells, with every measure, its method and its limits; the latency at 120 Hz, by Typometer, is of 1 November, of the versions of then ([its report](docs/bench/compare-F2-134.md)). Each release's own measures, against its budgets and the best of the others, are in [the releases' table](docs/bench/RELEASES.md).
 
 <p align="center">
-  <img src="docs/bench/compare-F3-268/charts/startup.svg" alt="Startup to the first window: Lokyr 238 ms, Alacritty 274, Terminal.app 283, Ghostty 296, WezTerm 355, kitty 628, iTerm2 814" width="680">
-  <img src="docs/bench/compare-F3-268/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 27.8 MB, Alacritty 31.1, Terminal.app 34.2, WezTerm 36.6, Ghostty 40.3, kitty 99.3, iTerm2 147.9" width="680">
-  <img src="docs/bench/compare-F3-268/charts/wakeups.svg" alt="Wakeups at rest a second: Lokyr 0.35, Alacritty 0.37, Terminal.app 0.37, WezTerm 1.38, iTerm2 7.62, Ghostty 14.72, kitty 21.05" width="680">
-  <img src="docs/bench/compare-F3-268/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 328 MiB/s, Lokyr 318, Alacritty 174, kitty 145, iTerm2 60, Terminal.app 44, WezTerm 43" width="680">
-  <img src="docs/bench/compare-F3-268/charts/energy.svg" alt="The CPU's energy to show cat of 1 GiB: Lokyr 16.9 J, Alacritty 40.2, Ghostty 40.8, kitty 42.5, Terminal.app 116.7, WezTerm 193.6, iTerm2 201.4" width="680">
-  <img src="docs/bench/compare-F3-268/charts/latency-60hz.svg" alt="Latency at 60 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 20.3 and 46.0 ms, kitty 19.7 and 47.3, Lokyr 18.5 and 48.2, iTerm2 32.2 and 48.7, Terminal.app 18.4 and 48.9, Ghostty 19.8 and 49.5, WezTerm 63.3 and 75.7" width="680">
-  <img src="docs/bench/compare-F3-268/charts/latency-120hz.svg" alt="Latency at 120 Hz on 1 November 2026, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.6 and 25.8 ms, kitty 21.8 and 29.6, Lokyr 21.2 and 32.2, iTerm2 21.3 and 45.0, Ghostty 24.8 and 47.7" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/startup.svg" alt="Startup to the first window: Lokyr 253 ms, Alacritty 271, Ghostty 304, iTerm2 598, kitty 644" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/memory.svg" alt="Memory at rest, without the GPU's: Lokyr 28.6 MB, Alacritty 31.3, Ghostty 39.6, kitty 99.6, iTerm2 144.0" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/wakeups.svg" alt="Wakeups at rest a second: Alacritty 0.33, Lokyr 0.35, iTerm2 7.48, Ghostty 15.22, kitty 20.07" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/throughput.svg" alt="Throughput of cat of 1 GiB on screen: Ghostty 306 MiB/s, Lokyr 294, Alacritty 170, kitty 140, iTerm2 100" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/energy.svg" alt="The CPU's energy to show cat of 1 GiB: Lokyr 16.8 J, kitty 42.2, Ghostty 43.5, Alacritty 43.7, iTerm2 201.6" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/latency-60hz.svg" alt="Latency at 60 Hz, a key to its echo on screen with Typometer, median and 99th percentile: Lokyr 22.4 and 29.5 ms, kitty 23.9 and 33.1, Alacritty 23.6 and 40.3, Ghostty 24.2 and 44.0, iTerm2 25.3 and 50.8" width="680">
+  <img src="docs/bench/compare-F5a-78/charts/latency-120hz.svg" alt="Latency at 120 Hz on 1 November 2026, a key to its echo on screen with Typometer, median and 99th percentile: Alacritty 21.6 and 25.8 ms, kitty 21.8 and 29.6, Lokyr 21.2 and 32.2, iTerm2 21.3 and 45.0, Ghostty 24.8 and 47.7" width="680">
 </p>
 
 ## What works today
@@ -113,7 +117,8 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 | [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |
-| [`command-header`](docs/plugins/command-header.md) | The command whose output you are looking at, at the pane's top, which a click scrolls to |
+| [`command-header`](docs/plugins/command-header.md) | The command whose output you are looking at, at the pane's top, which a click scrolls to, while `blocks` is off |
+| [`blocks`](docs/blocks.md) | Off by default: each command and its output a block, its prompt rows pinned at the pane's top, which a click scrolls to, and its parts copied, its details shown or its command run again from the context menu · Since 1.4 |
 | [`copy-mode`](docs/plugins/copy-mode.md) | The copy mode: ⇧⌘C, then vi's keys move a cursor through the scrollback, select and copy, without the mouse |
 | [`quick-tips`](docs/plugins/quick-tips.md) | A tip at the start, once a week at most: a shortcut as your keymap binds it, or a feature that shows in no menu |
 | [`settings`](docs/plugins/settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |
@@ -175,12 +180,6 @@ Lokyr shows the progress that a program reports on its tab, round its outline, a
 - [Writing a plugin](docs/plugins/authoring.md) and [making a theme](docs/themes/authoring.md): the guides for their authors.
 - [The plugin system](docs/PLUGIN-SYSTEM.md) and [Sleip](docs/PACKAGE-MANAGER.md).
 - [Performance](docs/PERFORMANCE.md): the budgets, and the [measures](docs/bench/).
-
-## Supporting Lokyr
-
-If you like Lokyr, or what it aims for, a coffee helps to keep it going:
-
-<a href="https://www.buymeacoffee.com/sephiroth74"><img alt="Buy me a coffee" src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=&slug=sephiroth74&button_colour=BD5FFF&font_colour=ffffff&font_family=Cookie&outline_colour=000000&coffee_colour=FFDD00"></a>
 
 ## Contributing
 

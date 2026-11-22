@@ -1,0 +1,101 @@
+## Startup, warm, first frame (ms): median, spread; floor's first window; gap
+round 1 v130: 235.7 ms, p90 271.7, spread 22.8%; floor 194.9; gap 40.8
+round 1 v140: 249.2 ms, p90 270.5, spread 19.9%; floor 194.9; gap 54.2
+round 2 v140: 235.1 ms, p90 251.7, spread 11.9%; floor 170.5; gap 64.6
+round 2 v130: 244.5 ms, p90 270.4, spread 15.0%; floor 170.5; gap 74.0
+round 3 v140: 236.0 ms, p90 253.9, spread 15.1%; floor 180.2; gap 55.8
+round 3 v130: 236.1 ms, p90 251.0, spread 14.1%; floor 180.2; gap 55.8
+round 4 v130: 236.3 ms, p90 268.1, spread 20.8%; floor 175.5; gap 60.8
+round 4 v140: 235.8 ms, p90 238.6, spread 6.8%; floor 175.5; gap 60.3
+v130: median of rounds 236.2, mean 238.2 (sd 3.7); gap median 58.3, mean 57.9 (sd 11.9)
+v140: median of rounds 235.9, mean 239.0 (sd 5.9); gap median 58.0, mean 58.7 (sd 4.0)
+v140 − v130 by round: +13.5, -9.4, -0.1, -0.5; mean +0.9
+## Startup again, eight rounds
+round 1 v130: 229.7 ms, p90 245.8, spread 14.1%; floor 177.2; gap 52.5
+round 1 v140: 238.4 ms, p90 249.8, spread 12.7%; floor 177.2; gap 61.3
+round 2 v140: 239.4 ms, p90 246.4, spread 11.7%; floor 180.2; gap 59.2
+round 2 v130: 230.3 ms, p90 262.4, spread 21.3%; floor 180.2; gap 50.1
+round 3 v140: 240.6 ms, p90 247.5, spread 11.9%; floor 187.1; gap 53.5
+round 3 v130: 225.0 ms, p90 271.6, spread 26.0%; floor 187.1; gap 37.9
+round 4 v130: 247.0 ms, p90 265.5, spread 13.7%; floor 174.9; gap 72.1
+round 4 v140: 242.1 ms, p90 263.0, spread 13.1%; floor 174.9; gap 67.2
+round 5 v130: 233.5 ms, p90 261.8, spread 20.9%; floor 177.1; gap 56.4
+round 5 v140: 231.2 ms, p90 263.1, spread 14.4%; floor 177.1; gap 54.1
+round 6 v140: 246.6 ms, p90 256.1, spread 10.6%; floor 174.9; gap 71.7
+round 6 v130: 236.5 ms, p90 261.7, spread 20.1%; floor 174.9; gap 61.6
+round 7 v140: 239.9 ms, p90 255.1, spread 10.0%; floor 192.2; gap 47.8
+round 7 v130: 236.8 ms, p90 253.3, spread 16.9%; floor 192.2; gap 44.7
+round 8 v130: 225.1 ms, p90 253.8, spread 17.7%; floor 173.2; gap 51.8
+round 8 v140: 245.9 ms, p90 255.4, spread 10.0%; floor 173.2; gap 72.7
+v130: median of rounds 231.9, mean 233.0 (sd 6.8); gap median 52.2, mean 53.4 (sd 9.7)
+v140: median of rounds 240.2, mean 240.5 (sd 4.5); gap median 60.2, mean 60.9 (sd 8.4)
+v140 − v130 by round: +8.8, +9.1, +15.6, -4.9, -2.3, +10.1, +3.1, +20.8; mean +7.5
+## Latency (ms), and its histogram in refreshes
+round 1 place 1 v130: p50 14.32 p90 22.54 p99 29.57 max 33.88; refresh 16.67; {'1': 121, '2': 77, '3': 1}
+round 1 place 2 v140: p50 13.22 p90 21.65 p99 29.79 max 32.06; refresh 16.67; {'1': 132, '2': 67}
+round 2 place 1 v140: p50 12.83 p90 22.00 p99 26.70 max 30.73; refresh 16.67; {'1': 130, '2': 69}
+round 2 place 2 v130: p50 15.16 p90 23.91 p99 28.97 max 29.27; refresh 16.67; {'1': 114, '2': 85}
+round 3 place 1 v140: p50 13.63 p90 21.71 p99 27.30 max 31.91; refresh 16.67; {'1': 134, '2': 65}
+round 3 place 2 v130: p50 14.66 p90 21.92 p99 27.30 max 28.14; refresh 16.67; {'1': 125, '2': 74}
+round 4 place 1 v130: p50 13.80 p90 22.67 p99 27.93 max 33.59; refresh 16.67; {'1': 123, '2': 75, '3': 1}
+round 4 place 2 v140: p50 13.00 p90 20.54 p99 24.82 max 27.79; refresh 16.67; {'1': 143, '2': 56}
+round 5 place 1 v130: p50 14.87 p90 22.14 p99 30.46 max 31.76; refresh 16.67; {'1': 123, '2': 76}
+round 5 place 2 v140: p50 14.61 p90 22.37 p99 31.07 max 33.57; refresh 16.67; {'1': 120, '2': 78, '3': 1}
+round 6 place 1 v140: p50 14.00 p90 21.71 p99 28.68 max 29.10; refresh 16.67; {'1': 129, '2': 70}
+round 6 place 2 v130: p50 14.58 p90 22.79 p99 35.13 max 39.11; refresh 16.67; {'1': 116, '2': 81, '3': 2}
+round 7 place 1 v140: p50 13.80 p90 22.43 p99 25.73 max 25.74; refresh 16.67; {'1': 118, '2': 81}
+round 7 place 2 v130: p50 13.87 p90 23.25 p99 30.16 max 32.85; refresh 16.67; {'1': 134, '2': 65}
+round 8 place 1 v130: p50 14.74 p90 23.55 p99 28.57 max 29.60; refresh 16.67; {'1': 121, '2': 78}
+round 8 place 2 v140: p50 13.63 p90 21.16 p99 25.55 max 27.43; refresh 16.67; {'1': 135, '2': 64}
+v130: p50 mean 14.50 (sd 0.44), p99 mean 29.76 (sd 2.26), of 8 rounds; 0 of 1592 samples in the fourth refresh or later
+v140: p50 mean 13.59 (sd 0.54), p99 mean 27.45 (sd 2.07), of 8 rounds; 0 of 1592 samples in the fourth refresh or later
+place 1: p50 mean 14.00, p99 mean 28.12
+place 2: p50 mean 14.09, p99 mean 29.10
+## Idle (per s) and memory (MB)
+v130-1: package idle 0.000/s, interrupt 0.367/s; footprint w/o GPU 29.4 MB, GPU 30.6 MB; 17 threads
+v140-1: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 28.7 MB, GPU 30.6 MB; 16 threads
+v140-2: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 29.0 MB, GPU 30.6 MB; 16 threads
+v130-2: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 28.7 MB, GPU 30.6 MB; 16 threads
+v140-3: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 29.1 MB, GPU 30.6 MB; 16 threads
+v130-3: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 28.7 MB, GPU 30.6 MB; 16 threads
+v130-4: package idle 0.000/s, interrupt 0.317/s; footprint w/o GPU 28.6 MB, GPU 30.6 MB; 16 threads
+v140-4: package idle 0.000/s, interrupt 0.350/s; footprint w/o GPU 29.1 MB, GPU 30.6 MB; 18 threads
+## Idle over 240 s
+v130-1: package idle 0.0000/s at [] ms, interrupt 0.333/s
+v140-1: package idle 0.0000/s at [] ms, interrupt 0.337/s
+v140-2: package idle 0.0000/s at [] ms, interrupt 0.337/s
+v130-2: package idle 0.0000/s at [] ms, interrupt 0.321/s
+## Memory at rest, four rounds
+round 1 v130: footprint w/o GPU 28.6 MB, GPU 30.6 MB
+round 1 v140: footprint w/o GPU 28.7 MB, GPU 30.6 MB
+round 2 v140: footprint w/o GPU 28.8 MB, GPU 30.6 MB
+round 2 v130: footprint w/o GPU 29.0 MB, GPU 30.6 MB
+round 3 v140: footprint w/o GPU 28.7 MB, GPU 30.6 MB
+round 3 v130: footprint w/o GPU 28.7 MB, GPU 30.6 MB
+round 4 v130: footprint w/o GPU 28.7 MB, GPU 30.6 MB
+round 4 v140: footprint w/o GPU 28.5 MB, GPU 30.6 MB
+v130: median 28.7 MB, mean 28.8 (sd 0.1)
+v140: median 28.7 MB, mean 28.7 (sd 0.1)
+v140 − v130 by round: +0.1, -0.2, -0.0, -0.2 MB
+## Throughput on screen (MiB/s, median of the runs of every round) and frames (ms)
+ascii v130: 265.6 MiB/s (runs 261.0, 257.5, 198.8, 209.5, 271.7, 271.7, 270.1, 279.6; rounds 1-2 233.5, rounds 3-4 271.7); total p50 0.321 p99 0.417, total p50 0.332 p99 0.415, total p50 0.316 p99 0.461, total p50 0.306 p99 0.408
+ascii v140: 269.5 MiB/s (runs 260.1, 253.9, 274.7, 273.7, 259.0, 285.3, 275.9, 265.4; rounds 1-2 266.9, rounds 3-4 270.6); total p50 0.328 p99 0.461, total p50 0.320 p99 0.440, total p50 0.318 p99 0.452, total p50 0.324 p99 0.428
+seq v130: 159.4 MiB/s (runs 131.9, 156.2, 153.4, 155.9, 220.9, 218.0, 165.2, 162.6; rounds 1-2 154.7, rounds 3-4 191.6); total p50 0.285 p99 5.811, total p50 0.298 p99 6.913, total p50 0.281 p99 5.380, total p50 0.300 p99 5.614
+seq v140: 185.9 MiB/s (runs 159.6, 158.5, 128.3, 137.4, 212.3, 222.8, 221.7, 224.8; rounds 1-2 147.9, rounds 3-4 222.2); total p50 0.297 p99 5.561, total p50 0.298 p99 6.744, total p50 0.284 p99 5.680, total p50 0.302 p99 7.367
+sgr v130: 195.1 MiB/s (runs 152.0, 174.7, 193.1, 163.8, 286.2, 290.2, 197.2, 228.4; rounds 1-2 169.2, rounds 3-4 257.3); total p50 0.526 p99 3.860, total p50 0.553 p99 4.520, total p50 0.545 p99 5.255, total p50 0.520 p99 5.797
+sgr v140: 191.9 MiB/s (runs 187.5, 171.7, 171.4, 190.4, 193.5, 224.5, 281.0, 293.2; rounds 1-2 179.6, rounds 3-4 252.8); total p50 0.536 p99 5.744, total p50 0.551 p99 5.621, total p50 0.552 p99 5.168, total p50 0.556 p99 5.213
+cjk v130: 203.3 MiB/s (runs 199.3, 209.6, 169.0, 183.5, 209.7, 215.0, 197.8, 207.3; rounds 1-2 191.4, rounds 3-4 208.5); total p50 0.749 p99 5.806, total p50 0.488 p99 3.627, total p50 0.755 p99 5.571, total p50 0.747 p99 7.004
+cjk v140: 204.6 MiB/s (runs 187.8, 175.4, 200.8, 206.2, 202.9, 208.4, 214.4, 207.1; rounds 1-2 194.3, rounds 3-4 207.8); total p50 0.532 p99 3.132, total p50 0.764 p99 5.586, total p50 0.703 p99 5.442, total p50 0.716 p99 6.511
+## The window's motion
+opaque drag v130: fps mean 57.5, missed mean 18.0; r1 58.5/s missed 12 delay p50 13.15 p95 14.17 ws 31.7% app 2.7% (9.59 s, Built-In Display, 16.67 ms); r2 56.6/s missed 24 delay p50 13.25 p95 13.93 ws 30.8% app 2.8% (8.39 s, Built-In Display, 16.67 ms)
+opaque drag v140: fps mean 58.4, missed mean 11.5; r1 58.5/s missed 9 delay p50 13.31 p95 14.02 ws 30.1% app 2.7% (8.52 s, Built-In Display, 16.67 ms); r2 58.2/s missed 14 delay p50 13.22 p95 28.2 ws 30.7% app 3.1% (9.42 s, Built-In Display, 16.67 ms)
+opaque resize v130: fps mean 56.4, missed mean 26.0; r1 56.0/s missed 30 delay p50 12.78 p95 28.73 ws 30.7% app 16.8% (8.74 s, Built-In Display, 16.67 ms); r2 56.8/s missed 22 delay p50 12.49 p95 13.3 ws 35.2% app 16.8% (8.63 s, Built-In Display, 16.67 ms)
+opaque resize v140: fps mean 55.5, missed mean 36.0; r1 55.2/s missed 38 delay p50 12.38 p95 13.53 ws 35.9% app 16.3% (8.6 s, Built-In Display, 16.67 ms); r2 55.7/s missed 34 delay p50 12.27 p95 13.23 ws 35.0% app 17.1% (8.86 s, Built-In Display, 16.67 ms)
+blur drag v130: fps mean 57.2, missed mean 22.5; r1 57.2/s missed 21 delay p50 13.24 p95 14.17 ws 29.0% app 2.9% (8.83 s, Built-In Display, 16.67 ms); r2 57.2/s missed 24 delay p50 13.17 p95 14.23 ws 28.9% app 3.0% (9.39 s, Built-In Display, 16.67 ms)
+blur drag v140: fps mean 58.7, missed mean 9.5; r1 58.7/s missed 9 delay p50 12.8 p95 13.69 ws 36.3% app 3.1% (9.28 s, Built-In Display, 16.67 ms); r2 58.6/s missed 10 delay p50 13.52 p95 14.3 ws 24.5% app 2.4% (9.61 s, Built-In Display, 16.67 ms)
+blur resize v130: fps mean 56.2, missed mean 21.0; r1 56.0/s missed 15 delay p50 12.54 p95 13.49 ws 29.5% app 17.1% (4.95 s, Built-In Display, 16.67 ms); r2 56.5/s missed 27 delay p50 12.29 p95 13.34 ws 34.8% app 16.0% (8.74 s, Built-In Display, 16.67 ms)
+blur resize v140: fps mean 56.8, missed mean 23.5; r1 56.8/s missed 24 delay p50 12.12 p95 28.33 ws 36.0% app 16.2% (8.67 s, Built-In Display, 16.67 ms); r2 56.9/s missed 23 delay p50 12.0 p95 28.41 ws 37.5% app 16.1% (8.67 s, Built-In Display, 16.67 ms)
+## A trackpad's scroll, by rows and by pixels, and the idle after it
+v130 rows: app frames mean 32.2/s, refreshes with a frame mean 0.510, app cpu mean 4.7%; r1 app 31.2/s, refreshes with a frame 0.493, gaps {'0': 7, '1': 96, '2': 62, '3': 11, '4': 9, '5': 2, '6': 6}; display 31.3/s missed 80 delay p50 2.33 p95 3.72 ws 12.7% app 4.7% (6.22 s, Built-In Display, 24.14 ms), then idle package 0.000/s interrupt 0.333/s; r2 app 33.2/s, refreshes with a frame 0.528, gaps {'0': 18, '1': 155, '2': 98, '3': 14, '4': 13, '5': 4, '6': 9}; display 33.3/s missed 130 delay p50 2.02 p95 2.76 ws 13.3% app 4.7% (9.4 s, Built-In Display, 22.48 ms), then idle package 0.000/s interrupt 0.333/s
+v140 rows: app frames mean 32.1/s, refreshes with a frame mean 0.514, app cpu mean 4.8%; r1 app 31.9/s, refreshes with a frame 0.504, gaps {'0': 17, '1': 141, '2': 98, '3': 20, '4': 11, '5': 3, '6': 9}; display 31.9/s missed 120 delay p50 2.07 p95 2.75 ws 13.1% app 5.5% (9.4 s, Built-In Display, 23.87 ms), then idle package 0.000/s interrupt 0.333/s; r2 app 32.3/s, refreshes with a frame 0.525, gaps {'0': 12, '1': 161, '2': 89, '3': 17, '4': 11, '5': 4, '6': 9}; display 32.4/s missed 130 delay p50 2.03 p95 2.59 ws 13.7% app 4.2% (9.4 s, Built-In Display, 22.93 ms), then idle package 0.000/s interrupt 0.333/s
+v140 pixels: app frames mean 60.8/s, refreshes with a frame mean 0.990, app cpu mean 6.9%; r1 app 60.8/s, refreshes with a frame 0.991, gaps {'1': 571}; display 61.0/s missed 2 delay p50 2.02 p95 2.73 ws 19.0% app 6.3% (9.4 s, Built-In Display, 16.31 ms), then idle package 0.000/s interrupt 0.333/s; r2 app 60.8/s, refreshes with a frame 0.989, gaps {'1': 571}; display 61.0/s missed 3 delay p50 2.16 p95 3.52 ws 21.7% app 7.5% (9.4 s, Built-In Display, 16.49 ms), then idle package 0.000/s interrupt 0.333/s

@@ -358,16 +358,19 @@ pub struct Fields {
 
 /// Whether a field that has the keyboard takes `key` of `mods` as its own,
 /// before the app's bindings of no context: a move of the arrows, Home or
-/// End, of Option, Command or Shift; a deletion, of Option or Command too;
-/// the Control keys of macOS's text fields; Command's edits, all, copy,
-/// cut, paste, undo and redo; Return; a character that types. Control's
-/// arrows and the keys of Command that a field does not edit with, as
-/// Command-T, stay the app's.
+/// End, of Option or Command, and Shift; a deletion, of Option or Command
+/// too; the Control keys of macOS's text fields; plain Command's edits,
+/// all, copy, cut, paste and undo, and redo of Shift; Return; a character
+/// that types. Control's arrows, the arrows of Option and Command
+/// together, and the keys of Command that a field does not edit with, as
+/// Command-T, Shift-Command-C or Option-Command-C, stay the app's.
 pub fn takes(key: Key, mods: Mods) -> bool {
     let (command, control) = (mods.super_key, mods.control);
     let option = mods.left_alt || mods.right_alt;
     match key {
-        Key::Left | Key::Right | Key::Up | Key::Down | Key::Home | Key::End => !control,
+        Key::Left | Key::Right | Key::Up | Key::Down | Key::Home | Key::End => {
+            !control && !(option && command)
+        }
         Key::Backspace | Key::Delete => !control,
         Key::Char(c) if control && !command && !option => {
             matches!(
@@ -376,7 +379,13 @@ pub fn takes(key: Key, mods: Mods) -> bool {
             )
         }
         Key::Char(c) if command && !control => {
-            matches!(c.to_ascii_lowercase(), 'a' | 'c' | 'x' | 'v' | 'z')
+            let shift = mods.shift || c.is_ascii_uppercase();
+            !option
+                && match c.to_ascii_lowercase() {
+                    'z' => true,
+                    'a' | 'c' | 'x' | 'v' => !shift,
+                    _ => false,
+                }
         }
         Key::Enter | Key::Keypad(Keypad::Enter) => !command && !control,
         Key::Char(_) | Key::Keypad(_) => !command && !control,
@@ -1463,9 +1472,17 @@ mod tests {
         ] {
             assert!(takes(key, mods), "{key:?} {mods:?}");
         }
-        // Control's arrows, Command's other keys, Tab and Escape, the app's.
+        // Control's arrows, Option and Command's arrows, Command's other
+        // keys and its edits of Shift or Option, Tab and Escape, the app's.
+        let option_command = mods(false, false, true, true);
         for (key, mods) in [
             (Key::Left, control),
+            (Key::Left, option_command),
+            (Key::Down, option_command),
+            (Key::Char('c'), shift_command),
+            (Key::Char('C'), command),
+            (Key::Char('c'), option_command),
+            (Key::Char('v'), option_command),
             (Key::Char('t'), command),
             (Key::Char('w'), command),
             (Key::Char('k'), command),

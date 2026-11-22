@@ -26,6 +26,7 @@ fn screen() -> Viewport {
         oldest: 0,
         epoch: 1,
         alternate: false,
+        folds: Vec::new(),
     }
 }
 

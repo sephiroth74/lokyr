@@ -182,6 +182,8 @@ pub fn section(
     SettingsSection {
         name: name.to_owned(),
         plugin: plugin.map(str::to_owned),
+        replaced_by: None,
+        enabled: None,
         description,
         keys,
     }

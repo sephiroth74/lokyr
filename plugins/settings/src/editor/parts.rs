@@ -42,6 +42,7 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
             "tabs.hover.bg",
             "tabs.seamless.line",
             "tabs.seamless.veil",
+            "status-bar.bg",
         ],
     ),
     (
@@ -53,6 +54,9 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
             "gutter.running",
             "gutter.succeeded",
             "gutter.failed",
+            "blocks.divider",
+            "blocks.selected.bg",
+            "blocks.failed",
             "search.match",
             "search.match.current",
             "cursor.guide",

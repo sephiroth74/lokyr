@@ -18,6 +18,8 @@ command-palette = { path = "../plugins/command-palette" }
 quick-terminal = { path = "../plugins/quick-terminal" }
 progress = { path = "../plugins/progress" }
 command-header = { path = "../plugins/command-header" }
+# The commands' blocks, which replace the plain header while they run.
+blocks = { path = "../plugins/blocks" }
 copy-mode = { path = "../plugins/copy-mode" }
 quick-tips = { path = "../plugins/quick-tips" }
 settings = { path = "../plugins/settings" }

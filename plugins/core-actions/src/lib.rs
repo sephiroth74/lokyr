@@ -11,15 +11,25 @@
 use lokyr_plugin_sdk::command::{
     Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
 };
-use lokyr_plugin_sdk::host::{Line, PaneId, Scroll, ShellCommand};
+use lokyr_plugin_sdk::host::{PaneId, Scroll, ShellCommand};
 use lokyr_plugin_sdk::message::Event;
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
-use unicode_width::UnicodeWidthStr;
+
+mod output;
+
+use output::{Span, output_span, output_text, selected};
 
 lokyr_plugin_sdk::export_plugin!(CoreActions);
 
 /// Copies the focused pane's selection to the clipboard.
 const COPY: &str = "pane.copy";
+
+/// The context of a copy: a selection, or a block that Blocks selected.
+const COPY_WHEN: &str = "selection || blocks.selected";
+
+/// Blocks' copy of a block, its line and its output, which a copy of no
+/// selection runs of the block that Blocks selected.
+const COPY_BLOCK: &str = "blocks.copy-block";
 
 /// The context of a window whose pane has the keyboard, which the panes'
 /// actions take.
@@ -73,14 +83,6 @@ const MOST_OUTPUT_ROWS: usize = lokyr_plugin_sdk::host::MOST_LINES;
 /// The rows back from the screen whose commands a look for the last
 /// command's output reads first, before every command's.
 const RECENT_ROWS: i64 = 10_000;
-
-/// The marks that a shell prints of output that ends without a line's end,
-/// before its prompt: zsh's `%` of a user, `#` of root, and fish's.
-const MISSING_NEWLINE: [char; 4] = ['%', '#', '⏎', '¶'];
-
-/// The first and the last cells of an output, each by its column and its
-/// row's number.
-type Span = ((u16, i64), (u16, i64));
 
 /// The plugin's catalogs, of its commands' titles.
 static CATALOGS: [(&str, &str); 2] = [
@@ -153,11 +155,12 @@ impl Plugin for CoreActions {
                 category,
                 capabilities: capabilities.to_vec(),
                 params: Vec::new(),
-                // Copying takes a selection, and the rest but the text's
-                // size a pane that has the keyboard, which a window that
-                // shows the settings tab has not.
+                // Copying takes a selection, or a block that Blocks
+                // selected, and the rest but the text's size a pane that has
+                // the keyboard, which a window that shows the settings tab
+                // has not.
                 when: match name {
-                    COPY => Some("selection".to_owned()),
+                    COPY => Some(COPY_WHEN.to_owned()),
                     FONT_BIGGER | FONT_SMALLER | FONT_RESET => None,
                     _ => Some(PANE.to_owned()),
                 },
@@ -323,13 +326,20 @@ impl Plugin for CoreActions {
             };
         }
         match name {
+            // The text selected, or else the block that Blocks selected, its
+            // line and its output, as Blocks copies it; nothing of no block
+            // selected nor of no Blocks, the clipboard kept.
             COPY => {
                 if let Some(text) = cx.selection_text(pane)?
                     && !text.is_empty()
                 {
-                    cx.set_clipboard_text(&text)?;
+                    return cx.set_clipboard_text(&text);
                 }
-                Ok(())
+                let selected = Args::from([("selected".to_owned(), Value::Boolean(true))]);
+                match cx.run_command(COPY_BLOCK, selected) {
+                    Err(error) if error.code == Code::NotFound => Ok(()),
+                    done => done,
+                }
             }
             PASTE => {
                 if let Some(text) = cx.clipboard_text()?
@@ -395,100 +405,6 @@ fn holds(command: &ShellCommand, row: i64) -> bool {
         return false;
     };
     row >= first && (row < end || (row == end && end_column > 0))
-}
-
-/// The first and the last cells of `command`'s output, of a grid of
-/// `columns`: from its output's mark to the cell before its end's; none of
-/// a command that has not ended, nor of no output.
-fn output_span(command: &ShellCommand, columns: u16) -> Option<Span> {
-    let first = command.output?;
-    let (end_column, end_row) = command.end?;
-    let last = if end_column == 0 {
-        (columns.saturating_sub(1), end_row - 1)
-    } else {
-        (end_column - 1, end_row)
-    };
-    (last.1 > first.1 || (last.1 == first.1 && last.0 >= first.0)).then_some((first, last))
-}
-
-/// The text of the output of `span` that `lines`, its rows' texts, hold:
-/// from its first cell to its last, a row that wraps joined to the next,
-/// without the blank rows that start and end it, nor the mark of a missing
-/// newline that a shell printed at its end.
-fn output_text(lines: &[Line], ((first_column, first), (last_column, last)): Span) -> String {
-    let mut text = String::new();
-    for line in lines
-        .iter()
-        .filter(|line| line.row >= first && line.row <= last)
-    {
-        let shown = if line.row == last {
-            unmarked(line)
-        } else {
-            &line.text
-        };
-        let start = if line.row == first {
-            within(shown, usize::from(first_column))
-        } else {
-            0
-        };
-        let end = if line.row == last {
-            within(shown, usize::from(last_column) + 1)
-        } else {
-            shown.len()
-        };
-        text.push_str(&shown[start.min(end)..end]);
-        if !line.wrapped || line.row == last {
-            text.push('\n');
-        }
-    }
-    let trimmed = text.trim_end().trim_start_matches(['\n', '\r']);
-    trimmed.to_owned()
-}
-
-/// The text of `line`, the last row of a command's output, without the
-/// mark of a missing newline: a row that wraps into the end's row ends in
-/// the shell's mark and the spaces that took the prompt to a row of its
-/// own, as zsh's `PROMPT_SP` prints them.
-fn unmarked(line: &Line) -> &str {
-    if !line.wrapped {
-        return &line.text;
-    }
-    let text = line.text.trim_end_matches(' ');
-    text.strip_suffix(MISSING_NEWLINE).unwrap_or(text)
-}
-
-/// The end, in bytes, of the longest start of `text` that takes `cells`
-/// cells at most, as wide characters take two and the characters of a
-/// cluster share theirs.
-fn within(text: &str, cells: usize) -> usize {
-    let mut end = 0;
-    for (at, character) in text.char_indices() {
-        let next = at + character.len_utf8();
-        if UnicodeWidthStr::width(&text[..next]) > cells {
-            break;
-        }
-        end = next;
-    }
-    end
-}
-
-/// The first and last cells of a selection of the output of `span`, of a
-/// grid of `columns`, as `lines`, its last row's text, tells its end: its
-/// last row's cells but the mark of a missing newline, or, of none left,
-/// the row before's; none of an output left empty.
-fn selected(lines: &[Line], (first, last): Span, columns: u16) -> Option<Span> {
-    let Some(line) = lines.iter().find(|line| line.row == last.1) else {
-        return Some((first, last));
-    };
-    if !line.wrapped {
-        return Some((first, last));
-    }
-    let cells = UnicodeWidthStr::width(unmarked(line));
-    let end = match u16::try_from(cells) {
-        Ok(cells) if cells > 0 => (cells.min(columns) - 1, last.1),
-        _ => (columns.saturating_sub(1), last.1 - 1),
-    };
-    (end.1 > first.1 || (end.1 == first.1 && end.0 >= first.0)).then_some((first, end))
 }
 
 #[cfg(test)]

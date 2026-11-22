@@ -1,0 +1,90 @@
+Process:         lokyr [67955]
+Path:            /private/tmp/*/Lokyr.app/Contents/MacOS/lokyr
+Load Address:    0x104404000
+Identifier:      io.github.sephiroth74.lokyr
+Version:         1.3.0 (202611181532)
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  launchd [1]
+Target Type:     live task
+
+Date/Time:       2026-11-21 17:51:10.495 +0100
+Launch Time:     2026-11-21 17:50:40.299 +0100
+OS Version:      macOS 27.2.1 (26B131)
+Report Version:  7
+Analysis Tool:   /usr/bin/vmmap
+
+Physical footprint:         56.5M
+Physical footprint (peak):  218.3M
+Idle exit:                  untracked
+----
+
+ReadOnly portion of Libraries: Total=3.0G resident=720.9M(24%) swapped_out_or_unallocated=2.3G(76%)
+Writable regions: Total=358.1M written=24.1M(7%) resident=51.1M(14%) swapped_out=0K(0%) unallocated=307.0M(86%)
+
+                                VIRTUAL RESIDENT    DIRTY  SWAPPED VOLATILE   NONVOL    EMPTY   REGION 
+REGION TYPE                        SIZE     SIZE     SIZE     SIZE     SIZE     SIZE     SIZE    COUNT (non-coalesced) 
+===========                     ======= ========    =====  ======= ========   ======    =====  ======= 
+Accelerate Framework               128K     128K     128K       0K       0K     128K       0K        1 
+Activity Tracing                   256K      32K      32K       0K       0K      32K       0K        1 
+ColorSync                           16K      16K      16K       0K       0K       0K       0K        1 
+CoreAnimation                      672K     592K     592K       0K       0K     512K       0K       42 
+CoreGraphics                        32K      32K      32K       0K       0K       0K       0K        2 
+CoreUI Image Data                  576K     576K     576K       0K       0K       0K       0K        4 
+Deferred Reclaim                  64.0M      16K      16K       0K       0K       0K       0K        1 
+Dispatch Continuations           144.0M     448K     448K       0K       0K       0K       0K        2 
+Foundation                          16K      16K      16K       0K       0K       0K       0K        1 
+Guard                            385.0G       0K       0K       0K       0K       0K       0K        1 
+IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 
+IOAccelerator (graphics)          11.4M    6496K    6496K       0K       0K    6496K       0K       63 
+IOKit                              112K      64K      64K       0K       0K      16K       0K        7 
+IOSurface                         19.9M    19.9M    19.9M       0K       0K    19.9M       0K        3 
+Image IO                            32K       0K       0K       0K       0K       0K       0K        2 
+Malloc                            1024K      96K      96K       0K       0K       0K       0K        1         see MALLOC ZONE table below
+Malloc Guard Page                 3296K       0K       0K       0K       0K       0K       0K        4         see MALLOC ZONE table below
+Malloc Metadata                   1232K    1232K    1232K       0K       0K       0K       0K        7         see MALLOC ZONE table below
+Malloc Metadata metadata          1296K     560K     560K       0K       0K       0K       0K        2         see MALLOC ZONE table below
+Malloc Small                      43.8M    16.6M    16.6M       0K       0K       0K       0K       81         see MALLOC ZONE table below
+Malloc Small (empty)              20.2M     752K     752K       0K       0K       0K       0K       12         see MALLOC ZONE table below
+Malloc Tiny                       4096K     208K     208K       0K       0K       0K       0K        1         see MALLOC ZONE table below
+OS Alloc Once                       32K      16K      16K       0K       0K       0K       0K        1 
+Stack                             34.5M     576K     544K       0K       0K       0K       0K       17 
+Stack (reserved)                   544K       0K       0K       0K       0K       0K       0K        1         reserved VM address space (unallocated)
+Stack Guard                       56.3M       0K       0K       0K       0K       0K       0K       18 
+Untagged                           272K      48K      48K       0K       0K       0K       0K       17 
+Untagged (reserved)               1664K       0K       0K       0K       0K       0K       0K       13         reserved VM address space (unallocated)
+__AUTH                            5660K    2320K     527K       0K       0K       0K       0K      537 
+__AUTH_CONST                      99.9M    33.8M       0K       0K       0K       0K       0K     1056 
+__CTF                               824      824       0K       0K       0K       0K       0K        1 
+__DATA                            38.5M    8935K    1643K       0K       0K       0K       0K     1018 
+__DATA_CONST                      38.4M    17.5M     131K       0K       0K       0K       0K     1064 
+__DATA_DIRTY                      16.5M    5427K    1876K       0K       0K       0K       0K     1002 
+__FONT_DATA                        2352     2352       0K       0K       0K       0K       0K        1 
+__LINKEDIT                         1.6G    37.9M       0K       0K       0K       0K       0K        5 
+__OBJC_RO                        118.5M    64.2M       0K       0K       0K       0K       0K        1 
+__OBJC_RW                         2740K    2244K      36K       0K       0K       0K       0K        1 
+__TEXT                             1.4G   683.0M       0K       0K       0K       0K       0K     1151 
+__TPRO_CONST                       132K     132K     112K       0K       0K       0K       0K        4 
+mapped file                      549.1M    12.6M       0K       0K       0K       0K       0K       30 
+owned unmapped                    4096K       0K       0K       0K       0K       0K       0K        8 
+owned unmapped (graphics)         4960K    2912K    2912K       0K       0K       0K       0K       22 
+page table in kernel               849K     849K     849K       0K       0K       0K       0K        1 
+shared memory                     1504K     352K     352K       0K       0K       0K       0K       22 
+unused but dirty shlib __DATA      236K     236K     236K       0K       0K       0K       0K      255 
+===========                     ======= ========    =====  ======= ========   ======    =====  ======= 
+TOTAL                            389.2G   920.0M    56.6M       0K       0K    26.9M       0K     6487 
+TOTAL, minus reserved VM space   389.2G   920.0M    56.6M       0K       0K    26.9M       0K     6487 
+
+                                          VIRTUAL   RESIDENT      DIRTY    SWAPPED ALLOCATION      BYTES DIRTY+SWAP          REGION
+MALLOC ZONE                                  SIZE       SIZE       SIZE       SIZE      COUNT  ALLOCATED  FRAG SIZE  % FRAG   COUNT
+===========                               =======  =========  =========  =========  =========  =========  =========  ======  ======
+DefaultMallocZone_0x105bd4000               68.2M      17.1M      17.1M         0K      59147      11.5M      5696K     33%      55
+AttributeGraph_0x7710c59dc0                 1024K        96K        96K         0K       2188        79K        17K     18%       1
+QuartzCore_0x10a358000                       640K       528K       528K         0K       1421       115K       413K     79%      22
+AttributeGraph graph data_0x1231e8000        160K       160K       160K         0K         77        16K       144K     90%       8
+objc-class_rw_t_0x10a260000                  144K       144K       144K         0K       3080        72K        72K     50%       8
+LSBindingEvaluator_0x10a31c000               144K       144K       144K         0K          0         0K       144K    100%       3
+DefaultPurgeableMallocZone_0x1244a4000         0K         0K         0K         0K          0         0K         0K      0%       0
+===========                               =======  =========  =========  =========  =========  =========  =========  ======  ======
+TOTAL                                       70.3M      18.2M      18.2M         0K      65913      11.8M      6485K     35%      97
+

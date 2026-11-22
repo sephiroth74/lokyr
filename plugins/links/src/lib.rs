@@ -836,97 +836,105 @@ fn screen_hints(
     patterns: &[hints::Pattern],
 ) -> Result<Vec<(Span, String, Opens)>, Error> {
     let view = cx.viewport(pane)?;
-    let (top, bottom) = (view.top, view.top + i64::from(view.rows));
     // A read as far as the view's rows takes every row of the line that
     // the view shows from the read's row on, but of a view taller than a
     // read reaches.
     let reach = usize::from(view.rows).clamp(1, MOST_REACH);
     let mut found: Vec<(Span, String, Opens)> = Vec::new();
     let mut directory: Option<Option<String>> = None;
-    let mut row = top;
-    // Where the last read's word that its reach cut starts, as a row and a
-    // column, which the next read starts from and takes no hint before.
-    let mut resume: Option<(i64, u16)> = None;
-    while row < bottom {
-        let Some(line) = cx.line_text(pane, row, reach)? else {
-            row += 1;
-            continue;
-        };
-        let (Some(&(_, first_row)), Some(&(_, last_row))) = (line.cells.first(), line.cells.last())
-        else {
-            row += 1;
-            continue;
-        };
-        // A read that its reach stopped may have cut the line, and a hint
-        // of its first or its last word, which the scan may end before the
-        // cut, of a full stop it leaves out; the rows before the read's own
-        // were read already, or are above the view.
-        let cut_before = row - first_row >= reach as i64;
-        let cut_after = last_row - row >= reach as i64;
-        let chars: Vec<char> = line.text.chars().collect();
-        let first_word_end = chars
-            .iter()
-            .position(|c| c.is_whitespace())
-            .unwrap_or(chars.len());
-        let last_word_start = chars
-            .iter()
-            .rposition(|c| c.is_whitespace())
-            .map_or(0, |space| space + 1);
-        let from = row;
-        let since = resume.take();
-        // The next read from the cut word's row, so that a hint across the
-        // two reads is whole in the next; a word longer than a read is lost.
-        row = last_row.max(row) + 1;
-        if cut_after
-            && let Some(&(column, word_row)) = line.cells.get(last_word_start)
-            && word_row > from
-        {
-            row = word_row;
-            resume = Some((word_row, column));
-        }
-        for hint in hints::in_line(&line.text, patterns) {
-            if (cut_before && hint.first < first_word_end)
-                || (cut_after && hint.end > last_word_start)
-            {
+    // Each run of the rows that the view shows apart, the folds between
+    // them, whose rows show no hint.
+    for (top, bottom) in view.shown_runs() {
+        let mut row = top;
+        // Where the last read's word that its reach cut starts, as a row
+        // and a column, which the next read starts from and takes no hint
+        // before.
+        let mut resume: Option<(i64, u16)> = None;
+        while row < bottom {
+            let Some(line) = cx.line_text(pane, row, reach)? else {
+                row += 1;
                 continue;
-            }
-            let span = cells_of(&line.cells, hint.first, hint.end);
-            if !(from..bottom).contains(&span.0.1)
-                || since.is_some_and(|at| (span.0.1, span.0.0) < at)
-            {
-                continue;
-            }
-            // A path that is there, from the working directory of a
-            // relative one.
-            let opens = match &hint.kind {
-                hints::Kind::Link(Found::Url(url)) | hints::Kind::Pattern(Some(url)) => {
-                    Opens::Url(url.clone())
-                }
-                hints::Kind::Link(Found::Path(path, place)) => {
-                    let target = if path.starts_with('/') || path == "~" || path.starts_with("~/") {
-                        normal(path)
-                    } else {
-                        let directory = match &directory {
-                            Some(known) => known.clone(),
-                            None => {
-                                let known = cx.working_directory(pane)?;
-                                directory = Some(known.clone());
-                                known
-                            }
-                        };
-                        let Some(directory) = directory else {
-                            continue;
-                        };
-                        normal(&format!("{directory}/{path}"))
-                    };
-                    if !cx.opens(&target)? {
-                        continue;
-                    }
-                    Opens::Path(target, place.clone())
-                }
-                hints::Kind::Hash | hints::Kind::Ip | hints::Kind::Pattern(None) => Opens::Nothing,
             };
-            found.push((span, hint.text, opens));
+            let (Some(&(_, first_row)), Some(&(_, last_row))) =
+                (line.cells.first(), line.cells.last())
+            else {
+                row += 1;
+                continue;
+            };
+            // A read that its reach stopped may have cut the line, and a hint
+            // of its first or its last word, which the scan may end before the
+            // cut, of a full stop it leaves out; the rows before the read's own
+            // were read already, or are above the view.
+            let cut_before = row - first_row >= reach as i64;
+            let cut_after = last_row - row >= reach as i64;
+            let chars: Vec<char> = line.text.chars().collect();
+            // Of no space, as a minified document wrapped over the read, the
+            // word is the whole read: only the hints that reach its edges,
+            // which the cut may have cut.
+            let first_word_end = chars.iter().position(|c| c.is_whitespace()).unwrap_or(1);
+            let last_word_start = chars
+                .iter()
+                .rposition(|c| c.is_whitespace())
+                .map_or(chars.len().saturating_sub(1), |space| space + 1);
+            let from = row;
+            let since = resume.take();
+            // The next read from the cut word's row, so that a hint across the
+            // two reads is whole in the next; a word longer than a read is lost.
+            row = last_row.max(row) + 1;
+            if cut_after
+                && let Some(&(column, word_row)) = line.cells.get(last_word_start)
+                && word_row > from
+            {
+                row = word_row;
+                resume = Some((word_row, column));
+            }
+            for hint in hints::in_line(&line.text, patterns) {
+                if (cut_before && hint.first < first_word_end)
+                    || (cut_after && hint.end > last_word_start)
+                {
+                    continue;
+                }
+                let span = cells_of(&line.cells, hint.first, hint.end);
+                if !(from..bottom).contains(&span.0.1)
+                    || since.is_some_and(|at| (span.0.1, span.0.0) < at)
+                {
+                    continue;
+                }
+                // A path that is there, from the working directory of a
+                // relative one.
+                let opens = match &hint.kind {
+                    hints::Kind::Link(Found::Url(url)) | hints::Kind::Pattern(Some(url)) => {
+                        Opens::Url(url.clone())
+                    }
+                    hints::Kind::Link(Found::Path(path, place)) => {
+                        let target =
+                            if path.starts_with('/') || path == "~" || path.starts_with("~/") {
+                                normal(path)
+                            } else {
+                                let directory = match &directory {
+                                    Some(known) => known.clone(),
+                                    None => {
+                                        let known = cx.working_directory(pane)?;
+                                        directory = Some(known.clone());
+                                        known
+                                    }
+                                };
+                                let Some(directory) = directory else {
+                                    continue;
+                                };
+                                normal(&format!("{directory}/{path}"))
+                            };
+                        if !cx.opens(&target)? {
+                            continue;
+                        }
+                        Opens::Path(target, place.clone())
+                    }
+                    hints::Kind::Hash | hints::Kind::Ip | hints::Kind::Pattern(None) => {
+                        Opens::Nothing
+                    }
+                };
+                found.push((span, hint.text, opens));
+            }
         }
     }
     // The nearest the cursor first: of the fewest rows from it, then of the

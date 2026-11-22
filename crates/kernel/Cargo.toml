@@ -26,6 +26,9 @@ serde_json = { workspace = true, features = ["raw_value"] }
 toml_edit = { workspace = true, features = ["display"] }
 unic-langid.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 lokyr-plugin-host-luau = { workspace = true, features = ["testing"] }
 lokyr-plugin-sdk = { workspace = true, features = ["fake"] }

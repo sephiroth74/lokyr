@@ -220,6 +220,9 @@ pub enum Request {
     /// The day of the system's clock, in days since 1970-01-01, in UTC, as
     /// a plugin that shows something once in a while counts its days.
     Day,
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, as a plugin that shows a time of day reads them.
+    Now,
     /// Whether a notice of the app's shows, as of a config that does not
     /// read, which a plugin's card of its own yields to.
     NoticeShows,
@@ -227,6 +230,27 @@ pub enum Request {
     /// a file of its own, which it does not without a state's folder: a
     /// plugin that shows something once in a while shows nothing then.
     KeepsState,
+    /// Writes `bytes` as the plugin's temporary file `name`, in a folder of
+    /// the plugin's own that the host empties at the quit and at the start,
+    /// a file of the same name in place of the old one, marked as come from
+    /// elsewhere, so that the system asks before it opens as a program: the
+    /// host answers with its path, as an editor opens it. Within
+    /// [`TemporaryFiles::check`](crate::host::TemporaryFiles::check)'s
+    /// bounds; no capability, as the plugin's folder is its own.
+    TempFile {
+        /// The file's name.
+        name: String,
+        /// Its bytes.
+        bytes: Bytes,
+    },
+    /// The branch of the git repository that holds the folder of this
+    /// absolute path, as its `HEAD` tells, which the host reads up from the
+    /// folder, a worktree's too, without running git: a detached head's
+    /// short hash; none out of a repository.
+    GitBranch {
+        /// The folder's absolute path.
+        folder: String,
+    },
     /// The AI agents that run in the panes, of every window, in the
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
@@ -516,6 +540,26 @@ pub enum Request {
         /// The command's id.
         command: u64,
     },
+    /// A pane's command, by its id, as a read of the commands gives it, if
+    /// the pane keeps it.
+    ShellCommand {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id.
+        command: u64,
+    },
+    /// The command of a pane whose block holds a row: from its first row,
+    /// its prompt's or, of a prompt that left the scrollback, the pane's
+    /// oldest, to its end's row, which is its own where the end is past its
+    /// first column and the next prompt's otherwise, or, of a command that
+    /// has not ended, to the next command's first row; none of a row above
+    /// every command's, or past an end before the next command.
+    CommandAt {
+        /// The pane.
+        pane: PaneId,
+        /// The row's number.
+        row: i64,
+    },
     /// A pane's view, as its last frame showed it, or as its terminal is
     /// before its first frame.
     Viewport(PaneId),
@@ -535,6 +579,19 @@ pub enum Request {
     /// The cells of the rows that a pane's view shows, from its top, as an
     /// image draws them.
     ScreenCells(PaneId),
+    /// The cells of `count` rows of a pane's active screen from the row
+    /// numbered `first`, whole, as an image draws them, as many as the
+    /// pane holds from it, [`MOST_ROWS`](crate::image::MOST_ROWS) at most:
+    /// a block of a command, say; none of a first row that the pane does
+    /// not hold.
+    RowCells {
+        /// The pane.
+        pane: PaneId,
+        /// The first row's number.
+        first: i64,
+        /// How many rows.
+        count: usize,
+    },
     /// Renders an image of cells, of their styles, in the theme's colors
     /// and the terminal's font, as a window shows them, in a frame as a
     /// window's, offscreen: the host answers with the PNG. It reads nothing
@@ -624,6 +681,25 @@ pub enum Request {
         pane: PaneId,
         /// The text.
         text: String,
+    },
+    /// The command line that a pane's shell edits at its prompt, as its
+    /// cells show it, if it edits one: after its input's mark and before
+    /// its output's (OSC 133), on the primary screen, of no right prompt,
+    /// its lines apart, without the spaces that end it; empty of nothing
+    /// typed. None while a command runs, a program's own screen shows, or
+    /// the shell marks no prompt.
+    EditedLine(PaneId),
+    /// Runs a command line in a pane's shell, at its prompt: while the
+    /// shell edits an empty command line there, as a read of the edited
+    /// line tells it, the host pastes `line`, bracketed as the program
+    /// asks, and Return, of no question, as a paste of several lines may
+    /// ask, as the line is one to run; refused, `unavailable`, otherwise,
+    /// and of a line of nothing but spaces.
+    RunLine {
+        /// The pane.
+        pane: PaneId,
+        /// The command line.
+        line: String,
     },
     /// Scrolls a pane's view.
     Scroll {
@@ -825,6 +901,10 @@ pub enum Request {
     },
     /// Takes a group apart, its tabs staying where they are.
     Ungroup(GroupId),
+    /// Puts the plugin's view of the status bar on `side`, in place of its
+    /// manifest's side, or of the one asked before, until the plugin stops;
+    /// no capability, as it moves the plugin's own view within the bar.
+    SetStatusBarSide(crate::host::StatusBarSide),
     /// Puts the plugin's tab bar at `place` in the windows that show it, a
     /// column's width from [`COLUMN_WIDTHS`](crate::host::COLUMN_WIDTHS)'s
     /// narrowest to its widest, in
@@ -840,6 +920,25 @@ pub enum Request {
     /// Gives the keyboard to the pane of a tab that the pointer comes over,
     /// while the plugin runs, as any plugin asks it.
     SetFocusFollowsMouse(bool),
+    /// Draws the commands' blocks of every pane so, while the plugin runs:
+    /// each look that any plugin asks for.
+    SetBlockLooks(crate::host::BlockLooks),
+    /// Selects the block of a pane's command, by its id, as the keyboard
+    /// selects one, or none: the host tints its rows, of the theme's
+    /// `blocks.selected.bg`, and the keys' context holds `<namespace>.selected`
+    /// while the pane has the keyboard, until the plugin selects another or
+    /// none, or a key that the pane's program takes, a text typed into the
+    /// pane or a click in it ends it; of a command that the pane keeps.
+    SelectBlock {
+        /// The pane.
+        pane: PaneId,
+        /// The command's id, or none.
+        command: Option<u64>,
+    },
+    /// The command whose block the plugin selected in a pane, as a read of
+    /// the commands gives it, while the selection lasts and the pane keeps
+    /// the command.
+    SelectedBlock(PaneId),
     /// Puts the plugin's tab bar of `window` at `place`, over the place of
     /// its bar in every window, as a window of a single tab shows its title
     /// in its titlebar, [`BarPlace::Title`]; `None` gives it that place
@@ -1148,7 +1247,10 @@ impl Request {
                     // them.
                     needed.push(Capability::HistoryRead);
                 }
-                if names.iter().any(|name| name == POINTER) {
+                if names
+                    .iter()
+                    .any(|name| name == POINTER || name == CLICK || name == PROMPT_ROWS_MENU)
+                {
                     needed.push(Capability::PointerRead);
                 }
                 // The plugins, as their read of `packages` tells them.
@@ -1163,6 +1265,24 @@ impl Request {
             }
             _ => self.capability().into_iter().collect(),
         }
+    }
+
+    /// The first of the capabilities that the request needs that `granted`
+    /// lacks, as the host refuses the request for it; none of a request
+    /// that `granted` allows. A subscription to the commands' starts and
+    /// ends takes `history-read` or `process-read`: a plugin that reads the
+    /// processes hears as a command starts and ends, as a folder's branch
+    /// may change then, of no exit status.
+    pub fn lacking(&self, granted: &[Capability]) -> Option<Capability> {
+        let commands = matches!(
+            self,
+            Self::Subscribe(names)
+                if names.iter().any(|name| name == COMMAND_STARTED || name == COMMAND_ENDED)
+        ) && crate::command::grants(granted, &Capability::ProcessRead);
+        self.capabilities()
+            .into_iter()
+            .filter(|needed| !(commands && *needed == Capability::HistoryRead))
+            .find(|needed| !crate::command::grants(granted, needed))
     }
 
     /// The one capability that a request other than a subscription needs,
@@ -1195,10 +1315,18 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::Styles { .. }
             | Self::SelectionCells(_)
-            | Self::ScreenCells(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) | Self::Agents => Some(Capability::ProcessRead),
+            | Self::ScreenCells(_)
+            | Self::RowCells { .. }
+            | Self::EditedLine(_) => Some(Capability::TerminalRead),
+            Self::WorkingDirectory(_) | Self::Agents | Self::GitBranch { .. } => {
+                Some(Capability::ProcessRead)
+            }
             // The commands that the shell ran, as their marks tell them.
-            Self::ShellCommands { .. } | Self::CommandLine { .. } => Some(Capability::HistoryRead),
+            Self::ShellCommands { .. }
+            | Self::CommandLine { .. }
+            | Self::ShellCommand { .. }
+            | Self::CommandAt { .. }
+            | Self::SelectedBlock(_) => Some(Capability::HistoryRead),
             Self::OpenQuickWindow { .. } | Self::ShowQuickWindow { .. } => {
                 Some(Capability::GlobalHotkey)
             }
@@ -1214,7 +1342,9 @@ impl Request {
                 Some(Capability::GlobalHotkey)
             }
             Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
-            Self::Paste { .. } | Self::SendText { .. } => Some(Capability::PtyWrite),
+            Self::Paste { .. } | Self::SendText { .. } | Self::RunLine { .. } => {
+                Some(Capability::PtyWrite)
+            }
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
             | Self::CloseWindow(_)
@@ -1257,7 +1387,9 @@ impl Request {
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
-            | Self::SetFocusFollowsMouse(_) => Some(Capability::PaneView),
+            | Self::SetFocusFollowsMouse(_)
+            | Self::SetBlockLooks(_)
+            | Self::SelectBlock { .. } => Some(Capability::PaneView),
             // What a plugin draws over a pane.
             Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -1306,8 +1438,11 @@ impl Request {
             | Self::Fonts
             | Self::FontStyles(_)
             | Self::Day
+            | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
+            | Self::TempFile { .. }
+            | Self::SetStatusBarSide(_)
             | Self::RenderImage(_)
             | Self::DropImage(_)
             | Self::ShowColorPanel { .. }
@@ -1340,6 +1475,10 @@ impl Request {
             | Self::CurrentMatch(_)
             | Self::ShellCommands { .. }
             | Self::CommandLine { .. }
+            | Self::ShellCommand { .. }
+            | Self::CommandAt { .. }
+            | Self::EditedLine(_)
+            | Self::SelectedBlock(_)
             | Self::Viewport(_)
             | Self::CursorCell(_)
             | Self::Styles { .. }
@@ -1362,15 +1501,19 @@ impl Request {
             | Self::ThemeTokens(_)
             | Self::Fonts
             | Self::Day
+            | Self::Now
             | Self::NoticeShows
             | Self::KeepsState
+            | Self::TempFile { .. }
+            | Self::GitBranch { .. }
             | Self::Agents
             | Self::Plugins
             | Self::Settings
             | Self::FontStyles(_)
             | Self::RenderImage(_)
             | Self::SelectionCells(_)
-            | Self::ScreenCells(_) => Effect::Read,
+            | Self::ScreenCells(_)
+            | Self::RowCells { .. } => Effect::Read,
             Self::SetClipboardText(_)
             | Self::SetClipboardImage(_)
             | Self::KeepAwake(_)
@@ -1384,6 +1527,7 @@ impl Request {
             | Self::Clear(_)
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -1405,10 +1549,13 @@ impl Request {
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
             | Self::ReopenTab(_)
+            | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
             | Self::SetWindowTabBarPlace { .. }
             | Self::SetInactiveDim(_)
             | Self::SetFocusFollowsMouse(_)
+            | Self::SetBlockLooks(_)
+            | Self::SelectBlock { .. }
             | Self::ActivateTab(_)
             | Self::FocusPane(_)
             | Self::MoveTab { .. }
@@ -1509,6 +1656,8 @@ pub enum Response {
     FontStyles(Vec<String>),
     /// A day of the system's clock, in days since 1970-01-01.
     Day(u64),
+    /// The time of the system's clock and the local time zone's offset.
+    Now(crate::host::LocalTime),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
     /// The plugins, built in and installed.
@@ -1527,6 +1676,9 @@ pub enum Response {
     TabBarPlace(BarPlace),
     /// A pane's commands, as a read of them gives them.
     ShellCommands(Vec<ShellCommand>),
+    /// A pane's command, or none, boxed, as it is larger than the other
+    /// answers.
+    ShellCommand(Option<Box<ShellCommand>>),
     /// A pane's view.
     Viewport(Viewport),
     /// A cell, by its column and its row's number, or none.
@@ -1568,6 +1720,12 @@ pub enum Response {
 /// The name of [`Event::Pointer`], as plugins subscribe to it.
 pub const POINTER: &str = "pointer";
 
+/// The name of [`Event::Click`], as plugins subscribe to it.
+pub const CLICK: &str = "click";
+
+/// The name of [`Event::PromptRowsMenu`], as plugins subscribe to it.
+pub const PROMPT_ROWS_MENU: &str = "prompt-rows-menu";
+
 /// The name of [`Event::KeysChanged`], as a plugin subscribes to it.
 pub const KEYS_CHANGED: &str = "keys-changed";
 
@@ -1605,6 +1763,8 @@ pub fn is_event_name(name: &str) -> bool {
     WorkspaceEvent::NAMES.contains(&name)
         || [
             POINTER,
+            CLICK,
+            PROMPT_ROWS_MENU,
             KEYS_CHANGED,
             WINDOW_FOCUS,
             VIEWPORT_CHANGED,
@@ -1653,6 +1813,30 @@ pub enum Event {
         at: Option<(u16, i64)>,
         /// The modifiers held.
         mods: Mods,
+    },
+    /// A click of the left button on a pane's cell that the terminal kept:
+    /// one click, of no modifier, that dragged over no cell, and that no
+    /// binding nor program took, as the button went up; the cell, by its
+    /// column and its row's number, as the drawn frame showed it.
+    Click {
+        /// The pane.
+        pane: PaneId,
+        /// The cell clicked.
+        at: (u16, i64),
+    },
+    /// The secondary button pressed over the prompt rows of a block that
+    /// the host pins at a pane's top, as a plugin's block looks ask, or
+    /// the primary one with Control, which opens a context menu: the
+    /// command of the rows, and the window, at whose pointer the plugin's
+    /// menu opens; the press goes no further, neither to the terminal nor
+    /// to the program.
+    PromptRowsMenu {
+        /// The pane.
+        pane: PaneId,
+        /// Its window.
+        window: WindowId,
+        /// The command of the pinned rows, by its id.
+        command: u64,
     },
     /// The rows of a read that the plugin asked for, to it alone: all
     /// that it asked for, of those that the pane holds, unless `complete`
@@ -1723,7 +1907,7 @@ pub enum Event {
     },
     /// A command that the shell marked started in a pane, as its output's
     /// mark came, of its id among the pane's commands, as a read of them
-    /// gives it, to a plugin of `history-read`.
+    /// gives it, to a plugin of `history-read` or `process-read`.
     CommandStarted {
         /// The pane.
         pane: PaneId,
@@ -1732,9 +1916,10 @@ pub enum Event {
     },
     /// A command that started ended, as its end's mark came, of the exit
     /// status that the shell told, if it told one, to a plugin of
-    /// `history-read`; or as its pane let go of it before its end, as a
-    /// reset or a screen cleared under it does, of none. A shell that marks
-    /// no end tells none.
+    /// `history-read`, or of none to a plugin of `process-read` alone; or
+    /// as its pane let go of it before its end, as a reset or a screen
+    /// cleared under it does, of none. A shell that marks no end tells
+    /// none.
     CommandEnded {
         /// The pane.
         pane: PaneId,
@@ -1855,11 +2040,26 @@ pub enum Event {
 }
 
 impl Event {
+    /// The event as a plugin of no `history-read` hears it: a command's
+    /// end of no exit status, which tells what the command did.
+    pub fn without_history(self) -> Self {
+        match self {
+            Self::CommandEnded { pane, command, .. } => Self::CommandEnded {
+                pane,
+                command,
+                status: None,
+            },
+            other => other,
+        }
+    }
+
     /// The event's name, as a plugin subscribes to it.
     pub fn name(&self) -> &str {
         match self {
             Self::Workspace(event) => event.name(),
             Self::Pointer { .. } => POINTER,
+            Self::Click { .. } => CLICK,
+            Self::PromptRowsMenu { .. } => PROMPT_ROWS_MENU,
             Self::Lines { .. } => "lines",
             Self::Searched { .. } => "searched",
             Self::PanelClosed(_) => "panel-closed",
@@ -1996,6 +2196,7 @@ impl Request {
             | Self::Clear { .. }
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::SetFontSize { .. }
             | Self::OpenWindow { .. }
@@ -2014,9 +2215,12 @@ impl Request {
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
             | Self::ReopenTab(_)
+            | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
             | Self::SetInactiveDim { .. }
             | Self::SetFocusFollowsMouse { .. }
+            | Self::SetBlockLooks { .. }
+            | Self::SelectBlock { .. }
             | Self::SetWindowTabBarPlace { .. }
             | Self::ActivateTab { .. }
             | Self::FocusPane { .. }
@@ -2045,6 +2249,7 @@ impl Request {
             Self::Fonts { .. } => "fonts",
             Self::FontStyles { .. } => "font-styles",
             Self::Day { .. } => "day",
+            Self::Now { .. } => "now",
             Self::Agents { .. } => "agents",
             Self::Plugins { .. } => "plugins",
             Self::Settings { .. } => "settings",
@@ -2053,9 +2258,12 @@ impl Request {
             | Self::LinkAt { .. }
             | Self::WorkingDirectory { .. }
             | Self::CommandLine { .. }
+            | Self::EditedLine { .. }
             | Self::KeysOf { .. }
             | Self::Message { .. }
-            | Self::PaneTitle { .. } => "text",
+            | Self::PaneTitle { .. }
+            | Self::TempFile { .. }
+            | Self::GitBranch { .. } => "text",
             Self::FocusedWindow { .. } | Self::OpenQuickWindow { .. } => "window",
             Self::FocusedPane { .. } | Self::Split { .. } => "pane",
             Self::LineText { .. } => "line",
@@ -2065,10 +2273,15 @@ impl Request {
             Self::SearchMatches { .. } => "matches",
             Self::CurrentMatch { .. } => "current",
             Self::ShellCommands { .. } => "shell-commands",
+            Self::ShellCommand { .. } | Self::CommandAt { .. } | Self::SelectedBlock { .. } => {
+                "shell-command"
+            }
             Self::Viewport { .. } => "viewport",
             Self::Styles { .. } => "styles",
             Self::RenderImage { .. } => "image",
-            Self::SelectionCells { .. } | Self::ScreenCells { .. } => "cells",
+            Self::SelectionCells { .. } | Self::ScreenCells { .. } | Self::RowCells { .. } => {
+                "cells"
+            }
             Self::Decorate { .. } | Self::MarkGutter { .. } => "decoration",
             Self::Opens { .. } | Self::NoticeShows | Self::KeepsState => "boolean",
             Self::FontSize { .. } => "font-size",
@@ -2433,6 +2646,35 @@ mod tests {
                 .capabilities()
                 .is_empty()
         );
+        // The commands' events of `history-read` or `process-read`, the
+        // others' capabilities still needed.
+        let commands = Request::Subscribe(vec![COMMAND_ENDED.to_owned()]);
+        assert_eq!(commands.lacking(&[]), Some(Capability::HistoryRead));
+        assert_eq!(commands.lacking(&[Capability::HistoryRead]), None);
+        assert_eq!(commands.lacking(&[Capability::ProcessRead]), None);
+        let pointed = Request::Subscribe(vec![POINTER.to_owned(), COMMAND_ENDED.to_owned()]);
+        assert_eq!(
+            pointed.lacking(&[Capability::ProcessRead]),
+            Some(Capability::PointerRead)
+        );
+        assert_eq!(
+            Request::ClipboardText.lacking(&[Capability::ProcessRead]),
+            Some(Capability::ClipboardRead)
+        );
+        // Of no `history-read`, a command's end of no status.
+        let ended = Event::CommandEnded {
+            pane: PaneId(1),
+            command: 2,
+            status: Some(1),
+        };
+        assert!(matches!(
+            ended.without_history(),
+            Event::CommandEnded {
+                status: None,
+                command: 2,
+                ..
+            }
+        ));
         // A modifier's double tap, from any app, of `global-hotkey`, a
         // declaration.
         let tap = Request::WatchDoubleTap(Some(crate::host::Modifier::Alt));
@@ -2454,7 +2696,16 @@ mod tests {
         // The cells of a pane, of `terminal-read`; an image on the
         // clipboard, of `clipboard-write`; a save of none, as the user
         // chooses the place.
-        for read in [Request::SelectionCells(pane), Request::ScreenCells(pane)] {
+        let rows = Request::RowCells {
+            pane,
+            first: 0,
+            count: 3,
+        };
+        for read in [
+            Request::SelectionCells(pane),
+            Request::ScreenCells(pane),
+            rows,
+        ] {
             assert_eq!(read.capabilities(), [Capability::TerminalRead]);
             assert_eq!(read.effect(), Effect::Read);
             assert_eq!(read.answer(), "cells");
@@ -2487,6 +2738,22 @@ mod tests {
             .name(),
             "saved"
         );
+        // A temporary file of the plugin's own, a read of none, its path
+        // the answer; a folder's branch, of `process-read`.
+        let temporary = Request::TempFile {
+            name: "x.txt".to_owned(),
+            bytes: Bytes(Vec::new()),
+        };
+        assert!(temporary.capabilities().is_empty());
+        assert_eq!(
+            (temporary.effect(), temporary.answer()),
+            (Effect::Read, "text")
+        );
+        let branch = Request::GitBranch {
+            folder: "/".to_owned(),
+        };
+        assert_eq!(branch.capabilities(), [Capability::ProcessRead]);
+        assert_eq!((branch.effect(), branch.answer()), (Effect::Read, "text"));
         // An image of the plugin's own cells, a read of none.
         let image = Request::RenderImage(crate::image::ImageSpec::default());
         assert!(image.capabilities().is_empty());

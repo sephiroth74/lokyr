@@ -277,6 +277,189 @@ fn a_plugin_s_render_alone_draws_and_a_panel_s_closing_comes_in_its_turn() {
     assert!(app.deliver_timer.is_none());
 }
 
+/// A plugin of a status bar's segment of `width` points, whose command
+/// `<namespace>.center` puts it in the bar's middle.
+struct Segment {
+    namespace: &'static str,
+    width: f32,
+}
+
+impl plugins::Plugin for Segment {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        let name = format!("{}.center", self.namespace);
+        cx.register_command(Command {
+            name: name.clone(),
+            title: name,
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.set_status_bar_side(plugins::host::StatusBarSide::Center)?;
+        for window in cx.windows()? {
+            cx.request_render(ViewId::StatusBar(window.id))?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot()? != Slot::StatusBar {
+            return None;
+        }
+        let mut node = Node::container(vec![Node::text(self.namespace)]);
+        node.layout.width = Length::Points(self.width);
+        node.layout.height = Length::Points(STATUS);
+        Some(node)
+    }
+}
+
+#[test]
+fn the_status_bar_s_views_take_their_widths_on_their_plugins_sides() {
+    let manifest = |name: &str, side: &str| {
+        format!(
+            "[plugin]\nname = \"lokyr/{name}\"\nkind = \"builtin\"\nlicense = \"MIT\"\n[contributes]\nslots = [\"status-bar\"]\n{side}"
+        )
+    };
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(
+            &manifest("first", ""),
+            Box::new(Segment {
+                namespace: "first",
+                width: 100.0,
+            }),
+        )
+        .with_builtin(
+            &manifest("second", "[contributes.status-bar]\nside = \"end\"\n"),
+            Box::new(Segment {
+                namespace: "second",
+                width: 60.0,
+            }),
+        );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    let frames = |fake: &mut Fake, app: &mut App| {
+        for _ in 0..3 {
+            fake.send(app, window, WindowEvent::Frame);
+        }
+        let of = |plugin: &str| {
+            app.windows[&window]
+                .chrome
+                .iter()
+                .find(|view| view.plugin == plugin)
+                .and_then(|view| view.frame)
+                .map(super::super::chrome::rect_of)
+                .expect("a view's frame")
+        };
+        (of("lokyr/first"), of("lokyr/second"))
+    };
+    let size = fake.window(window).unwrap().size;
+    let width = size.pixels.width as i32;
+    let pixels = |points: f32| (f64::from(points) * size.scale).round() as u32;
+    // The first at the start, of no side in its manifest; the second at
+    // the end, as its manifest says; each of its own width.
+    let (first, second) = frames(&mut fake, &mut app);
+    assert_eq!((first.x, first.width), (0, pixels(100.0)));
+    assert_eq!(
+        (second.x + second.width as i32, second.width),
+        (width, pixels(60.0))
+    );
+    assert_eq!(first.y, second.y);
+    // The bar's band across the window, under the views, of its token.
+    let fills = [false, true].map(|dark| app.theme.variant(dark).tokens.get("status-bar.bg"));
+    let bands: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .shown
+        .as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Item::Shapes(shapes) => shapes.clone(),
+            _ => Vec::new(),
+        })
+        .filter(|shape| fills.contains(&Some(shape.fill)) && shape.rect.y == first.y)
+        .map(|shape| shape.rect)
+        .collect();
+    assert!(
+        bands
+            .iter()
+            .any(|band| band.x == 0 && band.width as i32 == width && band.height == first.height),
+        "{bands:?}"
+    );
+    // The first asks for the middle, which it takes.
+    app.run(&mut fake, "first.center", Args::new());
+    let (first, _) = frames(&mut fake, &mut app);
+    assert_eq!(first.x, (width - pixels(100.0) as i32) / 2);
+}
+
+/// A plugin of a status bar's text of one line, longer than any window,
+/// which counts the `cut` events that it hears and renders again at each,
+/// as a view that shows a More button while its text is cut.
+struct Cutting {
+    cuts: Rc<Cell<usize>>,
+}
+
+impl plugins::Plugin for Cutting {
+    fn on_ui_event(
+        &mut self,
+        cx: &mut plugins::Cx<'_>,
+        event: &plugins::ui::UiEvent,
+    ) -> Result<(), Error> {
+        if matches!(event.kind, plugins::view::UiEventKind::Cut { .. }) {
+            self.cuts.set(self.cuts.get() + 1);
+            cx.request_render(event.view.clone())?;
+        }
+        Ok(())
+    }
+
+    fn render(&mut self, _: &mut plugins::Cx<'_>, view: &ViewId) -> Option<Node> {
+        if view.slot()? != Slot::StatusBar {
+            return None;
+        }
+        let text = Node::text("a long status ".repeat(200)).key("long").layout(
+            lokyr_kernel::plugins::view::Layout {
+                lines: Some(1),
+                ..lokyr_kernel::plugins::view::Layout::default()
+            },
+        );
+        Some(Node::container(vec![text]))
+    }
+}
+
+#[test]
+fn a_cut_view_of_the_status_bar_hears_one_cut_and_asks_no_frame_at_rest() {
+    let cuts = Rc::new(Cell::new(0));
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/cutting\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[contributes]\nslots = [\"status-bar\"]\n",
+    );
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), unpadded(), None)
+        .with_program(idle())
+        .with_builtin(
+            manifest,
+            Box::new(Cutting {
+                cuts: Rc::clone(&cuts),
+            }),
+        );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    for _ in 0..6 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert_eq!(cuts.get(), 1);
+    assert!(!fake.window(window).unwrap().frame_requested);
+}
+
 #[test]
 fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     use plugins::host::BarPlace;
@@ -350,7 +533,10 @@ fn the_tab_bar_goes_at_its_plugin_s_place_and_the_titlebar_follows() {
     let (_, tab_bar, status, pane) = placed(&mut fake, &mut app, BarPlace::Right { width: 100.0 });
     assert_eq!(tab_bar.x + tab_bar.width as i32, width);
     assert_eq!(pane.x + pane.width as i32, tab_bar.x);
-    assert_eq!(status.x + status.width as i32, tab_bar.x);
+    // The status bar's view at its start, of its own width, before the
+    // column.
+    assert_eq!(status.x, 0);
+    assert!(status.x + status.width as i32 <= tab_bar.x);
     // Below a titlebar of the title, across the window.
     let (bar, tab_bar, _, pane) = placed(&mut fake, &mut app, BarPlace::BelowTitlebar);
     assert_eq!(bar, Titlebar::Titled);

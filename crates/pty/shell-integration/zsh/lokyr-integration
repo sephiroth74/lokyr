@@ -48,7 +48,13 @@ _lokyr_precmd() {
 # shares.
 _lokyr_preexec() {
     builtin emulate -L zsh -o extended_glob -o no_multibyte
-    builtin local line="${1//(#m)[^A-Za-z0-9\/._~-]/%${(l:2::0:)$(( [##16] #MATCH ))}}"
+    # The line as typed, `$1`, which a hook that switches the history list
+    # as the line is added leaves empty, as Oh My Zsh's per-directory-history
+    # does of `share_history`: the text that runs, `$3`, of its aliases
+    # expanded, in its place; either without the line feed that ends it.
+    builtin local typed="${1:-$3}"
+    typed="${typed%$'\n'}"
+    builtin local line="${typed//(#m)[^A-Za-z0-9\/._~-]/%${(l:2::0:)$(( [##16] #MATCH ))}}"
     builtin print -nr -- $'\e]133;C;cmdline_url='"${line}"$'\a'
     _lokyr_running=1
 }

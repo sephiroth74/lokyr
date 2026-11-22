@@ -804,3 +804,58 @@ fn a_refusal_of_a_question_whose_file_was_fixed_meanwhile_leaves_the_file_s_gran
     );
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_replacement_revoked_or_granted_in_the_file_turns_the_replaced_plugin_on_or_off() {
+    let _luau = LUAU.lock().unwrap_or_else(PoisonError::into_inner);
+    let folder = shelf("consent-replaces");
+    let header = Capability::Replaces("lokyr/command-header".to_owned());
+    let mut permissions = Permissions::default();
+    permissions
+        .plugins
+        .entry("acme/plus".to_owned())
+        .or_default()
+        .decide(&[Capability::Open, header.clone()], true);
+    permissions.write(&folder.join(FILE)).unwrap();
+    let plus = concat!(
+        "[plugin]\nname = \"acme/plus\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\n",
+        "license = \"MIT\"\nreplaces = [\"lokyr/command-header\"]\n",
+        "[activation]\non = []\n[capabilities]\nopen = true\n",
+    );
+    let packages = [("plus", plus.to_owned(), opening("activate", "plus", ""))];
+    let mut fake = Fake::default();
+    let mut app = installed(&folder, &packages, "en");
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |fake, _| opened(fake, "plus"));
+    let header_status = |app: &App| app.plugins.status("lokyr/command-header");
+    assert_eq!(header_status(&app), Some(plugins::Status::Off));
+    // The replacement revoked, as the file's watch tells: the header runs
+    // again at once, as the plus still runs.
+    let told = |fake: &mut Fake, app: &mut App, permissions: &Permissions| {
+        permissions.write(&folder.join(FILE)).unwrap();
+        permissions_told(app);
+        fake.send_app(app, AppEvent::Wake);
+        fake.fire_timers(app, Instant::now() + Duration::from_secs(1));
+    };
+    permissions
+        .plugins
+        .get_mut("acme/plus")
+        .unwrap()
+        .granted
+        .retain(|capability| *capability != header);
+    told(&mut fake, &mut app, &permissions);
+    assert_eq!(header_status(&app), Some(plugins::Status::Active));
+    assert_eq!(
+        app.plugins.status("acme/plus"),
+        Some(plugins::Status::Active)
+    );
+    // Granted again: off again.
+    permissions
+        .plugins
+        .get_mut("acme/plus")
+        .unwrap()
+        .decide(&[header], true);
+    told(&mut fake, &mut app, &permissions);
+    assert_eq!(header_status(&app), Some(plugins::Status::Off));
+    let _ = std::fs::remove_dir_all(&folder);
+}

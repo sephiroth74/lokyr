@@ -1,0 +1,46 @@
+# I testi dei blocchi dei comandi, in italiano.
+
+header-label = Comando: { $line }
+header-tooltip = Scorri fino a { $line }
+header-end = Scorri fino alla fine di { $line }
+
+# I titoli dei comandi del plugin.
+command-blocks-copy-command = Copia comando
+command-blocks-copy-block = Copia comando e output
+command-blocks-select-block = Seleziona blocco
+command-blocks-details = Dettagli del blocco
+command-blocks-rerun = Esegui di nuovo il comando
+command-blocks-select-previous = Seleziona il blocco precedente
+command-blocks-select-next = Seleziona il blocco successivo
+command-blocks-deselect = Deseleziona il blocco
+
+menu-block = Blocco
+menu-copy-output = Copia output del comando
+menu-select-output = Seleziona output del comando
+
+# I dettagli di un blocco.
+details-label = Dettagli di { $line }
+details-line = Comando
+details-status = Stato
+details-started = Inizio
+details-duration = Durata
+details-folder = Cartella
+details-copy-line = Copia il comando
+details-copy-status = Copia lo stato
+details-copy-started = Copia l'ora d'inizio
+details-copy-duration = Copia la durata
+details-copy-folder = Copia la cartella
+details-running = In esecuzione
+details-succeeded = { $status } · Riuscito
+details-failed = { $status } · Non riuscito
+details-ended = Terminato
+details-milliseconds = { $count } ms
+details-seconds = { $whole },{ $tenths } s
+details-minutes = { $minutes } min { $seconds } s
+details-hours = { $hours } h { $minutes } min
+
+# Perché il comando di un blocco non viene eseguito di nuovo.
+rerun-title = Impossibile eseguire di nuovo il comando
+rerun-no-line = Questo blocco non ha una riga di comando da eseguire.
+rerun-busy = La shell non è al prompt: un comando è ancora in esecuzione. Eseguilo di nuovo quando il comando termina.
+rerun-typed = La riga di comando contiene del testo. Cancellalo, poi esegui di nuovo il comando.

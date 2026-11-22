@@ -37,6 +37,12 @@ tip-links = Hold ⌘ over a link to underline it, then click to open it.
 tip-prompt-click = Click in the command line to move the cursor there, in zsh, bash and fish; select part of it and press Backspace, or type, to replace it.
 tip-copy-output = Press { $keys } to copy the output of the last command, without its prompt; its context menu copies any command's.
 tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and ⌘-click on src/main.rs:42 opens your editor at line 42.
+tip-block-header = Scrolled up through a long output? The command's prompt stays at the pane's top: click it to go back to the command.
+tip-block-copy = Right-click a command's output and open Block to copy the command, its output or both, or to select its output or its whole block. Right-click its pinned rows at the top for the same menu.
+tip-block-details = Right-click a command's output and choose Block › Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
+tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
+tip-block-rerun = Right-click a command's output and choose Block › Run Command Again to run it once more at the prompt.
+tip-block-spacing = Want room between your commands? Set spacing = true in [plugins.blocks] for a blank row before each prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
 tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.
@@ -51,6 +57,7 @@ tip-look-up = Right-click a word to look it up, or to search the web or the man 
 tip-services = In the Finder, right-click a folder and choose Services › New Lokyr Tab Here for a terminal there.
 tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock icon, to install its theme.
 tip-float = Window › Float on Top keeps the window above every other app's.
+tip-smooth-scroll = Set smooth-scroll = true under [window] in the config, and the trackpad scrolls the text by pixels, gliding on as you lift your fingers; a mouse wheel's step glides too.
 tip-cursor-guide = Press { $keys }, or View › Show Cursor Guide, for a band across the cursor's row that shows where it is.
 tip-transparency = Press { $keys }, or View › Use Transparency, to show a translucent window opaque while you read, and again to see through it; your config stays as it is.
 tip-sleip = Plugins come from the registry: `sleip search` lists them, and `sleip add` installs one.
@@ -59,6 +66,7 @@ tip-settings-keys = On the settings window's Keys page, type in its filter to fi
 tip-settings-themes = The settings window's Themes page shows every theme of a preview of its colors: a click uses it.
 tip-theme-editor = Editor, on the settings window's Themes page, shows every color of a theme and where it comes from, and edits your own: click a color's row to type its value, or its swatch to pick it in the color panel. Edit, in a theme card's context menu, shows that theme in it.
 tip-settings-search = In the settings window, type in the search field at the sidebar's top to find a setting by its name, what it does, or a shortcut's keys.
+tip-settings-plugin-on = Turn a bundled plugin, such as Blocks, on or off with the Enabled switch at the top of its section in Settings.
 tip-plugins = Lokyr › Plugins… lists every plugin, its state and what it may do, disables, updates or removes one, and installs those of the registry.
 
 # The tips of an installed plugin's command, `$title`: of its keys, or of

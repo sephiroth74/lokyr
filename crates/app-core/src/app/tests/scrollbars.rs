@@ -265,6 +265,135 @@ fn a_click_on_the_track_pages_toward_it_or_jumps_there_as_the_system_says() {
     });
 }
 
+/// The config of no padding, scrolling by pixels.
+fn smooth() -> Config {
+    let mut config = unpadded();
+    config.window.smooth_scroll = true;
+    config
+}
+
+/// The view's place from the oldest row, its first row's and the share
+/// of a row past it, as the last frame drew it.
+fn place(app: &App, window: WindowId) -> f64 {
+    let (top, oldest, _) = view(app, window);
+    // Far fewer rows than an `f64` holds exactly.
+    (top - oldest) as f64 + f64::from(app.pane(window).snapshot().fraction())
+}
+
+/// Scrolls the view up three rows by the wheel's glide, until it ends and
+/// the bar shows.
+fn glided_up(fake: &mut Fake, app: &mut App, window: WindowId) {
+    fake.send(app, window, wheel_up(3.0));
+    run_until(fake, app, |_, app| {
+        app.windows[&window].mouse.glide.is_none() && opacity(app, window) == 1.0
+    });
+}
+
+#[test]
+fn by_pixels_the_knob_s_drag_moves_the_view_a_share_of_a_row_where_the_knob_shows() {
+    let (mut fake, mut app, window) = started_bars(smooth());
+    glided_up(&mut fake, &mut app, window);
+    let none = Modifiers::NONE;
+    let grab = knob_middle(&fake, &app, window);
+    fake.send(&mut app, window, click(true, grab, none, 1));
+    let shown = bar(&app, window).unwrap();
+    let scale = scale(&fake, window) as f32;
+    let knob = scrollbar::knob(shown.area, shown.rows, true, scale);
+    // Two pixels up: less than a row's place, the view a share of a row up.
+    let up = Point {
+        y: grab.y - 2.0 / f64::from(scale),
+        ..grab
+    };
+    fake.send(&mut app, window, moved(up, none));
+    frames(&mut fake, &mut app, window);
+    let wanted = scrollbar::place_at(shown.area, shown.rows, scale, knob.y as f32 - 2.0);
+    let found = place(&app, window);
+    assert!((found - wanted).abs() < 1e-3, "{found}, not {wanted}");
+    assert!(app.pane(window).snapshot().fraction() > 0.0);
+    // The knob shows where the drag put it, of the view's share.
+    let dragged = bar(&app, window).unwrap();
+    let at = scrollbar::knob(dragged.area, dragged.rows, true, scale);
+    assert!((at.y - (knob.y - 2)).abs() <= 1, "{} from {}", at.y, knob.y);
+    // To the bottom: the screen, of no share, which the view follows.
+    let bottom = Point {
+        y: grab.y + 10_000.0,
+        ..grab
+    };
+    fake.send(&mut app, window, moved(bottom, none));
+    frames(&mut fake, &mut app, window);
+    assert_eq!(app.pane(window).view_offset(), 0);
+    assert_eq!(app.pane(window).snapshot().fraction(), 0.0);
+    fake.send(&mut app, window, click(false, bottom, none, 1));
+}
+
+#[test]
+fn by_pixels_the_knob_dragged_to_the_bottom_goes_to_the_screen_while_output_comes() {
+    let program = shell(
+        "for n in $(seq 1 200); do echo \"line $n\"; done; while :; do echo tick; sleep 0.02; done",
+    );
+    let (mut fake, mut app, window) = drawn(smooth(), program);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "tick"));
+    glided_up(&mut fake, &mut app, window);
+    let none = Modifiers::NONE;
+    let grab = knob_middle(&fake, &app, window);
+    fake.send(&mut app, window, click(true, grab, none, 1));
+    // Rows come after the bar's frame, before the drag.
+    std::thread::sleep(Duration::from_millis(200));
+    let bottom = Point {
+        y: grab.y + 10_000.0,
+        ..grab
+    };
+    fake.send(&mut app, window, moved(bottom, none));
+    assert_eq!(app.pane(window).view_offset(), 0);
+    fake.send(&mut app, window, click(false, bottom, none, 1));
+    // The view follows the output after.
+    let after = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > after);
+    assert_eq!(app.pane(window).view_offset(), 0);
+}
+
+#[test]
+fn by_pixels_a_click_on_the_track_glides_a_page_or_there() {
+    let (mut fake, mut app, window) = started_bars(smooth());
+    glided_up(&mut fake, &mut app, window);
+    let none = Modifiers::NONE;
+    let rows = i64::from(app.pane(window).grid().rows);
+    let shown = bar(&app, window).unwrap();
+    let near_top = point(
+        &fake,
+        window,
+        (
+            shown.area.x as f32 + shown.area.width as f32 / 2.0,
+            shown.area.y as f32 + 10.0,
+        ),
+    );
+    // A page up, which glides there, of none at once.
+    let (before, _, _) = view(&app, window);
+    fake.send(&mut app, window, click(true, near_top, none, 1));
+    fake.send(&mut app, window, click(false, near_top, none, 1));
+    assert_eq!(app.pane(window).view_offset(), 3);
+    assert!(app.windows[&window].mouse.glide.is_some());
+    run_until(&mut fake, &mut app, |_, app| {
+        view(app, window).0 == before - rows && app.windows[&window].mouse.glide.is_none()
+    });
+    assert_eq!(app.pane(window).snapshot().fraction(), 0.0);
+    // As the system jumps to the spot clicked: a glide there, the drag
+    // holding the knob's middle.
+    fake.set_scrollers(Scrollers {
+        overlay: true,
+        jump_to_spot: true,
+    });
+    fake.send(&mut app, window, click(true, near_top, none, 1));
+    assert!(app.windows[&window].bar_drag.is_some());
+    assert!(app.windows[&window].mouse.glide.is_some());
+    run_until(&mut fake, &mut app, |_, app| {
+        let (top, oldest, _) = view(app, window);
+        top == oldest && app.windows[&window].mouse.glide.is_none()
+    });
+    fake.send(&mut app, window, click(false, near_top, none, 1));
+}
+
 #[test]
 fn the_pointer_over_the_bar_shows_it_wide_and_its_leaving_lets_it_fade() {
     let (mut fake, mut app, window) = started_bars(unpadded());

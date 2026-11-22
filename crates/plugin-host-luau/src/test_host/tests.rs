@@ -558,3 +558,191 @@ fn a_test_opens_tabs_marks_them_and_reads_the_menu_items() {
     assert_eq!(ran.len(), 1, "{ran:?}");
     assert_eq!(ran[0].failure, None, "{ran:?}");
 }
+
+#[test]
+fn a_test_gives_the_pane_its_commands_and_reads_a_block_s_rows() {
+    // A plugin that reads the block of the command at a row, its rows'
+    // cells, and copies their text.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "rows.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            local command = assert(cx.command_at(pane, 1))
+            local first, last = command.prompt[2], command["end"][2] - 1
+            local rows = assert(cx.row_cells(pane, first, last - first + 1))
+            local texts = {}
+            for _, row in rows do
+                table.insert(texts, row.text)
+            end
+            assert(cx.set_clipboard_text(table.concat(texts, "\n")))
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        reads_the_block_s_rows = function(host)
+            host.activate()
+            host.set_screen({
+                { text = "$ ls", runs = {} },
+                { text = "a.txt", runs = {} },
+                { text = "$", runs = {} },
+            })
+            host.set_commands({
+                { id = 1, prompt = { 0, 0 }, output = { 0, 1 }, ["end"] = { 0, 2 }, status = 0 },
+            })
+            host.command("rows.go")
+            assert(host.clipboard() == "$ ls\na.txt", host.clipboard())
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/rows.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/rows",
+            capabilities: &[
+                Capability::TerminalRead,
+                Capability::HistoryRead,
+                Capability::ClipboardWrite,
+            ],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}
+
+#[test]
+fn a_test_reads_a_temporary_file_and_gives_a_folder_its_branch() {
+    // A plugin that writes the screen's text as a temporary file, and the
+    // branch of the pane's folder.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "files.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            local rows = assert(cx.screen_cells(pane))
+            local path = assert(cx.temp_file("screen.txt", rows[1].text))
+            local branch = cx.git_branch("/work/lokyr/src") or "none"
+            assert(cx.set_clipboard_text(path .. " " .. branch))
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        writes_and_reads = function(host)
+            host.activate()
+            host.set_screen({ { text = "$ ls", runs = {} } })
+            host.set_git_branch("/work/lokyr", "main")
+            host.command("files.go")
+            assert(host.temporary_file("screen.txt") == "$ ls", host.temporary_file("screen.txt"))
+            assert(host.clipboard() == "/tmp/lokyr-temporary/files/screen.txt main", host.clipboard())
+            host.set_git_branch("/work/lokyr", nil)
+            host.command("files.go")
+            assert(host.clipboard():sub(-5) == " none", host.clipboard())
+            assert(host.temporary_file("other.txt") == nil)
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/files.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/files",
+            capabilities: &[
+                Capability::TerminalRead,
+                Capability::ProcessRead,
+                Capability::ClipboardWrite,
+            ],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}
+
+#[test]
+fn a_test_tells_the_plugin_s_reads_and_cuts_its_reads_of_rows_short() {
+    // A plugin that reads the pane's folder and its rows, and copies
+    // whether the read of its rows went to its end.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "reads.go", title = "Go", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            local pane = assert(cx.focused_pane())
+            cx.working_directory(pane)
+            assert(cx.read_lines(pane, 0, 1))
+        end,
+        on_event = function(cx, events)
+            for _, event in events do
+                if event.kind == "lines" then
+                    assert(cx.set_clipboard_text(if event.complete then "whole" else "cut"))
+                end
+            end
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        reads = function(host)
+            host.activate()
+            host.reads()
+            host.command("reads.go")
+            local reads = host.reads()
+            assert(#reads == 3, #reads)
+            assert(reads[1] == "focused-pane" and reads[2].working_directory ~= nil)
+            assert(reads[3].read_lines ~= nil)
+            assert(#host.reads() == 0, "taken")
+            host.events({})
+            assert(host.clipboard() == "whole", host.clipboard())
+            host.command("reads.go")
+            host.cut_reads()
+            host.events({})
+            assert(host.clipboard() == "cut", host.clipboard())
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/reads.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/reads",
+            capabilities: &[
+                Capability::TerminalRead,
+                Capability::ProcessRead,
+                Capability::ClipboardWrite,
+            ],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

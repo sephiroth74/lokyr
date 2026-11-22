@@ -1,0 +1,74 @@
+{
+  "app": "/Users/taacral1/Documents/git/sephiroth74/rust/lokyr-workspace/lokyr/spikes/wasmtime-notarized/build/Spike.app",
+  "executable": "/Users/taacral1/Documents/git/sephiroth74/rust/lokyr-workspace/lokyr/spikes/wasmtime-notarized/build/Spike.app/Contents/MacOS/spike",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 61453,
+      "from_start_ms": 181.2,
+      "from_request_ms": 202.1
+    },
+    {
+      "pid": 61466,
+      "from_start_ms": 168.2,
+      "from_request_ms": 179.3
+    },
+    {
+      "pid": 61472,
+      "from_start_ms": 209.9,
+      "from_request_ms": 236.0
+    },
+    {
+      "pid": 61476,
+      "from_start_ms": 175.5,
+      "from_request_ms": 188.4
+    },
+    {
+      "pid": 61489,
+      "from_start_ms": 174.0,
+      "from_request_ms": 187.4
+    },
+    {
+      "pid": 61522,
+      "from_start_ms": 173.4,
+      "from_request_ms": 201.2
+    },
+    {
+      "pid": 61537,
+      "from_start_ms": 178.6,
+      "from_request_ms": 189.3
+    },
+    {
+      "pid": 61543,
+      "from_start_ms": 217.6,
+      "from_request_ms": 247.5
+    },
+    {
+      "pid": 61548,
+      "from_start_ms": 219.9,
+      "from_request_ms": 246.5
+    },
+    {
+      "pid": 61559,
+      "from_start_ms": 172.3,
+      "from_request_ms": 183.1
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 168.2,
+      "p10": 172.3,
+      "median": 177.05,
+      "p90": 217.6,
+      "max": 219.9
+    },
+    "from_request_ms": {
+      "min": 179.3,
+      "p10": 183.1,
+      "median": 195.25,
+      "p90": 246.5,
+      "max": 247.5
+    },
+    "spread": 0.256
+  }
+}

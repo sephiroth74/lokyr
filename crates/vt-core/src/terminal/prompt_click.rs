@@ -210,6 +210,39 @@ impl Terminal {
         })
     }
 
+    /// The command line that the shell's line editor holds, as its cells
+    /// show it, while it edits one at its prompt (after `B`, before `C`) on
+    /// the primary screen: its characters, of no right prompt, its lines
+    /// apart, without the spaces that end it; empty of nothing typed. None
+    /// otherwise, as while a command runs, the alternate screen shows, or
+    /// the shell marks no prompt.
+    pub fn edited_command_line(&self) -> Option<String> {
+        let (start, _) = self.command_line_start()?;
+        let rows = &self.screen().rows;
+        let mut text = String::new();
+        for step in self.edited_line(start).steps {
+            match step {
+                Step::Char { x, y, .. } => {
+                    let (page, row) = rows.screen_row(y);
+                    match page
+                        .cells(row)
+                        .get(usize::from(x))
+                        .map(|cell| cell.content())
+                    {
+                        Some(Content::Char(character)) if character != '\0' => text.push(character),
+                        Some(Content::Grapheme(character)) => {
+                            text.push(character);
+                            text.extend(page.grapheme(row, x));
+                        }
+                        _ => text.push(' '),
+                    }
+                }
+                Step::Break { .. } => text.push('\n'),
+            }
+        }
+        Some(text.trim_end().to_owned())
+    }
+
     /// What replaces the selection, which a key that deletes or types
     /// takes the place of, where it lies within the command line that the
     /// shell edits, as its prompt announced that its line editor takes the
@@ -221,17 +254,13 @@ impl Terminal {
     /// rectangle, or of more than [`MOST_ARROWS`] arrows or deletes.
     pub fn command_line_selection(&mut self) -> Option<(Option<PromptClick>, usize)> {
         let clicks = self.prompt_clicks?;
-        let selected = self.selection()?;
-        if selected.shape != super::SelectionShape::Cells {
+        let (shape, first, last) = self.selected_cells()?;
+        if shape != super::SelectionShape::Cells {
             return None;
         }
         let (start, _) = self.command_line_start()?;
-        let origin = self.origin();
-        let first = (
-            selected.start.0,
-            self.screen_y(origin.top + selected.start.1)?,
-        );
-        let last = (selected.end.0, self.screen_y(origin.top + selected.end.1)?);
+        let first = (first.0, self.screen_y(first.1)?);
+        let last = (last.0, self.screen_y(last.1)?);
         if (first.1, first.0) < (start.1, start.0) {
             return None;
         }
@@ -307,15 +336,16 @@ impl Terminal {
         if self.alternate_active || zone != Semantic::Input {
             return None;
         }
-        let command = self.commands().last().copied();
+        let command = self.last_command();
         let on_screen = |mark: Option<(u16, i64)>| {
             let (x, row) = mark?;
             Some((x, self.screen_y(row)?))
         };
-        let top = on_screen(command.and_then(|command| command.prompt))
+        let top = on_screen(command.as_ref().and_then(|command| command.prompt))
             .map(|(_, y)| y)
             .or_else(|| self.prompt_row(self.cursor().y))?;
-        let start = on_screen(command.and_then(|command| command.input)).unwrap_or((0, top));
+        let start =
+            on_screen(command.as_ref().and_then(|command| command.input)).unwrap_or((0, top));
         Some((start, top))
     }
 

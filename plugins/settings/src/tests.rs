@@ -190,6 +190,8 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "font".to_owned(),
                 plugin: None,
+                replaced_by: None,
+                enabled: None,
                 description: "The font of the text".to_owned(),
                 keys: vec![
                     key("family", None, None, text),
@@ -206,6 +208,8 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "window".to_owned(),
                 plugin: None,
+                replaced_by: None,
+                enabled: None,
                 description: String::new(),
                 keys: vec![
                     key(
@@ -233,6 +237,8 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "theme".to_owned(),
                 plugin: None,
+                replaced_by: None,
+                enabled: None,
                 description: "The themes".to_owned(),
                 keys: vec![
                     controlled("light", Some("Lokyr Light"), "theme"),
@@ -253,6 +259,8 @@ fn settings() -> Settings {
             SettingsSection {
                 name: "tabs".to_owned(),
                 plugin: Some("lokyr/tabs".to_owned()),
+                replaced_by: None,
+                enabled: None,
                 description: "The tab bar".to_owned(),
                 keys: vec![
                     key(
@@ -1896,6 +1904,8 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
     let section = |name: &str, plugin: bool| SettingsSection {
         name: name.to_owned(),
         plugin: plugin.then(|| format!("lokyr/{name}")),
+        replaced_by: None,
+        enabled: None,
         description: String::new(),
         keys: Vec::new(),
     };
@@ -1925,6 +1935,7 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
         "quick-terminal",
         "search",
         "command-header",
+        "blocks",
         "quick-tips",
     ];
     let mut icons: Vec<&str> = app
@@ -2770,6 +2781,8 @@ fn host_of_hints(hints: Option<Data>) -> (FakeHost, SettingsPage) {
     settings.sections.push(SettingsSection {
         name: "links".to_owned(),
         plugin: Some("lokyr/links".to_owned()),
+        replaced_by: None,
+        enabled: None,
         description: "The hints".to_owned(),
         keys: vec![key(
             "hints",
@@ -3063,6 +3076,8 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     let app_links = SettingsSection {
         name: "links".to_owned(),
         plugin: None,
+        replaced_by: None,
+        enabled: None,
         description: "What a link does".to_owned(),
         keys: vec![key("editor", None, None, text.clone())],
     };
@@ -3070,6 +3085,8 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     settings.sections.push(SettingsSection {
         name: "links".to_owned(),
         plugin: Some("lokyr/links".to_owned()),
+        replaced_by: None,
+        enabled: None,
         description: "The hints".to_owned(),
         keys: vec![key("alphabet", None, None, text.clone())],
     });
@@ -3078,12 +3095,16 @@ fn a_plugin_s_section_of_an_app_s_name_shows_in_it_each_key_written_to_its_own()
     settings.sections.push(SettingsSection {
         name: "window".to_owned(),
         plugin: Some("lokyr/window".to_owned()),
+        replaced_by: None,
+        enabled: None,
         description: String::new(),
         keys: vec![key("programs", None, None, text.clone())],
     });
     settings.sections.push(SettingsSection {
         name: "font".to_owned(),
         plugin: Some("acme/font".to_owned()),
+        replaced_by: None,
+        enabled: None,
         description: String::new(),
         keys: vec![key("ligatures", None, None, text)],
     });
@@ -3250,4 +3271,136 @@ fn a_map_s_editor_writes_what_its_fields_show() {
         held(&tree, &name).and_then(|(text, _)| text).as_deref(),
         Some("jira")
     );
+}
+
+#[test]
+fn a_replaced_plugin_s_section_tells_the_plugin_that_replaces_it() {
+    let mut settings = settings();
+    let text = SettingKind::Text {
+        min_length: Some(1),
+        max_length: Some(256),
+        examples: Vec::new(),
+    };
+    for (name, replaced_by) in [
+        ("command-header", Some("lokyr/blocks".to_owned())),
+        ("blocks", None),
+    ] {
+        settings.sections.push(SettingsSection {
+            name: name.to_owned(),
+            plugin: Some(format!("lokyr/{name}")),
+            replaced_by,
+            enabled: Some(true),
+            description: String::new(),
+            keys: vec![key("border", None, None, text.clone())],
+        });
+    }
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let told = "lokyr/blocks replaces this plugin while it runs";
+    host.set_message(
+        "settings-replaced",
+        &[("plugin", Data::Text("lokyr/blocks".to_owned()))],
+        Some(told),
+    );
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        sidebar_of(&tree),
+        [
+            "font",
+            "window",
+            "theme",
+            "tabs",
+            "command-header",
+            "blocks"
+        ]
+    );
+    // The replaced one's part, of a callout over its keys, which it keeps.
+    host.ui_event(&mut plugin, &choose(4)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(text_of(&tree, "replaced").as_deref(), Some(told));
+    assert!(held(&tree, "field:border").is_some());
+    // Its replacer's, of none.
+    host.ui_event(&mut plugin, &choose(5)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "replaced").is_none());
+    assert!(held(&tree, "field:border").is_some());
+}
+
+#[test]
+fn a_plugin_s_switch_turns_it_on_and_its_keys_dim_while_it_is_off() {
+    let mut settings = settings();
+    let text = SettingKind::Text {
+        min_length: Some(1),
+        max_length: Some(256),
+        examples: Vec::new(),
+    };
+    settings.sections.push(SettingsSection {
+        name: "blocks".to_owned(),
+        plugin: Some("lokyr/blocks".to_owned()),
+        replaced_by: None,
+        enabled: Some(false),
+        description: String::new(),
+        keys: vec![
+            key("border", None, None, text.clone()),
+            key("dividers", None, None, SettingKind::Boolean),
+        ],
+    });
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.pane(PaneId(1));
+    host.set_settings(settings);
+    let mut plugin = SettingsPage::default();
+    host.activate(&mut plugin).unwrap();
+    host.show_page(PAGE);
+    host.deliver(&mut plugin).unwrap();
+    host.ui_event(&mut plugin, &choose(4)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    // Off: its switch off, its keys' controls disabled, their texts dimmed.
+    assert_eq!(
+        switched(&tree, "plugin-on:blocks").map(|(on, _)| on),
+        Some(false)
+    );
+    let disabled = |tree: &Node, key: &str| find_node(tree, key).map(|node| node.kind.disabled());
+    assert_eq!(disabled(&tree, "field:border"), Some(true));
+    assert_eq!(disabled(&tree, "set:dividers"), Some(true));
+    assert_eq!(disabled(&tree, "reset:border"), Some(true));
+    let row = find_node(&tree, "key:border").unwrap();
+    let name = row
+        .children
+        .first()
+        .and_then(|about| about.children.first())
+        .and_then(|title| title.children.first())
+        .unwrap();
+    assert_eq!(name.style.color, Some(Token::from("text.disabled")));
+    // On: its key `enabled`, which the host turns, then its keys enabled.
+    host.ui_event(
+        &mut plugin,
+        &on("plugin-on:blocks", UiEventKind::Toggle { on: true }),
+    )
+    .unwrap();
+    assert_eq!(
+        written(&mut host),
+        [(
+            "blocks".to_owned(),
+            Some("lokyr/blocks".to_owned()),
+            "enabled".to_owned(),
+            Some(Data::Boolean(true))
+        )]
+    );
+    host.deliver(&mut plugin).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert_eq!(
+        switched(&tree, "plugin-on:blocks").map(|(on, _)| on),
+        Some(true)
+    );
+    assert_eq!(disabled(&tree, "field:border"), Some(false));
+    assert_eq!(disabled(&tree, "set:dividers"), Some(false));
+    // An app's section shows no switch.
+    host.ui_event(&mut plugin, &choose(0)).unwrap();
+    let tree = rendered(&mut host, &mut plugin);
+    assert!(find_node(&tree, "plugin-on:font").is_none());
 }

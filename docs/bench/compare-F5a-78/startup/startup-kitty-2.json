@@ -1,0 +1,49 @@
+{
+  "app": "/Applications/kitty.app",
+  "executable": "/Applications/kitty.app/Contents/MacOS/kitty",
+  "warmup": 1,
+  "runs": [
+    {
+      "pid": 61080,
+      "from_start_ms": 658.0,
+      "from_request_ms": 730.1
+    },
+    {
+      "pid": 61099,
+      "from_start_ms": 642.9,
+      "from_request_ms": 708.0
+    },
+    {
+      "pid": 61112,
+      "from_start_ms": 645.5,
+      "from_request_ms": 717.6
+    },
+    {
+      "pid": 61130,
+      "from_start_ms": 640.3,
+      "from_request_ms": 712.6
+    },
+    {
+      "pid": 61140,
+      "from_start_ms": 638.5,
+      "from_request_ms": 695.9
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 638.5,
+      "p10": 638.5,
+      "median": 642.9,
+      "p90": 658.0,
+      "max": 658.0
+    },
+    "from_request_ms": {
+      "min": 695.9,
+      "p10": 695.9,
+      "median": 712.6,
+      "p90": 730.1,
+      "max": 730.1
+    },
+    "spread": 0.03
+  }
+}

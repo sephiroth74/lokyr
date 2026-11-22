@@ -111,6 +111,10 @@ pub struct FakePane {
     /// The lines of its commands, by their ids, as a read of a command's
     /// line gives them.
     pub command_lines: BTreeMap<u64, String>,
+    /// The command line that its shell edits at its prompt, as a read of
+    /// it gives it, and as a run of a line needs it empty: none by
+    /// default, as of a shell that marks no prompt.
+    pub edited_line: Option<String>,
     /// Its view, as a read of it gives it; of none, its screen, the last
     /// of its rows held, as many as its grid's, of no scrollback above
     /// them.
@@ -197,42 +201,109 @@ impl FakePane {
                     input: held(command.input),
                     output: held(command.output),
                     end: held(command.end),
-                    ..*command
+                    ..command.clone()
                 })
             })
             .collect()
     }
 
+    /// Its command of the id `id`, as a read of the commands gives it, its
+    /// marks of rows above those held read as none.
+    fn command(&self, id: u64) -> Option<host::ShellCommand> {
+        let start = self.held.start;
+        let held = |mark: Option<(u16, i64)>| mark.filter(|&(_, row)| row >= start);
+        let command = self.commands.iter().find(|command| command.id == id)?;
+        Some(host::ShellCommand {
+            prompt: held(command.prompt),
+            input: held(command.input),
+            output: held(command.output),
+            end: held(command.end),
+            ..command.clone()
+        })
+    }
+
+    /// Its command whose block holds the row numbered `row`, as the app's
+    /// host gives it: the last whose first row is at `row` or above it,
+    /// unless it ended before `row`, its end's row its own where the end is
+    /// past its first column.
+    fn command_at(&self, row: i64) -> Option<host::ShellCommand> {
+        let command = self.commands_meeting(row, row.saturating_add(1)).pop()?;
+        let within = match command.end {
+            Some((column, end)) => row < end || (row == end && column > 0),
+            None => true,
+        };
+        within.then_some(command)
+    }
+
     /// Its view, as a read of it gives it.
     fn viewport(&self) -> host::Viewport {
-        self.viewport.unwrap_or_else(|| {
+        self.viewport.clone().unwrap_or_else(|| {
             let top = self.held.end - i64::from(self.grid.1);
             host::Viewport {
                 top,
                 rows: self.grid.1,
                 screen: top,
                 oldest: self.held.start,
-                epoch: 0,
-                alternate: false,
+                ..host::Viewport::default()
             }
         })
     }
 
+    /// The cells of `count` rows from the row numbered `first`, as many as
+    /// the pane holds; none of a first row that it does not hold.
+    fn row_cells(&self, first: i64, count: usize) -> Option<Vec<crate::image::CellRow>> {
+        if !self.held.contains(&first) {
+            return None;
+        }
+        let last = first
+            .saturating_add(i64::try_from(count).unwrap_or(i64::MAX))
+            .min(self.held.end);
+        Some(
+            (first..last)
+                .map(|row| crate::image::CellRow {
+                    text: self
+                        .rows
+                        .get(&row)
+                        .map(|(text, _)| text.trim_end_matches(' ').to_owned())
+                        .unwrap_or_default(),
+                    runs: self.styles.get(&row).cloned().unwrap_or_default(),
+                })
+                .collect(),
+        )
+    }
+
     /// The cells of the rows that its view shows, of their texts without
     /// the spaces that end them and their styles, as a read of them gives
-    /// them.
+    /// them: a fold's placeholder's of none.
     fn view_cells(&self) -> Vec<crate::image::CellRow> {
         let view = self.viewport();
-        (view.top..view.top + i64::from(view.rows))
-            .map(|row| crate::image::CellRow {
-                text: self
-                    .rows
-                    .get(&row)
-                    .map(|(text, _)| text.trim_end_matches(' ').to_owned())
-                    .unwrap_or_default(),
-                runs: self.styles.get(&row).cloned().unwrap_or_default(),
-            })
-            .collect()
+        let cells = |row: i64| crate::image::CellRow {
+            text: self
+                .rows
+                .get(&row)
+                .map(|(text, _)| text.trim_end_matches(' ').to_owned())
+                .unwrap_or_default(),
+            runs: self.styles.get(&row).cloned().unwrap_or_default(),
+        };
+        let mut shown = Vec::with_capacity(usize::from(view.rows));
+        let mut row = view.top;
+        let mut folds = view.folds.iter().peekable();
+        for _ in 0..view.rows {
+            match folds.next_if(|fold| fold.first <= row) {
+                Some(fold) => {
+                    shown.push(crate::image::CellRow {
+                        text: String::new(),
+                        runs: Vec::new(),
+                    });
+                    row = fold.last + 1;
+                }
+                None => {
+                    shown.push(cells(row));
+                    row += 1;
+                }
+            }
+        }
+        shown
     }
 }
 
@@ -252,6 +323,7 @@ impl Default for FakePane {
             title: None,
             commands: Vec::new(),
             command_lines: BTreeMap::new(),
+            edited_line: None,
             viewport: None,
             cursor: (0, 0),
             held_cursor: None,
@@ -505,6 +577,20 @@ pub struct FakeHost {
     day: u64,
     notice: bool,
     keeps_state: bool,
+    /// The system's time and the local time zone's offset that a read of
+    /// the time gives.
+    local_time: host::LocalTime,
+    /// The folder of the host's temporary files, of none as without a
+    /// state's folder, and the temporary files that the plugin wrote, their
+    /// bounds' tally and their bytes by their names, kept in memory, and
+    /// the clock's time of the last, from which their budget refills.
+    temporary_folder: Option<std::path::PathBuf>,
+    temporary: host::TemporaryFiles,
+    temporary_bytes: BTreeMap<String, Vec<u8>>,
+    temporary_written: Option<u64>,
+    /// The git branches of the repositories' folders, as the test gave
+    /// them, which a folder within one takes.
+    git_branches: BTreeMap<String, String>,
     /// The AI agents that a read of the agents gives, as the test gave them.
     agents: Vec<host::AgentInfo>,
     /// The plugins that a read of the plugins gives, as the test gave them,
@@ -523,12 +609,20 @@ pub struct FakeHost {
     messages: Vec<(String, BTreeMap<String, Data>, String)>,
     /// The place of the plugin's tab bar.
     bar_place: BarPlace,
+    /// The side of the status bar of the plugin's view: its manifest's,
+    /// then the one that it asked for.
+    status_bar_side: host::StatusBarSide,
     /// The places of the plugin's tab bar of windows of their own.
     window_bar_places: BTreeMap<WindowId, BarPlace>,
     /// The fade of the panes that have not the keyboard, and whether the
     /// keyboard follows the pointer, as the plugin asked.
     inactive_dim: f32,
     focus_follows_mouse: bool,
+    /// The looks of the commands' blocks that the plugin asked for.
+    block_looks: host::BlockLooks,
+    /// The blocks that the plugin selected, by their panes, of their
+    /// commands' ids.
+    selected_blocks: BTreeMap<PaneId, u64>,
     /// The window that has the focus.
     focused: Option<WindowId>,
     /// The focus that the test gave last, which the next look at the
@@ -571,6 +665,8 @@ pub struct FakeHost {
     menu_items: Vec<crate::host::MenuItem>,
     subscribed: Vec<String>,
     done: Vec<Request>,
+    /// The plugin's reads since the last take, in their order.
+    reads: Vec<Request>,
     decorations: Vec<FakeDecoration>,
     gutter_marks: Vec<FakeGutterMark>,
     panels: BTreeMap<PanelId, PanelOptions>,
@@ -638,6 +734,12 @@ impl FakeHost {
             registry: Vec::new(),
             fonts: fonts(),
             day: DAY,
+            local_time: LOCAL_TIME,
+            temporary_folder: Some(std::path::PathBuf::from(TEMPORARY_FOLDER)),
+            temporary: host::TemporaryFiles::default(),
+            temporary_bytes: BTreeMap::new(),
+            temporary_written: None,
+            git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
             settings: host::Settings::default(),
@@ -666,9 +768,12 @@ impl FakeHost {
             },
             messages: Vec::new(),
             bar_place: BarPlace::default(),
+            status_bar_side: host::StatusBarSide::Start,
             window_bar_places: BTreeMap::new(),
             inactive_dim: 0.0,
             focus_follows_mouse: false,
+            block_looks: host::BlockLooks::default(),
+            selected_blocks: BTreeMap::new(),
             focused: None,
             given_focus: None,
             clipboard: None,
@@ -692,6 +797,7 @@ impl FakeHost {
             menu_items: Vec::new(),
             subscribed: Vec::new(),
             done: Vec::new(),
+            reads: Vec::new(),
             decorations: Vec::new(),
             gutter_marks: Vec::new(),
             panels: BTreeMap::new(),
@@ -748,6 +854,7 @@ impl FakeHost {
             uses,
             builtin,
             pages,
+            status_bar_side,
         } = declared(manifest);
         // Lokyr's own plugins' alone, which another's manifest has refused.
         if !builtin {
@@ -755,6 +862,7 @@ impl FakeHost {
         }
         let mut host = self.with_capabilities(capabilities).with_pages(pages);
         host.third_party = !builtin;
+        host.status_bar_side = status_bar_side;
         match uses {
             Some(patterns) => host.with_uses(patterns),
             None => host,
@@ -939,6 +1047,13 @@ impl FakeHost {
         self
     }
 
+    /// Gives the system's time and the local time zone's offset, which a
+    /// read of the time gives, in place of [`LOCAL_TIME`].
+    pub fn set_local_time(&mut self, now: host::LocalTime) -> &mut Self {
+        self.local_time = now;
+        self
+    }
+
     /// Gives the AI agents that a read of the agents gives.
     pub fn set_agents(&mut self, agents: Vec<host::AgentInfo>) -> &mut Self {
         self.agents = agents;
@@ -1103,6 +1218,37 @@ impl FakeHost {
         self
     }
 
+    /// Keeps the host's temporary files in `folder`, [`TEMPORARY_FOLDER`]
+    /// by default, which their paths are of, or none, as the app without a
+    /// state's folder, when a temporary file fails; the fake keeps their
+    /// bytes in memory, which [`FakeHost::temporary_file`] gives.
+    pub fn set_temporary_folder(&mut self, folder: Option<std::path::PathBuf>) -> &mut Self {
+        self.temporary_folder = folder;
+        self
+    }
+
+    /// The bytes of the plugin's temporary file `name`, as it wrote them
+    /// last; none of a file that it did not write.
+    pub fn temporary_file(&self, name: &str) -> Option<&[u8]> {
+        self.temporary_bytes.get(name).map(Vec::as_slice)
+    }
+
+    /// Makes the folder of the absolute path `folder` a git repository's
+    /// of the branch `branch`, or no repository's of none, which a read of
+    /// the branch of a folder within it gives.
+    pub fn set_git_branch(&mut self, folder: &str, branch: Option<&str>) -> &mut Self {
+        match branch {
+            Some(branch) => {
+                self.git_branches
+                    .insert(folder.to_owned(), branch.to_owned());
+            }
+            None => {
+                self.git_branches.remove(folder);
+            }
+        }
+        self
+    }
+
     /// Keeps the plugin's state between the app's runs, as by default, or
     /// not, as the app without a state's folder, which a read tells; it
     /// holds the state in memory all the same.
@@ -1205,6 +1351,12 @@ impl FakeHost {
         self.places.get(&window).copied()
     }
 
+    /// The side of the status bar where the plugin's view goes: its
+    /// manifest's, or the one that it asked for last.
+    pub fn status_bar_side(&self) -> host::StatusBarSide {
+        self.status_bar_side
+    }
+
     /// The place of the plugin's tab bar in `window`: the window's own, or
     /// the bar's.
     pub fn bar_place(&self, window: WindowId) -> BarPlace {
@@ -1218,6 +1370,24 @@ impl FakeHost {
     /// asked for, and whether the keyboard follows the pointer.
     pub fn pane_looks(&self) -> (f32, bool) {
         (self.inactive_dim, self.focus_follows_mouse)
+    }
+
+    /// The looks of the commands' blocks that the plugin asked for.
+    pub fn block_looks(&self) -> host::BlockLooks {
+        self.block_looks
+    }
+
+    /// The id of the command whose block the plugin selected in `pane`, if
+    /// it selected one.
+    pub fn selected_block(&self, pane: PaneId) -> Option<u64> {
+        self.selected_blocks.get(&pane).copied()
+    }
+
+    /// Ends the block's selection of `pane`, as a key that its program
+    /// takes, a text typed into it or a click in it does.
+    pub fn end_block_selection(&mut self, pane: PaneId) -> &mut Self {
+        self.selected_blocks.remove(&pane);
+        self
     }
 
     /// The clipboard's text.
@@ -1420,6 +1590,24 @@ impl FakeHost {
         std::mem::take(&mut self.done)
     }
 
+    /// The plugin's reads since the last take that its capabilities allow,
+    /// in their order, as the requests themselves: what its calls looked
+    /// at.
+    pub fn take_reads(&mut self) -> Vec<Request> {
+        std::mem::take(&mut self.reads)
+    }
+
+    /// Cuts short the reads of rows that the plugin asked for and has yet
+    /// to hear of, as a resize or the pane's closing does in their middle:
+    /// their `lines` events, at the next delivery, tell them incomplete.
+    pub fn cut_reads(&mut self) {
+        for event in &mut self.owed {
+            if let Event::Lines { complete, .. } = event {
+                *complete = false;
+            }
+        }
+    }
+
     /// The ids of the plugin's searches that the host keeps, in their
     /// order, as their ends take them away.
     pub fn searches(&self) -> Vec<u64> {
@@ -1611,7 +1799,7 @@ impl FakeHost {
                     | Event::DoubleTapped { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
             if taken && self.hears(&event) {
-                batch.push(event);
+                batch.push(self.told(event));
             }
         }
         self.timers.retain(|&id, timer| {
@@ -1790,6 +1978,25 @@ impl FakeHost {
                     .collect();
                 keys.extend(own);
                 settings.keys = keys;
+                continue;
+            }
+            // A plugin's section turned on or off, as the app reads its
+            // config again.
+            if let Request::SetSetting {
+                section,
+                plugin: plugin @ Some(_),
+                key,
+                value: Some(Data::Boolean(on)),
+            } = request
+                && key == "enabled"
+            {
+                if let Some(shown) = settings
+                    .sections
+                    .iter_mut()
+                    .find(|shown| shown.name == *section && shown.plugin == *plugin)
+                {
+                    shown.enabled = Some(*on);
+                }
                 continue;
             }
             if let Request::SetSetting {
@@ -2064,8 +2271,18 @@ impl FakeHost {
                 self.looked(*id, &before);
             }
             Request::SetTabBarPlace(place) => self.bar_place = *place,
+            Request::SetStatusBarSide(side) => self.status_bar_side = *side,
             Request::SetInactiveDim(dim) => self.inactive_dim = *dim,
             Request::SetFocusFollowsMouse(on) => self.focus_follows_mouse = *on,
+            Request::SetBlockLooks(looks) => self.block_looks = *looks,
+            Request::SelectBlock { pane, command } => match command {
+                Some(command) => {
+                    self.selected_blocks.insert(*pane, *command);
+                }
+                None => {
+                    self.selected_blocks.remove(pane);
+                }
+            },
             Request::SetWindowTabBarPlace { window, place } => match place {
                 Some(place) => {
                     self.window_bar_places.insert(*window, *place);
@@ -2212,6 +2429,20 @@ impl FakeHost {
         }
         if settles {
             self.settle_groups();
+        }
+    }
+
+    /// `event` as the plugin hears it: a command's end of no exit status
+    /// to a plugin of no `history-read`, as the app's host tells it.
+    fn told(&self, event: Event) -> Event {
+        let history = self
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::HistoryRead));
+        if history {
+            event
+        } else {
+            event.without_history()
         }
     }
 
@@ -3978,6 +4209,32 @@ impl Calling<'_> {
         ))
     }
 
+    /// Writes the plugin's temporary file `name` of `bytes`, as the app's
+    /// host does, in memory: its path in the folder of the host's
+    /// temporary files.
+    fn temp_file(&mut self, name: &str, bytes: &[u8]) -> Result<Response, Error> {
+        if self.looking {
+            return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+        }
+        let Some(folder) = self.host.temporary_folder.clone() else {
+            return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+        };
+        let now = self.host.clock;
+        if let Some(at) = self.host.temporary_written {
+            self.host
+                .temporary
+                .refill(std::time::Duration::from_millis(now.saturating_sub(at)));
+        }
+        self.host.temporary_written = Some(now);
+        self.host.temporary.check(name, bytes.len())?;
+        self.host.temporary.insert(name, bytes.len());
+        self.host
+            .temporary_bytes
+            .insert(name.to_owned(), bytes.to_vec());
+        let path = host::temporary_path(&folder, self.host.namespace(), name);
+        Ok(Response::Text(Some(path.to_string_lossy().into_owned())))
+    }
+
     /// The title of `pane`: its program's, or, to a plugin that reads the
     /// processes, the name of its folder, as the app's; what a plugin that
     /// does not read them learns of it, of which a change that it cannot
@@ -4009,6 +4266,9 @@ impl Calling<'_> {
         if let Request::PaneTitle(pane) = request {
             return self.pane_title(*pane);
         }
+        if let Request::TempFile { name, bytes } = request {
+            return self.temp_file(name, &bytes.0);
+        }
         let host = &*self.host;
         Ok(match request {
             Request::ClipboardText => Response::Text(host.clipboard.clone()),
@@ -4038,6 +4298,10 @@ impl Calling<'_> {
                     .map(|rows| rows.iter().take(crate::image::MOST_ROWS).cloned().collect()),
             ),
             Request::ScreenCells(pane) => Response::Cells(Some(host.held(*pane)?.view_cells())),
+            Request::RowCells { pane, first, count } => Response::Cells(
+                host.held(*pane)?
+                    .row_cells(*first, (*count).min(crate::image::MOST_ROWS)),
+            ),
             Request::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, crate::image::LOOKING));
@@ -4213,6 +4477,14 @@ impl Calling<'_> {
             Request::Fonts => Response::Fonts(host.fonts.clone()),
             Request::FontStyles(family) => Response::FontStyles(font_styles(family)),
             Request::Day => Response::Day(host.day),
+            Request::Now => Response::Now(host.local_time),
+            Request::GitBranch { folder } => {
+                host::check_absolute_folder(folder)?;
+                let branch = std::path::Path::new(folder)
+                    .ancestors()
+                    .find_map(|at| host.git_branches.get(at.to_str()?));
+                Response::Text(branch.cloned())
+            }
             Request::Agents => Response::Agents(host.agents.clone()),
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
@@ -4334,8 +4606,73 @@ impl Calling<'_> {
             Request::CommandLine { pane, command } => {
                 Response::Text(host.held(*pane)?.command_lines.get(command).cloned())
             }
+            Request::EditedLine(pane) => Response::Text(host.held(*pane)?.edited_line.clone()),
+            Request::SelectedBlock(pane) => {
+                let reads = host.reads_processes();
+                let held = host.held(*pane)?;
+                let command = host
+                    .selected_blocks
+                    .get(pane)
+                    .and_then(|&id| held.command(id));
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
+            }
+            // Their folders, the processes' working directories, to a plugin
+            // that reads the processes alone.
             Request::ShellCommands { pane, top, bottom } => {
-                Response::ShellCommands(host.held(*pane)?.commands_meeting(*top, *bottom))
+                let reads = host.reads_processes();
+                let commands = host.held(*pane)?.commands_meeting(*top, *bottom);
+                Response::ShellCommands(
+                    commands
+                        .into_iter()
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .collect(),
+                )
+            }
+            Request::ShellCommand { pane, command } => {
+                let reads = host.reads_processes();
+                let command = host.held(*pane)?.command(*command);
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
+            }
+            Request::CommandAt { pane, row } => {
+                let reads = host.reads_processes();
+                let command = host.held(*pane)?.command_at(*row);
+                Response::ShellCommand(
+                    command
+                        .map(|command| {
+                            if reads {
+                                command
+                            } else {
+                                command.without_folder()
+                            }
+                        })
+                        .map(Box::new),
+                )
             }
             Request::Viewport(pane) => Response::Viewport(host.held(*pane)?.viewport()),
             Request::CursorCell(pane) => Response::Cell(Some(host.held(*pane)?.cursor)),
@@ -4391,6 +4728,24 @@ impl Calling<'_> {
                 self.known_tab(*tab)?;
                 Response::Done
             }
+            Request::SelectBlock { pane, command } => {
+                let held = self.host.held(*pane)?;
+                if let Some(command) = command
+                    && held.command(*command).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        host::no_command(*pane, *command),
+                    ));
+                }
+                Response::Done
+            }
+            Request::RunLine { pane, line } => {
+                let edited = self.host.held(*pane)?.edited_line.as_deref();
+                host::check_run_line(*pane, edited, line)
+                    .map_err(|why| Error::new(Code::Unavailable, why))?;
+                Response::Done
+            }
             Request::SetClipboardImage(png) => {
                 png.check_png()?;
                 Response::Done
@@ -4401,13 +4756,14 @@ impl Calling<'_> {
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 Response::Done
             }
+            Request::SetStatusBarSide(_) => Response::Done,
             Request::SetInactiveDim(dim) => {
                 if !(0.0..=1.0).contains(dim) {
                     return Err(Error::new(Code::Failed, DIM_RANGE));
                 }
                 Response::Done
             }
-            Request::SetFocusFollowsMouse(_) => Response::Done,
+            Request::SetFocusFollowsMouse(_) | Request::SetBlockLooks(_) => Response::Done,
             Request::ShowMatches {
                 search, current, ..
             } => {
@@ -4574,6 +4930,27 @@ impl Calling<'_> {
                         return Err(Error::new(
                             Code::NotFound,
                             format!("there is no command `{command}`"),
+                        ));
+                    }
+                } else if plugin.is_some() && key == "enabled" {
+                    // The host's key of a plugin's section, which turns the
+                    // plugin on or off, of a boolean alone.
+                    let known = self
+                        .host
+                        .settings
+                        .sections
+                        .iter()
+                        .any(|shown| shown.name == *section && shown.plugin == *plugin);
+                    if !known {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("there is no plugin's section `{section}`"),
+                        ));
+                    }
+                    if !matches!(value, Some(Data::Boolean(_))) {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`enabled` in `[plugins.{section}]` is true or false"),
                         ));
                     }
                 } else {
@@ -5280,10 +5657,7 @@ impl host::Host for Calling<'_> {
             Err(error) => return Response::Failed(error),
         };
         if let Some(granted) = &self.host.granted
-            && let Some(needed) = request
-                .capabilities()
-                .into_iter()
-                .find(|needed| !crate::command::grants(granted, needed))
+            && let Some(needed) = request.lacking(granted)
         {
             return Response::Failed(Error::new(
                 Code::MissingCapability,
@@ -5294,7 +5668,10 @@ impl host::Host for Calling<'_> {
             ));
         }
         let answered = match request.effect() {
-            Effect::Read => self.read(&request),
+            Effect::Read => {
+                self.host.reads.push(request.clone());
+                self.read(&request)
+            }
             Effect::Write | Effect::App => self.queue(request),
             Effect::Declaration if self.looking => Err(Error::new(
                 Code::Failed,
@@ -5542,6 +5919,7 @@ fn write_node(out: &mut String, node: &Node, depth: usize) {
 fn declared(text: &str) -> Declared {
     let (mut capabilities, mut uses, mut builtin) = (Vec::new(), None, false);
     let mut pages = Vec::new();
+    let mut status_bar_side = host::StatusBarSide::Start;
     let mut section = "";
     let mut lines = text.lines();
     while let Some(line) = lines.next() {
@@ -5558,6 +5936,7 @@ fn declared(text: &str) -> Declared {
                 "capabilities" => "capabilities",
                 "uses" => "uses",
                 "contributes" => "contributes",
+                "contributes.status-bar" => "status-bar",
                 _ => "",
             };
             continue;
@@ -5603,6 +5982,13 @@ fn declared(text: &str) -> Declared {
                     })
                 }));
             }
+            "status-bar" if key == "side" => {
+                status_bar_side = match value.trim_matches('"') {
+                    "center" => host::StatusBarSide::Center,
+                    "end" => host::StatusBarSide::End,
+                    _ => host::StatusBarSide::Start,
+                };
+            }
             _ => {}
         }
     }
@@ -5611,6 +5997,7 @@ fn declared(text: &str) -> Declared {
         uses,
         builtin,
         pages,
+        status_bar_side,
     }
 }
 
@@ -5624,11 +6011,25 @@ struct Declared {
     builtin: bool,
     /// The ids of its settings' window's pages.
     pages: Vec<String>,
+    /// The side of the status bar of its view.
+    status_bar_side: host::StatusBarSide,
 }
 
 /// The system's day that the fake host gives by default, in days since
 /// 1970-01-01: 11 November 2026.
 pub const DAY: u64 = 20_768;
+
+/// The folder of the host's temporary files that the fake gives by
+/// default, which their paths are of; the fake writes nothing there.
+pub const TEMPORARY_FOLDER: &str = "/tmp/lokyr-temporary";
+
+/// The system's time that the fake host gives by default: 11 November 2026
+/// at noon in UTC, of a time zone an hour east of it, as Central European
+/// Time.
+pub const LOCAL_TIME: host::LocalTime = host::LocalTime {
+    time: (DAY * 86_400 + 12 * 3600) * 1000,
+    offset: 3600,
+};
 
 /// The tokens of the themes that the fake host gives by default: Lokyr
 /// Dark's, in force, of a token of its own, one of a rule and a plugin's.

@@ -1123,6 +1123,12 @@ fn flatten(
     Ok(())
 }
 
+/// The sections of Lokyr's tokens that a built-in plugin's own tokens
+/// share, of its name: `[blocks]`, of the blocks' dividers, and of the
+/// Blocks plugin's header's colors, which its config names. A name of them
+/// that Lokyr does not know is the plugin's.
+const SHARED: [&str; 1] = ["blocks"];
+
 /// Gives `partial` the token `name` of `item`'s value, a color or an
 /// expression, at its place: a value that does not read, or a name of
 /// Lokyr's own sections that Lokyr does not know, told among its notices;
@@ -1150,9 +1156,10 @@ fn give(
         )
     })?;
     let first = name.split('.').next().unwrap_or_default();
-    let ours = lokyr_plugin_sdk::theme::TOKENS
-        .iter()
-        .any(|token| token.split('.').next() == Some(first));
+    let ours = !SHARED.contains(&first)
+        && lokyr_plugin_sdk::theme::TOKENS
+            .iter()
+            .any(|token| token.split('.').next() == Some(first));
     if ours && !lokyr_plugin_sdk::theme::TOKENS.contains(&name.as_str()) {
         partial.notices.push(error(
             span.clone(),

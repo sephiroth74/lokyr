@@ -34,7 +34,7 @@ const RENAMES: [(&str, &str, &str); 6] = [
 
 /// The names of the parameters of the requests of a value, or of values,
 /// which have no fields' names, where their types' do not tell them.
-const PARAMS: [(&str, &[&str]); 19] = [
+const PARAMS: [(&str, &[&str]); 20] = [
     ("subscribe", &["names"]),
     ("show_page", &["page"]),
     ("keep_awake", &["awake"]),
@@ -52,6 +52,7 @@ const PARAMS: [(&str, &[&str]); 19] = [
     ("opens", &["target"]),
     ("set_font_size", &["size"]),
     ("set_tab_bar_place", &["place"]),
+    ("set_status_bar_side", &["side"]),
     ("set_inactive_dim", &["dim"]),
     ("set_state", &["state"]),
 ];
@@ -721,8 +722,18 @@ export type TestHost = {
     -- Moves the host's time on by `milliseconds`, its timers' events given.
     advance: (milliseconds: number) -> (),
     -- The writes that its calls made since the last look, each a table of
-    -- its request's name, as `{ Notify = { ... } }`.
+    -- its request's name in snake case, as `{ notify = { ... } }` or
+    -- `{ open_at = { ... } }`.
     done: () -> { { [string]: any } },
+    -- The reads that its calls made since the last look, of those that its
+    -- capabilities allow, each a table of its request's name in snake case,
+    -- as `{ git_branch = { ... } }` or `{ tabs = 1 }`, or the name alone of
+    -- a request of nothing more, in kebab case, as `focused-pane`.
+    reads: () -> { { [string]: any } | string },
+    -- Cuts short the reads of rows that it asked for and has yet to hear
+    -- of, as a resize or the pane's closing does: their `lines` events, at
+    -- the next delivery, tell them incomplete.
+    cut_reads: () -> (),
     -- The names of the commands that it registered.
     commands: () -> { string },
     -- The clipboard's text.
@@ -740,6 +751,10 @@ export type TestHost = {
     set_screen: (rows: { CellRow }) -> (),
     -- Gives the pane a selection of the cells `rows`, or none.
     set_selection: (rows: { CellRow }?) -> (),
+    -- Gives the pane the commands `commands` that its shell marked, oldest
+    -- first, as the reads of the commands tell them, their rows the
+    -- screen's from 0, as `set_screen` gives them.
+    set_commands: (commands: { ShellCommand }) -> (),
     -- The PNG on the clipboard, if the plugin put one there.
     clipboard_image: () -> string?,
     -- The saves whose panels show, in the order of their ids.
@@ -750,6 +765,19 @@ export type TestHost = {
     answer_save: (id: number, path: string?) -> (),
     -- The bytes of the file that a save wrote at `path`, if one did.
     saved_file: (path: string) -> string?,
+    -- The bytes of the plugin's temporary file `name`, as it wrote them
+    -- last, if it did.
+    temporary_file: (name: string) -> string?,
+    -- Gives the pane the folder of its program, as a read of its working
+    -- directory gives it, or none.
+    set_directory: (folder: string?) -> (),
+    -- The side of the status bar where its view goes: its manifest's, or
+    -- the one that it asked for last.
+    status_bar_side: () -> StatusBarSide,
+    -- Makes the folder of the absolute path `folder` a git repository's of
+    -- the branch `branch`, or no repository's of none, which a read of the
+    -- branch of a folder within it gives.
+    set_git_branch: (folder: string, branch: string?) -> (),
     -- The ids of the images that the host keeps of the plugin's, the oldest
     -- first.
     kept_images: () -> { number },

@@ -1,7 +1,8 @@
 //! The commands that the host of a Luau plugin's tests holds, beside the
 //! plugin's own: the app's and its first-party plugins', as the registry
-//! of an app of the default distribution holds them, which
-//! `lokyr-plugin-host-luau` keeps in `luau/commands.json`.
+//! of an app of the default distribution holds them, its plugins that
+//! start off, as Blocks, turned on, which `lokyr-plugin-host-luau` keeps
+//! in `luau/commands.json`.
 
 use std::path::Path;
 
@@ -14,7 +15,9 @@ fn file() -> std::path::PathBuf {
 
 #[test]
 fn the_luau_test_host_holds_the_app_s_commands() {
-    let (_fake, app) = started();
+    let mut fake = Fake::default();
+    let mut app = app(all_plugins(""), quiet());
+    fake.start(&mut app);
     let mut names: Vec<&str> = app
         .commands
         .in_order()

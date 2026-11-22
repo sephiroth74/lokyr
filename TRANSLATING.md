@@ -24,6 +24,7 @@ The catalogs, each in a folder of its language's code, `en` for English, `it` fo
 | [`plugins/quick-terminal/locales/en/quick-terminal.ftl`](plugins/quick-terminal/locales/en/quick-terminal.ftl) | The quick terminal |
 | [`plugins/progress/locales/en/progress.ftl`](plugins/progress/locales/en/progress.ftl) | The programs' progress |
 | [`plugins/command-header/locales/en/command-header.ftl`](plugins/command-header/locales/en/command-header.ftl) | The command at a pane's top |
+| [`plugins/blocks/locales/en/blocks.ftl`](plugins/blocks/locales/en/blocks.ftl) | The commands' blocks: the command at a pane's top, and its arrow to the block's end |
 | [`plugins/copy-mode/locales/en/copy-mode.ftl`](plugins/copy-mode/locales/en/copy-mode.ftl) | The copy mode |
 | [`plugins/quick-tips/locales/en/quick-tips.ftl`](plugins/quick-tips/locales/en/quick-tips.ftl) | The quick tips |
 

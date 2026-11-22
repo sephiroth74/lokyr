@@ -89,7 +89,7 @@ fn the_commands_register_without_keys() {
         .collect();
     for (name, when) in whens {
         let wanted = match name {
-            "pane.copy" => Some("selection"),
+            "pane.copy" => Some("selection || blocks.selected"),
             FONT_BIGGER | FONT_SMALLER | FONT_RESET => None,
             _ => Some("pane.focused"),
         };
@@ -278,6 +278,7 @@ fn commands_host() -> FakeHost {
         output: output.map(|row| (0, row)),
         end: Some((0, end)),
         status: Some(0),
+        ..ShellCommand::default()
     };
     pane.commands = vec![command(1, 0, Some(1), 6), command(2, 6, Some(7), 7)];
     host
@@ -360,6 +361,7 @@ fn output_host(rows: &[(&str, bool)], output: (u16, i64), end: (u16, i64)) -> Fa
         output: Some(output),
         end: Some(end),
         status: Some(0),
+        ..ShellCommand::default()
     }];
     host
 }
@@ -451,7 +453,55 @@ fn no_output_applies_while_the_alternate_screen_shows() {
         oldest: 0,
         epoch: 0,
         alternate: true,
+        folds: Vec::new(),
     });
     assert!(!host.applies(&mut plugin, COPY_OUTPUT, &Args::new()));
     assert!(!host.applies(&mut plugin, SELECT_OUTPUT, &cell(0, 1)));
+}
+
+#[test]
+fn a_copy_of_no_selection_copies_the_block_that_blocks_selected() {
+    use lokyr_plugin_sdk::command::{Capability, Category, Command};
+    let copy_block = Command {
+        name: COPY_BLOCK.to_owned(),
+        title: "Copy Command and Output".to_owned(),
+        category: Category::Clipboard,
+        capabilities: vec![
+            Capability::HistoryRead,
+            Capability::TerminalRead,
+            Capability::ClipboardWrite,
+        ],
+        params: vec![lokyr_plugin_sdk::command::Param {
+            name: "selected".to_owned(),
+            kind: lokyr_plugin_sdk::command::Kind::Boolean,
+            default: Some(Value::Boolean(false)),
+        }],
+        when: None,
+    };
+    let mut host = FakeHost::new(NAME)
+        .with_manifest(crate::MANIFEST)
+        .with_commands(vec![copy_block]);
+    host.focus(Some(PaneId(7)));
+    host.pane(PaneId(7));
+    run(&mut host, COPY).unwrap();
+    // Of the selected block alone, which Blocks copies of one selected.
+    assert_eq!(
+        host.take_done(),
+        [Request::RunCommand {
+            name: COPY_BLOCK.to_owned(),
+            args: Args::from([("selected".to_owned(), Value::Boolean(true))]),
+        }]
+    );
+    // A selection's text first; of no Blocks, nothing.
+    host.pane(PaneId(7)).selection = Some("ls".to_owned());
+    run(&mut host, COPY).unwrap();
+    assert_eq!(
+        host.take_done(),
+        [Request::SetClipboardText("ls".to_owned())]
+    );
+    let mut alone = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    alone.focus(Some(PaneId(7)));
+    alone.pane(PaneId(7));
+    run(&mut alone, COPY).unwrap();
+    assert!(alone.take_done().is_empty());
 }

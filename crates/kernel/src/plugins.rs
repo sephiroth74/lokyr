@@ -549,6 +549,9 @@ pub struct Context<'a> {
     pub config_error: Option<&'a host::ConfigProblem>,
     /// The day of the system's clock, in days since 1970-01-01, in UTC.
     pub day: u64,
+    /// The time of the system's clock and the local time zone's offset
+    /// from UTC, as the app reads them.
+    pub local_time: &'a dyn Fn() -> host::LocalTime,
     /// Whether a notice of the app's shows.
     pub notice: bool,
     /// Whether a window shows a save panel.
@@ -669,6 +672,8 @@ struct State {
     written: Data,
     /// Its state on the disk.
     stored: Stored,
+    /// Its temporary files.
+    temporary: Temporary,
     /// Whether its section of the config turns it on, as by default.
     wanted: bool,
     /// The plugin that replaces it, by its name, while one that runs does,
@@ -681,10 +686,17 @@ struct State {
     starts: u64,
     /// Where its tab bar goes in the windows that show it.
     bar_place: host::BarPlace,
+    /// The side of the status bar that it asked for its view, in place of
+    /// its manifest's, until it stops.
+    status_bar_side: Option<host::StatusBarSide>,
     /// The fade of the panes that have not the keyboard that it asked for,
     /// and whether it asked that the keyboard follow the pointer.
     dim: f32,
     follows: bool,
+    /// The looks of the commands' blocks that it asked for.
+    block_looks: host::BlockLooks,
+    /// The blocks that it selected, by their panes, of their commands' ids.
+    selected_blocks: BTreeMap<host::PaneId, u64>,
     /// Where its tab bar goes in windows of a place of their own, as a
     /// window of a single tab shows its title, which goes as the window
     /// closes.
@@ -962,6 +974,20 @@ impl State {
         self.wanted && !off_for_good
     }
 
+    /// `event` as it hears it: a command's end of no exit status to a
+    /// plugin of no `history-read`.
+    fn told(&self, event: Event) -> Event {
+        let history = self
+            .granted
+            .as_ref()
+            .is_none_or(|granted| granted.contains(&Capability::HistoryRead));
+        if history {
+            event
+        } else {
+            event.without_history()
+        }
+    }
+
     /// Whether it reads the processes, whose folders and programs a tab's
     /// title tells it.
     fn reads_processes(&self) -> bool {
@@ -1039,6 +1065,22 @@ struct Stored {
     held: Option<Data>,
 }
 
+/// The function that marks a file that a plugin wrote as come from
+/// elsewhere, so that the system asks before it opens as a program, as the
+/// platform gives it.
+pub type Mark = fn(&std::path::Path) -> std::io::Result<()>;
+
+/// A plugin's temporary files: their folder, its own in the host's folder
+/// of them, with the function that marks each, none without a state's
+/// folder; the tally of those that it wrote, which their bounds count; and
+/// the time of its last write, from which its budget of writes refills.
+#[derive(Debug, Default)]
+struct Temporary {
+    folder: Option<(PathBuf, Mark)>,
+    files: host::TemporaryFiles,
+    written: Option<Instant>,
+}
+
 impl State {
     /// Whether its manifest declares that it fills `slot`.
     fn fills(&self, slot: Slot) -> bool {
@@ -1082,6 +1124,9 @@ pub struct Plugins {
     serve_for: Option<Duration>,
     /// The app's state directory, which the plugins' states are kept in.
     state_directory: Option<PathBuf>,
+    /// The folder of the plugins' temporary files, each plugin's in a
+    /// folder of its own, with the function that marks them.
+    temporary_directory: Option<(PathBuf, Mark)>,
     /// The capabilities that the host withholds and that a declared
     /// plugin's manifest asked for, by the plugin's name, which
     /// [`Plugins::take_withheld`] tells.
@@ -1616,12 +1661,11 @@ impl Plugins {
         // capabilities that it holds now, as a subscription takes them.
         let granted = self.entries[at].state.granted.clone();
         for event in deferred.events {
-            let needed =
-                lokyr_plugin_sdk::message::Request::Subscribe(vec![event.name().to_owned()])
-                    .capabilities();
+            let subscription =
+                lokyr_plugin_sdk::message::Request::Subscribe(vec![event.name().to_owned()]);
             let may = granted
                 .as_ref()
-                .is_none_or(|granted| needed.iter().all(|capability| granted.contains(capability)));
+                .is_none_or(|granted| subscription.lacking(granted).is_none());
             if may {
                 self.out.events.push((Some(name.to_owned()), event));
             }
@@ -1719,7 +1763,12 @@ impl Plugins {
             .state_directory
             .as_ref()
             .map(|directory| state_file(directory, &namespace));
+        let temporary = self
+            .temporary_directory
+            .as_ref()
+            .map(|(directory, mark)| (directory.join(&namespace), *mark));
         let (granted, uses) = declared.unzip();
+        let wanted = enabled_by_default(manifest.as_ref());
         self.entries.push(Entry {
             runner,
             make: None,
@@ -1752,14 +1801,22 @@ impl Plugins {
                 config: data(&Value::Object(config)),
                 written: Data::Map(BTreeMap::new()),
                 stored: Stored { file, held: None },
-                wanted: true,
+                temporary: Temporary {
+                    folder: temporary,
+                    files: host::TemporaryFiles::default(),
+                    written: None,
+                },
+                wanted,
                 replaced_by: None,
                 ran: false,
                 starts: 0,
                 bar_place: host::BarPlace::default(),
+                status_bar_side: None,
                 window_places: BTreeMap::new(),
                 dim: 0.0,
                 follows: false,
+                block_looks: host::BlockLooks::default(),
+                selected_blocks: BTreeMap::new(),
                 told_tabs: BTreeMap::new(),
                 told_panes: BTreeMap::new(),
                 searches: Vec::new(),
@@ -1809,6 +1866,39 @@ impl Plugins {
         self.state_directory = directory;
     }
 
+    /// Gives the host the folder of the plugins' temporary files, each
+    /// plugin's in a folder of its namespace's within it, and the function
+    /// that marks each file as come from elsewhere: emptied now, as the
+    /// app starts, of the files of a run that did not quit; none, as
+    /// without a state's folder, fails a temporary file.
+    pub fn set_temporary_directory(&mut self, directory: Option<PathBuf>, mark: Mark) {
+        if let Some(directory) = &directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        for entry in &mut self.entries {
+            entry.state.temporary = Temporary {
+                folder: directory
+                    .as_ref()
+                    .map(|directory| (directory.join(&entry.state.namespace), mark)),
+                files: host::TemporaryFiles::default(),
+                written: None,
+            };
+        }
+        self.temporary_directory = directory.map(|directory| (directory, mark));
+    }
+
+    /// Takes the plugins' temporary files away, their folder whole, as the
+    /// app quits.
+    pub fn empty_temporary(&self) {
+        if let Some((directory, _)) = &self.temporary_directory {
+            // A folder that is not there is empty already; a link there
+            // goes alone, not what it leads to.
+            let _ = std::fs::remove_dir_all(directory);
+        }
+    }
+
     /// Checks the plugins' sections of `config` against their schemas: a
     /// section that one refuses leaves its plugin's config in force; one
     /// that it takes, with the defaults of the keys that it leaves out,
@@ -1838,7 +1928,7 @@ impl Plugins {
             written.remove(ENABLED);
             state.written = data(&Value::Object(written));
             match values.remove(ENABLED) {
-                None => state.wanted = true,
+                None => state.wanted = enabled_by_default(state.manifest.as_ref()),
                 Some(Value::Bool(enabled)) => state.wanted = enabled,
                 Some(other) => {
                     notices.push(ConfigNotice {
@@ -1927,7 +2017,8 @@ impl Plugins {
             }
         }
         // Who replaces whom, of the sections' `enabled`: a cycle replaces
-        // nothing, and a replaced plugin's keys apply once the other goes.
+        // nothing. A replaced plugin's keys, which apply once the other
+        // goes, tell nothing: the settings show its section's replacer.
         for cycle in self.replace() {
             let names = cycle
                 .iter()
@@ -1945,25 +2036,6 @@ impl Plugins {
                 namespace,
                 refused: false,
             });
-        }
-        for entry in &self.entries {
-            let state = &entry.state;
-            let keys = matches!(&state.written, Data::Map(map) if !map.is_empty());
-            if let (Some(by), true) = (&state.replaced_by, keys) {
-                let namespace = &state.namespace;
-                notices.push(ConfigNotice {
-                    text: format!(
-                        "{}the keys of `[plugins.{namespace}]` apply while `{by}`, which replaces `{}`, is off",
-                        config
-                            .get(namespace)
-                            .map(|section| section.at(&[]) + ": ")
-                            .unwrap_or_default(),
-                        state.name
-                    ),
-                    namespace: namespace.clone(),
-                    refused: false,
-                });
-            }
         }
         for (namespace, section) in config.sections() {
             if !self
@@ -2149,6 +2221,8 @@ impl Plugins {
             if entry.state.replaced_by != replacer {
                 entry.state.replaced_by = replacer;
                 self.out.written = true;
+                // The settings tell the replaced plugins' sections.
+                self.generation += 1;
             }
         }
         cycles
@@ -2433,6 +2507,15 @@ impl Plugins {
         commands
     }
 
+    /// Whether the plugin of `namespace` runs where the config says nothing
+    /// of it, as its manifest says; on, of a plugin not there.
+    pub fn enabled_by_default(&self, namespace: &str) -> bool {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.namespace == namespace)
+            .is_none_or(|entry| enabled_by_default(entry.state.manifest.as_ref()))
+    }
+
     /// The menus' items of the active plugins, in their order, each titled
     /// in `language` from its plugin's catalogs, the language's or
     /// English's, or by its own text where they lack it; `None` for the
@@ -2458,10 +2541,11 @@ impl Plugins {
                         .as_ref()
                         .map(|title| texts.get(title).unwrap_or_else(|| title.clone())),
                     ticked: item.ticked,
-                    own: state
-                        .commands
-                        .iter()
-                        .any(|command| command.name == item.command),
+                    own: (is_lokyrs_own(state) && item.submenu.is_some())
+                        || state
+                            .commands
+                            .iter()
+                            .any(|command| command.name == item.command),
                 }
             }));
         }
@@ -2521,12 +2605,76 @@ impl Plugins {
             .fold(0.0, f32::max)
     }
 
+    /// The id of the command whose block an active plugin selected in
+    /// `pane`, if one did.
+    pub fn selected_block(&self, pane: host::PaneId) -> Option<u64> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .find_map(|entry| entry.state.selected_blocks.get(&pane).copied())
+    }
+
+    /// The namespaces of the active plugins that selected a block of
+    /// `pane`, whose keys' context holds `<namespace>.selected`.
+    pub fn selecting(&self, pane: host::PaneId) -> Vec<&str> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry.state.status == Status::Active
+                    && entry.state.selected_blocks.contains_key(&pane)
+            })
+            .map(|entry| entry.state.name.rsplit('/').next().unwrap_or_default())
+            .collect()
+    }
+
+    /// Ends every block's selection of `pane`, as a key that its program
+    /// takes, a text typed into it or a click in it does. Whether one
+    /// ended.
+    pub fn end_block_selections(&mut self, pane: host::PaneId) -> bool {
+        let mut ended = false;
+        for entry in &mut self.entries {
+            ended |= entry.state.selected_blocks.remove(&pane).is_some();
+        }
+        ended
+    }
+
+    /// How the panes draw the commands' blocks: each look that an active
+    /// plugin asked for.
+    pub fn block_looks(&self) -> host::BlockLooks {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state.status == Status::Active)
+            .fold(host::BlockLooks::default(), |looks, entry| {
+                looks.with(entry.state.block_looks)
+            })
+    }
+
     /// Whether the keyboard goes to the pane that the pointer comes over, as
     /// an active plugin asked.
     pub fn focus_follows_mouse(&self) -> bool {
         self.entries
             .iter()
             .any(|entry| entry.state.status == Status::Active && entry.state.follows)
+    }
+
+    /// The side of the status bar where the view of `plugin` goes: the one
+    /// that it asked for, or its manifest's; the start for a plugin not
+    /// there.
+    pub fn status_bar_side(&self, plugin: &str) -> host::StatusBarSide {
+        self.entries
+            .iter()
+            .find(|entry| entry.state.name == plugin)
+            .map(|entry| {
+                entry.state.status_bar_side.unwrap_or_else(|| {
+                    entry
+                        .state
+                        .manifest
+                        .as_ref()
+                        .map(|manifest| manifest.contributes.status_bar_side)
+                        .unwrap_or_default()
+                })
+            })
+            .unwrap_or_default()
     }
 
     /// Where the tab bar of `plugin`, the provider of a window's, goes; at
@@ -2667,6 +2815,9 @@ impl Plugins {
                 &state.granted,
                 &state.undecided,
                 &state.replaced_by,
+                // Whether its section turns it on, which tells a replaced
+                // plugin's state from one turned off.
+                state.wanted,
             )
                 .hash(&mut hasher);
         }
@@ -2689,7 +2840,7 @@ impl Plugins {
     /// The plugins' sections of the settings: each plugin's of a config
     /// schema, in their order, of its schema's order and of its keys'
     /// values as the config file writes them, whether the plugin takes them
-    /// or not; the same list until a plugin comes or goes or the
+    /// or not, and of the plugin that replaces it, if one does; the same list until a plugin comes or goes or the
     /// config applies anew, a change of which the plugins that subscribe to
     /// `settings-changed` hear.
     pub fn settings_sections(&mut self) -> Arc<[host::SettingsSection]> {
@@ -2712,12 +2863,15 @@ impl Plugins {
                     Data::Map(values) => values.clone(),
                     _ => BTreeMap::new(),
                 };
-                Some(crate::config::schema::section(
+                let mut section = crate::config::schema::section(
                     &state.namespace,
                     Some(&state.name),
                     &node,
                     |key| values.get(key).cloned(),
-                ))
+                );
+                section.replaced_by = state.replaced_by.clone();
+                section.enabled = Some(state.wanted);
+                Some(section)
             })
             .collect();
         let sections: Arc<[host::SettingsSection]> = Arc::from(sections);
@@ -3463,8 +3617,13 @@ impl Plugins {
                 let held: Vec<(Option<String>, Event)> = events
                     .iter()
                     .filter(|(to, _)| to.as_ref().is_none_or(|to| *to == name))
-                    .filter(|(_, event)| state.hears(event, context.workspace))
-                    .cloned()
+                    .filter_map(|(to, event)| {
+                        if state.hears(event, context.workspace) {
+                            Some((to.clone(), state.told(event.clone())))
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 worker.hold(held);
                 continue;
@@ -3480,7 +3639,14 @@ impl Plugins {
                 .collect();
             let mut batch: Vec<Event> = batch
                 .into_iter()
-                .filter(|event| entry.state.hears(event, context.workspace))
+                .filter_map(|event| {
+                    let state = &mut entry.state;
+                    if state.hears(&event, context.workspace) {
+                        Some(state.told(event))
+                    } else {
+                        None
+                    }
+                })
                 .collect();
             // Its timers that fired, once it can take them: a plugin of a
             // thread of its own as its thread is free, so that a timer that
@@ -3533,6 +3699,21 @@ impl Plugins {
                         .iter()
                         .any(|trigger| matches!(trigger, Trigger::Event(event) if event == name))
             })
+    }
+
+    /// A fingerprint of the active plugins that subscribed to the events of
+    /// `name`, each of its run: it changes as a plugin starts following
+    /// them, or starts again, which heard nothing of what came before, as
+    /// the panes' views, which the app then tells anew.
+    pub fn listeners(&self, name: &str) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for state in self.active() {
+            if state.subscribed.iter().any(|subscribed| subscribed == name) {
+                (&state.name, state.starts).hash(&mut hasher);
+            }
+        }
+        hasher.finish()
     }
 
     /// Whether events wait for the next delivery: those of the reads of
@@ -4004,7 +4185,10 @@ pub struct MenuEntry {
     pub submenu: Option<String>,
     /// Whether the menu bar shows it ticked.
     pub ticked: bool,
-    /// Whether its command is its plugin's own, which it registered.
+    /// Whether it takes its command's place in its menu, of no arguments:
+    /// its command is its plugin's own, which it registered, or its plugin
+    /// is one of Lokyr's own and it goes into a submenu, which gathers
+    /// another's commands too, as a submenu of a block's actions.
     pub own: bool,
 }
 
@@ -4303,6 +4487,12 @@ fn start(
 
 /// Whether the plugin of `state` is one of Lokyr's own, compiled into the
 /// app, of its manifest, or of none and no grants.
+/// Whether the plugin of `manifest` runs where the config says nothing of
+/// it, as its manifest's `enabled-by-default` says: on, of none.
+fn enabled_by_default(manifest: Option<&Manifest>) -> bool {
+    manifest.is_none_or(|manifest| manifest.enabled_by_default)
+}
+
 fn is_lokyrs_own(state: &State) -> bool {
     state
         .manifest
@@ -4439,6 +4629,7 @@ fn stop(
     state.views.clear();
     state.subscribed.clear();
     state.bar_place = host::BarPlace::default();
+    state.status_bar_side = None;
     state.window_places.clear();
     state.dim = 0.0;
     state.follows = false;
@@ -4799,6 +4990,14 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.send_text(&text);
                 }
             }
+            // The line, as a paste, bracketed as the program asks, then
+            // Return, as the user types it; of no question, as it runs.
+            Asked::RunLine { pane: id, line } => {
+                if let Some(pane) = pane(id) {
+                    pane.paste(&line);
+                    pane.send_text("\r");
+                }
+            }
             Asked::Scroll { pane: id, scroll } => {
                 if let Some(pane) = pane(id) {
                     pane.scroll(scrolled(scroll));
@@ -4867,8 +5066,18 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.set_tab_title(TabId::of(tab.0), title);
             }
             Asked::SetTabBarPlace(place) => state.bar_place = place,
+            Asked::SetStatusBarSide(side) => state.status_bar_side = Some(side),
             Asked::SetInactiveDim(dim) => state.dim = dim,
             Asked::SetFocusFollowsMouse(on) => state.follows = on,
+            Asked::SetBlockLooks(looks) => state.block_looks = looks,
+            Asked::SelectBlock { pane, command } => match command {
+                Some(command) => {
+                    state.selected_blocks.insert(pane, command);
+                }
+                None => {
+                    state.selected_blocks.remove(&pane);
+                }
+            },
             Asked::SetWindowTabBarPlace { window, place } => {
                 // The places of windows that closed go.
                 state
@@ -5776,11 +5985,7 @@ impl Host<'_, '_> {
         let Some(granted) = &self.state.granted else {
             return Ok(());
         };
-        match request
-            .capabilities()
-            .into_iter()
-            .find(|needed| !lokyr_plugin_sdk::command::grants(granted, needed))
-        {
+        match request.lacking(granted) {
             Some(needed) => Err(Error::new(
                 Code::MissingCapability,
                 format!(
@@ -6074,8 +6279,38 @@ impl Host<'_, '_> {
             Asked::CommandLine { pane, command } => {
                 Response::Text(self.pane(pane)?.command_line(command))
             }
+            // Their folders, the processes' working directories, to a plugin
+            // that reads the processes alone.
             Asked::ShellCommands { pane, top, bottom } => {
-                Response::ShellCommands(self.pane(pane)?.commands_meeting(top, bottom))
+                let reads = self.state.reads_processes();
+                let commands = self.pane(pane)?.commands_meeting(top, bottom);
+                Response::ShellCommands(
+                    commands
+                        .into_iter()
+                        .map(|command| folder_for(command, reads))
+                        .collect(),
+                )
+            }
+            Asked::ShellCommand { pane, command } => {
+                let reads = self.state.reads_processes();
+                let command = self.pane(pane)?.shell_command(command);
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
+            }
+            Asked::EditedLine(pane) => Response::Text(self.pane(pane)?.edited_command_line()),
+            Asked::SelectedBlock(pane) => {
+                let reads = self.state.reads_processes();
+                let found = self.pane(pane)?;
+                let command = self
+                    .state
+                    .selected_blocks
+                    .get(&pane)
+                    .and_then(|&id| found.shell_command(id));
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
+            }
+            Asked::CommandAt { pane, row } => {
+                let reads = self.state.reads_processes();
+                let command = self.pane(pane)?.command_at(row);
+                Response::ShellCommand(command.map(|command| Box::new(folder_for(command, reads))))
             }
             Asked::CursorCell(pane) => Response::Cell(self.pane(pane)?.cursor_cell()),
             Asked::Viewport(pane) => {
@@ -6107,6 +6342,41 @@ impl Host<'_, '_> {
             Asked::Fonts => Response::Fonts((self.context.fonts)()),
             Asked::FontStyles(family) => Response::FontStyles((self.context.font_styles)(&family)),
             Asked::Day => Response::Day(self.context.day),
+            Asked::Now => Response::Now((self.context.local_time)()),
+            Asked::TempFile { name, bytes } => {
+                if self.looking {
+                    return Err(Error::new(Code::Failed, host::LOOKING_WRITES_NOTHING));
+                }
+                let Some((folder, mark)) = self.state.temporary.folder.clone() else {
+                    return Err(Error::new(Code::Failed, host::NO_TEMPORARY_FOLDER));
+                };
+                // Of the plugin's budget of writes in time, which each file
+                // takes, so that a plugin's loop of writes waits.
+                let temporary = &mut self.state.temporary;
+                if let Some(at) = temporary.written {
+                    temporary
+                        .files
+                        .refill(self.context.now.saturating_duration_since(at));
+                }
+                temporary.written = Some(self.context.now);
+                temporary.files.check(&name, bytes.0.len())?;
+                // Written whole, of the platform's mark before it takes its
+                // name, on the main thread, of no flush to the disk, as the
+                // file is gone at the quit anyway.
+                let path = folder.join(&name);
+                lokyr_pkg_model::write_scratch(&path, &bytes.0, mark).map_err(|error| {
+                    Error::new(
+                        Code::Failed,
+                        format!("the temporary file `{name}` was not written: {error}"),
+                    )
+                })?;
+                self.state.temporary.files.insert(&name, bytes.0.len());
+                Response::Text(Some(path.to_string_lossy().into_owned()))
+            }
+            Asked::GitBranch { folder } => {
+                host::check_absolute_folder(&folder)?;
+                Response::Text(crate::git::branch(std::path::Path::new(&folder)))
+            }
             Asked::Plugins => Response::Plugins(self.context.plugins.to_vec()),
             Asked::Settings => {
                 let mut sections = crate::config::schema::sections(self.context.config);
@@ -6169,6 +6439,11 @@ impl Host<'_, '_> {
             Asked::ScreenCells(pane) => {
                 Response::Cells(Some(cell_rows(self.pane(pane)?.view_cells())))
             }
+            Asked::RowCells { pane, first, count } => Response::Cells(
+                self.pane(pane)?
+                    .row_cells(first, count.min(image::MOST_ROWS))
+                    .map(cell_rows),
+            ),
             Asked::RenderImage(image) => {
                 if self.looking {
                     return Err(Error::new(Code::Failed, lokyr_plugin_sdk::image::LOOKING));
@@ -6266,6 +6541,24 @@ impl Host<'_, '_> {
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SelectBlock { pane, command } => {
+                let found = self.pane(*pane)?;
+                if let Some(command) = command
+                    && found.shell_command(*command).is_none()
+                {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        host::no_command(*pane, *command),
+                    ));
+                }
+            }
+            // A line runs at the shell's prompt alone, as it edits an empty
+            // command line now.
+            Asked::RunLine { pane, line } => {
+                let edited = self.pane(*pane)?.edited_command_line();
+                host::check_run_line(*pane, edited.as_deref(), line)
+                    .map_err(|why| Error::new(Code::Unavailable, why))?;
             }
             Asked::Decorate {
                 pane,
@@ -7130,6 +7423,33 @@ impl Host<'_, '_> {
                         lokyr_plugin_sdk::keys::system_error(&key),
                     ));
                 }
+                // The host's key of every plugin's section, which turns its
+                // plugin on or off, as the Plugins page does: written of
+                // the plugin's own default, the plugin starting anew.
+                if let Some(plugin) = &plugin
+                    && key == ENABLED
+                {
+                    let known = self.context.plugin_settings.iter().any(|shown| {
+                        shown.name == section && shown.plugin.as_deref() == Some(plugin.as_str())
+                    });
+                    if !known {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            format!("the plugin `{plugin}` has no section `{section}`"),
+                        ));
+                    }
+                    let Some(Data::Boolean(enabled)) = value else {
+                        return Err(Error::new(
+                            Code::InvalidConfig,
+                            format!("`{ENABLED}` in `[plugins.{section}]` is true or false"),
+                        ));
+                    };
+                    self.out.requests.push(Request::SetPluginEnabled {
+                        namespace: section,
+                        enabled,
+                    });
+                    return Ok(Response::Done);
+                }
                 if plugin.is_none()
                     && section == "keys"
                     && let Some(command) = command
@@ -7537,6 +7857,16 @@ fn window_title(workspace: &Workspace, window: &crate::workspace::Window, reads:
     any_tab_info(workspace, window.active_tab(), false)
         .map(|tab| tab.title)
         .unwrap_or_default()
+}
+
+/// `command`, of its folder if the plugin `reads` the processes, whose
+/// working directories they are, and of none otherwise.
+fn folder_for(command: host::ShellCommand, reads: bool) -> host::ShellCommand {
+    if reads {
+        command
+    } else {
+        command.without_folder()
+    }
 }
 
 /// What a read of a window's tabs tells of `tab` of `workspace`, a tab of

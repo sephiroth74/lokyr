@@ -97,17 +97,35 @@ fn the_cells_show_the_selection_matches_backgrounds_cursor_guide_and_bars() {
     assert_eq!(at(0, ROWS - 2).alpha, 0.0);
     // An underline, a curly one and a strikethrough among its lines.
     assert!(batch.lines.len() >= 3);
-    // The gutter's bars of the commands' states, of the theme's tokens.
+    // The first block's tint, as the keyboard selects it, the failed
+    // block's, a divider at each block's top, then the gutter's bars of the
+    // commands' states along their blocks, of the theme's tokens.
     let fills: Vec<Color> = bars.iter().map(|bar| bar.fill).collect();
+    let token = |name: &str| tokens.get(name).unwrap();
     assert_eq!(
         fills,
         [
-            tokens.get("gutter.succeeded").unwrap(),
-            tokens.get("gutter.succeeded").unwrap(),
-            tokens.get("gutter.failed").unwrap(),
-            tokens.get("gutter.running").unwrap(),
+            token("blocks.selected.bg"),
+            token("blocks.failed"),
+            token("blocks.divider"),
+            token("blocks.divider"),
+            token("blocks.divider"),
+            token("blocks.divider"),
+            token("gutter.succeeded"),
+            token("gutter.succeeded"),
+            token("gutter.failed"),
+            token("gutter.running"),
         ]
     );
+    // The bars along their blocks, of their rows: `ls`' prompt and its
+    // output's row, the colors' six, `make`'s two, and the last one's to
+    // the cursor's row.
+    let height = cell().height;
+    let rows: Vec<u32> = bars[6..]
+        .iter()
+        .map(|bar| bar.rect.height.div_ceil(height))
+        .collect();
+    assert_eq!(rows, [2, 6, 2, 2]);
     assert!(bars.iter().all(|bar| bar.rect.x < 12));
 }
 

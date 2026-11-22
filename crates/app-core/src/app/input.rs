@@ -4,7 +4,7 @@
 //! slots' views, which take the pointer over them and the keys while one of
 //! their nodes has the keyboard's focus.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::commands::Value;
 use lokyr_kernel::keymap::{Invocation, Pressed, Resolved, Resolver};
@@ -15,17 +15,25 @@ use lokyr_platform_core::{
     Dropped, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, Platform, Point,
     ScrollDelta, ScrollPhase, WindowId,
 };
-use lokyr_ui_core::pane::Preedit;
+use lokyr_ui_core::pane::{Preedit, rows_up};
 use lokyr_vt_core::input::{Key, KeyOptions, Keypad, MouseAction, MouseEvent, Wheel};
 use lokyr_vt_core::terminal::{
-    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit,
+    MouseEncoding, MouseTracking, Scroll, SelectionShape, SelectionUnit, ShownRow, Snapshot,
 };
 
 use super::{App, SELECTION_SCROLL, SELECTION_SCROLL_ROWS, chrome, context};
 use crate::drawing::Backend;
-use crate::mouse::{Pointer, Spot};
+use crate::mouse::{Ease, Glide, Pointer, Spot};
 use crate::window::{ColumnDrag, Selecting};
 use crate::{keys, mouse};
+
+/// The rows that a glide's view stops short of its place by, at most, of
+/// the shares that a view rounds: past them, the view met the oldest row.
+const STOPPED: f64 = 0.01;
+
+/// The refresh of a display that tells none, which a trackpad's ease takes:
+/// a sixtieth of a second.
+const REFRESH: Duration = Duration::from_nanos(16_666_667);
 
 impl<B: Backend> App<B> {
     /// A key of `window`: the press that the latency's bench waits for;
@@ -402,6 +410,11 @@ impl<B: Backend> App<B> {
         } else {
             keymap::Context::new(Vec::<&str>::new())
         };
+        if state.pane_has_focus()
+            && let Some(pane) = self.workspace.focused(state.window)
+        {
+            hold_selected_blocks(&self.plugins, pane, &mut context);
+        }
         // The plugins' panels: `<namespace>.open` of each that shows, not
         // of one whose pane another tab or a zoomed pane hides, and
         // `<namespace>.focused` of the one whose node has the keyboard.
@@ -477,7 +490,9 @@ impl<B: Backend> App<B> {
         self.pointer_in(platform, window, self.focused(window)?, position)
     }
 
-    /// Where `position` is in the cells of `pane`, one of `window`'s.
+    /// Where `position` is in the cells of `pane`, one of `window`'s, as the
+    /// drawn frame showed them: of its rows a share of a row up, while its
+    /// view is scrolled by one.
     fn pointer_in(
         &self,
         platform: &dyn Platform,
@@ -487,11 +502,14 @@ impl<B: Backend> App<B> {
     ) -> Option<Pointer> {
         let pane = self.workspace.pane(id)?;
         let size = platform.window_size(window)?;
+        let grid = pane.grid();
+        let up = rows_up(pane.snapshot(), u32::from(grid.cell_height));
         Some(mouse::pointer(
             position,
             size.scale,
             self.pane_origin(window, id, size),
-            pane.grid(),
+            grid,
+            u32::try_from(up).unwrap_or(0),
         ))
     }
 
@@ -614,6 +632,39 @@ impl<B: Backend> App<B> {
         {
             self.focus_pane(platform, window, under);
         }
+        // The right button, or the left one with Control, opens a context
+        // menu.
+        let menu_button = match button {
+            lokyr_vt_core::input::MouseButton::Right => true,
+            lokyr_vt_core::input::MouseButton::Left => mods.control,
+            _ => false,
+        };
+        // A press on the prompt rows of a block pinned at the view's top
+        // scrolls to the block's prompt, as a header's click does; a press
+        // of the menu's button asks the plugins for the block's menu.
+        if pressed
+            && button == lokyr_vt_core::input::MouseButton::Left
+            && !menu_button
+            && self.sticky_press(platform, window, position)
+        {
+            return;
+        }
+        if pressed && menu_button && self.sticky_menu(platform, window, position) {
+            return;
+        }
+        // A press of the left button that goes to the program ends the
+        // selection of a block of the pane under it; one that the terminal
+        // keeps ends it as it selects text, or tells a click as it goes up.
+        if pressed
+            && button == lokyr_vt_core::input::MouseButton::Left
+            && !self.keeps_click(window, mods)
+            && let Some(under) = self.pane_at(platform, window, position)
+            && self
+                .plugins
+                .end_block_selections(lokyr_kernel::plugins::host::PaneId(under.get()))
+        {
+            platform.request_frame(window);
+        }
         // A press that a binding takes starts no selection, and reaches no
         // program, which then learns of no release.
         if button == lokyr_vt_core::input::MouseButton::Left
@@ -623,13 +674,8 @@ impl<B: Backend> App<B> {
         {
             return;
         }
-        // The right button, or the left one with Control, opens the context
-        // menu where the terminal keeps the click.
-        let menu_button = match button {
-            lokyr_vt_core::input::MouseButton::Right => true,
-            lokyr_vt_core::input::MouseButton::Left => mods.control,
-            _ => false,
-        };
+        // The menu's button opens the context menu where the terminal keeps
+        // the click.
         if pressed && menu_button && self.keeps_click(window, mods) {
             self.context_menu(platform, window, position);
             return;
@@ -659,8 +705,7 @@ impl<B: Backend> App<B> {
         let Some(pane) = self.workspace.pane(target).filter(|pane| !pane.is_kept()) else {
             return;
         };
-        let on_screen =
-            mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height);
+        let on_screen = on_screen(pane, pointer);
         if pressed {
             let Some(pointer) = on_screen else {
                 return;
@@ -754,7 +799,9 @@ impl<B: Backend> App<B> {
         };
         let pane = self.workspace.focused(state.window);
         let context = context(pane);
-        let row = pane.map_or(0, shown_top) + i64::from(pointer.row);
+        let row = pane.map_or(i64::from(pointer.row), |pane| {
+            shown_number(pane, pointer.row)
+        });
         let Resolved::Run(mut invocation) =
             Resolver::new().press(&self.keymap, Pressed::click(binding_mods(mods)), &context)
         else {
@@ -824,8 +871,8 @@ impl<B: Backend> App<B> {
         let Some(pane) = self.workspace.focused(state.window) else {
             return;
         };
-        let grid = pane.grid();
-        let spot = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
+        let extended = state.selecting.as_ref().filter(|_| mods.shift);
+        let spot = spot_of(pane, pointer, extended.map(|selecting| selecting.anchor));
         let tracking = !pane.is_kept()
             && pane
                 .input_modes()
@@ -899,7 +946,7 @@ impl<B: Backend> App<B> {
             return;
         };
         let grid = pane.grid();
-        selecting.last = mouse::spot(pointer, shown_top(pane), grid.cell_width, grid.columns);
+        selecting.last = spot_of(pane, pointer, Some(selecting.anchor));
         selecting.beyond = mouse::beyond(position.y, scale, top, grid);
         show_selection(pane, selecting);
         platform.request_frame(window);
@@ -923,13 +970,27 @@ impl<B: Backend> App<B> {
                 .workspace
                 .focused(state.window)
                 .map_or(0, |pane| pane.grid().columns);
+            let click = selecting.plain
+                && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none();
             if self.config.cursor.click_to_move
-                && selecting.plain
-                && mouse::dragged_cells(selecting.anchor, selecting.last, columns).is_none()
+                && click
                 && let Some(pane) = self.workspace.focused(state.window)
                 && pane.shell_in_front()
             {
                 pane.prompt_click(selecting.anchor.col, selecting.anchor.row);
+            }
+            // A click tells the plugins that follow them, as a block's
+            // selection takes it; a selection of text ends a block's.
+            if let Some(pane) = self.workspace.focused(state.window) {
+                let id = lokyr_kernel::plugins::host::PaneId(pane.id().get());
+                if click {
+                    self.plugins.post(plugins::Event::Click {
+                        pane: id,
+                        at: (selecting.anchor.col, selecting.anchor.row),
+                    });
+                } else if self.plugins.end_block_selections(id) {
+                    platform.request_frame(window);
+                }
             }
         }
         if self.config.clipboard.copy_on_select
@@ -950,6 +1011,7 @@ impl<B: Backend> App<B> {
     pub(super) fn scroll_selections(&mut self, platform: &mut dyn Platform) {
         self.scroll_timer = None;
         let mut scrolled = false;
+        let by_pixels = self.config.window.smooth_scroll;
         for (&window, state) in &mut self.windows {
             let Some(selecting) = &mut state.selecting else {
                 continue;
@@ -964,20 +1026,31 @@ impl<B: Backend> App<B> {
                 .unwrap_or(usize::MAX)
                 .min(SELECTION_SCROLL_ROWS);
             let before = pane.view_offset();
-            pane.scroll(if selecting.beyond < 0 {
-                Scroll::Up(rows)
+            if by_pixels {
+                // By whole rows, the view's share of a row kept.
+                // Far fewer rows than an `f64` holds exactly.
+                let rows = rows as f64;
+                pane.scroll_by(if selecting.beyond < 0 { rows } else { -rows });
             } else {
-                Scroll::Down(rows)
-            });
+                pane.scroll(if selecting.beyond < 0 {
+                    Scroll::Up(rows)
+                } else {
+                    Scroll::Down(rows)
+                });
+            }
             let offset = pane.view_offset();
             // The pointer stays past the edge, on the row that the view
-            // brings under it.
+            // brings under it: at the bottom, the row past the view's last
+            // while the view is a share of a row up.
             let edge = if selecting.beyond < 0 {
                 0
             } else {
                 pane.grid().rows.saturating_sub(1)
             };
-            selecting.last.row = pane.origin().map_or(0, |origin| origin.row(edge));
+            let below =
+                selecting.beyond > 0 && pane.scrolled_place().is_some_and(|(_, share)| share > 0.0);
+            selecting.last.row =
+                pane.shown_row_now(edge).map_or(0, ShownRow::row) + i64::from(below);
             show_selection(pane, selecting);
             platform.request_frame(window);
             scrolled |= offset != before;
@@ -985,6 +1058,68 @@ impl<B: Backend> App<B> {
         if scrolled {
             self.scroll_timer = Some(platform.start_timer(Instant::now() + SELECTION_SCROLL));
         }
+    }
+
+    /// Scrolls the view of the pane under `position`, over `window`, to the
+    /// prompt of the block whose rows its snapshot pins at its top, if
+    /// `position` is over them. Whether it was.
+    fn sticky_press(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> bool {
+        let Some((id, _, prompt)) = self.sticky_under(platform, window, position) else {
+            return false;
+        };
+        let Some(pane) = self.workspace.pane(id) else {
+            return false;
+        };
+        pane.scroll(Scroll::Row(prompt));
+        platform.request_frame(window);
+        true
+    }
+
+    /// Tells the plugins of a press of the menu's button on the prompt rows
+    /// of a block pinned at the view's top of the pane under `position`,
+    /// over `window`, if `position` is over them, as their block's menu
+    /// opens there. Whether it was.
+    fn sticky_menu(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> bool {
+        let Some((id, command, _)) = self.sticky_under(platform, window, position) else {
+            return false;
+        };
+        let Some(state) = self.windows.get(&window) else {
+            return false;
+        };
+        self.plugins.post(plugins::Event::PromptRowsMenu {
+            pane: lokyr_kernel::plugins::host::PaneId(id.get()),
+            window: lokyr_kernel::plugins::host::WindowId::from(state.window),
+            command,
+        });
+        true
+    }
+
+    /// The pane under `position`, over `window`, the command and the row's
+    /// number of its prompt of the block whose prompt rows its snapshot
+    /// pins at its top, if `position` is over them.
+    fn sticky_under(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Point,
+    ) -> Option<(lokyr_kernel::workspace::PaneId, u64, i64)> {
+        let id = self.pane_at(platform, window, position)?;
+        let pointer = self.pointer_in(platform, window, id, position)?;
+        let snapshot = self.workspace.pane(id)?.snapshot();
+        let (command, prompt) = over_sticky(snapshot, pointer)
+            .then(|| snapshot.sticky_prompt())
+            .flatten()?;
+        Some((id, command, prompt))
     }
 
     /// The pointer moved over `window`: a program that asked learns of it,
@@ -1075,8 +1210,7 @@ impl<B: Backend> App<B> {
         if modes.mouse_tracking == MouseTracking::None {
             return;
         }
-        let offset = pane.snapshot().offset();
-        let Some(pointer) = mouse::on_screen(pointer, offset, pane.grid().cell_height) else {
+        let Some(pointer) = on_screen(pane, pointer) else {
             return;
         };
         let pixels = modes.mouse_encoding == MouseEncoding::SgrPixels;
@@ -1133,13 +1267,12 @@ impl<B: Backend> App<B> {
         let over = position.and_then(|position| {
             let pane = self.pane_under(platform, window, position)?;
             let pointer = self.pointer_in(platform, window, pane, position)?;
-            // The drawn frame's numbers, which take no lock of the pane.
-            let top = self.workspace.pane(pane)?.snapshot().origin()?.top;
-            Some((
-                pane,
-                Some((pointer.col, top + i64::from(pointer.row))),
-                command,
-            ))
+            // The drawn frame's numbers, which take no lock of the pane; no
+            // cell under a block's prompt rows pinned at the view's top.
+            let snapshot = self.workspace.pane(pane)?.snapshot();
+            let pinned = over_sticky(snapshot, pointer);
+            let row = snapshot.shown_row(pointer.row)?.row();
+            Some((pane, (!pinned).then_some((pointer.col, row)), command))
         });
         // Out of the panes, the pane that it left learns so.
         let told = over.or_else(|| self.pointer_told.map(|(pane, _, _)| (pane, None, command)));
@@ -1165,7 +1298,9 @@ impl<B: Backend> App<B> {
     /// The wheel or the trackpad scrolled over `window`, by `scroll`'s delta
     /// in its phase: each whole step goes to a program that takes the
     /// wheel, as the cursor keys on the alternate screen; otherwise, and
-    /// with Shift, it moves the view through the scrollback.
+    /// with Shift, it moves the view through the scrollback, by pixels with
+    /// `smooth-scroll`: a trackpad's points as they come, its momentum's
+    /// too, and a wheel's lines in a glide.
     pub(super) fn scroll(
         &mut self,
         platform: &mut dyn Platform,
@@ -1194,11 +1329,9 @@ impl<B: Backend> App<B> {
             return;
         };
         let row_points = f64::from(pane.grid().cell_height) / scale;
-        let (across, up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
         // A step that the program takes over the scrollback goes to it at
         // the screen's top row.
-        let pointer = mouse::on_screen(pointer, pane.snapshot().offset(), pane.grid().cell_height)
-            .unwrap_or(mouse::at_top(pointer));
+        let pointer = on_screen(pane, pointer).unwrap_or(mouse::at_top(pointer));
         let to_program = !mods.shift && !pane.is_kept();
         // A binding of a step takes it first, before the program and the
         // view.
@@ -1211,6 +1344,50 @@ impl<B: Backend> App<B> {
             Resolved::Run(invocation) => Some(invocation),
             _ => None,
         };
+        // By pixels, the view takes the scroll up and down as it comes,
+        // where neither a binding nor the program takes the wheel's steps.
+        let (_, rows) = mouse::rows(delta, row_points, mods.shift);
+        let wheel = if rows > 0.0 { Wheel::Up } else { Wheel::Down };
+        let by_pixels = self.config.window.smooth_scroll
+            && rows != 0.0
+            && rows.is_finite()
+            && bound(wheel).is_none()
+            && !(to_program
+                && pane.takes_mouse(&mouse_event(MouseAction::Wheel(wheel), mods, pointer)));
+        let (across, mut up) = state.mouse.scroll(delta, phase, row_points, mods.shift);
+        // A wheel's lines glide, once the steps below are done with.
+        let mut glides = None;
+        if by_pixels {
+            state.mouse.settle_up();
+            up = 0;
+            match delta {
+                // The view eases toward where the events take it, of a
+                // frame at every refresh while it moves; none at its ends,
+                // where the momentum goes on a while.
+                ScrollDelta::Points { .. } => {
+                    let refresh = platform.refresh_interval(window).unwrap_or(REFRESH);
+                    match &mut state.mouse.ease {
+                        // Its frames come at their pace.
+                        Some(ease) if ease.pane == target => ease.add(rows),
+                        slot => {
+                            // Another pane's view takes the rows that it
+                            // had left at once.
+                            if let Some(ease) = slot.take()
+                                && let Some(other) = self.workspace.pane(ease.pane)
+                            {
+                                other.scroll_by(ease.left());
+                            }
+                            if !at_end(pane, rows) {
+                                let now = Instant::now();
+                                *slot = Some(Ease::new(target, rows, now, refresh));
+                                platform.request_frame_at(window, now);
+                            }
+                        }
+                    }
+                }
+                ScrollDelta::Lines { .. } => glides = Some(rows),
+            }
+        }
         let mut runs = Vec::new();
         let mut view: i64 = 0;
         let wheel = if up > 0 { Wheel::Up } else { Wheel::Down };
@@ -1247,8 +1424,171 @@ impl<B: Backend> App<B> {
             });
             platform.request_frame(window);
         }
+        if let Some(rows) = glides {
+            self.glide(platform, window, target, rows);
+        }
         for invocation in runs {
             self.run(platform, &invocation.command, invocation.args);
+        }
+    }
+
+    /// Glides the view of `target`, one of `window`'s panes, by `rows`, up
+    /// where positive, as a wheel's step, or a click on a scroll bar's
+    /// track, scrolling by pixels: from where a glide of its view is, over
+    /// the rows that it has left and these; another pane's glide goes to
+    /// its rows at once. A glide that has nowhere to go, down at the screen
+    /// or up at the oldest row, is none, of no frame.
+    pub(super) fn glide(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        target: PaneId,
+        rows: f64,
+    ) {
+        let (Some(state), Some(pane)) =
+            (self.windows.get_mut(&window), self.workspace.pane(target))
+        else {
+            return;
+        };
+        let now = Instant::now();
+        let place = pane.scrolled_place();
+        let Some((oldest, screen)) = pane.row_ends() else {
+            return;
+        };
+        // Far fewer rows than an `f64` holds exactly.
+        let (oldest, screen) = (oldest as f64, screen as f64);
+        // The view's place, of its first row's number: at the screen, its
+        // top row's.
+        let from = match place {
+            // Far fewer rows than an `f64` holds exactly.
+            Some((origin, share)) => origin.top as f64 + f64::from(share),
+            None => screen,
+        };
+        let slot = &mut state.mouse.glide;
+        match slot {
+            Some(glide) if glide.pane == target => glide.add(rows, now, (place, from), screen),
+            _ => {
+                if let Some(glide) = slot.take()
+                    && let Some(other) = self.workspace.pane(glide.pane)
+                    && other.scrolled_place() == glide.left
+                {
+                    other.scroll_to(glide.end());
+                }
+                *slot = Some(Glide::new(target, rows, now, (place, from), screen));
+            }
+        }
+        let stuck = slot.as_ref().is_some_and(|glide| {
+            if glide.down() {
+                place.is_none()
+            } else {
+                from <= oldest
+            }
+        });
+        if stuck {
+            *slot = None;
+            return;
+        }
+        platform.request_frame(window);
+    }
+
+    /// Moves the view that the wheel glides over `window` by its step at
+    /// `now`, as a frame starts, before the frame takes the panes' screens,
+    /// and asks for the next frame while the glide goes on; a view that
+    /// moved another way since its last step, as a key moves it, or output
+    /// that brings it back to the screen, ends it, as the view's reaching
+    /// the screen going down, which it then follows, or its oldest row
+    /// going up.
+    pub(super) fn glide_view(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(glide) = &mut state.mouse.glide else {
+            return;
+        };
+        let Some((pane, (_, screen))) = self
+            .workspace
+            .pane(glide.pane)
+            .filter(|pane| pane.scrolled_place() == glide.left)
+            .and_then(|pane| Some((pane, pane.row_ends()?)))
+        else {
+            state.mouse.glide = None;
+            return;
+        };
+        if glide.down() && glide.left.is_none() {
+            state.mouse.glide = None;
+            return;
+        }
+        // Far fewer rows than an `f64` holds exactly.
+        glide.follow(screen as f64);
+        let (place, on) = glide.step(now);
+        pane.scroll_to(place);
+        glide.left = pane.scrolled_place();
+        // Short of its place going up, at the oldest row; down, at the
+        // screen, which the view then follows.
+        let stopped = match glide.left {
+            Some((origin, share)) => {
+                // Far fewer rows than an `f64` holds exactly.
+                origin.top as f64 + f64::from(share) - place > STOPPED
+            }
+            None => glide.down(),
+        };
+        if on && !stopped {
+            platform.request_frame(window);
+        } else {
+            state.mouse.glide = None;
+        }
+    }
+
+    /// Moves the view that a trackpad's scroll eases over `window` by its
+    /// step at `now`, as a frame starts, before the frame takes the panes'
+    /// screens, and asks for the next frame at its pace while rows are left;
+    /// at an end of the view, where it moves no more, the rest goes, as a
+    /// scroll past the end goes nowhere.
+    pub(super) fn ease_view(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        now: Instant,
+    ) {
+        let refresh = platform.refresh_interval(window).unwrap_or(REFRESH);
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let Some(ease) = &mut state.mouse.ease else {
+            return;
+        };
+        let Some(pane) = self.workspace.pane(ease.pane) else {
+            state.mouse.ease = None;
+            return;
+        };
+        // Half a pixel, of the rows' height in pixels.
+        let least = 0.5 / f64::from(pane.grid().cell_height.max(1));
+        let before = pane.scrolled_place();
+        pane.scroll_by(ease.step(now, refresh, least));
+        if ease.left() != 0.0 && pane.scrolled_place() != before {
+            platform.request_frame_at(window, ease.next(now, refresh));
+        } else {
+            state.mouse.ease = None;
+        }
+    }
+}
+
+/// Whether `pane`'s view is at the end that `rows` move it toward, up where
+/// positive: down at the screen, up at the oldest row.
+fn at_end(pane: &Pane, rows: f64) -> bool {
+    match pane.scrolled_place() {
+        None => rows < 0.0,
+        Some((origin, share)) => {
+            rows > 0.0
+                && pane.row_ends().is_some_and(|(oldest, _)| {
+                    // Far fewer rows than an `f64` holds exactly.
+                    origin.top as f64 + f64::from(share) <= oldest as f64
+                })
         }
     }
 }
@@ -1368,15 +1708,75 @@ fn mouse_event(action: MouseAction, mods: Modifiers, pointer: Pointer) -> MouseE
     }
 }
 
-/// The number of the first row of `pane`'s view as the drawn frame showed
-/// it, which the pointer's cells take, though output scrolled the view
-/// since; as the terminal has it now, when a resize laid the rows out
-/// again since, or the other screen became the active one.
-pub(super) fn shown_top(pane: &Pane) -> i64 {
-    let now = pane.origin();
-    match (pane.snapshot().origin(), now) {
-        (Some(drawn), Some(now)) if drawn.epoch == now.epoch => drawn.top,
-        (_, now) => now.map_or(0, |now| now.top),
+/// The row of `pane`'s view `y`, by the numbers of the rows that it shows,
+/// as the drawn frame showed it, which the pointer's cells take, though
+/// output scrolled the view since: the list's row, or a fold's
+/// placeholder, the screen's last past the list's last; the row `y` from
+/// the view's first as the terminal has it now, when a resize laid the
+/// rows out again since, or the other screen became the active one.
+pub(super) fn shown_row(pane: &Pane, y: u16) -> ShownRow {
+    let snapshot = pane.snapshot();
+    match (snapshot.origin(), pane.origin()) {
+        (Some(drawn), Some(now)) if drawn.epoch == now.epoch => {
+            snapshot.shown_row(y).unwrap_or_else(|| {
+                // Fewer rows than an `i64` holds.
+                let screen = drawn.top.saturating_add(snapshot.offset() as i64);
+                ShownRow::Row(screen + i64::from(snapshot.rows()) - 1)
+            })
+        }
+        (_, now) => ShownRow::Row(now.map_or(0, |now| now.top) + i64::from(y)),
+    }
+}
+
+/// `pointer` over `pane`, at its place on the screen, whose rows the program
+/// counts, as [`mouse::on_screen`] finds it, of the drawn view: over a view
+/// of folds, at its row's place on the screen, a fold's placeholder's first
+/// row's; `None` above the screen.
+fn on_screen(pane: &Pane, pointer: Pointer) -> Option<Pointer> {
+    let snapshot = pane.snapshot();
+    let cell_height = pane.grid().cell_height;
+    if snapshot.view().is_empty() {
+        return mouse::on_screen(pointer, snapshot.offset(), cell_height);
+    }
+    mouse::onto_row(pointer, snapshot.screen_row(pointer.row)?, cell_height)
+}
+
+/// Whether `pointer` is over the prompt rows that `snapshot` pins at its
+/// view's top: of the grid's band, where they stay, or of the rows, with
+/// which they move a share of a row as their block's end pushes them up.
+fn over_sticky(snapshot: &Snapshot, pointer: Pointer) -> bool {
+    let row = if snapshot.sticky_pushed() {
+        pointer.row
+    } else {
+        pointer.band_row
+    };
+    snapshot.sticky().is_some_and(|sticky| row < sticky.rows())
+}
+
+/// The number of the row of `pane`'s view `y`, as [`shown_row`] finds it:
+/// a fold's placeholder's first row's.
+pub(super) fn shown_number(pane: &Pane, y: u16) -> i64 {
+    shown_row(pane, y).row()
+}
+
+/// The spot of `pointer` in `pane`, its row as [`shown_row`] finds it: over
+/// a fold's placeholder, the end of the fold's last row from an anchor
+/// `from` above the fold, the start of its first otherwise, so that a drag
+/// over it selects the fold's rows whole.
+fn spot_of(pane: &Pane, pointer: Pointer, from: Option<Spot>) -> Spot {
+    let grid = pane.grid();
+    match shown_row(pane, pointer.row) {
+        ShownRow::Row(row) => mouse::spot(pointer, row, grid.cell_width, grid.columns),
+        ShownRow::Folded { first, last, .. } if from.is_some_and(|from| from.row < first) => Spot {
+            row: last,
+            col: grid.columns.saturating_sub(1),
+            boundary: grid.columns,
+        },
+        ShownRow::Folded { first, .. } => Spot {
+            row: first,
+            col: 0,
+            boundary: 0,
+        },
     }
 }
 
@@ -1424,4 +1824,27 @@ pub(super) fn editing_field<B: Backend>(state: &crate::window::Window<B>) -> boo
                 Some(plugins::view::Kind::Field(field)) if !field.records
             )
     })
+}
+
+/// Holds in `context` the plugins of `plugins` that selected a block of
+/// `pane`: `<namespace>.selected`, while the pane keeps its command and the
+/// command ended, on its primary screen.
+pub(super) fn hold_selected_blocks(
+    plugins: &plugins::Plugins,
+    pane: &Pane,
+    context: &mut keymap::Context,
+) {
+    let id = plugins::host::PaneId(pane.id().get());
+    // A command that runs takes its keys, the arrows and Escape, as a
+    // remote shell's or a pager's.
+    let kept = !pane.snapshot().alternate_screen()
+        && plugins.selected_block(id).is_some_and(|command| {
+            pane.shell_command(command)
+                .is_some_and(|shown| shown.end.is_some())
+        });
+    if kept {
+        for namespace in plugins.selecting(id) {
+            context.hold(format!("{namespace}.selected"));
+        }
+    }
 }

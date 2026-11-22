@@ -15,6 +15,7 @@ const PANE: Rect = Rect {
 const ROWS: Rows = Rows {
     total: 1000,
     top: 450,
+    share: 0.0,
     shown: 100,
 };
 
@@ -83,6 +84,33 @@ fn a_drag_s_knob_top_gives_the_view_s_first_row() {
 }
 
 #[test]
+fn by_pixels_the_knob_takes_the_view_s_share_and_a_drag_gives_a_place_of_one() {
+    let area = area(PANE, 1.0);
+    // 200 rows, of which the view shows 100: a knob of half the run, 297
+    // pixels, over a room of 297 for 100 places, 2.97 pixels a row.
+    let rows = Rows {
+        total: 200,
+        top: 50,
+        share: 0.0,
+        shown: 100,
+    };
+    let at = |top, share| knob(area, Rows { top, share, ..rows }, false, 1.0).y;
+    assert_eq!((at(50, 0.0), at(51, 0.0)), (172, 174));
+    // Half a row past the 50th, between the two.
+    assert_eq!(at(50, 0.5), 173);
+    // A drag's knob top gives the place of a share of a row, which the
+    // whole rows' drag rounds.
+    let place = place_at(area, rows, 1.0, 23.0 + 297.0 * 0.505);
+    assert!((place - 50.5).abs() < 1e-3, "{place}");
+    let place = place_at(area, rows, 1.0, 23.0 + 297.0 * 0.2025);
+    assert!((place - 20.25).abs() < 1e-3, "{place}");
+    assert_eq!(top_at(area, rows, 1.0, 23.0 + 297.0 * 0.2025), 20);
+    // Past the ends, the ends, whole.
+    assert_eq!(place_at(area, rows, 1.0, -100.0), 0.0);
+    assert_eq!(place_at(area, rows, 1.0, 5000.0), 100.0);
+}
+
+#[test]
 fn rows_that_the_view_shows_whole_and_a_hidden_bar_have_no_shapes() {
     let area = area(PANE, 1.0);
     let look = Look {
@@ -93,6 +121,7 @@ fn rows_that_the_view_shows_whole_and_a_hidden_bar_have_no_shapes() {
     let fit = Rows {
         total: 100,
         top: 0,
+        share: 0.0,
         shown: 100,
     };
     assert!(shapes(area, fit, look, &[], &tokens(), 1.0).is_empty());

@@ -81,8 +81,9 @@ const STATE_NEVER: &str = "never";
 /// The namespaces of the app's commands and of its own plugins', whose
 /// tips are the curated ones: a command of another is an installed
 /// plugin's.
-const FIRST_PARTY: [&str; 12] = [
+const FIRST_PARTY: [&str; 13] = [
     "app",
+    "blocks",
     "command-palette",
     "copy-mode",
     "font",
@@ -122,17 +123,19 @@ impl Arg {
 /// A curated tip: its id, which the state keeps, its text's message, and
 /// the command whose keys it names, as `$keys`, with its argument, which
 /// shows it only while they are bound; or none, of a feature that needs no
-/// keys.
+/// keys; and a command that shows it only while it is there, of a plugin
+/// that may be off, as Blocks, which starts off.
 #[derive(Clone, Copy, Debug)]
 struct Curated {
     id: &'static str,
     message: &'static str,
     command: Option<(&'static str, Arg)>,
+    needs: Option<&'static str>,
 }
 
 /// The curated tips, the most useful first: a new action, feature or
 /// shortcut of the app adds its own, its message in every catalog.
-const CURATED: [Curated; 47] = [
+const CURATED: [Curated; 55] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     plain("agents", "tip-agents"),
     plain("agent-status", "tip-agent-status"),
@@ -174,6 +177,17 @@ const CURATED: [Curated; 47] = [
         Arg::None,
     ),
     command("prompts", "tip-prompts", "pane.prompt-previous", Arg::None),
+    command(
+        "select-block",
+        "tip-select-block",
+        "blocks.select-previous",
+        Arg::None,
+    ),
+    needing(BLOCKS, plain("block-header", "tip-block-header")),
+    needing(BLOCKS, plain("block-copy", "tip-block-copy")),
+    needing(BLOCKS, plain("block-details", "tip-block-details")),
+    needing(BLOCKS, plain("block-rerun", "tip-block-rerun")),
+    needing(BLOCKS, plain("block-spacing", "tip-block-spacing")),
     command("copy-mode", "tip-copy-mode", "copy-mode.toggle", Arg::None),
     plain("tab-drag", "tip-tab-drag"),
     command("zoom", "tip-zoom", "splits.zoom-toggle", Arg::None),
@@ -211,6 +225,7 @@ const CURATED: [Curated; 47] = [
     command("font-size", "tip-font-size", "font.bigger", Arg::None),
     plain("itermcolors", "tip-itermcolors"),
     plain("float", "tip-float"),
+    plain("smooth-scroll", "tip-smooth-scroll"),
     command(
         "cursor-guide",
         "tip-cursor-guide",
@@ -227,10 +242,14 @@ const CURATED: [Curated; 47] = [
     plain("plugins", "tip-plugins"),
     plain("settings-window", "tip-settings-window"),
     plain("settings-search", "tip-settings-search"),
+    plain("settings-plugin-on", "tip-settings-plugin-on"),
     plain("settings-keys", "tip-settings-keys"),
     plain("settings-themes", "tip-settings-themes"),
     plain("theme-editor", "tip-theme-editor"),
 ];
+
+/// A command of Blocks, which shows its tips while it runs.
+const BLOCKS: &str = "blocks.copy-command";
 
 /// A curated tip of a command's keys.
 const fn command(id: &'static str, message: &'static str, name: &'static str, arg: Arg) -> Curated {
@@ -238,6 +257,15 @@ const fn command(id: &'static str, message: &'static str, name: &'static str, ar
         id,
         message,
         command: Some((name, arg)),
+        needs: None,
+    }
+}
+
+/// `tip`, shown only while the command `name` is there.
+const fn needing(name: &'static str, tip: Curated) -> Curated {
+    Curated {
+        needs: Some(name),
+        ..tip
     }
 }
 
@@ -247,6 +275,7 @@ const fn plain(id: &'static str, message: &'static str) -> Curated {
         id,
         message,
         command: None,
+        needs: None,
     }
 }
 
@@ -629,7 +658,13 @@ fn stop_timers(cx: &mut Cx<'_>, card: &Card) {
 /// commands of no parameters, of their keys or, of none, of the palette's.
 fn ready(cx: &mut Cx<'_>) -> Vec<Ready> {
     let mut tips = Vec::new();
+    let commands = cx.commands().unwrap_or_default();
     for tip in CURATED {
+        if let Some(needed) = tip.needs
+            && !commands.iter().any(|command| command.name == needed)
+        {
+            continue;
+        }
         let message = tip.message;
         match tip.command {
             None => tips.push(Ready {
@@ -650,7 +685,7 @@ fn ready(cx: &mut Cx<'_>) -> Vec<Ready> {
     }
     let palette = cx.keys_of(PALETTE, Args::new()).ok().flatten();
     let mut plugins = 0;
-    for command in cx.commands().unwrap_or_default() {
+    for command in commands {
         if plugins == MOST_PLUGIN_TIPS {
             break;
         }

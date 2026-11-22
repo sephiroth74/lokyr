@@ -993,14 +993,19 @@ fn gutter_marks(app: &App, window: WindowId) -> Vec<(Rect, Color)> {
 }
 
 #[test]
-fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
+fn the_gutter_shows_each_command_s_bar_along_its_block_under_the_blocks_dividers() {
     // A command that succeeded, one that failed, then one that runs.
     let marks = "printf '\\033]133;A\\007$ \\033]133;B\\007ok\\r\\n\\033]133;C\\007\\033]133;D;0\\007';\
         printf '\\033]133;A\\007$ \\033]133;B\\007bad\\r\\n\\033]133;C\\007\\033]133;D;1\\007';\
         printf '\\033]133;A\\007$ \\033]133;B\\007run\\r\\n\\033]133;C\\007'; echo ready; sleep 30";
     let mut fake = Fake::default();
     let drawing = Drawing::new(lokyr_text_core::FontConfig::default()).unwrap();
-    let mut app = App::new(Some(drawing), Config::default(), None).with_program(shell(marks));
+    let config = Config::parse(
+        "[plugins.blocks]\nenabled = true\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    let mut app = App::new(Some(drawing), config, None).with_program(shell(marks));
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
     app.windows.get_mut(&window).unwrap().surface = Some(crate::fakes::Surface::default());
@@ -1010,25 +1015,63 @@ fn the_gutter_shows_the_prompts_of_the_commands_that_ended_in_the_padding() {
     let scale = fake.window(window).unwrap().size.scale;
     let grid = app.windows[&window].views[0].rect;
     let dark = fake.appearance() == Appearance::Dark;
-    let tokens = &app.theme.variant(dark).tokens;
+    let tokens = app.theme.variant(dark).tokens.clone();
     let token = |name: &str| tokens.get(name).unwrap();
-    // A bar of 2 points in the middle of the padding of 4, a point shorter
-    // than its row at either end, on each prompt's row.
+    // As Blocks asks: a divider of a point at the top of each block, across
+    // the pane and its paddings of 4; then a bar of 2 points in the middle
+    // of the padding at the cells' left, a point shorter than its block at
+    // either end, along each block's rows, the one that runs to the
+    // cursor's row, past `ready`.
     let padding = (4.0 * scale).round() as i32;
     let width = (2.0 * scale).round() as u32;
     let inset = scale.round() as u32;
-    let bar = |row: u32| Rect {
+    let divider = |row: u32| Rect {
+        x: grid.x - padding,
+        y: grid.y + i32::try_from(row * cell_height).unwrap(),
+        width: grid.width + 2 * padding as u32,
+        height: scale.round() as u32,
+    };
+    let bar = |first: u32, last: u32| Rect {
         x: grid.x - padding + (padding - width as i32) / 2,
-        y: grid.y + i32::try_from(row * cell_height + inset).unwrap(),
+        y: grid.y + i32::try_from(first * cell_height + inset).unwrap(),
         width,
-        height: cell_height - 2 * inset,
+        height: (last - first + 1) * cell_height - 2 * inset,
     };
     assert_eq!(
         gutter_marks(&app, window),
         [
-            (bar(0), token("gutter.succeeded")),
-            (bar(1), token("gutter.failed")),
-            (bar(2), token("gutter.running")),
+            (divider(0), token("blocks.divider")),
+            (divider(1), token("blocks.divider")),
+            (divider(2), token("blocks.divider")),
+            (bar(0, 0), token("gutter.succeeded")),
+            (bar(1, 1), token("gutter.failed")),
+            (bar(2, 4), token("gutter.running")),
+        ]
+    );
+    // Without Blocks, the bar beside each prompt's row alone, and no
+    // dividers.
+    app.apply(
+        &mut fake,
+        Config::parse(
+            "[plugins.blocks]\nenabled = false\n",
+            std::path::Path::new("config.toml"),
+        )
+        .unwrap(),
+    );
+    for _ in 0..200 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+        if gutter_marks(&app, window).len() == 3 {
+            break;
+        }
+        run_until(&mut fake, &mut app, |_, _| true);
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(
+        gutter_marks(&app, window),
+        [
+            (bar(0, 0), token("gutter.succeeded")),
+            (bar(1, 1), token("gutter.failed")),
+            (bar(2, 2), token("gutter.running")),
         ]
     );
 }
@@ -1233,4 +1276,82 @@ fn a_cursor_that_the_view_or_the_screen_moves_goes_at_once() {
         cursor_place(fake, window).is_some_and(|place| place.size != before.size)
     });
     assert_eq!(cursor_place(&fake, window).unwrap().slide, None);
+}
+
+#[test]
+fn a_pane_scrolled_a_share_of_a_row_draws_its_rows_and_its_cursor_up_within_their_band() {
+    // A program of more lines than the screen, then its prompt, the
+    // cursor's row, the screen's last; no scroll bar, which would fade.
+    let mut config = unpadded();
+    config.window.scrollbar = lokyr_kernel::config::Scrollbar::Never;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("seq 1 100; printf 'ready '; sleep 30");
+    let mut app = App::new(Some(drawing), config, None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let state = app.windows.get_mut(&window).unwrap();
+    state.surface = Some(fakes::Surface::default());
+    state.cursor_layer.surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let view = app.windows[&window].views[0];
+    let cell = *app.drawing.as_ref().unwrap().font.cell();
+    let band = Rect {
+        x: view.rect.x,
+        y: view.rect.y,
+        width: view.rect.width,
+        height: u32::from(view.grid.rows) * cell.height,
+    };
+    // The pane's cells, and the clip that holds them, as the frame drew.
+    let drawn = |app: &App| {
+        let items = &app.windows[&window].shown.as_ref().expect("a frame").items;
+        let at = items
+            .iter()
+            .position(|item| matches!(item, Item::Cells(_)))
+            .expect("the pane's cells");
+        let Item::Cells(batch) = &items[at] else {
+            unreachable!()
+        };
+        let clip = at.checked_sub(1).and_then(|before| match items[before] {
+            Item::PushClip(clip) => Some(clip),
+            _ => None,
+        });
+        (batch.y, batch.rows, clip)
+    };
+    let rows = view.grid.rows;
+    assert_eq!(drawn(&app), (view.rect.y, rows, None));
+    let before = cursor_place(&fake, window).expect("the cursor's layer");
+    // Half a row up: the rows half a row up, the prompt's row below them,
+    // all within the band of the grid's rows.
+    app.pane(window).scroll_by(0.5);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let up = i32::try_from(cell.height / 2).unwrap();
+    assert_eq!(drawn(&app), (view.rect.y - up, rows + 1, Some(band)));
+    // The cursor's layer a row down, half a row up, on the row below, of
+    // its upper half alone.
+    let scale = fake.window(window).unwrap().size.scale;
+    let after = cursor_place(&fake, window).expect("the cursor's layer");
+    let down = f64::from(cell.height) / 2.0 / scale;
+    assert!((after.origin.y - before.origin.y - down).abs() < 1e-9);
+    assert_eq!(after.size, before.size);
+    assert_eq!(after.slide, None);
+    let part = app.windows[&window].cursor_layer.drawn.as_ref().unwrap().1;
+    assert_eq!(
+        part.map(|part| (part.y, part.height)),
+        Some((0, cell.height / 2))
+    );
+    // At rest, no frame of its own.
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // A row further up, the cursor is past the view, and its layer hidden.
+    app.pane(window).scroll_by(1.0);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(cursor_place(&fake, window), None);
+    // Down to whole rows, the rows in their place, as before.
+    app.pane(window).scroll_by(-0.5);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(drawn(&app), (view.rect.y, rows, None));
 }

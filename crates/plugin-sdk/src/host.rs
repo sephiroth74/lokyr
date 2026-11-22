@@ -617,13 +617,15 @@ pub const MOST_COMMANDS: usize = 10_000;
 /// A command that the shell marked, as its integration tells it (OSC 133),
 /// as a read of a pane's commands gives it: its id, the cell of each of its
 /// marks, by its column and its row's number, if its row is in the pane
-/// still, and its exit status, if it ended and the shell told it.
+/// still, its exit status, if it ended and the shell told it, the times of
+/// its start and its end, and the folder where it started, as the shell
+/// told it (OSC 7).
 ///
 /// Its prompt starts at `prompt`, the input that the user typed at
 /// `input`, its output at `output`, and it ended at `end`: its output is
 /// the cells from `output` to before `end`, in reading order, which a read
 /// of rows reads.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShellCommand {
     /// Its id, of the pane's commands from 1 in their prompts' order, as
     /// `command-started` and `command-ended` tell it.
@@ -638,6 +640,177 @@ pub struct ShellCommand {
     pub end: Option<(u16, i64)>,
     /// Its exit status.
     pub status: Option<i32>,
+    /// The time of the system's clock as it started, at its output's mark,
+    /// in milliseconds since 1970-01-01 in UTC, if it started.
+    #[serde(default)]
+    pub started: Option<u64>,
+    /// The time of the system's clock as it ended, at its end's mark, in
+    /// milliseconds since 1970-01-01 in UTC, if it ended after its start.
+    #[serde(default)]
+    pub ended: Option<u64>,
+    /// The folder where it started, the working directory that the shell
+    /// told last before its start, if it told one, to a plugin that reads
+    /// the processes (`process-read`).
+    #[serde(default)]
+    pub folder: Option<String>,
+    /// The machine of its folder, as the shell told it, of a machine other
+    /// than this one, as a shell's over ssh; none of this one.
+    #[serde(default)]
+    pub host: Option<String>,
+}
+
+/// The message of a request of a command that `pane` keeps not, by its id
+/// `command`, as both hosts tell it.
+pub fn no_command(pane: PaneId, command: u64) -> String {
+    format!("the pane {} keeps no command {command}", pane.0)
+}
+
+/// Whether `pane`, whose shell edits `edited` at its prompt, as a read of
+/// the edited line tells it, runs `line`: while the shell edits an empty
+/// command line, of a line of other than spaces; why not otherwise, as
+/// both hosts tell it.
+pub fn check_run_line(pane: PaneId, edited: Option<&str>, line: &str) -> Result<(), String> {
+    if line.trim().is_empty() {
+        return Err("an empty command line runs nothing".to_owned());
+    }
+    match edited {
+        None => Err(format!(
+            "the shell of the pane {} is not at its prompt",
+            pane.0
+        )),
+        Some(text) if !text.is_empty() => Err(format!(
+            "the command line of the pane {} holds text",
+            pane.0
+        )),
+        Some(_) => Ok(()),
+    }
+}
+
+impl ShellCommand {
+    /// The command, of no folder nor machine, as a plugin that does not
+    /// read the processes, whose working directories they are, reads it.
+    #[must_use]
+    pub fn without_folder(self) -> Self {
+        Self {
+            folder: None,
+            host: None,
+            ..self
+        }
+    }
+}
+
+/// How the host draws the blocks of the commands that the shells mark, as
+/// a plugin of blocks asks, in every pane, while it runs: each of the
+/// commands' blocks of the view, from its prompt to its output's end.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockLooks {
+    /// The gutter's bar of a command along its block's rows, in place of
+    /// its prompt's row alone.
+    #[serde(default)]
+    pub bars: bool,
+    /// A hairline at the top of each block's first row, across the pane,
+    /// of the theme's token `blocks.divider`, or through the middle of the
+    /// blank row before it, of `spacing`.
+    #[serde(default)]
+    pub dividers: bool,
+    /// The rows of a block whose command failed tinted, across the pane, of
+    /// the theme's token `blocks.failed`.
+    #[serde(default)]
+    pub failed_tint: bool,
+    /// The prompt rows of the block whose rows the view's top shows, its
+    /// prompt's and its command's line, three at most, pinned over the
+    /// view's first rows once the prompt's first row leaves the view's top,
+    /// as a sticky header, which the block's end pushes up, a line of the
+    /// theme's `blocks.divider` under them; a click on them scrolls to the
+    /// prompt.
+    #[serde(default)]
+    pub prompt_rows: bool,
+    /// A blank row before each prompt that follows a command that ended,
+    /// which the terminal puts there as the prompt's mark comes, as room
+    /// between the blocks, the divider through its middle and the blocks'
+    /// tints meeting there; none before the first prompt nor at the
+    /// screen's top, as a clear leaves it. The rows that it put stay as the
+    /// look goes.
+    #[serde(default)]
+    pub spacing: bool,
+}
+
+impl BlockLooks {
+    /// The looks of `self` and of `other` together, as several plugins ask
+    /// for them.
+    #[must_use]
+    pub fn with(self, other: Self) -> Self {
+        Self {
+            bars: self.bars || other.bars,
+            dividers: self.dividers || other.dividers,
+            failed_tint: self.failed_tint || other.failed_tint,
+            prompt_rows: self.prompt_rows || other.prompt_rows,
+            spacing: self.spacing || other.spacing,
+        }
+    }
+}
+
+/// The time of the system's clock and the local time zone's offset from
+/// UTC, as a read of the time gives them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalTime {
+    /// The time, in milliseconds since 1970-01-01 at midnight in UTC.
+    pub time: u64,
+    /// The local time zone's offset from UTC, in seconds east of it, as
+    /// 3600 of Central European Time.
+    pub offset: i32,
+}
+
+/// A date and a time of day of the Gregorian calendar.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CivilTime {
+    /// The year.
+    pub year: i64,
+    /// The month, from 1.
+    pub month: u8,
+    /// The day of the month, from 1.
+    pub day: u8,
+    /// The hour, from 0 to 23.
+    pub hour: u8,
+    /// The minute.
+    pub minute: u8,
+    /// The second.
+    pub second: u8,
+}
+
+impl LocalTime {
+    /// The local date and time of day of `time`, in milliseconds since
+    /// 1970-01-01 in UTC, of the time zone's offset.
+    pub fn civil(&self, time: u64) -> CivilTime {
+        let seconds = i64::try_from(time / 1000)
+            .unwrap_or(i64::MAX)
+            .saturating_add(i64::from(self.offset));
+        let (days, rest) = (seconds.div_euclid(86_400), seconds.rem_euclid(86_400));
+        // The civil date of the days since 1970-01-01, after Howard
+        // Hinnant's `civil_from_days`
+        // (https://howardhinnant.github.io/date_algorithms.html).
+        let days = days + 719_468;
+        let era = days.div_euclid(146_097);
+        let of_era = days.rem_euclid(146_097);
+        let year_of_era = (of_era - of_era / 1460 + of_era / 36_524 - of_era / 146_096) / 365;
+        let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let shifted_month = (5 * of_year + 2) / 153;
+        let day = of_year - (153 * shifted_month + 2) / 5 + 1;
+        let month = if shifted_month < 10 {
+            shifted_month + 3
+        } else {
+            shifted_month - 9
+        };
+        let small = |value: i64| u8::try_from(value).unwrap_or(0);
+        CivilTime {
+            year: year_of_era + era * 400 + i64::from(month <= 2),
+            month: small(month),
+            day: small(day),
+            hour: small(rest / 3600),
+            minute: small(rest % 3600 / 60),
+            second: small(rest % 60),
+        }
+    }
 }
 
 /// What a selection of cells takes, from its first cell to its last.
@@ -659,9 +832,24 @@ pub enum SelectionKind {
     Block,
 }
 
+/// A fold of a pane's view: a command's output, or its whole block, which
+/// the view shows as one row, its placeholder, by its command's id, whether
+/// it hides the whole block, and the numbers of its first row and its last.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ViewFold {
+    /// The command's id.
+    pub command: u64,
+    /// Whether it hides the whole block, the command's prompt and line too.
+    pub whole: bool,
+    /// The number of its first row.
+    pub first: i64,
+    /// The number of its last row.
+    pub last: i64,
+}
+
 /// A pane's view: the rows that it shows, of its screen or of the
 /// scrollback above it, by their numbers, as its last frame showed them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Viewport {
     /// The number of its first row.
     pub top: i64,
@@ -680,6 +868,79 @@ pub struct Viewport {
     /// Whether the alternate screen shows, as a program such as vim shows
     /// its own: rows of its own, of no scrollback nor commands.
     pub alternate: bool,
+    /// The folds that it shows, from its top, each one of its rows, so
+    /// that it shows the rows past `top + rows` too: none of no fold.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folds: Vec<ViewFold>,
+}
+
+impl Viewport {
+    /// The numbers of the rows that it shows, from its top: each fold's
+    /// rows left out, its placeholder's row taking one of its `rows`.
+    pub fn shown_rows(&self) -> Vec<i64> {
+        let mut shown = Vec::with_capacity(usize::from(self.rows));
+        let mut row = self.top;
+        let mut folds = self.folds.iter().peekable();
+        for _ in 0..self.rows {
+            match folds.peek() {
+                Some(fold) if fold.first <= row => {
+                    row = fold.last.saturating_add(1);
+                    folds.next();
+                }
+                _ => {
+                    shown.push(row);
+                    row = row.saturating_add(1);
+                }
+            }
+        }
+        shown
+    }
+
+    /// Whether it shows the screen's last row, as a view that follows the
+    /// screen does: of no fold, whether its `top` is the screen's.
+    pub fn at_screen(&self) -> bool {
+        let last = self.screen.saturating_add(i64::from(self.rows)) - 1;
+        self.view_row(last).is_some()
+    }
+
+    /// The runs of rows that it shows, from its top, each from its first
+    /// row's number to past its last's, the folds between them: one run of
+    /// `top` to `top + rows` of no fold.
+    pub fn shown_runs(&self) -> Vec<(i64, i64)> {
+        let mut runs: Vec<(i64, i64)> = Vec::new();
+        for row in self.shown_rows() {
+            match runs.last_mut() {
+                Some((_, past)) if *past == row => *past = row + 1,
+                _ => runs.push((row, row + 1)),
+            }
+        }
+        runs
+    }
+
+    /// The row of the view that shows the row numbered `row`, its own or
+    /// its fold's placeholder; none of a row above the view or past it.
+    pub fn view_row(&self, row: i64) -> Option<u16> {
+        if row < self.top {
+            return None;
+        }
+        let mut at = self.top;
+        let mut y = 0;
+        for fold in &self.folds {
+            if row < fold.first {
+                break;
+            }
+            // The rows before the fold, then its placeholder.
+            y += fold.first - at;
+            if row <= fold.last {
+                return u16::try_from(y).ok().filter(|&y| y < self.rows);
+            }
+            y += 1;
+            at = fold.last + 1;
+        }
+        u16::try_from(y + (row - at))
+            .ok()
+            .filter(|&y| y < self.rows)
+    }
 }
 
 /// A command, as a read of the registry gives it: its name, its title, in
@@ -1669,6 +1930,15 @@ pub struct SettingsSection {
     /// The plugin whose section it is, by its name; none of the app's.
     #[serde(default)]
     pub plugin: Option<String>,
+    /// The plugin that replaces its plugin, by its name, while it is
+    /// replaced: its keys apply once that one is off.
+    #[serde(default)]
+    pub replaced_by: Option<String>,
+    /// Whether its plugin runs as the config says: its section's
+    /// `enabled`, or, of none, the plugin's own default, which a write of
+    /// the key `enabled` turns; none of the app's sections.
+    #[serde(default)]
+    pub enabled: Option<bool>,
     /// What it holds, of its schema's description.
     #[serde(default)]
     pub description: String,
@@ -2039,6 +2309,163 @@ pub fn check_file_name(name: &str) -> Result<(), crate::command::Error> {
     ))
 }
 
+/// Where a plugin's view goes along the status bar, as the interface reads,
+/// from left to right in every language that Lokyr has: from the bar's
+/// start edge, the plugins' first nearest it; together in its middle; or
+/// from its end edge, the first nearest it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StatusBarSide {
+    /// From the bar's start edge, the left one.
+    #[default]
+    Start,
+    /// In its middle.
+    Center,
+    /// From its end edge, the right one.
+    End,
+}
+
+/// The most bytes of a plugin's temporary file.
+pub const MOST_TEMPORARY_BYTES: usize = 8 * 1024 * 1024;
+
+/// The most temporary files that a plugin keeps at once.
+pub const MOST_TEMPORARY_FILES: usize = 16;
+
+/// The most bytes of a plugin's temporary files together.
+pub const MOST_TEMPORARY_TOTAL: usize = 32 * 1024 * 1024;
+
+/// The bytes of a plugin's budget of temporary files' writes at once, each
+/// write's cost its bytes, [`TEMPORARY_LEAST_COST`] at least: a plugin
+/// that writes faster than [`TEMPORARY_RATE`] waits.
+pub const TEMPORARY_BUDGET: u64 = 32 * 1024 * 1024;
+
+/// The bytes a second given back to a plugin's budget of temporary files.
+pub const TEMPORARY_RATE: u64 = 8 * 1024 * 1024;
+
+/// The least cost of a temporary file's write, however few its bytes.
+pub const TEMPORARY_LEAST_COST: u64 = 256 * 1024;
+
+/// The extensions of a temporary file's name, whatever their case: texts'
+/// alone, which no app runs as a program nor loads as a page.
+pub const TEMPORARY_EXTENSIONS: [&str; 9] = [
+    "txt", "log", "md", "json", "yaml", "yml", "toml", "diff", "patch",
+];
+
+/// The message of the error of a temporary file past the plugin's budget of
+/// writes.
+pub const TEMPORARY_BUSY: &str =
+    "a plugin's temporary files wait a moment, as it wrote too many too fast";
+
+/// The message of the error of a temporary file asked of a host that keeps
+/// none, as without a state's folder.
+pub const NO_TEMPORARY_FOLDER: &str = "the host keeps no temporary files without a state's folder";
+
+/// The message of the error of a temporary file asked by a call that only
+/// looks, as `applies`.
+pub const LOOKING_WRITES_NOTHING: &str = "a call that only looks, as `applies`, writes no file";
+
+/// A plugin's temporary files, as a host keeps them for it in a folder of
+/// its own, which it empties at the quit and at the start: the bytes of
+/// each by its name, which a new file's bounds count, and what its budget
+/// of writes has left, below zero of a plugin that owes it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TemporaryFiles {
+    sizes: std::collections::BTreeMap<String, usize>,
+    left: f64,
+}
+
+impl Default for TemporaryFiles {
+    fn default() -> Self {
+        Self {
+            sizes: std::collections::BTreeMap::new(),
+            left: TEMPORARY_BUDGET as f64,
+        }
+    }
+}
+
+impl TemporaryFiles {
+    /// Gives back the budget of `elapsed`, up to the whole budget.
+    pub fn refill(&mut self, elapsed: std::time::Duration) {
+        self.left = (self.left + elapsed.as_secs_f64() * TEMPORARY_RATE as f64)
+            .min(TEMPORARY_BUDGET as f64);
+    }
+
+    /// Whether a file of `name` and of `bytes` fits: its name as
+    /// [`check_file_name`] takes it, of an extension of
+    /// [`TEMPORARY_EXTENSIONS`], its bytes [`MOST_TEMPORARY_BYTES`] at
+    /// most, and, with the others, [`MOST_TEMPORARY_FILES`] files and
+    /// [`MOST_TEMPORARY_TOTAL`] bytes at most, a file of the same name in
+    /// place of the old one, of a budget of writes left; the error that
+    /// tells it does not.
+    pub fn check(&self, name: &str, bytes: usize) -> Result<(), crate::command::Error> {
+        check_file_name(name)?;
+        let failed = |message: String| {
+            Err(crate::command::Error::new(
+                crate::command::Code::Failed,
+                message,
+            ))
+        };
+        let text = name.rsplit_once('.').is_some_and(|(_, extension)| {
+            TEMPORARY_EXTENSIONS
+                .iter()
+                .any(|known| known.eq_ignore_ascii_case(extension))
+        });
+        if !text {
+            return failed(format!(
+                "a temporary file's name ends in one of .{}",
+                TEMPORARY_EXTENSIONS.join(", .")
+            ));
+        }
+        if bytes > MOST_TEMPORARY_BYTES {
+            return failed(format!(
+                "a temporary file has {MOST_TEMPORARY_BYTES} bytes at most"
+            ));
+        }
+        let old = self.sizes.get(name).copied();
+        if old.is_none() && self.sizes.len() >= MOST_TEMPORARY_FILES {
+            return failed(format!(
+                "a plugin keeps {MOST_TEMPORARY_FILES} temporary files at most"
+            ));
+        }
+        let others: usize = self.sizes.values().sum::<usize>() - old.unwrap_or(0);
+        if others + bytes > MOST_TEMPORARY_TOTAL {
+            return failed(format!(
+                "a plugin's temporary files have {MOST_TEMPORARY_TOTAL} bytes at most together"
+            ));
+        }
+        if self.left <= 0.0 {
+            return failed(TEMPORARY_BUSY.to_owned());
+        }
+        Ok(())
+    }
+
+    /// Notes the file `name`, of `bytes`, written, its cost taken from the
+    /// budget.
+    pub fn insert(&mut self, name: &str, bytes: usize) {
+        self.sizes.insert(name.to_owned(), bytes);
+        self.left -= (bytes as u64).max(TEMPORARY_LEAST_COST) as f64;
+    }
+}
+
+/// The path of the temporary file `name` of the plugin of `namespace`, in
+/// the host's folder of temporary files `folder`: in a folder of the
+/// plugin's own.
+pub fn temporary_path(folder: &std::path::Path, namespace: &str, name: &str) -> std::path::PathBuf {
+    folder.join(namespace).join(name)
+}
+
+/// Whether `folder` is a folder's absolute path, as a plugin asks of it;
+/// the error that tells it is not.
+pub fn check_absolute_folder(folder: &str) -> Result<(), crate::command::Error> {
+    if std::path::Path::new(folder).is_absolute() && !folder.contains('\0') {
+        return Ok(());
+    }
+    Err(crate::command::Error::new(
+        crate::command::Code::Failed,
+        format!("`{folder}` is not a folder's absolute path"),
+    ))
+}
+
 /// Bytes, as a PNG's or a file's, which serde carries as bytes, a string of
 /// Luau's, rather than as a list of numbers.
 #[derive(Clone, Default, PartialEq, Eq)]
@@ -2109,6 +2536,70 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_view_of_folds_shows_the_rows_past_them_each_fold_one_row() {
+        let fold = |first, last| ViewFold {
+            command: 1,
+            whole: false,
+            first,
+            last,
+        };
+        // Ten rows from 100, of the folds of 102 to 149 and 152 to 152.
+        let view = Viewport {
+            top: 100,
+            rows: 10,
+            screen: 140,
+            folds: vec![fold(102, 149), fold(152, 152)],
+            ..Viewport::default()
+        };
+        assert_eq!(view.shown_rows(), [100, 101, 150, 151, 153, 154, 155, 156]);
+        assert_eq!(view.shown_runs(), [(100, 102), (150, 152), (153, 157)]);
+        assert_eq!(view.view_row(101), Some(1));
+        assert_eq!(view.view_row(120), Some(2));
+        assert_eq!(view.view_row(150), Some(3));
+        assert_eq!(view.view_row(152), Some(5));
+        assert_eq!(view.view_row(156), Some(9));
+        assert_eq!(view.view_row(157), None);
+        assert_eq!(view.view_row(99), None);
+        // The screen's last row, 149, in a fold.
+        assert!(view.at_screen());
+        // Of no fold, the rows from `top` alone.
+        let plain = Viewport {
+            top: 130,
+            rows: 10,
+            screen: 140,
+            ..Viewport::default()
+        };
+        assert_eq!(plain.shown_runs(), [(130, 140)]);
+        assert_eq!(plain.view_row(139), Some(9));
+        assert!(!plain.at_screen());
+        assert!(Viewport { top: 140, ..plain }.at_screen());
+    }
+
+    #[test]
+    fn a_local_time_s_date_and_time_of_day_are_of_its_offset() {
+        let at = |offset: i32, time: u64| LocalTime { time: 0, offset }.civil(time);
+        let civil = |year, month, day, hour, minute, second| CivilTime {
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+        };
+        assert_eq!(at(0, 0), civil(1970, 1, 1, 0, 0, 0));
+        // 11 November 2026 at 23:30:15 in UTC, of its milliseconds.
+        let late = (20_768 * 86_400 + 23 * 3600 + 30 * 60 + 15) * 1000 + 999;
+        assert_eq!(at(0, late), civil(2026, 11, 11, 23, 30, 15));
+        // An hour east is the next day; five hours west, the same evening.
+        assert_eq!(at(3600, late), civil(2026, 11, 12, 0, 30, 15));
+        assert_eq!(at(-5 * 3600, late), civil(2026, 11, 11, 18, 30, 15));
+        // A leap day, and a time before 1970 of a west offset.
+        let leap = 11_016 * 86_400 * 1000;
+        assert_eq!(at(0, leap), civil(2000, 2, 29, 0, 0, 0));
+        assert_eq!(at(-3600, 0), civil(1969, 12, 31, 23, 0, 0));
+    }
 
     #[test]
     fn a_group_s_name_holds_no_control_nor_hidden_character() {
@@ -2234,5 +2725,57 @@ mod tests {
             assert!(!is_local_host(host, "mac.local"), "{host}");
         }
         assert!(!is_local_host("mac", ""));
+    }
+
+    #[test]
+    fn a_temporary_file_is_a_text_s_of_a_budget_that_comes_back_in_time() {
+        let mut files = TemporaryFiles::default();
+        // Texts' extensions alone, whatever their case.
+        for name in ["output.txt", "LOG.Log", "a.b.json", "x.patch"] {
+            assert!(files.check(name, 1).is_ok(), "{name}");
+        }
+        for name in ["page.html", "run.command", "script.sh", "txt", "a.txt.app"] {
+            let refused = files.check(name, 1).unwrap_err();
+            assert!(
+                refused.message.contains(".txt, .log"),
+                "{name}: {refused:?}"
+            );
+        }
+        // Four files of 8 MiB take the 32 MiB of the budget, then a write
+        // waits.
+        let most = TEMPORARY_RATE as usize;
+        for _ in 0..4 {
+            files.check("big.txt", most).unwrap();
+            files.insert("big.txt", most);
+        }
+        assert_eq!(
+            files.check("big.txt", 1).unwrap_err().message,
+            TEMPORARY_BUSY
+        );
+        // A millisecond gives back a little, which a write takes and owes
+        // the rest of: then a second, less a millisecond, owes still.
+        files.refill(std::time::Duration::from_millis(1));
+        files.check("big.txt", most).unwrap();
+        files.insert("big.txt", most);
+        files.refill(std::time::Duration::from_millis(999));
+        assert!(files.check("big.txt", 1).is_err());
+        files.refill(std::time::Duration::from_millis(1));
+        assert!(files.check("big.txt", 1).is_ok());
+        // Small writes cost the least cost each: 128 of the whole budget.
+        let mut files = TemporaryFiles::default();
+        for _ in 0..TEMPORARY_BUDGET / TEMPORARY_LEAST_COST {
+            files.check("small.txt", 1).unwrap();
+            files.insert("small.txt", 1);
+        }
+        assert!(files.check("small.txt", 1).is_err());
+        // Never more than the whole budget, however long the wait.
+        files.refill(std::time::Duration::from_secs(3600));
+        assert_eq!(
+            files,
+            TemporaryFiles {
+                left: TEMPORARY_BUDGET as f64,
+                ..files.clone()
+            }
+        );
     }
 }

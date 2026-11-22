@@ -93,6 +93,18 @@ fn started() -> (Fake, App) {
     (fake, app)
 }
 
+/// The config of `text`, of no padding, its plugins that start off, as
+/// Blocks, turned on.
+fn all_plugins(text: &str) -> Config {
+    let mut config = Config::parse(
+        &format!("[plugins.blocks]\nenabled = true\n{text}"),
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    config
+}
+
 /// The items of the main menu's menu `index` that `fake` has: each
 /// one's title and its keys, as `cmd+n`, or a line, `-`.
 fn menu_items(fake: &Fake, index: usize) -> Vec<String> {
@@ -489,7 +501,7 @@ fn the_app_s_catalogs_match_their_source() {
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 14);
+    assert_eq!(builtins.len(), 15);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         // A plugin of no commands, as the keymap's, has no titles.
@@ -2064,6 +2076,33 @@ fn the_config_s_scroll_on_output_reaches_the_panes() {
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
 
+#[test]
+fn scrolling_by_pixels_turned_off_leaves_no_pane_a_share_of_a_row() {
+    let (mut fake, mut app, window) = configured("", shell("seq 1 200; echo ready; sleep 10"));
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = true;
+    app.apply(&mut fake, config);
+    // Up two rows and a half: the next frame's snapshot shows the share,
+    // and the row past the view's last.
+    app.pane(window).scroll_by(2.5);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let snapshot = app.pane(window).snapshot();
+    assert!((snapshot.fraction() - 0.5).abs() < 1e-4);
+    assert!(snapshot.below().is_some());
+    let offset = snapshot.offset();
+    assert_eq!(offset, 3);
+    // The key turned off: no share, the view's rows where they were.
+    let mut config = app.config.clone();
+    config.window.smooth_scroll = false;
+    app.apply(&mut fake, config);
+    assert!(fake.window(window).unwrap().frame_requested);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let snapshot = app.pane(window).snapshot();
+    assert_eq!(snapshot.fraction(), 0.0);
+    assert!(snapshot.below().is_none());
+    assert_eq!(snapshot.offset(), offset);
+}
+
 /// The config of a window without padding.
 /// The config of no padding, of windows of 200 columns and 62 rows:
 /// 800 points by 496, of cells 4 points wide and 8 high.
@@ -3488,29 +3527,39 @@ fn selecting(clipboard: &str, modes: &str) -> (Fake, App, WindowId) {
 fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<String>) {
     let (over, position, menu) = fake.context_menus().last().expect("a context menu");
     assert_eq!(*over, window);
-    let items = menu
-        .items
-        .iter()
-        .map(|item| match item {
+    // A submenu by its title and `›`, its items after it, each of the
+    // submenu's title and `›` before its own.
+    let mut items = Vec::new();
+    for item in &menu.items {
+        match item {
             MenuItem::Command {
                 title, shortcut, ..
             } => {
                 assert_eq!(*shortcut, None, "{title}");
-                title.clone()
+                items.push(title.clone());
             }
-            MenuItem::Separator => "-".to_owned(),
+            MenuItem::Separator => items.push("-".to_owned()),
+            MenuItem::Submenu(submenu) => {
+                items.push(format!("{} ›", submenu.title));
+                for inner in &submenu.items {
+                    match inner {
+                        MenuItem::Command { title, .. } => {
+                            items.push(format!("{} › {title}", submenu.title));
+                        }
+                        other => panic!("{other:?}"),
+                    }
+                }
+            }
             other => panic!("{other:?}"),
-        })
-        .collect();
+        }
+    }
     // A plugin's item by its title, as its id is its place in a list.
     let dimmed = menu
         .dimmed
         .iter()
         .map(|id| {
-            let title = menu.items.iter().find_map(|item| match item {
-                MenuItem::Command { title, command, .. } if command == id => Some(title),
-                _ => None,
-            });
+            let title = commands_of(&menu.items)
+                .find_map(|(title, command)| (command == id).then_some(title));
             match title {
                 Some(title) if id.starts_with("menu-item:") => title.clone(),
                 _ => id.clone(),
@@ -3518,6 +3567,16 @@ fn context_menu(fake: &Fake, window: WindowId) -> (Point, Vec<String>, Vec<Strin
         })
         .collect();
     (*position, items, dimmed)
+}
+
+/// The commands' items of `items`, those of their submenus too, each of
+/// its title and its command.
+fn commands_of(items: &[MenuItem]) -> impl Iterator<Item = (&String, &String)> {
+    items.iter().flat_map(|item| match item {
+        MenuItem::Command { title, command, .. } => vec![(title, command)],
+        MenuItem::Submenu(submenu) => commands_of(&submenu.items).collect(),
+        _ => Vec::new(),
+    })
 }
 
 /// A press and a release of the right button at `at`, with `mods`.
@@ -3890,14 +3949,15 @@ fn a_plugin_cannot_show_or_hide_another_plugin_s_quick_window() {
 }
 
 #[test]
-fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks() {
+fn command_up_and_down_jump_to_the_prompts_that_the_shell_marks_while_blocks_is_off() {
     // Three commands of the shell's marks, of 30 lines each, then the
     // terminal raw for the keys; the last command's prompt on the screen.
+    // Blocks, which takes the keys to select a block, off.
     let program = shell(concat!(
         "for n in 1 2 3; do printf '\\033]133;A\\007$ \\033]133;B\\007run %s\\r\\n\\033]133;C\\007' $n; ",
         "seq 1 30; printf '\\033]133;D;0\\007'; done; stty raw -echo; echo ready; cat -v"
     ));
-    let (mut fake, mut app, window) = bound("", program);
+    let (mut fake, mut app, window) = bound("[plugins.blocks]\nenabled = false\n", program);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     let first_row = |app: &App| screen(app, window)[0].clone();
     let key = |code| key_event(code, "", CMD, true);

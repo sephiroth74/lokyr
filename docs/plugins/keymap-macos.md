@@ -17,7 +17,8 @@ The keys that macOS's apps have taught you, bound to Lokyr's commands and to the
 | ⌘U | `window.toggle-opacity`: a translucent window shown opaque, and back · Since 1.3 |
 | ⇧⌘E, and Tab and ⇧Tab in the hints | `links.hints`, `links.hints-action`: the hints of what the pane shows, and what a pick does · Since 1.3 |
 | ⇧⌘↑, ⇧⌘↓, ⌘Page Up, ⌘Page Down, ⌘Home, ⌘End | scrolling, by a line, a page, or to the top and the bottom |
-| ⌘↑, ⌘↓ | the previous prompt and the next, of the commands that the shell marks |
+| ⌘↑, ⌘↓ | the previous prompt and the next, of the commands that the shell marks; while [Blocks](../blocks.md) runs, the block of the prompt before or after, selected, `blocks.select-previous`, `blocks.select-next` · Since 1.4 |
+| ↑, ↓, Escape, while a block is selected | the block before or after, and none, `blocks.select-previous`, `blocks.select-next`, `blocks.deselect` · Since 1.4 |
 | ⌘-click | `links.open` |
 | ⌘F, ⌘G, ⇧⌘G | `search.open`, `search.next`, `search.previous` |
 | ⇧⌘P, and ↑ and ↓ in the palette | `command-palette.open`, `command-palette.move` |

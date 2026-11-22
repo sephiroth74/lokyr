@@ -103,11 +103,18 @@ section-plugin-splits = Splits
 section-plugin-quick-terminal = Quick Terminal
 section-plugin-search = Find
 section-plugin-command-header = Command Header
+section-plugin-blocks = Blocks
 section-plugin-quick-tips = Quick Tips
 section-plugin-links = Hints
 
+# A replaced plugin's section, of the plugin that replaces it.
+settings-replaced = { $plugin } replaces this plugin while it runs: these settings apply while it is off.
 # A key.
 settings-plugin = Of the plugin { $plugin }
+# The switch that turns a plugin's section's plugin on or off, and what it
+# does, of the section's title.
+settings-plugin-on = Enabled
+settings-plugin-on-about = Turns { $plugin } on or off. While it is off, its settings are dimmed, and apply once you turn it on.
 setting-unset = Not set
 setting-platforms = { $platforms }
 settings-none = No setting to show.

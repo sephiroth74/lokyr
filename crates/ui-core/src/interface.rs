@@ -198,6 +198,7 @@ const ICONS: &[(&str, char)] = &[
     ("eye-closed", '\u{eae7}'),
     ("filter", '\u{eaf1}'),
     ("folder", '\u{ea83}'),
+    ("git-branch", '\u{ec6f}'),
     ("history", '\u{ea82}'),
     ("hubot", '\u{eb08}'),
     ("info", '\u{ea74}'),

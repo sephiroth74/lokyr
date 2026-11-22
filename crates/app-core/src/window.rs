@@ -98,9 +98,10 @@ pub(crate) struct WindowLayer<B: Backend> {
     /// Where the app placed it last, and how it blinks: `None` while it is
     /// hidden.
     pub(crate) place: Option<LayerPlace>,
-    /// The cells that it shows, at what scale, and of which of the
-    /// drawing's fonts, which a frame draws again only as they change.
-    pub(crate) drawn: Option<(CellBatch, f64, u64)>,
+    /// The cells that it shows, the part of it that shows them where it
+    /// shows a part alone, at what scale, and of which of the drawing's
+    /// fonts, which a frame draws again only as they change.
+    pub(crate) drawn: Option<(CellBatch, Option<Rect>, f64, u64)>,
     /// Whether its surface takes colors past white, of extended dynamic
     /// range.
     pub(crate) extended: bool,
@@ -340,6 +341,10 @@ pub(crate) struct Window<B: Backend> {
     /// The window's room below its titlebar and its tab bar, in pixels, as
     /// its last layout placed it, whose corners panels anchor in.
     pub(crate) overlay: Frame,
+    /// The status bar's region across the window, in pixels, as its last
+    /// layout placed it, while a plugin's view fills it, whose band the
+    /// frame draws under the views.
+    pub(crate) status_bar: Option<Frame>,
 }
 
 /// Where a pane of a window lies, as a frame laid it out.
@@ -489,6 +494,7 @@ impl<B: Backend> Window<B> {
             native_hovered: None,
             native_item: None,
             overlay: Frame::default(),
+            status_bar: None,
         }
     }
 

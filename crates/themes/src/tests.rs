@@ -763,7 +763,7 @@ fn a_new_theme_of_a_built_in_one_writes_every_key_its_optional_ones_as_comments(
     assert!(text.find("the text's when left out").unwrap() < text.find("\n[interface]\n").unwrap());
     assert!(
         text.trim_end()
-            .ends_with("\"hints.label.fg\" = \"contrasting(hints.label.bg)\""),
+            .ends_with("\"blocks.failed\" = \"gutter.failed / 12%\""),
         "{text}"
     );
     let _ = fs::remove_dir_all(folder);
@@ -801,7 +801,7 @@ fn the_guide_s_example_theme_holds_every_key_and_token() {
         assert!(partial.tokens.contains_key(token), "the token {token}");
     }
     // A plugin's, of a section of its own name.
-    assert!(partial.tokens.contains_key("command-header.pill"));
+    assert!(partial.tokens.contains_key("blocks.pill"));
     // And it resolves whole, of the theme that it extends, of nothing
     // told, as Lokyr Dark colors, its colors of other colors too.
     let dark = lokyr_plugin_sdk::theme::builtin::dark();

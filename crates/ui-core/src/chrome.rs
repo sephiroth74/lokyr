@@ -8,11 +8,12 @@
 //! the titlebar, as macOS's sidebars; the window's strip goes across the
 //! panes' top, over them, as it takes none of their rows; the status bar
 //! goes across the bottom of the room that a column leaves, of its view's
-//! height; a pane's header goes across the pane's top, of its view's
-//! height, above its grid. The overlays and the popups are the rooms that
-//! the floating panels anchor in. A slot whose view is empty takes no
-//! room.
+//! height, its views on three sides, each at its natural width; a pane's
+//! header goes across the pane's top, of its view's height, above its
+//! grid. The overlays and the popups are the rooms that the floating
+//! panels anchor in. A slot whose view is empty takes no room.
 
+use lokyr_plugin_sdk::host::StatusBarSide;
 use lokyr_plugin_sdk::view::Kind;
 
 use crate::layout::{Frame, Layout};
@@ -114,6 +115,72 @@ pub struct PaneRegions {
     pub grid: Frame,
     /// Its overlays', as a find bar's, over its grid.
     pub overlay: Frame,
+}
+
+/// The frames of the status bar's views across `region`, of their sides and
+/// their natural widths, in the plugins' order: the start's from the
+/// region's start edge, the first nearest it; the end's from its end edge,
+/// the first nearest it; the center's together in its middle, between the
+/// two. Where they do not fit, the center gives way first; then each side
+/// keeps half the region, or what the other leaves, of what it needs, its
+/// last views cut, or of none where no room is left. Each frame of the
+/// region's height, at whole pixels.
+pub fn status_bar_frames(region: Frame, views: &[(StatusBarSide, f32)]) -> Vec<Option<Frame>> {
+    let width = region.width.max(0.0);
+    let natural = |side: StatusBarSide| -> f32 {
+        views
+            .iter()
+            .filter(|(of, _)| *of == side)
+            .map(|(_, width)| width.max(0.0).round())
+            .sum()
+    };
+    let (start, center, end) = (
+        natural(StatusBarSide::Start),
+        natural(StatusBarSide::Center),
+        natural(StatusBarSide::End),
+    );
+    // Each side's room: its natural width where both fit, half the region
+    // or what the other leaves where they do not; the center's, what they
+    // leave.
+    let start_room = start.min((width / 2.0).max(width - end)).floor();
+    let end_room = end.min(width - start_room);
+    let center_room = (width - start_room - end_room).max(0.0);
+    // The center's views together in the middle, between the sides.
+    let center_from = if center <= center_room {
+        ((width - center) / 2.0)
+            .round()
+            .clamp(start_room, width - end_room - center)
+    } else {
+        start_room
+    };
+    let mut used = (0.0_f32, 0.0_f32, 0.0_f32);
+    views
+        .iter()
+        .map(|&(side, natural)| {
+            let natural = natural.max(0.0).round();
+            let (room, used) = match side {
+                StatusBarSide::Start => (start_room, &mut used.0),
+                StatusBarSide::Center => (center_room, &mut used.1),
+                StatusBarSide::End => (end_room, &mut used.2),
+            };
+            let taken = natural.min(room - *used).max(0.0);
+            let at = *used;
+            *used += taken;
+            if taken <= 0.0 {
+                return None;
+            }
+            let x = match side {
+                StatusBarSide::Start => at,
+                StatusBarSide::Center => center_from + at,
+                StatusBarSide::End => width - at - taken,
+            };
+            Some(Frame {
+                x: region.x + x,
+                width: taken,
+                ..region
+            })
+        })
+        .collect()
 }
 
 /// The regions of `window`'s slots, the tab bar at `place`, of the views of
@@ -743,5 +810,62 @@ mod tests {
         assert_eq!(areas_of(&wide), [frame(0.0, 0.0, 100.0, 24.0)]);
         let layout = Layout::new(1.0);
         assert!(titlebar_areas(&Tree::new(), &layout).is_empty());
+    }
+
+    /// The frames' starts and widths of `views` across a region of `width`
+    /// pixels from 10, of none `None`.
+    fn sides(width: f32, views: &[(StatusBarSide, f32)]) -> Vec<Option<(f32, f32)>> {
+        let region = frame(10.0, 578.0, width, 22.0);
+        status_bar_frames(region, views)
+            .into_iter()
+            .map(|frame| {
+                frame.map(|frame| {
+                    assert_eq!((frame.y, frame.height), (578.0, 22.0));
+                    (frame.x - 10.0, frame.width)
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_status_bar_s_views_take_their_widths_on_their_sides() {
+        use StatusBarSide::{Center, End, Start};
+        let views = [
+            (Start, 100.0),
+            (End, 50.0),
+            (Center, 60.0),
+            (Start, 40.0),
+            (End, 30.0),
+        ];
+        // The start's from the left in their order, the end's from the
+        // right, the first nearest the edge, the center's in the middle.
+        assert_eq!(
+            sides(800.0, &views),
+            [
+                Some((0.0, 100.0)),
+                Some((750.0, 50.0)),
+                Some((370.0, 60.0)),
+                Some((100.0, 40.0)),
+                Some((720.0, 30.0)),
+            ]
+        );
+        // The center between the sides where the middle would cover one.
+        assert_eq!(sides(300.0, &views)[2], Some((140.0, 60.0)));
+        // Of too little room, the center is cut first, then goes.
+        assert_eq!(sides(250.0, &views)[2], Some((140.0, 30.0)));
+        let narrow = sides(200.0, &views);
+        assert_eq!(narrow[2], None);
+        // Then each side keeps what the other leaves of half the bar, its
+        // last views cut.
+        assert_eq!(narrow[0], Some((0.0, 100.0)));
+        assert_eq!(narrow[3], Some((100.0, 20.0)));
+        assert_eq!(
+            (narrow[1], narrow[4]),
+            (Some((150.0, 50.0)), Some((120.0, 30.0)))
+        );
+        // Both past half: half each, the last views of none.
+        let both = sides(100.0, &[(Start, 80.0), (Start, 10.0), (End, 80.0)]);
+        assert_eq!(both, [Some((0.0, 50.0)), None, Some((50.0, 50.0))]);
+        assert!(sides(800.0, &[]).is_empty());
     }
 }

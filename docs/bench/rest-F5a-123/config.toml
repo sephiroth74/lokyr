@@ -1,0 +1,39 @@
+# The A/B of F3b-20, 1.0.0 against 1.1.0: a config of the least work beside
+# the terminal's own, the same for every release's measures from 1.1.0 on,
+# of keys that both versions know. F2-134's conditions, Menlo 13, 120 × 40
+# cells, about 10 000 rows of scrollback; no ligatures, an opaque window of
+# no blur; no blinking, of the cursor nor of the text, the cursor moving at
+# once; no bell's flash nor bounce; no quick tip at the start, and no
+# windows of a run before restored.
+[app]
+restore-windows = "never"
+
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+background-blur = 0
+
+[cursor]
+blink = false
+smooth-blink = "off"
+movement = "instant"
+
+[text]
+blink = false
+
+[bell]
+flash = false
+bounce = false
+
+[scrollback]
+limit = 10
+
+[plugins.quick-tips]
+enabled = false

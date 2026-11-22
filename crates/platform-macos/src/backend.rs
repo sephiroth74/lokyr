@@ -650,6 +650,17 @@ impl Platform for Backend {
         }
     }
 
+    fn request_frame_at(&mut self, window: WindowId, at: Instant) {
+        let Some(open) = self.windows.get(&window) else {
+            return;
+        };
+        if open.request_frame_at(at)
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(window, WindowEvent::Frame));
+        }
+    }
+
     fn focus_window(&mut self, window: WindowId) {
         // A hidden quick window would take the keys off the screen.
         if let Some(window) = self.windows.get(&window)

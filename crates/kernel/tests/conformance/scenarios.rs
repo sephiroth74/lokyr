@@ -25,10 +25,11 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
     DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
-    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier,
-    Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo,
-    TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
+    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
+    MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
+    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
+    check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -152,6 +153,10 @@ pub struct World {
     pub cursor: (u16, i64),
     /// The cells of the rows that the pane's view shows.
     pub screen: Vec<CellRow>,
+    /// A folder of the scenarios' own: of the host's temporary files, in
+    /// `temporary`, and of a git repository of the branch `main`, in
+    /// `repository`, beside a folder of no repository, `plain`.
+    pub files: std::path::PathBuf,
 }
 
 /// A scenario: what the test plugin holds, and its steps.
@@ -631,6 +636,24 @@ fn cells_and_saves(world: &World) -> Scenario {
                 (
                     Request::ScreenCells(world.pane),
                     Response::Cells(Some(world.screen.clone())),
+                ),
+                // The view's first two rows, by their numbers; none of a row
+                // that the pane does not hold.
+                (
+                    Request::RowCells {
+                        pane: world.pane,
+                        first: world.viewport.top,
+                        count: 2,
+                    },
+                    Response::Cells(Some(world.screen.iter().take(2).cloned().collect())),
+                ),
+                (
+                    Request::RowCells {
+                        pane: world.pane,
+                        first: world.viewport.oldest - 1,
+                        count: 2,
+                    },
+                    Response::Cells(None),
                 ),
                 (Request::SetClipboardImage(png()), Response::Done),
                 (
@@ -1176,6 +1199,20 @@ fn tabs(world: &World) -> Scenario {
                 (Request::SetFocusFollowsMouse(true), Response::Done),
                 (Request::SetInactiveDim(0.0), Response::Done),
                 (Request::SetFocusFollowsMouse(false), Response::Done),
+                (
+                    Request::SetBlockLooks(lokyr_plugin_sdk::host::BlockLooks {
+                        bars: true,
+                        dividers: true,
+                        failed_tint: false,
+                        prompt_rows: false,
+                        spacing: false,
+                    }),
+                    Response::Done,
+                ),
+                (
+                    Request::SetBlockLooks(lokyr_plugin_sdk::host::BlockLooks::default()),
+                    Response::Done,
+                ),
             ]),
             // A drag of its column's edge, told to it alone.
             Step {
@@ -2215,6 +2252,20 @@ fn capabilities(world: &World) -> Scenario {
                 lacks("history-read"),
             ),
             (
+                Request::ShellCommand {
+                    pane: world.pane,
+                    command: 1,
+                },
+                lacks("history-read"),
+            ),
+            (
+                Request::CommandAt {
+                    pane: world.pane,
+                    row: 0,
+                },
+                lacks("history-read"),
+            ),
+            (
                 Request::Subscribe(vec![
                     "viewport-changed".to_owned(),
                     "command-ended".to_owned(),
@@ -2227,7 +2278,7 @@ fn capabilities(world: &World) -> Scenario {
             ),
             (
                 Request::Viewport(world.pane),
-                Response::Viewport(world.viewport),
+                Response::Viewport(world.viewport.clone()),
             ),
             // The windows, the tabs and the panes; what the panes show; what
             // a plugin draws over them; and the pointer.
@@ -2311,7 +2362,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
                 .commands
                 .iter()
                 .filter(|command| ids.contains(&command.id))
-                .copied()
+                .cloned()
                 .collect(),
         )
     };
@@ -2327,7 +2378,7 @@ fn commands_and_viewport(world: &World) -> Scenario {
     let events = vec![
         Event::ViewportChanged {
             pane: world.pane,
-            viewport: world.viewport,
+            viewport: world.viewport.clone(),
         },
         Event::CommandStarted {
             pane: world.pane,
@@ -2347,67 +2398,192 @@ fn commands_and_viewport(world: &World) -> Scenario {
             "command-started".to_owned(),
             "command-ended".to_owned(),
         ],
-        steps: vec![Step {
-            wait: 0,
-            asks: vec![
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        commands(-1_000_000, 1_000_000),
+                        Response::ShellCommands(world.commands.clone()),
+                    ),
+                    (commands(row, row + 1), ids(&[])),
+                    (commands(row + 1, row + 2), ids(&[first])),
+                    (commands(row, row + 3), ids(&[first, second])),
+                    (commands(row + 2, row + 3), ids(&[second])),
+                    (commands(row + 5, row + 5), ids(&[])),
+                    // Their lines, as the long command's notification reads them.
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: first,
+                        },
+                        Response::Text(world.command_lines[0].clone()),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: second,
+                        },
+                        Response::Text(world.command_lines[1].clone()),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: world.pane,
+                            command: 999_999,
+                        },
+                        Response::Text(None),
+                    ),
+                    // Each by its id, and the block that holds a row: the
+                    // line's row is above both, each prompt's row its own.
+                    (
+                        Request::ShellCommand {
+                            pane: world.pane,
+                            command: second,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
+                    ),
+                    (
+                        Request::ShellCommand {
+                            pane: world.pane,
+                            command: 999_999,
+                        },
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row,
+                        },
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row: row + 1,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[0].clone()))),
+                    ),
+                    (
+                        Request::CommandAt {
+                            pane: world.pane,
+                            row: row + 2,
+                        },
+                        Response::ShellCommand(Some(Box::new(world.commands[1].clone()))),
+                    ),
+                    (
+                        Request::CommandAt { pane: NO_PANE, row },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::CommandLine {
+                            pane: NO_PANE,
+                            command: first,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::ShellCommands {
+                            pane: NO_PANE,
+                            top: 0,
+                            bottom: 1,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::Viewport(world.pane),
+                        Response::Viewport(world.viewport.clone()),
+                    ),
+                    (
+                        Request::Viewport(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    // The shell's last prompt has no input's mark: it edits no
+                    // command line, and runs none.
+                    (Request::EditedLine(world.pane), Response::Text(None)),
+                    (
+                        Request::EditedLine(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: world.pane,
+                            line: "true".to_owned(),
+                        },
+                        failed(
+                            Code::Unavailable,
+                            &format!(
+                                "the shell of the pane {} is not at its prompt",
+                                world.pane.0
+                            ),
+                        ),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: world.pane,
+                            line: " ".to_owned(),
+                        },
+                        failed(Code::Unavailable, "an empty command line runs nothing"),
+                    ),
+                    (
+                        Request::RunLine {
+                            pane: NO_PANE,
+                            line: "true".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    // A block selected, of a command that the pane keeps, which a
+                    // read of the same call does not see yet.
+                    (
+                        Request::SelectedBlock(world.pane),
+                        Response::ShellCommand(None),
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: world.pane,
+                            command: Some(first),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: world.pane,
+                            command: Some(999),
+                        },
+                        failed(
+                            Code::NotFound,
+                            &lokyr_plugin_sdk::host::no_command(world.pane, 999),
+                        ),
+                    ),
+                    (
+                        Request::SelectBlock {
+                            pane: NO_PANE,
+                            command: None,
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::SelectedBlock(NO_PANE),
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                ],
+                posts: events.clone(),
+                heard: events,
+            },
+            // The next call reads it, and selects none.
+            ask(vec![
                 (
-                    commands(-1_000_000, 1_000_000),
-                    Response::ShellCommands(world.commands.clone()),
+                    Request::SelectedBlock(world.pane),
+                    Response::ShellCommand(Some(Box::new(world.commands[0].clone()))),
                 ),
-                (commands(row, row + 1), ids(&[])),
-                (commands(row + 1, row + 2), ids(&[first])),
-                (commands(row, row + 3), ids(&[first, second])),
-                (commands(row + 2, row + 3), ids(&[second])),
-                (commands(row + 5, row + 5), ids(&[])),
-                // Their lines, as the long command's notification reads them.
                 (
-                    Request::CommandLine {
+                    Request::SelectBlock {
                         pane: world.pane,
-                        command: first,
+                        command: None,
                     },
-                    Response::Text(world.command_lines[0].clone()),
+                    Response::Done,
                 ),
-                (
-                    Request::CommandLine {
-                        pane: world.pane,
-                        command: second,
-                    },
-                    Response::Text(world.command_lines[1].clone()),
-                ),
-                (
-                    Request::CommandLine {
-                        pane: world.pane,
-                        command: 999_999,
-                    },
-                    Response::Text(None),
-                ),
-                (
-                    Request::CommandLine {
-                        pane: NO_PANE,
-                        command: first,
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::ShellCommands {
-                        pane: NO_PANE,
-                        top: 0,
-                        bottom: 1,
-                    },
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-                (
-                    Request::Viewport(world.pane),
-                    Response::Viewport(world.viewport),
-                ),
-                (
-                    Request::Viewport(NO_PANE),
-                    failed(Code::NotFound, "there is no pane 999999"),
-                ),
-            ],
-            posts: events.clone(),
-            heard: events,
-        }],
+            ]),
+        ],
     }
 }
 
@@ -2856,6 +3032,19 @@ fn color_panel() -> Scenario {
     }
 }
 
+/// The path of the temporary file `name` of the scenarios' plugin, in the
+/// host's folder of them of `world`'s.
+fn temporary(world: &World, name: &str) -> String {
+    lokyr_plugin_sdk::host::temporary_path(&world.files.join("temporary"), "conformer", name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// The absolute path of `world`'s folder `name`.
+fn folder(world: &World, name: &str) -> String {
+    world.files.join(name).to_string_lossy().into_owned()
+}
+
 /// What every plugin asks of the app: a command run, a window opened or
 /// closed, the app quit and the text's size, and what of them is refused.
 fn app_requests(world: &World) -> Scenario {
@@ -2969,11 +3158,92 @@ fn app_requests(world: &World) -> Scenario {
                 ),
             ),
             (Request::SetFont("Monaco".to_owned()), Response::Done),
-            // The system's day, whether a notice shows, and whether the
-            // state lasts, as the harness gives the kernel's host a folder.
+            // The system's day and time, whether a notice shows, and
+            // whether the state lasts, as the harness gives the kernel's
+            // host a folder.
             (Request::Day, Response::Day(lokyr_plugin_sdk::fake::DAY)),
+            (
+                Request::Now,
+                Response::Now(lokyr_plugin_sdk::fake::LOCAL_TIME),
+            ),
             (Request::NoticeShows, Response::Boolean(false)),
             (Request::KeepsState, Response::Boolean(true)),
+            // The side of the status bar of the plugin's view.
+            (
+                Request::SetStatusBarSide(lokyr_plugin_sdk::host::StatusBarSide::End),
+                Response::Done,
+            ),
+            // A temporary file, in the plugin's folder, its path the
+            // answer; one of the same name in its place; a name of a
+            // folder's, a name of no text's extension, and bytes past the
+            // bound, refused.
+            (
+                Request::TempFile {
+                    name: "output.txt".to_owned(),
+                    bytes: Bytes(b"ls\n".to_vec()),
+                },
+                Response::Text(Some(temporary(world, "output.txt"))),
+            ),
+            (
+                Request::TempFile {
+                    name: "output.txt".to_owned(),
+                    bytes: Bytes(b"ls -l\n".to_vec()),
+                },
+                Response::Text(Some(temporary(world, "output.txt"))),
+            ),
+            (
+                Request::TempFile {
+                    name: "a/b.txt".to_owned(),
+                    bytes: Bytes(Vec::new()),
+                },
+                failed(
+                    Code::Failed,
+                    &check_file_name("a/b.txt").unwrap_err().message,
+                ),
+            ),
+            (
+                Request::TempFile {
+                    name: "page.html".to_owned(),
+                    bytes: Bytes(Vec::new()),
+                },
+                failed(
+                    Code::Failed,
+                    &lokyr_plugin_sdk::host::TemporaryFiles::default()
+                        .check("page.html", 0)
+                        .unwrap_err()
+                        .message,
+                ),
+            ),
+            (
+                Request::TempFile {
+                    name: "big.txt".to_owned(),
+                    bytes: Bytes(vec![b'x'; MOST_TEMPORARY_BYTES + 1]),
+                },
+                failed(
+                    Code::Failed,
+                    &format!("a temporary file has {MOST_TEMPORARY_BYTES} bytes at most"),
+                ),
+            ),
+            // The branch of a folder within a repository; none out of one;
+            // a path that is not absolute refused.
+            (
+                Request::GitBranch {
+                    folder: folder(world, "repository/src"),
+                },
+                Response::Text(Some("main".to_owned())),
+            ),
+            (
+                Request::GitBranch {
+                    folder: folder(world, "plain"),
+                },
+                Response::Text(None),
+            ),
+            (
+                Request::GitBranch {
+                    folder: "src".to_owned(),
+                },
+                failed(Code::Failed, "`src` is not a folder's absolute path"),
+            ),
             // No agent runs in the scenarios' panes.
             (Request::Agents, Response::Agents(Vec::new())),
             (

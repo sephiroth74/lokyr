@@ -30,7 +30,7 @@ A tab of several panes, side by side and one above another: the commands that sp
 
 <!-- commands end -->
 
-The pane's context menu splits it right, left, down or up, moves it to a tab or a window of its own, and closes it; an item that would do nothing there is dimmed, as Close Pane in a tab of one pane.
+The pane's context menu, in its **Pane** submenu, splits it right, left, down or up, moves it to a tab or a window of its own, and closes it; an item that would do nothing there is dimmed, as Close Pane in a tab of one pane.
 
 The commands without keys are there for your own bindings:
 

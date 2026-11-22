@@ -50,7 +50,7 @@ pub fn dismantle(node: Node) {
 /// names: the codicons of Symbols Nerd Font, and two that the host draws
 /// as macOS 27's search field draws them, `magnifying-glass` and
 /// `clear-circle`, its button's cross knocked out of a disc.
-pub const ICONS: [&str; 58] = [
+pub const ICONS: [&str; 59] = [
     "add",
     "arrow-down",
     "arrow-up",
@@ -79,6 +79,7 @@ pub const ICONS: [&str; 58] = [
     "eye-closed",
     "filter",
     "folder",
+    "git-branch",
     "history",
     "hubot",
     "info",
@@ -524,6 +525,11 @@ pub struct Field {
     /// Its size.
     #[serde(skip_serializing_if = "ControlSize::is_regular")]
     pub size: ControlSize,
+    /// Whether it is disabled: dimmed, as a disabled control is, it takes
+    /// neither the pointer's presses, the focus, nor accessibility's
+    /// value, so that nothing types into it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
 }
 
 /// A button's own properties.
@@ -802,7 +808,8 @@ impl Kind {
     /// node says.
     pub fn takes_focus(&self) -> bool {
         match self {
-            Self::Field(_) | Self::List(_) => true,
+            Self::Field(field) => !field.disabled,
+            Self::List(_) => true,
             Self::Button(button) => !button.disabled,
             Self::Toggle(toggle) => !toggle.disabled,
             Self::Switch(switch) => !switch.disabled,
@@ -869,6 +876,7 @@ impl Kind {
             Self::Checkbox(checkbox) => checkbox.disabled,
             Self::Radios(radios) => radios.disabled,
             Self::PopUp(pop_up) => pop_up.disabled,
+            Self::Field(field) => field.disabled,
             _ => false,
         }
     }
@@ -1681,6 +1689,7 @@ impl Node {
             records: false,
             search: false,
             size: Default::default(),
+            disabled: false,
         }))
     }
 

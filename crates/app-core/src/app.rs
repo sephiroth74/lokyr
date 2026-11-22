@@ -89,10 +89,13 @@ mod theme_copies;
 mod theme_imports;
 mod tools;
 
-use input::{show_selection, shown_top};
+use input::{show_selection, shown_number};
 
 /// The command that quits.
 const QUIT: &str = "app.quit";
+
+/// The folder of the plugins' temporary files, in the state's folder.
+const TEMPORARY_FOLDER: &str = "temporary";
 
 /// The command that opens the config file in the text editor, made first
 /// when it is not there.
@@ -730,10 +733,17 @@ pub struct App<B: Backend> {
     /// held then.
     pointer_told: Option<PointerTold>,
     pointer_mods: lokyr_platform_core::Modifiers,
+    /// The fingerprint of the plugins that follow the panes' views, as
+    /// [`Plugins::listeners`] gives it, as they were last told them.
+    viewport_listeners: u64,
     /// Whether the frame drawn changed the text under the pointer that the
     /// plugins were told of, as its row changed or its pane scrolled under
     /// it, of which they are told again.
     pointer_text_changed: bool,
+    /// Whether the frame drawn moved the rows under the pointer by a share
+    /// of a row, as they scroll by pixels, which can bring another cell
+    /// under it, of which the plugins are told then.
+    pointer_shifted: bool,
     /// Whether a window opened since the app started, after which none
     /// restores the frame that a window kept, nor starts in the first
     /// window's directory.
@@ -1088,7 +1098,9 @@ impl<B: Backend> App<B> {
             editing_text: false,
             pointer_told: None,
             pointer_mods: lokyr_platform_core::Modifiers::NONE,
+            viewport_listeners: 0,
             pointer_text_changed: false,
+            pointer_shifted: false,
             title_timer: None,
             command_looks: BTreeMap::new(),
             title_look: Some(TITLE_LOOK),
@@ -2111,6 +2123,9 @@ impl<B: Backend> App<B> {
         let performance_changed =
             config.debug.performance_overlay != self.config.debug.performance_overlay;
         let term_changed = config.terminal.term != self.config.terminal.term;
+        // Scrolling by pixels turned off leaves no pane a share of a row,
+        // nor a wheel's glide, nor a trackpad's ease.
+        let smooth_off = self.config.window.smooth_scroll && !config.window.smooth_scroll;
         let themes_changed = config.theme.light != self.config.theme.light
             || config.theme.dark != self.config.theme.dark;
         self.settle_update_checks(platform, config.updates.check);
@@ -2194,6 +2209,16 @@ impl<B: Backend> App<B> {
             pane.set_width_tables(widths.tables, widths.ambiguous_wide);
             pane.set_normalization(terminal.normalization.form());
             pane.set_scrollback_limit(self.config.scrollback.limit.bytes());
+            if smooth_off {
+                pane.drop_fraction();
+            }
+        }
+        if smooth_off {
+            for (&window, state) in &mut self.windows {
+                state.mouse.glide = None;
+                state.mouse.ease = None;
+                platform.request_frame(window);
+            }
         }
         if icon_changed {
             self.show_icon(platform);
@@ -2986,6 +3011,7 @@ impl<B: Backend> App<B> {
         }
         self.keep_windows(platform);
         self.end_latency_bench(platform);
+        self.plugins.empty_temporary();
         platform.quit();
     }
 
@@ -3066,6 +3092,7 @@ impl<B: Backend> App<B> {
             // window closes; the windows kept, none now, forgotten.
             self.end_latency_bench(platform);
             self.keep_windows(platform);
+            self.plugins.empty_temporary();
             platform.quit();
         } else if self
             .windows
@@ -3527,6 +3554,15 @@ impl<B: Backend> App<B> {
         // next and no card that shows once in a while comes in a measure.
         self.plugins
             .set_state_directory(self.state.clone().filter(|_| !self.benched));
+        // Their temporary files, marked as the platform marks a download,
+        // in a folder that the start empties, and the quit.
+        self.plugins.set_temporary_directory(
+            self.state
+                .as_ref()
+                .filter(|_| !self.benched)
+                .map(|state| state.join(TEMPORARY_FOLDER)),
+            platform.quarantine(),
+        );
         self.add_installed(platform);
         self.configure_plugins(platform);
         self.tell_keys(platform);
@@ -3695,6 +3731,7 @@ impl<B: Backend> App<B> {
             day: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |since| since.as_secs() / 86_400),
+            local_time: &crate::clock::local_time,
             notice: self.diagnostics.shown().is_some(),
             saving: &saving,
             language: self.texts.language(),
@@ -4149,6 +4186,16 @@ impl<B: Backend> App<B> {
                 &[("name", Arg::Text(&plugin)), ("fault", Arg::Text(&fault))],
             );
             self.report(platform, Diagnostic::new(Code::Fault, text, About::Other));
+        }
+        // A plugin that started following the panes' views, which heard
+        // none of them, hears each at the windows' next frames.
+        let listeners = self.plugins.listeners(plugins::VIEWPORT_CHANGED);
+        if listeners != self.viewport_listeners {
+            self.viewport_listeners = listeners;
+            for pane in self.workspace.panes_mut() {
+                pane.tell_viewport_again();
+            }
+            self.request_frames(platform);
         }
         // What the windows show changed only through the calls' writes; a
         // turn whose plugins wrote nothing, as the start's, whose events

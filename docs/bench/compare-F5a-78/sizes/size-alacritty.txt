@@ -1,0 +1,2 @@
+40 120
+/tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color

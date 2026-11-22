@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use super::Terminal;
+use super::folds::ViewMap;
 use super::selection::CellPin;
 
 /// The memory that a terminal's images take at most, of their bytes as
@@ -954,11 +955,12 @@ impl Terminal {
         )
     }
 
-    /// The placements that the view shows of the active screen's images,
-    /// the lowest first, in the order that they came of the same; the
-    /// placements whose text left go, with the images that went with them.
-    /// Nothing, and no cost, without placements.
-    pub(super) fn images_view(&mut self) -> Vec<Placed> {
+    /// The placements that the view `map` shows of the active screen's
+    /// images, the lowest first, in the order that they came of the same,
+    /// none whose first row a fold takes; the placements whose text left
+    /// go, with the images that went with them. Nothing, and no cost,
+    /// without placements.
+    pub(super) fn images_view(&mut self, map: &ViewMap) -> Vec<Placed> {
         if self.images.placements.is_empty() {
             return Vec::new();
         }
@@ -976,15 +978,20 @@ impl Terminal {
             self.unpin_cell(&placement.pin);
             self.drop_unplaced(placement.image);
         }
-        let top = self.origin().top;
-        let shown = i64::from(self.rows);
+        // The view's rows, of the row below its last while it has one.
+        // The view has at most `u16::MAX` rows, and one below.
+        let shown = map.height() as i64;
         let mut placed: Vec<Placed> = self
             .images
             .placements
             .iter()
             .filter_map(|placement| {
                 let (column, row) = self.pinned_cell(&placement.pin)?;
-                let row = row - top;
+                // An image whose first row a fold takes shows nothing.
+                if map.showing(row).is_some() && map.own(row).is_none() {
+                    return None;
+                }
+                let row = map.place(row);
                 if row >= shown || row + i64::from(placement.rows) <= 0 {
                     return None;
                 }

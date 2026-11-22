@@ -28,13 +28,16 @@ pub const MARK: f32 = 2.0;
 
 /// What the view shows of a pane's rows: how many the pane holds, of its
 /// scrollback and its screen, the view's first by its place from the
-/// oldest, and how many the view shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// oldest, and the share of a row past it, and how many the view shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rows {
     /// The rows that the pane holds.
     pub total: u64,
     /// The view's first row, from the oldest, 0.
     pub top: u64,
+    /// The share of a row, from 0 to under 1, that the view is scrolled
+    /// past its first row, as it scrolls by pixels.
+    pub share: f32,
     /// The rows that the view shows.
     pub shown: u64,
 }
@@ -46,8 +49,8 @@ impl Rows {
         self.total > self.shown
     }
 
-    /// The most that the view's first row can be.
-    fn last_top(&self) -> u64 {
+    /// The most that the view's first row can be, at the screen.
+    pub fn last_top(&self) -> u64 {
         self.total.saturating_sub(self.shown)
     }
 }
@@ -105,13 +108,17 @@ fn length(area: Rect, rows: Rows, scale: f32) -> f32 {
 
 /// The knob's rectangle in `area`, in pixels, on a display of `scale`, wide
 /// or thin: its length of the share of the rows that the view shows, its
-/// place of the view's first row.
+/// place of the view's first row and the share of a row past it.
 pub fn knob(area: Rect, rows: Rows, wide: bool, scale: f32) -> Rect {
     let (start, run) = track(area, scale);
     let length = length(area, rows, scale);
+    // Far fewer rows than an `f64` holds exactly.
     let share = match rows.last_top() {
         0 => 0.0,
-        last => rows.top.min(last) as f32 / last as f32,
+        last => {
+            let place = (rows.top as f64 + f64::from(rows.share)).min(last as f64);
+            (place / last as f64) as f32
+        }
     };
     let top = start + (run - length) * share;
     let width = if wide { KNOB.1 } else { KNOB.0 } * scale;
@@ -125,15 +132,25 @@ pub fn knob(area: Rect, rows: Rows, wide: bool, scale: f32) -> Rect {
 }
 
 /// The view's first row, from the oldest, that the knob's top at `y`, in
-/// pixels, gives, as a drag puts it, within the rows.
+/// pixels, gives, as a drag puts it, within the rows: the nearest of
+/// [`place_at`]'s.
 pub fn top_at(area: Rect, rows: Rows, scale: f32, y: f32) -> u64 {
+    // Within the rows, which a `u64` holds.
+    place_at(area, rows, scale, y).round() as u64
+}
+
+/// The view's place, from the oldest row, that the knob's top at `y`, in
+/// pixels, gives, as a drag puts it by pixels, within the rows: its first
+/// row and the share of a row past it.
+pub fn place_at(area: Rect, rows: Rows, scale: f32, y: f32) -> f64 {
     let (start, run) = track(area, scale);
     let room = run - length(area, rows, scale);
     if room <= 0.0 {
-        return 0;
+        return 0.0;
     }
-    let share = ((y - start) / room).clamp(0.0, 1.0);
-    (share * rows.last_top() as f32).round() as u64
+    let share = f64::from(((y - start) / room).clamp(0.0, 1.0));
+    // Far fewer rows than an `f64` holds exactly.
+    share * rows.last_top() as f64
 }
 
 /// The knob's top, in pixels, that puts its middle at `y`, as a click on

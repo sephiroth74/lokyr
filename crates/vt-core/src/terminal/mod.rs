@@ -13,6 +13,7 @@ mod edit;
 mod erase;
 mod escape;
 mod events;
+mod folds;
 mod gutter;
 mod images;
 mod keyboard;
@@ -38,7 +39,8 @@ pub use charsets::{Charset, Charsets, Shift};
 pub use clipboard::{ClipboardRequest, ClipboardTarget};
 pub use colors::{ColorScheme, Colors, SPECIAL_COLORS};
 pub use decorations::{Decorated, Label, Look, MOST_DECORATIONS};
-pub use gutter::{GutterKind, GutterMark, MOST_GUTTER_MARKS};
+pub use folds::{FoldMark, MOST_FOLDS, ShownRow, ViewRow};
+pub use gutter::{BlockMark, GutterKind, GutterMark, MOST_GUTTER_MARKS};
 pub use images::{
     IMAGE_MEMORY, Image, ImageFormat, MOST_PIXELS, MOST_PLACEMENTS, Placed, Placing, Side, Source,
     dimensions,
@@ -49,15 +51,17 @@ pub use matches::{Highlighted, MatchCells};
 pub use osc::{Event, Progress, WorkingDirectory};
 pub use prompt_click::{PromptClick, PromptClicks};
 pub use selection::{
-    CellPin, RowCells, RowText, Selected, SelectionShape, SelectionUnit, WORD_SEPARATORS,
+    CellPin, RowCells, RowText, Selected, SelectedCells, SelectionShape, SelectionUnit,
+    WORD_SEPARATORS,
 };
 pub use session_status::SessionStatus;
-pub use snapshot::{Line, Snapshot, SnapshotCursor};
+pub use snapshot::{Line, MOST_STICKY_ROWS, Snapshot, SnapshotCursor};
 pub use status::{MOST_REPORT, MOST_STATUSES, Status, StatusKind, StatusState};
 pub use viewport::{Origin, Scroll};
 pub use window::Window;
 
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::page::{
     Cell, Content, Grow, PageList, PinId, Position, Rgb, RowFlag, Scrollback, Semantic, Style,
@@ -490,8 +494,9 @@ pub struct Terminal {
     osc: Vec<u8>,
     /// What the embedder has to act on, oldest first.
     events: events::Events,
-    /// The working directory that OSC 7 gave last.
-    working_directory: Option<WorkingDirectory>,
+    /// The working directory that OSC 7 gave last, which the commands that
+    /// start share.
+    working_directory: Option<Arc<WorkingDirectory>>,
     /// The tab's color, from OSC 6;1.
     tab_color: Option<Rgb>,
     /// The programs' statuses that OSC 7501 told, from the least recently
@@ -521,6 +526,10 @@ pub struct Terminal {
     /// The first row of the primary screen's view, pinned, while the view
     /// is above the screen; `None` while it shows the screen.
     viewport: Option<PinId>,
+    /// The share of a row that the view is scrolled past its first row, as
+    /// a scroll by a fraction of a row left it, and where the view's rows
+    /// were then: no share once they are elsewhere.
+    fraction: Option<(viewport::Origin, f32)>,
     /// Whether output brings the view back to the screen.
     scroll_on_output: bool,
     /// The selection, if there is one.
@@ -538,6 +547,14 @@ pub struct Terminal {
     decorations: Vec<decorations::Decoration>,
     /// The gutter's marks that the embedder laid.
     gutter: Vec<gutter::Laid>,
+    /// The folds of the primary screen, in their rows' order.
+    folds: Vec<folds::Fold>,
+    /// Whether the snapshot pins the prompt rows of the block whose output
+    /// the view's top shows, as an embedder asks, which RIS keeps.
+    sticky_prompts: bool,
+    /// Whether a blank row comes before each prompt that follows a command
+    /// that ended, as an embedder asks, which RIS keeps.
+    block_spacing: bool,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
     /// The inline images that programs sent, and their placements.
@@ -653,6 +670,7 @@ impl Terminal {
             last_printed: None,
             bells: 0,
             viewport: None,
+            fraction: None,
             scroll_on_output: options.scroll_on_output,
             selection: None,
             selection_anchor: None,
@@ -660,6 +678,9 @@ impl Terminal {
             held_cursor: None,
             decorations: Vec::new(),
             gutter: Vec::new(),
+            folds: Vec::new(),
+            sticky_prompts: false,
+            block_spacing: false,
             matches: Vec::new(),
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),
@@ -883,6 +904,7 @@ impl Terminal {
         if self.alternate_active {
             return;
         }
+        self.forget_folds();
         let y = self.cursor().y;
         let (start, end) = {
             let rows = &self.screen().rows;
@@ -1188,7 +1210,7 @@ impl Terminal {
 
     /// The working directory that OSC 7 gave last.
     pub fn working_directory(&self) -> Option<&WorkingDirectory> {
-        self.working_directory.as_ref()
+        self.working_directory.as_deref()
     }
 
     /// The tab's color, from OSC 6;1.

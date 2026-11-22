@@ -12,12 +12,12 @@ use lokyr_vt_core::page::Style;
 use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, InputModes, KeyboardFlags, Look, Origin, RowCells, Scroll,
-    Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, FoldMark, InputModes, KeyboardFlags, Look, Origin, RowCells,
+    Scroll, Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
-use lokyr_plugin_sdk::host::{ShellCommand, Viewport};
+use lokyr_plugin_sdk::host::{ShellCommand, ViewFold, Viewport};
 
 use super::PaneId;
 use super::agent::{Agent, Told};
@@ -232,6 +232,12 @@ pub struct Pane {
     /// The view that a frame showed as it was last told, whose change
     /// tells `viewport-changed`.
     told_viewport: Option<Viewport>,
+    /// Whether its terminal pins the prompt rows of the block at the view's
+    /// top, as the app asked last.
+    sticky_prompts: bool,
+    /// Whether its terminal puts a blank row before each prompt that
+    /// follows a command that ended, as the last ask said.
+    block_spacing: bool,
     /// The command that started last, of its id, and when the workspace's
     /// look found its start, until its end.
     pub(super) command_started: Option<(u64, Instant)>,
@@ -260,13 +266,13 @@ impl std::fmt::Debug for Pane {
 
 /// A view of the first row `origin`, of `rows` rows, `offset` rows above
 /// the screen, over a scrollback of `scrollback` rows, of the alternate
-/// screen or not.
+/// screen or not, of the folds `folds`.
 fn viewport(
     origin: Origin,
     rows: u16,
-    offset: usize,
-    scrollback: usize,
+    (offset, scrollback): (usize, usize),
     alternate: bool,
+    folds: Vec<FoldMark>,
 ) -> Viewport {
     // Fewer rows than an `i64` holds.
     let screen = origin.top.saturating_add(offset as i64);
@@ -277,6 +283,15 @@ fn viewport(
         oldest: screen.saturating_sub(scrollback as i64),
         epoch: origin.epoch,
         alternate,
+        folds: folds
+            .into_iter()
+            .map(|fold| ViewFold {
+                command: fold.command,
+                whole: fold.whole,
+                first: fold.first,
+                last: fold.last,
+            })
+            .collect(),
     }
 }
 
@@ -388,6 +403,8 @@ impl Pane {
             progress: None,
             slices: 0,
             told_viewport: None,
+            sticky_prompts: false,
+            block_spacing: false,
             command_started: None,
             commands_told: false,
             agent: None,
@@ -596,6 +613,33 @@ impl Pane {
         self.grid
     }
 
+    /// Has its terminal pin, over the view's first rows, the prompt rows of
+    /// the block whose output the view's top shows, or not, as
+    /// [`Terminal::set_sticky_prompts`] does: of the terminal's lock only as
+    /// the ask changes.
+    pub fn set_sticky_prompts(&mut self, on: bool) {
+        if self.sticky_prompts == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_sticky_prompts(on);
+            self.sticky_prompts = on;
+        }
+    }
+
+    /// Has its terminal put a blank row before each prompt that follows a
+    /// command that ended, or not, as [`Terminal::set_block_spacing`] does:
+    /// of the terminal's lock only as the ask changes.
+    pub fn set_block_spacing(&mut self, on: bool) {
+        if self.block_spacing == on {
+            return;
+        }
+        if let Some(session) = &self.session {
+            session.lock().set_block_spacing(on);
+            self.block_spacing = on;
+        }
+    }
+
     /// The screen, as the last frame copied it.
     pub fn snapshot(&self) -> &Snapshot {
         &self.snapshot
@@ -783,6 +827,14 @@ impl Pane {
             .is_some_and(|session| session.mouse(event))
     }
 
+    /// Whether the program would take the mouse's `event`, as
+    /// [`Pane::mouse`] tells, sending nothing.
+    pub fn takes_mouse(&self, event: &MouseEvent) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.takes_mouse(event))
+    }
+
     /// The modes that the program set of what the keys, the mouse and a
     /// paste send, as they are now, under the lock.
     pub fn input_modes(&self) -> Option<InputModes> {
@@ -842,24 +894,20 @@ impl Pane {
         }
     }
 
+    /// The row of the view `y` now, by the numbers of the rows that it
+    /// shows, as [`Terminal::shown_row`] gives it; none for a pane whose
+    /// program did not start.
+    pub fn shown_row_now(&self, y: u16) -> Option<terminal::ShownRow> {
+        self.session.as_ref()?.lock().shown_row(y)
+    }
+
     /// Scrolls the view, through the scrollback, so that the row numbered
     /// `row` shows: at the view's edge that it comes past, as it does
-    /// already, or not at all, of a row that the list does not hold.
+    /// already, its fold's placeholder for a row of a fold, or not at all,
+    /// of a row that the list does not hold.
     pub fn show_row(&self, row: i64) {
-        let Some(session) = &self.session else {
-            return;
-        };
-        let mut terminal = session.lock();
-        if terminal.row_index(row).is_none() {
-            return;
-        }
-        let top = terminal.origin().top;
-        let bottom = top.saturating_add(i64::from(terminal.rows()));
-        let rows = |n: i64| usize::try_from(n).unwrap_or(usize::MAX);
-        if row < top {
-            terminal.scroll_viewport(Scroll::Up(rows(top - row)));
-        } else if row >= bottom {
-            terminal.scroll_viewport(Scroll::Down(rows(row - bottom + 1)));
+        if let Some(session) = &self.session {
+            session.lock().show_row(row);
         }
     }
 
@@ -904,18 +952,18 @@ impl Pane {
             return Some(viewport(
                 origin,
                 snapshot.rows(),
-                snapshot.offset(),
-                snapshot.scrollback(),
+                (snapshot.offset(), snapshot.scrollback()),
                 snapshot.alternate_screen(),
+                snapshot.shown_folds(),
             ));
         }
         let terminal = self.session.as_ref()?.lock();
         Some(viewport(
             terminal.origin(),
             terminal.rows(),
-            terminal.viewport_offset(),
-            terminal.scrollback_rows(),
+            (terminal.viewport_offset(), terminal.scrollback_rows()),
             terminal.is_alternate_screen(),
+            terminal.shown_folds(),
         ))
     }
 
@@ -925,7 +973,14 @@ impl Pane {
     pub fn viewport_changed(&mut self) -> Option<Viewport> {
         self.snapshot.origin()?;
         let now = self.viewport()?;
-        (self.told_viewport.replace(now) != Some(now)).then_some(now)
+        (self.told_viewport.replace(now.clone()).as_ref() != Some(&now)).then_some(now)
+    }
+
+    /// Forgets the view that [`Pane::viewport_changed`] told, so that the
+    /// next frame tells it again, as a plugin that starts following the
+    /// views hears it.
+    pub fn tell_viewport_again(&mut self) {
+        self.told_viewport = None;
     }
 
     /// The commands that the shell marked whose rows meet the rows
@@ -935,19 +990,39 @@ impl Pane {
         let Some(session) = &self.session else {
             return Vec::new();
         };
-        session
-            .lock()
-            .commands_meeting(top, bottom)
+        let commands = session.lock().commands_meeting(top, bottom);
+        let mut machine = Machine::default();
+        commands
             .into_iter()
-            .map(|marks| ShellCommand {
-                id: marks.id,
-                prompt: marks.prompt,
-                input: marks.input,
-                output: marks.output,
-                end: marks.end,
-                status: marks.status,
-            })
+            .map(|marks| shell_command(&marks, &mut machine))
             .collect()
+    }
+
+    /// The command of the id `command`, as [`Terminal::command`] gives it.
+    pub fn shell_command(&self, command: u64) -> Option<ShellCommand> {
+        self.session
+            .as_ref()?
+            .lock()
+            .command(command)
+            .map(|marks| shell_command(&marks, &mut Machine::default()))
+    }
+
+    /// The command whose block holds the row numbered `row`, as
+    /// [`Terminal::command_at`] gives it.
+    pub fn command_at(&self, row: i64) -> Option<ShellCommand> {
+        self.session
+            .as_ref()?
+            .lock()
+            .command_at(row)
+            .map(|marks| shell_command(&marks, &mut Machine::default()))
+    }
+
+    /// The command line that the shell edits at its prompt, as
+    /// [`Terminal::edited_command_line`] gives it; none for a pane whose
+    /// program did not start or ended.
+    pub fn edited_command_line(&self) -> Option<String> {
+        let session = self.session.as_ref().filter(|_| self.ended.is_none())?;
+        session.lock().edited_command_line()
     }
 
     /// The command line of the command of the id `command`, as
@@ -1014,7 +1089,15 @@ impl Pane {
             .unwrap_or_default()
     }
 
-    /// The cells of the selection, `most` rows at most, as
+    /// The cells of `count` rows from the row numbered `first`, as
+    /// [`Terminal::row_cells`] gives them; none without a terminal.
+    pub fn row_cells(&self, first: i64, count: usize) -> Option<Vec<RowCells>> {
+        self.session
+            .as_ref()
+            .and_then(|session| session.lock().row_cells(first, count))
+    }
+
+    /// The cells of the selection's rows, `most` at most, as
     /// [`Terminal::selection_cells`] gives them.
     pub fn selection_cells(&self, most: usize) -> Option<Vec<RowCells>> {
         self.session
@@ -1257,6 +1340,51 @@ impl Pane {
         if let Some(session) = &self.session {
             session.scroll(scroll);
         }
+    }
+
+    /// Scrolls the view by `rows`, up into the scrollback where positive,
+    /// of a share of a row too, as a trackpad's points scroll it: whole
+    /// rows move the view, and the rest is the share of a row that the
+    /// next snapshot shows the view scrolled past its first row, of the row
+    /// past its last, [`Snapshot::fraction`]; the view's reads and its
+    /// event of whole rows, as [`Pane::viewport`] tells.
+    pub fn scroll_by(&self, rows: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_by(rows);
+        }
+    }
+
+    /// Scrolls the view so that its first row is the row numbered
+    /// `place`'s whole part, and the share of a row past it the rest, as a
+    /// scroll bar's knob dragged by pixels or a wheel's glide puts it, as
+    /// [`Terminal::scroll_viewport_to`] does.
+    pub fn scroll_to(&self, place: f64) {
+        if let Some(session) = &self.session {
+            session.scroll_to(place);
+        }
+    }
+
+    /// Lets the view's share of a row go, its rows where they are, as
+    /// scrolling by pixels turns off.
+    pub fn drop_fraction(&self) {
+        if let Some(session) = &self.session {
+            session.drop_fraction();
+        }
+    }
+
+    /// Where the view is now while it is above the screen, which only a
+    /// scroll moves while output comes: its rows' origin and its share of a
+    /// row; none at the screen, where output moves the view, and for a pane
+    /// whose program did not start.
+    pub fn scrolled_place(&self) -> Option<(Origin, f32)> {
+        self.session.as_ref()?.scrolled_place()
+    }
+
+    /// The numbers of the oldest row, the scrollback's first, and of the
+    /// screen's first row, between which the view scrolls, as output has
+    /// them now; none for a pane whose program did not start.
+    pub fn row_ends(&self) -> Option<(i64, i64)> {
+        Some(self.session.as_ref()?.row_ends())
     }
 
     /// Whether the program's output brings the view back to the screen.
@@ -1540,6 +1668,51 @@ pub fn directory_name(directory: &std::path::Path, home: Option<&std::path::Path
         || "/".to_owned(),
         |name| name.to_string_lossy().into_owned(),
     )
+}
+
+/// A command's marks, as the plugins read them.
+fn shell_command(
+    marks: &lokyr_vt_core::terminal::CommandMarks,
+    machine: &mut Machine,
+) -> ShellCommand {
+    let millis = |time: std::time::SystemTime| {
+        time.duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+            })
+    };
+    let (folder, host) = match marks.folder.as_deref() {
+        Some(told) => {
+            let other = !told.host.is_empty() && !machine.is_local(&told.host);
+            (Some(told.path.clone()), other.then(|| told.host.clone()))
+        }
+        None => (None, None),
+    };
+    ShellCommand {
+        id: marks.id,
+        prompt: marks.prompt,
+        input: marks.input,
+        output: marks.output,
+        end: marks.end,
+        status: marks.status,
+        started: marks.started.map(millis),
+        ended: marks.ended.map(millis),
+        folder,
+        host,
+    }
+}
+
+/// This machine's name, read once a read of commands needs it, as a
+/// folder of a host's name tells it.
+#[derive(Default)]
+struct Machine(Option<String>);
+
+impl Machine {
+    /// Whether `host`, as a shell told it of its folder, is this machine.
+    fn is_local(&mut self, host: &str) -> bool {
+        let name = self.0.get_or_insert_with(lokyr_pty::host_name);
+        lokyr_plugin_sdk::host::is_local_host(host, name)
+    }
 }
 
 #[cfg(test)]

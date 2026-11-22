@@ -641,6 +641,20 @@ impl Kernel {
         let viewport = pane.viewport().expect("the pane's view");
         let cursor = pane.cursor_cell().expect("the pane's cursor");
         let screen = lokyr_kernel::plugins::cell_rows(pane.view_cells());
+        // The scenarios' folder, of each kernel its own: a repository of
+        // `main`, and a `.git` of no repository over them all, which stops
+        // the search of the others' repositories there.
+        static KERNELS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let files = std::env::temp_dir().join(format!(
+            "lokyr-conformance-files-{}-{}",
+            std::process::id(),
+            KERNELS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        let _ = std::fs::remove_dir_all(&files);
+        std::fs::create_dir_all(files.join("repository/.git")).unwrap();
+        std::fs::create_dir_all(files.join("plain")).unwrap();
+        std::fs::write(files.join(".git"), "not a repository\n").unwrap();
+        std::fs::write(files.join("repository/.git/HEAD"), "ref: refs/heads/main\n").unwrap();
         Self {
             registry: Registry::default(),
             workspace,
@@ -664,6 +678,7 @@ impl Kernel {
                 viewport,
                 cursor,
                 screen,
+                files,
             },
         }
     }
@@ -691,6 +706,7 @@ impl Kernel {
             plugin_settings: &[],
             config_error: None,
             day: lokyr_plugin_sdk::fake::DAY,
+            local_time: &|| lokyr_plugin_sdk::fake::LOCAL_TIME,
             notice: false,
             saving: &|_| false,
             language: "en",
@@ -773,6 +789,7 @@ fn on_kernel(
         }
     }
     plugins.set_state_directory(Some(state.to_path_buf()));
+    plugins.set_temporary_directory(Some(world.files.join("temporary")), |_| Ok(()));
     assert!(plugins.activate(&mut kernel.context()).is_empty());
     let deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
         let start = Instant::now();
@@ -861,6 +878,11 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
             .with_pages(vec![scenarios::PAGE.to_owned()]);
     }
     host.set_clipboard(Some(scenarios::CLIPBOARD));
+    host.set_temporary_folder(Some(world.files.join("temporary")));
+    host.set_git_branch(
+        &world.files.join("repository").to_string_lossy(),
+        Some("main"),
+    );
     host.set_plugins(scenarios::plugins());
     host.set_settings(scenarios::settings());
     host.focus(Some(world.pane));
@@ -878,7 +900,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         .zip(&world.command_lines)
         .filter_map(|(command, line)| Some((command.id, line.clone()?)))
         .collect();
-    pane.viewport = Some(world.viewport);
+    pane.viewport = Some(world.viewport.clone());
     pane.cursor = world.cursor;
     // The rows that the view shows, their texts and their styles.
     for (row, cells) in (world.viewport.top..).zip(&world.screen) {
@@ -971,6 +993,7 @@ fn conforms(front: Front) {
         );
     }
     let _ = std::fs::remove_dir_all(&states);
+    let _ = std::fs::remove_dir_all(&world.files);
 }
 
 /// Checks that the trace `got` is `wanted`, as `what` tells: of its first
@@ -1156,11 +1179,23 @@ fn kind(request: &Request) -> usize {
         Request::Ungroup(_) => 137,
         Request::Groups(_) => 138,
         Request::WatchDoubleTap(_) => 139,
+        Request::ShellCommand { .. } => 140,
+        Request::CommandAt { .. } => 141,
+        Request::Now => 142,
+        Request::EditedLine(_) => 143,
+        Request::RunLine { .. } => 144,
+        Request::SetBlockLooks(_) => 145,
+        Request::SelectBlock { .. } => 146,
+        Request::SelectedBlock(_) => 147,
+        Request::RowCells { .. } => 148,
+        Request::TempFile { .. } => 149,
+        Request::GitBranch { .. } => 150,
+        Request::SetStatusBarSide(_) => 151,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 140;
+const KINDS: usize = 152;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
@@ -1178,6 +1213,7 @@ fn the_scenarios_hold_every_request_of_the_plugin_api() {
         viewport: host::Viewport::default(),
         cursor: (0, 0),
         screen: Vec::new(),
+        files: std::path::PathBuf::new(),
     };
     let mut held = [false; KINDS];
     for scenario in scenarios::all(&world) {

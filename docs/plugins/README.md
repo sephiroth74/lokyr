@@ -43,7 +43,8 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
 | [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
 | [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |
-| [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top |
+| [`command-header`](command-header.md) | The command whose output you are looking at, at the pane's top, while [Blocks](../blocks.md) is off |
+| [`blocks`](../blocks.md) | Off by default: each command and its output a block, its prompt rows pinned at the pane's top, which takes you to the block's start, and its parts copied, its details shown or its command run again from the context menu · Since 1.4 |
 | [`copy-mode`](copy-mode.md) | The copy mode: a cursor that vi's keys move through the scrollback, to select and copy without the mouse |
 | [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
 | [`settings`](settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |

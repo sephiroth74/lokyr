@@ -1,0 +1,1 @@
+{"kind": "resize", "farthest": 114.03946685248927, "seconds": 8.67, "display": "Built-In Display", "frames_per_second": 56.8, "refresh_ms": 16.67, "missed": 24, "delay_p50_ms": 12.12, "delay_p95_ms": 28.33, "windowserver_cpu": 36.0, "app_cpu": 16.2}

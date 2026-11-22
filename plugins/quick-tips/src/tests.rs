@@ -246,9 +246,11 @@ fn each_tip_shows_once_before_any_comes_again_those_of_unbound_keys_left_out() {
         assert_eq!(shown(&mut host, &mut plugin), None);
     }
     // In their order, the palette's and the find bar's of their keys and
-    // the plain ones; the commands of no keys are left out.
+    // the plain ones; the commands of no keys are left out, and Blocks',
+    // which is not there.
     let ready: Vec<&str> = CURATED
         .iter()
+        .filter(|tip| tip.needs.is_none())
         .filter(|tip| match tip.command {
             None => true,
             Some((name, _)) => [PALETTE, "search.open"].contains(&name),
@@ -458,4 +460,46 @@ fn find<'a>(tree: &'a Node, key: &str) -> Option<&'a Node> {
 /// Whether `node` is a toggle that is on.
 fn toggled(node: &Node) -> bool {
     matches!(&node.kind, Kind::Toggle(toggle) if toggle.on)
+}
+
+#[test]
+fn a_plugin_s_tips_show_while_its_command_is_there() {
+    let blocks: Vec<&str> = CURATED
+        .iter()
+        .filter(|tip| tip.needs == Some(BLOCKS))
+        .map(|tip| tip.message)
+        .collect();
+    assert_eq!(
+        blocks,
+        [
+            "tip-block-header",
+            "tip-block-copy",
+            "tip-block-details",
+            "tip-block-rerun",
+            "tip-block-spacing"
+        ]
+    );
+    // Blocks there: its tips among those that show.
+    let (mut host, mut plugin) = host(fake::DAY, Data::Nil);
+    host.set_registry(vec![lokyr_plugin_sdk::host::CommandInfo {
+        name: BLOCKS.to_owned(),
+        title: "Copy Command".to_owned(),
+        category: lokyr_plugin_sdk::command::Category::Clipboard,
+        params: Vec::new(),
+        plugin: Some("lokyr/blocks".to_owned()),
+        keys: None,
+        when: None,
+        enabled: Some(true),
+    }]);
+    let mut seen = Vec::new();
+    for _ in 0..CURATED.len() {
+        host.command(&mut plugin, SHOW, Args::new()).unwrap();
+        seen.push(shown(&mut host, &mut plugin).unwrap());
+        host.ui_event(&mut plugin, &ui(UiEventKind::Click, "dismiss"))
+            .unwrap();
+        host.deliver(&mut plugin).unwrap();
+    }
+    for tip in blocks {
+        assert!(seen.iter().any(|shown| shown == tip), "{tip}");
+    }
 }

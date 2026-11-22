@@ -38,8 +38,11 @@ export type Cx = {
     set_theme_value: (theme: string, name: string, value: string?) -> (true?, string?, number?),
     fonts: () -> (Fonts?, string?, number?),
     day: () -> (number?, string?, number?),
+    now: () -> (LocalTime?, string?, number?),
     notice_shows: () -> (boolean?, string?, number?),
     keeps_state: () -> (boolean?, string?, number?),
+    temp_file: (name: string, bytes: string | buffer) -> (string?, string?, number?),
+    git_branch: (folder: string) -> (string?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
     plugins: () -> ({ PluginInfo }?, string?, number?),
     settings: () -> (Settings?, string?, number?),
@@ -78,10 +81,13 @@ export type Cx = {
     current_match: (search: number) -> (Current?, string?, number?),
     shell_commands: (pane: PaneId, top: number, bottom: number) -> ({ ShellCommand }?, string?, number?),
     command_line: (pane: PaneId, command: number) -> (string?, string?, number?),
+    shell_command: (pane: PaneId, command: number) -> (ShellCommand?, string?, number?),
+    command_at: (pane: PaneId, row: number) -> (ShellCommand?, string?, number?),
     viewport: (pane: PaneId) -> (Viewport?, string?, number?),
     styles: (pane: PaneId, row: number) -> ({ StyleRun }?, string?, number?),
     selection_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
     screen_cells: (pane: PaneId) -> ({ CellRow }?, string?, number?),
+    row_cells: (pane: PaneId, first: number, count: number) -> ({ CellRow }?, string?, number?),
     render_image: (image: ImageSpec) -> (Image?, string?, number?),
     drop_image: (image: number) -> (true?, string?, number?),
     decorate: (pane: PaneId, from: { number }, to: { number }, look: DecorationLook) -> (number?, string?, number?),
@@ -96,6 +102,8 @@ export type Cx = {
     clear: (pane: PaneId) -> (true?, string?, number?),
     paste: (pane: PaneId, text: string) -> (true?, string?, number?),
     send_text: (pane: PaneId, text: string) -> (true?, string?, number?),
+    edited_line: (pane: PaneId) -> (string?, string?, number?),
+    run_line: (pane: PaneId, line: string) -> (true?, string?, number?),
     scroll: (pane: PaneId, scroll: Scroll) -> (true?, string?, number?),
     font_size: () -> (number?, string?, number?),
     set_font_size: (size: number?) -> (true?, string?, number?),
@@ -124,9 +132,13 @@ export type Cx = {
     set_group_color: (group: GroupId, color: Color?) -> (true?, string?, number?),
     fold_group: (group: GroupId, folded: boolean) -> (true?, string?, number?),
     ungroup: (group: GroupId) -> (true?, string?, number?),
+    set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
     set_focus_follows_mouse: (on: boolean) -> (true?, string?, number?),
+    set_block_looks: (value: BlockLooks) -> (true?, string?, number?),
+    select_block: (pane: PaneId, command: number?) -> (true?, string?, number?),
+    selected_block: (pane: PaneId) -> (ShellCommand?, string?, number?),
     set_window_tab_bar_place: (window: WindowId, place: BarPlace?) -> (true?, string?, number?),
     tab_bar_place: () -> (BarPlace?, string?, number?),
     keys_of: (command: string, args: { [string]: Value }?) -> (string?, string?, number?),
@@ -178,6 +190,8 @@ export type Event =
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
+    | { kind: "click", pane: PaneId, at: { number } }
+    | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
     | { kind: "lines", id: number, pane: PaneId, lines: { Line }, complete: boolean }
     | { kind: "searched", id: number, pane: PaneId, matches: { SearchMatch }, count: number, done: boolean }
     | { kind: "panel-closed", id: PanelId }
@@ -312,8 +326,18 @@ export type TestHost = {
     -- Moves the host's time on by `milliseconds`, its timers' events given.
     advance: (milliseconds: number) -> (),
     -- The writes that its calls made since the last look, each a table of
-    -- its request's name, as `{ Notify = { ... } }`.
+    -- its request's name in snake case, as `{ notify = { ... } }` or
+    -- `{ open_at = { ... } }`.
     done: () -> { { [string]: any } },
+    -- The reads that its calls made since the last look, of those that its
+    -- capabilities allow, each a table of its request's name in snake case,
+    -- as `{ git_branch = { ... } }` or `{ tabs = 1 }`, or the name alone of
+    -- a request of nothing more, in kebab case, as `focused-pane`.
+    reads: () -> { { [string]: any } | string },
+    -- Cuts short the reads of rows that it asked for and has yet to hear
+    -- of, as a resize or the pane's closing does: their `lines` events, at
+    -- the next delivery, tell them incomplete.
+    cut_reads: () -> (),
     -- The names of the commands that it registered.
     commands: () -> { string },
     -- The clipboard's text.
@@ -331,6 +355,10 @@ export type TestHost = {
     set_screen: (rows: { CellRow }) -> (),
     -- Gives the pane a selection of the cells `rows`, or none.
     set_selection: (rows: { CellRow }?) -> (),
+    -- Gives the pane the commands `commands` that its shell marked, oldest
+    -- first, as the reads of the commands tell them, their rows the
+    -- screen's from 0, as `set_screen` gives them.
+    set_commands: (commands: { ShellCommand }) -> (),
     -- The PNG on the clipboard, if the plugin put one there.
     clipboard_image: () -> string?,
     -- The saves whose panels show, in the order of their ids.
@@ -341,6 +369,19 @@ export type TestHost = {
     answer_save: (id: number, path: string?) -> (),
     -- The bytes of the file that a save wrote at `path`, if one did.
     saved_file: (path: string) -> string?,
+    -- The bytes of the plugin's temporary file `name`, as it wrote them
+    -- last, if it did.
+    temporary_file: (name: string) -> string?,
+    -- Gives the pane the folder of its program, as a read of its working
+    -- directory gives it, or none.
+    set_directory: (folder: string?) -> (),
+    -- The side of the status bar where its view goes: its manifest's, or
+    -- the one that it asked for last.
+    status_bar_side: () -> StatusBarSide,
+    -- Makes the folder of the absolute path `folder` a git repository's of
+    -- the branch `branch`, or no repository's of none, which a read of the
+    -- branch of a folder within it gives.
+    set_git_branch: (folder: string, branch: string?) -> (),
     -- The ids of the images that the host keeps of the plugin's, the oldest
     -- first.
     kept_images: () -> { number },
@@ -420,6 +461,14 @@ export type Binding = {
     command: string,
     args: { [string]: Value }?,
     when: string?,
+}
+
+export type BlockLooks = {
+    bars: boolean?,
+    dividers: boolean?,
+    failed_tint: boolean?,
+    prompt_rows: boolean?,
+    spacing: boolean?,
 }
 
 export type Border = {
@@ -651,6 +700,11 @@ export type LineText = {
 
 export type ListItem = {
     texts: { string }?,
+}
+
+export type LocalTime = {
+    time: number,
+    offset: number,
 }
 
 export type MenuItem = {
@@ -913,6 +967,8 @@ export type Settings = {
 export type SettingsSection = {
     name: string,
     plugin: string?,
+    replaced_by: string?,
+    enabled: boolean?,
     description: string?,
     keys: { SettingKey },
 }
@@ -931,11 +987,20 @@ export type ShellCommand = {
     output: { number }?,
     ["end"]: { number }?,
     status: number?,
+    started: number?,
+    ended: number?,
+    folder: string?,
+    host: string?,
 }
 
 export type Side =
     | "first"
     | "second"
+
+export type StatusBarSide =
+    | "start"
+    | "center"
+    | "end"
 
 export type Style = {
     background: Token?,
@@ -1094,6 +1159,13 @@ export type Underline =
     | "dotted"
     | "dashed"
 
+export type ViewFold = {
+    command: number,
+    whole: boolean,
+    first: number,
+    last: number,
+}
+
 export type ViewId =
     | { tab_bar: WindowId }
     | { window_strip: WindowId }
@@ -1110,6 +1182,7 @@ export type Viewport = {
     oldest: number,
     epoch: number,
     alternate: boolean,
+    folds: { ViewFold }?,
 }
 
 export type WindowId = number

@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use lokyr_render_core::{
-    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, LineStyle, Rect,
-    Shape, Texture,
+    AtlasRegion, CellBatch, CellCursor, CellGlyph, CellLine, Color, CursorShape, Item, LineStyle,
+    Rect, Shape, Texture,
 };
 use lokyr_text_core::CellMetrics;
 use lokyr_vt_core::page::{self, Content, Rgb, Style, Width};
@@ -314,7 +314,8 @@ pub fn foreground(snapshot: &Snapshot) -> Color {
 /// selected, is opaque. Reverse video swaps the default colors; faint text mixes
 /// its color toward its background, of the config's opacity of it; hidden text shows its background
 /// alone. The cursor covers both cells of a wide character, and the text
-/// under a block takes its cell's background.
+/// under a block takes its cell's background. While the view shows the row
+/// past its last, [`Snapshot::below`], the grid has it as its last row.
 pub fn cells(
     snapshot: &Snapshot,
     cell: &CellMetrics,
@@ -480,9 +481,9 @@ pub fn highlight(batch: &mut CellBatch, snapshot: &Snapshot, colors: MatchColors
 }
 
 /// Whether `snapshot` shows text that blinks, as SGR 5 and 6 make it: some
-/// cell of a style that blinks.
+/// cell of a style that blinks, the row below the view's last too.
 pub fn has_blinking_text(snapshot: &Snapshot) -> bool {
-    (0..snapshot.rows()).any(|row| snapshot.line(row).styles().any(|style| style.blink))
+    (0..snapshot.drawn_rows()).any(|row| snapshot.line(row).styles().any(|style| style.blink))
 }
 
 /// The grid of `snapshot`, as [`cells`] lays it out, its text as `text`
@@ -509,6 +510,116 @@ pub fn cells_with(
         (text, shown),
         glyphs,
     )
+}
+
+/// Where a pane's rows draw while its view shows them a share of a row up,
+/// as [`Snapshot::fraction`] tells, so that a scroll by points moves them
+/// by points: [`rows_at`] gives it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rows {
+    /// How many pixels up of the grid's place the rows draw.
+    pub up: i32,
+    /// The band of the grid's rows, across the pane, that what is drawn
+    /// on the rows keeps within while they draw up, as the row past the
+    /// view's last shows at its bottom; `None` at no share, where the rows
+    /// draw in their place and nothing is cut.
+    pub clip: Option<Rect>,
+}
+
+impl Rows {
+    /// The top left corner that the rows draw from, of a grid whose corner
+    /// is `corner`.
+    pub fn corner(self, (x, y): (i32, i32)) -> (i32, i32) {
+        (x, y.saturating_sub(self.up))
+    }
+
+    /// `items`, drawn on the rows, within their band, where they have one.
+    pub fn clipped(self, items: Vec<Item>) -> Vec<Item> {
+        match self.clip {
+            Some(clip) if !items.is_empty() => std::iter::once(Item::PushClip(clip))
+                .chain(items)
+                .chain(std::iter::once(Item::PopClip))
+                .collect(),
+            _ => items,
+        }
+    }
+
+    /// What a layer over the rows shows, of `size` pixels, its top left
+    /// corner at `at`, in the window's pixels, as the band cuts what is
+    /// drawn on the rows: all of it, of no band or within it; the part of
+    /// it within the band, across its whole width, in its own pixels; or
+    /// nothing, past the band.
+    pub fn layer(self, at: (f64, f64), (width, height): (u32, u32)) -> Shows {
+        let Some(clip) = self.clip else {
+            return Shows::All;
+        };
+        let top = f64::from(clip.y) - at.1;
+        let bottom = top + f64::from(clip.height);
+        let height = f64::from(height);
+        if top <= 0.0 && bottom >= height {
+            return Shows::All;
+        }
+        let (top, bottom) = (top.max(0.0).round(), bottom.min(height).round());
+        if bottom <= top {
+            return Shows::Nothing;
+        }
+        // Casts from floats saturate.
+        Shows::Part(Rect {
+            x: 0,
+            y: top as i32,
+            width,
+            height: (bottom - top) as u32,
+        })
+    }
+}
+
+/// What a layer over a pane's rows shows of itself, as [`Rows::layer`]
+/// tells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shows {
+    /// All of it.
+    All,
+    /// The part of it in the rectangle, in its own pixels.
+    Part(Rect),
+    /// Nothing.
+    Nothing,
+}
+
+/// How many pixels up of their place the rows of `snapshot`, of rows of
+/// `row_height`, draw, as its view is scrolled a share of a row past its
+/// first row: that share of a row, rounded to whole pixels; none at none.
+pub fn rows_up(snapshot: &Snapshot, row_height: u32) -> i32 {
+    if snapshot.below().is_none() {
+        return 0;
+    }
+    // Casts from floats saturate; a share is under a row.
+    (f64::from(snapshot.fraction()) * f64::from(row_height)).round() as i32
+}
+
+/// Where the rows of `snapshot` draw, of cells of `cell`, in a pane whose
+/// grid's top left corner is `corner`, in pixels, `across` its left edge
+/// and its width, its paddings too: a share of a row up, rounded to whole
+/// pixels, within the band of the grid's rows across the pane, while the
+/// view is scrolled a share of a row past its first; in their place, of
+/// no band, at none.
+pub fn rows_at(
+    snapshot: &Snapshot,
+    cell: &CellMetrics,
+    corner: (i32, i32),
+    across: (i32, u32),
+) -> Rows {
+    if snapshot.below().is_none() {
+        return Rows::default();
+    }
+    Rows {
+        up: rows_up(snapshot, cell.height),
+        clip: Some(Rect {
+            x: across.0,
+            y: corner.1,
+            width: across.1,
+            height: u32::from(snapshot.rows()) * cell.height,
+        }),
+    }
 }
 
 /// The text that blinks of `snapshot`, as SGR 5 and 6 make it, as a batch
@@ -594,7 +705,8 @@ fn cells_of(
     (text, shown): (TextLook, Shown),
     glyphs: &mut dyn Glyphs,
 ) -> CellBatch {
-    let (columns, rows) = (snapshot.cols(), snapshot.rows());
+    // The row below the view's last too, while the view shows it.
+    let (columns, rows) = (snapshot.cols(), snapshot.drawn_rows());
     let colors = snapshot.colors();
     let defaults = defaults(snapshot);
     // The last color of selected text that kept the text's own, by its
@@ -1397,12 +1509,12 @@ pub fn cursor_cells(
 }
 
 /// The cell of `snapshot`'s cursor, its column and row, and whether it is
-/// a wide character's, when the program shows it in the view: a wide
-/// character's first, from either of its cells.
+/// a wide character's, when the program shows it in the view, the row
+/// below its last too: a wide character's first, from either of its cells.
 fn cursor_cell(snapshot: &Snapshot) -> Option<(u16, u16, bool)> {
     let cursor = snapshot.cursor();
     let (mut column, row) = (cursor.position.x, cursor.position.y);
-    let (columns, rows) = (snapshot.cols(), snapshot.rows());
+    let (columns, rows) = (snapshot.cols(), snapshot.drawn_rows());
     if !cursor.visible || row >= rows || column >= columns {
         return None;
     }
@@ -1515,49 +1627,177 @@ pub fn fade(batch: &mut CellBatch, toward: Color, share: f32) {
 const GUTTER_MARK: f64 = 2.0;
 
 /// The marks of `snapshot`'s gutter, of a pane whose grid's top left
-/// corner is at `origin`, in pixels, each a bar along its row, a point
-/// shorter at either end, in the middle of the padding at the cells' left,
-/// of `room`'s width, of `room`'s height of a row, on a display of
-/// `scale`: a prompt's of the theme's token of its command's state, a laid
-/// one of its color.
+/// corner is at `origin`, in pixels, each a bar in the middle of the
+/// padding at the cells' left, of `room`'s width, of `room`'s height of a
+/// row, on a display of `scale`: a laid one of its color along its row; a
+/// command's of the theme's token of its state, along its prompt's row, or,
+/// `along` the blocks, from its block's first row to its last; a bar a
+/// point shorter at either end that the view shows.
 pub fn gutter_marks<'a>(
     snapshot: &'a Snapshot,
     origin: (i32, i32),
     (padding, row_height): (u32, u32),
     scale: f64,
     tokens: &'a theme::Tokens,
+    along: bool,
 ) -> impl Iterator<Item = Shape> + 'a {
+    use lokyr_vt_core::terminal::GutterKind;
     // Casts from floats saturate.
     let width = ((GUTTER_MARK * scale).round() as u32).clamp(1, padding.max(1));
     let inset = (scale.round() as u32).min(row_height / 4);
     let x = origin.0 - i32::try_from(padding.div_ceil(2) + width / 2).unwrap_or(0);
-    snapshot.gutter().iter().filter_map(move |mark| {
-        let fill = match mark.kind {
-            lokyr_vt_core::terminal::GutterKind::Laid(rgb) => Color::from_rgb8(rgb.r, rgb.g, rgb.b),
-            lokyr_vt_core::terminal::GutterKind::Running => tokens.get("gutter.running")?,
-            lokyr_vt_core::terminal::GutterKind::Succeeded => tokens.get("gutter.succeeded")?,
-            lokyr_vt_core::terminal::GutterKind::Failed => tokens.get("gutter.failed")?,
+    let fill = move |kind: GutterKind| match kind {
+        GutterKind::Laid(rgb) => Some(Color::from_rgb8(rgb.r, rgb.g, rgb.b)),
+        GutterKind::Running => tokens.get("gutter.running"),
+        GutterKind::Succeeded => tokens.get("gutter.succeeded"),
+        GutterKind::Failed => tokens.get("gutter.failed"),
+    };
+    // A bar from the pixel `top` of the grid to before `bottom`.
+    let bar = move |top: u32, bottom: u32, fill: Color| Shape {
+        rect: Rect {
+            x,
+            y: origin
+                .1
+                .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
+            width,
+            height: bottom.saturating_sub(top),
+        },
+        radius: width as f32 / 2.0,
+        fill,
+        border: 0.0,
+        border_color: Color::CLEAR,
+        shadow: None,
+        arc: None,
+        knockout: false,
+        mark: None,
+    };
+    let rows = i32::from(snapshot.drawn_rows());
+    let marks = snapshot
+        .gutter()
+        .iter()
+        .filter(move |mark| !along || matches!(mark.kind, GutterKind::Laid(_)))
+        .filter_map(move |mark| {
+            let top = u32::from(mark.row) * row_height;
+            Some(bar(top + inset, top + row_height - inset, fill(mark.kind)?))
+        });
+    let blocks = snapshot
+        .blocks()
+        .iter()
+        .filter(move |_| along)
+        .filter_map(move |block| {
+            let (first, last) = (block.first.max(0), block.last.min(rows - 1));
+            if first > last {
+                return None;
+            }
+            // Its ends that the view shows a point short, the others to the
+            // view's edges.
+            let pixel = |row: i32| u32::try_from(row).unwrap_or(0) * row_height;
+            let top = pixel(first) + if block.first >= 0 { inset } else { 0 };
+            let bottom = pixel(last + 1) - if block.last < rows { inset } else { 0 };
+            Some(bar(top, bottom, fill(block.kind?)?))
+        });
+    // The blocks' bars under the laid marks, which show over them.
+    blocks.collect::<Vec<_>>().into_iter().chain(marks)
+}
+
+/// What a pane draws of the commands' blocks of `snapshot` as `looks` ask,
+/// of the theme's `tokens`, over its cells, its grid's top at `top`, in
+/// pixels, of rows of `row_height`, across `across`, the pane's left edge
+/// and its width, on a display of `scale`: each block's rows that the view
+/// shows tinted across the pane, the block of the command `selected` of
+/// `blocks.selected.bg`, else a failed block of `blocks.failed` where
+/// `looks` asks for it, to the middle of the blank rows that the terminal
+/// put around it, so that two blocks' tints meet there; then a hairline of
+/// a point at the top of each block's first row that the view shows, of
+/// `blocks.divider`, or through the middle of the blank row before it.
+pub fn block_shapes(
+    snapshot: &Snapshot,
+    top: i32,
+    row_height: u32,
+    across: (i32, u32),
+    scale: f64,
+    tokens: &theme::Tokens,
+    (looks, selected): (lokyr_plugin_sdk::host::BlockLooks, Option<u64>),
+) -> Vec<Shape> {
+    use lokyr_vt_core::terminal::GutterKind;
+    let rows = i32::from(snapshot.drawn_rows());
+    let shape = |y: i32, height: u32, fill: Color| Shape {
+        rect: Rect {
+            x: across.0,
+            y,
+            width: across.1,
+            height,
+        },
+        radius: 0.0,
+        fill,
+        border: 0.0,
+        border_color: Color::CLEAR,
+        shadow: None,
+        arc: None,
+        knockout: false,
+        mark: None,
+    };
+    let y_of = |row: i32| {
+        top.saturating_add(row.saturating_mul(i32::try_from(row_height).unwrap_or(i32::MAX)))
+    };
+    // The middle of the view's row `row`, of a blank row between blocks.
+    let half = i32::try_from(row_height / 2).unwrap_or(0);
+    let middle = |row: i32| y_of(row).saturating_add(half);
+    let chosen = tokens.get("blocks.selected.bg");
+    let failed = tokens.get("blocks.failed").filter(|_| looks.failed_tint);
+    let mut shapes = Vec::new();
+    for block in snapshot.blocks() {
+        let tint = if Some(block.id) == selected {
+            chosen
+        } else if block.kind == Some(GutterKind::Failed) {
+            failed
+        } else {
+            None
         };
-        let top = u32::from(mark.row) * row_height + inset;
-        Some(Shape {
-            rect: Rect {
-                x,
-                y: origin
-                    .1
-                    .saturating_add(i32::try_from(top).unwrap_or(i32::MAX)),
-                width,
-                height: row_height.saturating_sub(2 * inset),
-            },
-            radius: width as f32 / 2.0,
-            fill,
-            border: 0.0,
-            border_color: Color::CLEAR,
-            shadow: None,
-            arc: None,
-            knockout: false,
-            mark: None,
-        })
-    })
+        let (first, last) = (block.first.max(0), block.last.min(rows - 1));
+        if let Some(tint) = tint
+            && first <= last
+        {
+            let start = if block.room_above && block.first >= 1 {
+                middle(block.first - 1)
+            } else {
+                y_of(first)
+            };
+            let end = if block.room_below && block.last < rows - 1 {
+                middle(block.last + 1)
+            } else {
+                y_of(last + 1)
+            };
+            let height = u32::try_from(end.saturating_sub(start)).unwrap_or(0);
+            shapes.push(shape(start, height, tint));
+        }
+    }
+    let divider = tokens.get("blocks.divider").filter(|_| looks.dividers);
+    if let Some(divider) = divider {
+        // Casts from floats saturate.
+        let thickness = (scale.round() as u32).clamp(1, row_height.max(1));
+        let view = 0..rows;
+        let mut lines = Vec::new();
+        for block in snapshot.blocks() {
+            let above = block.first.saturating_sub(1);
+            if block.room_above {
+                if view.contains(&above) {
+                    lines.push(middle(above));
+                }
+            } else if view.contains(&block.first) {
+                lines.push(y_of(block.first));
+            }
+            // The blank row after a block whose next one the view does not
+            // show.
+            let below = block.last.saturating_add(1);
+            if block.room_below && view.contains(&below) {
+                lines.push(middle(below));
+            }
+        }
+        lines.dedup();
+        shapes.extend(lines.into_iter().map(|y| shape(y, thickness, divider)));
+    }
+    shapes
 }
 
 /// Faint text's color `text` at `opacity` over `under`, in the encoded
@@ -1575,6 +1815,9 @@ fn faint(text: Color, under: Color, opacity: f32) -> Color {
 fn color(rgb: Rgb) -> Color {
     Color::from_rgb8(rgb.r, rgb.g, rgb.b)
 }
+
+#[cfg(test)]
+mod fraction_tests;
 
 #[cfg(test)]
 mod tests {
@@ -3598,5 +3841,173 @@ mod tests {
                 (1, 1, rgb(4, 5, 6)),
             ]
         );
+    }
+
+    /// A snapshot of 20 columns and 6 rows of `ls`, of two rows of output,
+    /// `false`, which failed, and `seq`, which runs.
+    fn blocks_snapshot() -> Snapshot {
+        snapshot(
+            20,
+            6,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07seq\r\n\x1b]133;C\x071",
+            ),
+        )
+    }
+
+    #[test]
+    fn a_command_s_bar_runs_along_its_block_or_beside_its_prompt_alone() {
+        let snapshot = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        // Of rows of 16 pixels, a padding of 8 at the cells' left of x 8, at
+        // 1x: a bar of 2 pixels, a pixel short at each end.
+        let spans = |along: bool| -> Vec<(i32, u32)> {
+            gutter_marks(&snapshot, (8, 0), (8, 16), 1.0, &tokens, along)
+                .map(|bar| (bar.rect.y, bar.rect.height))
+                .collect()
+        };
+        assert_eq!(spans(false), [(1, 14), (49, 14), (65, 14)]);
+        // Along: `ls`' three rows, `false`'s one, and `seq`'s to the cursor.
+        assert_eq!(spans(true), [(1, 46), (49, 14), (65, 30)]);
+    }
+
+    #[test]
+    fn the_blocks_show_their_dividers_and_a_failed_one_s_tint_as_asked() {
+        let snapshot = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let shapes = |looks: lokyr_plugin_sdk::host::BlockLooks| -> Vec<(i32, u32, u32, Color)> {
+            block_shapes(&snapshot, 0, 16, (0, 176), 2.0, &tokens, (looks, None))
+                .iter()
+                .map(|shape| {
+                    (
+                        shape.rect.y,
+                        shape.rect.width,
+                        shape.rect.height,
+                        shape.fill,
+                    )
+                })
+                .collect()
+        };
+        assert!(shapes(lokyr_plugin_sdk::host::BlockLooks::default()).is_empty());
+        let divider = tokens.get("blocks.divider").unwrap();
+        let tint = tokens.get("blocks.failed").unwrap();
+        // A divider of a point, two pixels at 2x, across, at each block's
+        // top; `false`'s row tinted under them.
+        assert_eq!(
+            shapes(lokyr_plugin_sdk::host::BlockLooks {
+                bars: false,
+                dividers: true,
+                failed_tint: true,
+                prompt_rows: false,
+                spacing: false,
+            }),
+            [
+                (48, 176, 16, tint),
+                (0, 176, 2, divider),
+                (48, 176, 2, divider),
+                (64, 176, 2, divider),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_selected_block_is_tinted_whole_over_a_failed_one_s_tint() {
+        let shown = blocks_snapshot();
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let tints = |looks: lokyr_plugin_sdk::host::BlockLooks,
+                     selected: Option<u64>|
+         -> Vec<(i32, u32, u32, Color)> {
+            block_shapes(&shown, 0, 16, (0, 176), 2.0, &tokens, (looks, selected))
+                .iter()
+                .map(|shape| {
+                    (
+                        shape.rect.y,
+                        shape.rect.width,
+                        shape.rect.height,
+                        shape.fill,
+                    )
+                })
+                .collect()
+        };
+        let chosen = tokens.get("blocks.selected.bg").unwrap();
+        let failed = tokens.get("blocks.failed").unwrap();
+        let looks = lokyr_plugin_sdk::host::BlockLooks {
+            failed_tint: true,
+            ..lokyr_plugin_sdk::host::BlockLooks::default()
+        };
+        // `ls`' three rows selected, across the pane; `false` failed below
+        // them; `seq`'s, which runs to the cursor's row, the view's last.
+        assert_eq!(
+            tints(looks, Some(1)),
+            [(0, 176, 48, chosen), (48, 176, 16, failed)]
+        );
+        assert_eq!(
+            tints(looks, Some(3)),
+            [(48, 176, 16, failed), (64, 176, 32, chosen)]
+        );
+        // The failed block selected, of the selection's tint alone.
+        assert_eq!(tints(looks, Some(2)), [(48, 176, 16, chosen)]);
+        // None of a command that the view does not show.
+        let plain = lokyr_plugin_sdk::host::BlockLooks::default();
+        assert!(tints(plain, Some(9)).is_empty());
+        // A block whose first rows output scrolled above the view: its rows
+        // that the view shows.
+        let scrolled = snapshot(
+            20,
+            4,
+            "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\nb\r\nc\r\nd\r\n\x1b]133;D;0\x07\x1b]133;A\x07$ ",
+        );
+        let shapes = block_shapes(&scrolled, 0, 16, (0, 176), 2.0, &tokens, (plain, Some(1)));
+        assert_eq!((shapes[0].rect.y, shapes[0].rect.height), (0, 3 * 16));
+    }
+
+    #[test]
+    fn the_blank_rows_between_blocks_hold_the_dividers_and_the_tints_meet_there() {
+        let mut terminal = Terminal::new(20, 8, Options::default());
+        terminal.set_block_spacing(true);
+        // `ls` of a row, `false`, which failed, then the prompt where the
+        // user types: blank rows 2 and 4 between them.
+        Parser::new().advance(
+            &mut terminal,
+            concat!(
+                "\x1b]133;A\x07$ \x1b]133;B\x07ls\r\n\x1b]133;C\x07a\r\n\x1b]133;D;0\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07false\r\n\x1b]133;C\x07\x1b]133;D;1\x07",
+                "\x1b]133;A\x07$ \x1b]133;B\x07",
+            )
+            .as_bytes(),
+        );
+        let mut shown = Snapshot::default();
+        terminal.snapshot(&mut shown);
+        let tokens = crate::theme::Theme::builtin().dark.tokens.clone();
+        let looks = lokyr_plugin_sdk::host::BlockLooks {
+            dividers: true,
+            failed_tint: true,
+            ..lokyr_plugin_sdk::host::BlockLooks::default()
+        };
+        let shapes = |selected: Option<u64>| -> Vec<(i32, u32, Color)> {
+            block_shapes(&shown, 0, 16, (0, 176), 2.0, &tokens, (looks, selected))
+                .iter()
+                .map(|shape| (shape.rect.y, shape.rect.height, shape.fill))
+                .collect()
+        };
+        let chosen = tokens.get("blocks.selected.bg").unwrap();
+        let failed = tokens.get("blocks.failed").unwrap();
+        let divider = tokens.get("blocks.divider").unwrap();
+        // `ls` selected to the blank row's middle, 40, and `false`'s tint
+        // from there to the next blank row's, 72; the dividers at the top
+        // and through the blank rows' middles.
+        assert_eq!(
+            shapes(Some(1)),
+            [
+                (0, 40, chosen),
+                (40, 32, failed),
+                (0, 2, divider),
+                (40, 2, divider),
+                (72, 2, divider),
+            ]
+        );
+        assert_eq!(shapes(Some(2))[0], (40, 32, chosen));
     }
 }

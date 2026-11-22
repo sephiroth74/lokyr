@@ -1,28 +1,60 @@
 //! The mouse over a pane: where the pointer is in its cells, the buttons
 //! that the program learned were held, the wheel's scroll, which adds up to
-//! whole steps, and the cells that a drag selects.
+//! whole steps or glides the view by pixels, a trackpad's, which eases the
+//! view by pixels, and the cells that a drag selects.
 
 use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
 
 use lokyr_kernel::workspace::{Grid, PaneId};
 use lokyr_platform_core::{MouseButton as Button, Point, ScrollDelta, ScrollPhase};
 use lokyr_vt_core::input::MouseButton;
+use lokyr_vt_core::terminal::Origin;
+
+/// How long a wheel's step glides the view over its rows, scrolling by
+/// pixels.
+pub(crate) const GLIDE: Duration = Duration::from_millis(150);
+
+/// How much quicker than the display's refresh a trackpad's ease paces its
+/// frames, so that every refresh has one, as their times wander a little:
+/// two of them then fall within a refresh about once a second, the later
+/// shown.
+const QUICKER: Duration = Duration::from_micros(250);
+
+/// How long before its frame is due a frame of a trackpad's ease is still
+/// that one, rather than another, as output's, between two.
+const EARLY: Duration = Duration::from_millis(1);
 
 /// Where the pointer is in a grid: its cell, and its pixel from the cells'
-/// top left corner.
+/// top left corner, of the rows as they are drawn, a share of a row up
+/// while the view is scrolled by one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Pointer {
     pub(crate) col: u16,
+    /// The view's row under the pointer: the row past the view's last, at
+    /// the grid's bottom, while the view is scrolled a share of a row.
     pub(crate) row: u16,
     pub(crate) x: u32,
     pub(crate) y: u32,
+    /// The row of the grid's band under the pointer, from the band's top,
+    /// where what stays as the rows move a share of a row shows, as the
+    /// prompt rows pinned at the view's top: `row`, at no share.
+    pub(crate) band_row: u16,
 }
 
 /// The pointer at `position`, in points from the content's top left corner,
 /// over `grid`, in a window of `scale`, whose cells start `padding` pixels
-/// from its left and top edges: a pointer over the padding, or past the
-/// cells, takes the nearest cell's edge.
-pub(crate) fn pointer(position: Point, scale: f64, padding: (u32, u32), grid: Grid) -> Pointer {
+/// from its left and top edges, its rows drawn `up` pixels up, as a share
+/// of a row of the view has them: a pointer over the padding, or past the
+/// cells, takes the nearest cell's edge, of the rows that the grid's band
+/// shows.
+pub(crate) fn pointer(
+    position: Point,
+    scale: f64,
+    padding: (u32, u32),
+    grid: Grid,
+    up: u32,
+) -> Pointer {
     let within = |points: f64, padding: u32, cell: u16, cells: u16| {
         let cell = u32::from(cell.max(1));
         let last = (cell * u32::from(cells.max(1))).saturating_sub(1);
@@ -35,8 +67,19 @@ pub(crate) fn pointer(position: Point, scale: f64, padding: (u32, u32), grid: Gr
         (pixel, (pixel / cell) as u16)
     };
     let (x, col) = within(position.x, padding.0, grid.cell_width, grid.columns);
-    let (y, row) = within(position.y, padding.1, grid.cell_height, grid.rows);
-    Pointer { col, row, x, y }
+    let (band, band_row) = within(position.y, padding.1, grid.cell_height, grid.rows);
+    // Up by a row at most, as a share rounds to its pixels: the row past
+    // the view's last at most.
+    let y = band + up.min(u32::from(grid.cell_height));
+    // Within the grid's rows and the one below, which a `u16` holds.
+    let row = (y / u32::from(grid.cell_height.max(1))) as u16;
+    Pointer {
+        col,
+        row,
+        x,
+        y,
+        band_row,
+    }
 }
 
 /// `pointer`, over a view `offset` rows above the screen's top, of cells
@@ -51,6 +94,18 @@ pub(crate) fn on_screen(pointer: Pointer, offset: usize, cell_height: u16) -> Op
         // Below the pointer's row, which a `u16` holds.
         row: row as u16,
         y: pointer.y.checked_sub(above)?,
+        ..pointer
+    })
+}
+
+/// `pointer` moved to the row `row`, of cells `cell_height` pixels high, its
+/// column and its place in its cell kept: `None` above the first row.
+pub(crate) fn onto_row(pointer: Pointer, row: u16, cell_height: u16) -> Option<Pointer> {
+    let rows = i64::from(row) - i64::from(pointer.row);
+    let y = i64::from(pointer.y) + rows * i64::from(cell_height);
+    Some(Pointer {
+        row,
+        y: u32::try_from(y).ok()?,
         ..pointer
     })
 }
@@ -77,14 +132,14 @@ pub(crate) struct Spot {
     pub(crate) boundary: u16,
 }
 
-/// The spot of `pointer`, over a view whose first row is numbered `top`,
-/// in cells `cell_width` pixels wide, of a grid of `columns`.
-pub(crate) fn spot(pointer: Pointer, top: i64, cell_width: u16, columns: u16) -> Spot {
+/// The spot of `pointer`, over the row numbered `row`, in cells
+/// `cell_width` pixels wide, of a grid of `columns`.
+pub(crate) fn spot(pointer: Pointer, row: i64, cell_width: u16, columns: u16) -> Spot {
     let width = u32::from(cell_width.max(1));
     // Within the grid's columns, which a `u16` holds.
     let boundary = ((pointer.x + width / 2) / width).min(u32::from(columns)) as u16;
     Spot {
-        row: top.saturating_add(i64::from(pointer.row)),
+        row,
         col: pointer.col,
         boundary,
     }
@@ -179,10 +234,227 @@ fn number(button: MouseButton) -> u8 {
     }
 }
 
+/// Where a view is while it is above the screen, as only a scroll moves it
+/// there: its rows' origin and its share of a row; none at the screen,
+/// where output moves it.
+pub(crate) type Place = Option<(Origin, f32)>;
+
+/// A wheel's steps gliding a pane's view over their rows, by pixels: from
+/// the time of its last step, it eases out over [`GLIDE`], the view moving
+/// fast at first and slower as it comes to its rows. It puts the view at
+/// each step's place from where it started, by the rows' numbers, so that
+/// no step's rounding adds up, and its last puts it where it goes.
+///
+/// The screen's rows move as output comes, while those above it keep their
+/// numbers: a glide that starts at the screen starts again from its top as
+/// output moves it, and one down that reaches it ends there, the view then
+/// following the output.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Glide {
+    /// The pane whose view glides.
+    pub(crate) pane: PaneId,
+    /// When its last step came.
+    start: Instant,
+    /// The view's place then: its first row's number and the share of a
+    /// row past it.
+    from: f64,
+    /// The rows that it moves the view from `from`, up where positive.
+    rows: f64,
+    /// Those of them that it moved.
+    moved: f64,
+    /// Where it left the view, which a move of the view of another kind,
+    /// as a key's, changes, and which then ends it.
+    pub(crate) left: Place,
+    /// The number of the screen's first row as the glide last saw it.
+    screen: f64,
+    /// Whether it goes down to the screen, its end the screen's top however
+    /// far output moves it.
+    to_screen: bool,
+}
+
+impl Glide {
+    /// A glide of `pane`'s view by `rows`, up where positive, of a step at
+    /// `now`, the view at `place`, from its place `from`, of its first
+    /// row's number and the share past it, the screen's first row being
+    /// `screen`.
+    pub(crate) fn new(
+        pane: PaneId,
+        rows: f64,
+        now: Instant,
+        (place, from): (Place, f64),
+        screen: f64,
+    ) -> Glide {
+        Glide {
+            pane,
+            start: now,
+            from,
+            rows,
+            moved: 0.0,
+            left: place,
+            screen,
+            to_screen: rows < 0.0 && from - rows >= screen,
+        }
+    }
+
+    /// Adds `rows`, of another step at `now`, the view at `place` and its
+    /// place `from`, the screen's first row being `screen`: the glide eases
+    /// out again from where it is, over the rows that it has left and
+    /// these, or from `from` over these alone where the view moved another
+    /// way since its last step. At the screen, where it is is the screen's
+    /// top, as output moves it.
+    pub(crate) fn add(
+        &mut self,
+        rows: f64,
+        now: Instant,
+        (place, from): (Place, f64),
+        screen: f64,
+    ) {
+        *self = if place == self.left {
+            let there = if place.is_none() {
+                from
+            } else {
+                self.from - self.moved
+            };
+            Glide::new(self.pane, self.left() + rows, now, (place, there), screen)
+        } else {
+            Glide::new(self.pane, rows, now, (place, from), screen)
+        };
+    }
+
+    /// Whether it moves the view down.
+    pub(crate) fn down(&self) -> bool {
+        self.rows < 0.0
+    }
+
+    /// Follows the screen's first row to `screen`, as output moved it: a
+    /// glide that left the view at the screen starts from its new top, and
+    /// one that goes down to the screen ends at it.
+    pub(crate) fn follow(&mut self, screen: f64) {
+        if self.left.is_none() {
+            self.from += screen - self.screen;
+        }
+        self.screen = screen;
+        if self.to_screen && self.end() < screen {
+            self.rows = self.from - screen;
+        }
+    }
+
+    /// The rows that it has yet to move the view.
+    pub(crate) fn left(&self) -> f64 {
+        self.rows - self.moved
+    }
+
+    /// The place where it takes the view, its first row's number and the
+    /// share of a row past it.
+    pub(crate) fn end(&self) -> f64 {
+        self.from - self.rows
+    }
+
+    /// The view's place at `now`, of its first row's number and the share
+    /// past it, and whether the glide goes on after: the last step's is
+    /// where it goes.
+    pub(crate) fn step(&mut self, now: Instant) -> (f64, bool) {
+        let elapsed = now.saturating_duration_since(self.start);
+        let time = (elapsed.as_secs_f64() / GLIDE.as_secs_f64()).min(1.0);
+        // An ease-out of the cube: fast at first, still at its end.
+        self.moved = if time >= 1.0 {
+            self.rows
+        } else {
+            self.rows * (1.0 - (1.0 - time).powi(3))
+        };
+        (self.from - self.moved, time < 1.0)
+    }
+}
+
+/// A trackpad's scroll easing a pane's view toward where its events take
+/// it, by pixels: each event adds its rows to those left, and each frame
+/// moves the view a share of them, half of them in a refresh of the
+/// display, of the time since its last move, the rest at once once it is
+/// less than half a pixel. The view so moves at every refresh while rows
+/// are left, however the events fall between the refreshes, which macOS
+/// sends about once a refresh but some 11 to 25 ms apart, with steps that
+/// change little from one frame to the next, and stops where the events
+/// took it, never past. It paces its frames itself, a little quicker than
+/// the refreshes, as the display link follows the input while it comes,
+/// its ticks uneven.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Ease {
+    /// The pane whose view eases.
+    pub(crate) pane: PaneId,
+    /// The rows that the events gave and the view has yet to move, up
+    /// where positive.
+    left: f64,
+    /// When the view last moved toward them.
+    at: Instant,
+    /// When its frame is due.
+    due: Instant,
+}
+
+impl Ease {
+    /// An ease of `pane`'s view by `rows`, up where positive, of an event at
+    /// `now`, on a display of `refresh`: its first frame moves the view as
+    /// a refresh after a move would, half of the rows, rather than waiting
+    /// for the next.
+    pub(crate) fn new(pane: PaneId, rows: f64, now: Instant, refresh: Duration) -> Ease {
+        Ease {
+            pane,
+            left: rows,
+            at: now.checked_sub(refresh).unwrap_or(now),
+            due: now,
+        }
+    }
+
+    /// Adds `rows`, of another event, to those left.
+    pub(crate) fn add(&mut self, rows: f64) {
+        self.left += rows;
+    }
+
+    /// The rows that the view has yet to move.
+    pub(crate) fn left(&self) -> f64 {
+        self.left
+    }
+
+    /// When the frame after one at `now` is due, on a display of `refresh`:
+    /// a refresh, less [`QUICKER`], past the one due before, of a steady
+    /// pace, or that from `now` where it is past; a frame of another's, as
+    /// output's, before the one due leaves it as it is.
+    pub(crate) fn next(&mut self, now: Instant, refresh: Duration) -> Instant {
+        if now + EARLY < self.due {
+            return self.due;
+        }
+        let period = refresh.saturating_sub(QUICKER);
+        let next = self.due + period;
+        self.due = if next <= now { now + period } else { next };
+        self.due
+    }
+
+    /// The rows that the view moves at `now`, on a display of `refresh`: a
+    /// share of those left, half of them a refresh since its last move, or
+    /// all of them where fewer than `least` would be left.
+    pub(crate) fn step(&mut self, now: Instant, refresh: Duration, least: f64) -> f64 {
+        let elapsed = now.saturating_duration_since(self.at).as_secs_f64();
+        self.at = now;
+        let half = refresh.as_secs_f64();
+        let kept = if half > 0.0 {
+            0.5_f64.powf(elapsed / half)
+        } else {
+            0.0
+        };
+        let rows = if (self.left * kept).abs() < least {
+            self.left
+        } else {
+            self.left * (1.0 - kept)
+        };
+        self.left -= rows;
+        rows
+    }
+}
+
 /// A window's mouse: the buttons pressed that a pane's program learned of,
 /// and that pane, which takes the moves and the releases until the last
-/// goes up; where each pane's program last learned the pointer was; and the
-/// scroll that adds up to the wheel's next steps.
+/// goes up; where each pane's program last learned the pointer was; the
+/// scroll that adds up to the wheel's next steps; and the wheel's glide and
+/// the trackpad's ease of a view, scrolling by pixels.
 #[derive(Debug, Default)]
 pub(crate) struct Mouse {
     held: Vec<MouseButton>,
@@ -190,6 +462,10 @@ pub(crate) struct Mouse {
     last: BTreeMap<PaneId, Pointer>,
     /// The scroll that makes no whole step yet, across and up, in rows.
     rest: (f64, f64),
+    /// The wheel's glide of a pane's view under way.
+    pub(crate) glide: Option<Glide>,
+    /// The trackpad's ease of a pane's view under way.
+    pub(crate) ease: Option<Ease>,
 }
 
 impl Mouse {
@@ -224,6 +500,12 @@ impl Mouse {
     /// holds any more.
     pub(crate) fn forget(&mut self, pane: PaneId) {
         self.last.remove(&pane);
+        if self.glide.is_some_and(|glide| glide.pane == pane) {
+            self.glide = None;
+        }
+        if self.ease.is_some_and(|ease| ease.pane == pane) {
+            self.ease = None;
+        }
         if self.holder == Some(pane) {
             self.holder = None;
             self.held.clear();
@@ -251,12 +533,10 @@ impl Mouse {
     }
 
     /// The whole steps, across and up, that `delta` makes with the scroll
-    /// that made none yet, in rows of `row_points` points: a wheel's lines,
-    /// or a trackpad's points. A gesture that starts, and a scroll the other
-    /// way, start the sum again. With `sideways`, a scroll across alone, as
-    /// Shift makes a mouse's wheel, goes up and down. A step across goes
-    /// toward the content's left edge, and a step up toward its top, when
-    /// positive.
+    /// that made none yet, in rows of `row_points` points, as [`rows`]
+    /// finds them. A gesture that starts, and a scroll the other way, start
+    /// the sum again. A step across goes toward the content's left edge,
+    /// and a step up toward its top, when positive.
     pub(crate) fn scroll(
         &mut self,
         delta: ScrollDelta,
@@ -264,13 +544,7 @@ impl Mouse {
         row_points: f64,
         sideways: bool,
     ) -> (i32, i32) {
-        let (mut across, mut up) = match delta {
-            ScrollDelta::Lines { x, y } => (x, y),
-            ScrollDelta::Points { x, y } => (x / row_points, y / row_points),
-        };
-        if sideways && up == 0.0 {
-            (across, up) = (0.0, across);
-        }
+        let (across, up) = rows(delta, row_points, sideways);
         if phase == Some(ScrollPhase::Started) {
             self.rest = (0.0, 0.0);
         }
@@ -290,6 +564,29 @@ impl Mouse {
         let up = step(&mut self.rest.1, up);
         (across, up)
     }
+
+    /// Lets the scroll up and down that made no whole step yet go, as the
+    /// view takes it by pixels.
+    pub(crate) fn settle_up(&mut self) {
+        self.rest.1 = 0.0;
+    }
+}
+
+/// The rows, across and up, that `delta` scrolls, of rows of `row_points`
+/// points: a wheel's lines, or a trackpad's points. With `sideways`, a
+/// scroll across alone, as Shift makes a mouse's wheel, goes up and down.
+/// Across goes toward the content's left edge, and up toward its top, when
+/// positive.
+pub(crate) fn rows(delta: ScrollDelta, row_points: f64, sideways: bool) -> (f64, f64) {
+    let (across, up) = match delta {
+        ScrollDelta::Lines { x, y } => (x, y),
+        ScrollDelta::Points { x, y } => (x / row_points, y / row_points),
+    };
+    if sideways && up == 0.0 {
+        (0.0, across)
+    } else {
+        (across, up)
+    }
 }
 
 #[cfg(test)]
@@ -307,7 +604,7 @@ mod tests {
 
     #[test]
     fn the_pointer_takes_its_cell_and_pixel_within_the_grid() {
-        let at = |x, y| pointer(Point { x, y }, 2.0, (8, 8), grid());
+        let at = |x, y| pointer(Point { x, y }, 2.0, (8, 8), grid(), 0);
         // 8 pixels of padding, at a scale of 2: the first cell from 4 points.
         assert_eq!(
             at(4.0, 4.0),
@@ -315,7 +612,8 @@ mod tests {
                 col: 0,
                 row: 0,
                 x: 0,
-                y: 0
+                y: 0,
+                band_row: 0,
             }
         );
         assert_eq!(
@@ -324,7 +622,8 @@ mod tests {
                 col: 1,
                 row: 1,
                 x: 17,
-                y: 34
+                y: 34,
+                band_row: 1,
             }
         );
         // Over the padding, and past the last cell.
@@ -334,7 +633,8 @@ mod tests {
                 col: 0,
                 row: 0,
                 x: 0,
-                y: 0
+                y: 0,
+                band_row: 0,
             }
         );
         let far = at(5000.0, 5000.0);
@@ -344,19 +644,50 @@ mod tests {
         );
     }
 
+    #[test]
+    fn over_rows_a_share_up_the_pointer_takes_the_drawn_row() {
+        // Rows of 32 pixels drawn 12 up, as a view scrolled a share of a
+        // row has them; 8 pixels of padding, at a scale of 2.
+        let at = |y| pointer(Point { x: 4.0, y }, 2.0, (8, 8), grid(), 12);
+        // The band's top shows the first row's lower part.
+        let top = at(4.0);
+        assert_eq!((top.row, top.y, top.band_row), (0, 12, 0));
+        // 20 pixels down the band, the second row, the band's first still,
+        // where what stays shows.
+        let second = at(14.0);
+        assert_eq!((second.row, second.y, second.band_row), (1, 32, 0));
+        // At the band's bottom, the row past the view's last, and past it
+        // or over the padding, the nearest of the drawn rows.
+        let bottom = (8.0 + 24.0 * 32.0 - 1.0) / 2.0;
+        let below = at(bottom);
+        assert_eq!((below.row, below.y, below.band_row), (24, 24 * 32 + 11, 23));
+        assert_eq!(at(5000.0), below);
+        assert_eq!(at(0.0), top);
+        // Up a whole row, as a share near a row rounds, the row below at
+        // most.
+        let whole = pointer(Point { x: 4.0, y: 5000.0 }, 2.0, (8, 8), grid(), 99);
+        assert_eq!((whole.row, whole.y), (24, 25 * 32 - 1));
+    }
+
     fn at(row: i64, col: u16, boundary: u16) -> Spot {
         Spot { row, col, boundary }
     }
 
     #[test]
     fn a_spot_takes_the_nearest_boundary_and_its_row_s_number() {
-        let pointer = |col: u16, x: u32, row: u16| Pointer { col, row, x, y: 0 };
+        let pointer = |col: u16, x: u32, row: u16| Pointer {
+            col,
+            row,
+            x,
+            y: 0,
+            band_row: row,
+        };
         // Cells of 16 pixels: the boundary after the first cell from 8.
-        assert_eq!(spot(pointer(0, 7, 3), 0, 16, 80), at(3, 0, 0));
-        assert_eq!(spot(pointer(0, 8, 3), 0, 16, 80), at(3, 0, 1));
+        assert_eq!(spot(pointer(0, 7, 3), 3, 16, 80), at(3, 0, 0));
+        assert_eq!(spot(pointer(0, 8, 3), 3, 16, 80), at(3, 0, 1));
         assert_eq!(spot(pointer(79, 80 * 16 - 1, 0), 0, 16, 80), at(0, 79, 80));
-        // A view whose first row is numbered 40: its second row's.
-        assert_eq!(spot(pointer(5, 80, 1), 40, 16, 80).row, 41);
+        // The row's number that it is given, whatever the view's row.
+        assert_eq!(spot(pointer(5, 80, 1), 41, 16, 80).row, 41);
     }
 
     #[test]
@@ -418,6 +749,7 @@ mod tests {
             row,
             x: 50,
             y,
+            band_row: 0,
         };
         // Two rows of 32 pixels above the screen: the view's fifth row is
         // the screen's third.
@@ -429,6 +761,9 @@ mod tests {
         // A view on the screen leaves it as it is.
         assert_eq!(on_screen(at(1, 40), 0, 32), Some(at(1, 40)));
         assert_eq!(on_screen(at(1, 40), usize::MAX, 32), None);
+        // Moved to another row, as a view of folds shows the screen's rows.
+        assert_eq!(onto_row(at(2, 2 * 32 + 5), 6, 32), Some(at(6, 6 * 32 + 5)));
+        assert_eq!(onto_row(at(6, 6 * 32 + 5), 2, 32), Some(at(2, 2 * 32 + 5)));
     }
 
     #[test]
@@ -463,6 +798,7 @@ mod tests {
             row: 0,
             x,
             y: 0,
+            band_row: 0,
         };
         let (first, second) = (PaneId::of(1), PaneId::of(2));
         assert!(mouse.moved(first, at(0, 1), false));
@@ -502,5 +838,129 @@ mod tests {
         let sideways = ScrollDelta::Lines { x: 2.0, y: 0.0 };
         assert_eq!(mouse.scroll(sideways, None, 16.0, true), (0, 2));
         assert_eq!(mouse.scroll(sideways, None, 16.0, false), (2, 0));
+        // The rows of a scroll, which the view takes by pixels.
+        assert_eq!(rows(points(-24.0), 16.0, false), (0.0, -1.5));
+        assert_eq!(rows(sideways, 16.0, true), (0.0, 2.0));
+        mouse.scroll(points(8.0), None, 16.0, false);
+        mouse.settle_up();
+        assert_eq!(mouse.scroll(points(8.0), None, 16.0, false), (0, 0));
+    }
+
+    #[test]
+    fn a_wheel_s_glide_eases_out_to_its_rows() {
+        let pane = PaneId::of(1);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        // Three rows up from the row numbered 40, the screen's top.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0), 40.0);
+        assert_eq!(glide.end(), 37.0);
+        // Fast at first: past half its rows in a quarter of its time.
+        let (first, on) = glide.step(at(37));
+        assert!(on);
+        assert!(first < 38.5 && first > 37.0, "{first}");
+        let (second, on) = glide.step(at(75));
+        assert!(on);
+        assert!(second < first && first - second < 40.0 - first, "{second}");
+        // At its end, its rows whole, and no further.
+        assert_eq!(glide.step(at(150)), (37.0, false));
+        assert_eq!(glide.left(), 0.0);
+        assert_eq!(glide.step(at(300)), (37.0, false));
+        // A step during a glide adds to where it goes, from where it is.
+        let scrolled = |top, share| Some((Origin { epoch: 0, top }, share));
+        let mut glide = Glide::new(pane, 3.0, start, (scrolled(40, 0.0), 40.0), 100.0);
+        let (there, _) = glide.step(at(50));
+        glide.left = scrolled(38, 0.25);
+        glide.add(-1.0, at(50), (glide.left, 0.0), 100.0);
+        assert_eq!(glide.end(), 38.0);
+        assert!((glide.left() - (there - 38.0)).abs() < 1e-9);
+        assert_eq!(glide.step(at(200)), (38.0, false));
+        // A view moved another way since starts it anew, from where the
+        // view is, of the step's rows alone.
+        let mut glide = Glide::new(pane, 3.0, start, (scrolled(10, 0.5), 10.5), 60.0);
+        glide.add(1.0, at(10), (None, 60.0), 60.0);
+        assert_eq!((glide.left(), glide.end()), (1.0, 59.0));
+        // A clock that goes back moves nothing.
+        let mut glide = Glide::new(pane, 3.0, at(10), (None, 40.0), 40.0);
+        assert_eq!(glide.step(start), (40.0, true));
+    }
+
+    #[test]
+    fn a_glide_follows_the_screen_as_output_moves_it() {
+        let pane = PaneId::of(1);
+        let start = Instant::now();
+        let scrolled = |top| Some((Origin { epoch: 0, top }, 0.0));
+        // Up from the screen, which output moved five rows: from its top.
+        let mut glide = Glide::new(pane, 3.0, start, (None, 40.0), 40.0);
+        glide.follow(45.0);
+        assert_eq!(glide.end(), 42.0);
+        // Once the view left the screen, its rows keep their numbers.
+        glide.left = scrolled(44);
+        glide.follow(50.0);
+        assert_eq!(glide.end(), 42.0);
+        // Down as far as the screen: to its top, however far it moves.
+        let mut glide = Glide::new(pane, -10.0, start, (scrolled(30), 30.0), 40.0);
+        assert!(glide.down());
+        glide.follow(45.0);
+        assert_eq!(glide.end(), 45.0);
+        // Down short of it: where it goes.
+        let mut glide = Glide::new(pane, -5.0, start, (scrolled(30), 30.0), 40.0);
+        glide.follow(45.0);
+        assert_eq!(glide.end(), 35.0);
+    }
+
+    #[test]
+    fn a_trackpad_s_ease_moves_half_its_rows_a_refresh_and_stops_where_they_go() {
+        let pane = PaneId::of(1);
+        let refresh = Duration::from_millis(16);
+        let start = Instant::now();
+        let at = |ms| start + Duration::from_millis(ms);
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        let least = 0.01;
+        // Its first frame, at the event, moves half, as a refresh after a
+        // move would.
+        let mut ease = Ease::new(pane, 8.0, start, refresh);
+        assert_eq!(ease.step(start, refresh, least), 4.0);
+        assert_eq!(ease.left(), 4.0);
+        // Half of the rest a refresh later, a quarter of it half a refresh
+        // later: of the time since its last move, whatever the display.
+        assert_eq!(ease.step(at(16), refresh, least), 2.0);
+        let rows = ease.step(at(24), refresh, least);
+        assert!(close(rows, 2.0 * (1.0 - 0.5_f64.sqrt())), "{rows}");
+        let mut moved = 6.0 + rows;
+        // An event adds its rows to those left, of either way: three down.
+        ease.add(-3.0);
+        assert!(close(ease.left(), 2.0 * 0.5_f64.sqrt() - 3.0));
+        // The rest at once where less than `least` would be left: the view
+        // where the events took it, five rows up, never past, within a few
+        // refreshes.
+        let mut time = 24;
+        while ease.left() != 0.0 {
+            time += 16;
+            moved += ease.step(at(time), refresh, least);
+        }
+        assert!(close(moved, 5.0), "{moved}");
+        assert!(time <= 24 + 16 * 8, "{time}");
+        // A late frame moves the more; one of no time, nothing.
+        let mut ease = Ease::new(pane, 8.0, start, refresh);
+        ease.step(start, refresh, least);
+        assert_eq!(ease.step(start, refresh, least), 0.0);
+        assert_eq!(ease.step(at(160), refresh, least), 4.0);
+    }
+
+    #[test]
+    fn a_trackpad_s_ease_paces_its_frames_a_little_quicker_than_the_refreshes() {
+        let refresh = Duration::from_millis(16);
+        let start = Instant::now();
+        let at = |us: u64| start + Duration::from_micros(us);
+        let period = 16_000 - 250;
+        let mut ease = Ease::new(PaneId::of(1), 8.0, start, refresh);
+        // Its first frame, at the event, asks for the next a period later; a
+        // frame a little late keeps the pace.
+        assert_eq!(ease.next(start, refresh), at(period));
+        assert_eq!(ease.next(at(period + 300), refresh), at(2 * period));
+        // A frame of another's, before the one due, leaves it.
+        assert_eq!(ease.next(at(2 * period - 5_000), refresh), at(2 * period));
+        // One late past a period starts the pace again from it.
+        assert_eq!(ease.next(at(5 * period), refresh), at(6 * period));
     }
 }
