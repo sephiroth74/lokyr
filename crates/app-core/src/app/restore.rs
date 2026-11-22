@@ -1,13 +1,20 @@
 //! The windows kept as the app quits, which open again as it starts, as
 //! `[app] restore-windows` says: their frames, tabs, splits and the
-//! directories of their panes, whose programs start anew.
+//! directories of their panes, whose programs start anew; and, as
+//! `[app] restore-scrollback` says, what each pane showed, its scrollback
+//! within `[scrollback] limit`, which it shows again.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::diagnostics::{About, Diagnostic};
+use lokyr_kernel::l10n::{Arg, Texts};
+use lokyr_kernel::plugins::host::LocalTime;
+use lokyr_kernel::state::scrollback;
 use lokyr_kernel::state::windows::{self, Kept};
-use lokyr_kernel::workspace::{self, Environment, PaneId};
+use lokyr_kernel::workspace::{self, Environment, PaneId, Restored};
 use lokyr_platform_core::{Platform, ScreenRect, WindowAttributes, WindowId, WindowSize};
 
 use super::{App, TITLE, WINDOW_SIZE, spawn};
@@ -27,7 +34,9 @@ impl<B: Backend> App<B> {
     }
 
     /// Keeps the windows open now, in the order of their numbers, for the
-    /// next start, or, as the config keeps none, forgets those kept. A
+    /// next start, and, as the config says, each pane's scrollback beside
+    /// them, of no file for a pane that shows nothing; or, as the config
+    /// keeps no window, forgets those kept and their panes' scrollback. A
     /// quick window and a man page's window are not kept. A bench's app,
     /// of the user's state, neither keeps nor forgets the user's windows.
     pub(super) fn keep_windows(&self, platform: &dyn Platform) {
@@ -64,13 +73,40 @@ impl<B: Backend> App<B> {
                 .and_then(|front| self.windows.get(&front))
                 .map(|open| open.window);
             let host = lokyr_pty::host_name();
+            let keeps_scrollback = self.config.app.restore_scrollback;
+            let bound = self.config.scrollback.limit.bytes();
+            let mut archives: Vec<(String, Vec<u8>)> = Vec::new();
             // The directory that its shell told last, of this machine, as a
             // new pane's; its program's otherwise.
-            let kept = Kept::of(&self.workspace, &shown, front, |pane| {
-                pane.told_directory(&host)
-                    .or_else(|| pane.working_directory())
-            });
+            let kept = Kept::of(
+                &self.workspace,
+                &shown,
+                front,
+                |pane| {
+                    pane.told_directory(&host)
+                        .or_else(|| pane.working_directory())
+                },
+                |pane, index| {
+                    if !keeps_scrollback {
+                        return None;
+                    }
+                    let bytes = pane.terminal()?.archive(bound);
+                    if bytes.is_empty() {
+                        return None;
+                    }
+                    let name = scrollback::name(index);
+                    archives.push((name.clone(), bytes));
+                    Some(name)
+                },
+            );
             if !kept.windows.is_empty() {
+                // The panes' files first, so that the windows name none that
+                // is not there.
+                if let Err(error) = scrollback::write(state, &archives) {
+                    eprintln!(
+                        "lokyr: the panes' scrollback cannot be kept for the next start: {error}"
+                    );
+                }
                 if let Err(error) = windows::write(state, &kept) {
                     eprintln!("lokyr: the windows cannot be kept for the next start: {error}");
                 }
@@ -79,6 +115,11 @@ impl<B: Backend> App<B> {
         }
         if let Err(error) = windows::forget(state) {
             eprintln!("lokyr: the windows kept for the next start cannot be forgotten: {error}");
+        }
+        if let Err(error) = scrollback::forget(state) {
+            eprintln!(
+                "lokyr: the panes' scrollback kept for the next start cannot be forgotten: {error}"
+            );
         }
     }
 
@@ -90,6 +131,13 @@ impl<B: Backend> App<B> {
         let Some(state) = self.state.clone() else {
             return false;
         };
+        // What the panes showed, which no pane shows again, goes at once.
+        if !self.benched
+            && !(self.restores_windows(platform) && self.config.app.restore_scrollback)
+            && let Err(error) = scrollback::forget(&state)
+        {
+            eprintln!("lokyr: the panes' scrollback kept cannot be forgotten: {error}");
+        }
         if !self.restores_windows(platform) {
             return false;
         }
@@ -170,8 +218,17 @@ impl<B: Backend> App<B> {
         let program = self.program.clone();
         let (environment, texts, config) = (&self.environment, &self.texts, &self.config);
         let wakes = &mut self.pane_wakes;
-        let shown = kept.open(&mut self.workspace, |directory| {
-            let directory = directory.filter(|directory| {
+        // The panes' scrollback kept, as the config shows it again.
+        let state = self
+            .state
+            .as_deref()
+            .filter(|_| config.app.restore_scrollback);
+        let offset = crate::clock::local_time().offset;
+        let shown = kept.open(&mut self.workspace, |pane| {
+            let restored = state
+                .zip(pane.scrollback)
+                .and_then(|(state, name)| restored(state, name, grid.columns, texts, offset));
+            let directory = pane.directory.filter(|directory| {
                 let there = directory.is_dir();
                 if !there {
                     eprintln!(
@@ -183,6 +240,7 @@ impl<B: Backend> App<B> {
             });
             let environment = Environment {
                 directory: directory.map(Path::to_path_buf),
+                restored,
                 ..environment.clone()
             };
             spawn::Start {
@@ -205,6 +263,63 @@ impl<B: Backend> App<B> {
         self.show_title(platform, window);
         Some(window)
     }
+}
+
+/// What the pane of the scrollback's file `name` in `state` shows again, as
+/// it opens: its rows, which the pane's own thread reads, as reading a
+/// file of a full pane's takes milliseconds that the first frame need not
+/// wait for, and the line under them of when they were kept, across
+/// `columns`, of the local time zone of `offset`; none of no such file. A
+/// file left aside shows nothing, as the log tells.
+fn restored(
+    state: &Path,
+    name: &str,
+    columns: u16,
+    texts: &Texts,
+    offset: i32,
+) -> Option<Restored> {
+    let time = scrollback::time(state, name)?;
+    let (state, name) = (state.to_path_buf(), name.to_owned());
+    Some(Restored {
+        rows: Arc::new(move || match scrollback::take(&state, &name) {
+            Ok(kept) => kept.map(|kept| kept.rows),
+            Err(unread) => {
+                eprintln!(
+                    "lokyr: a pane's scrollback does not show again, as its file is left aside: {unread}"
+                );
+                None
+            }
+        }),
+        line: restored_line(texts, time, offset, columns),
+    })
+}
+
+/// The line under a pane's restored scrollback: `── Restored from <date and
+/// time>`, of `time` in the local time zone of `offset`, as 2026-11-22
+/// 09:31, then a rule to `columns`.
+fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> String {
+    let millis = time.duration_since(UNIX_EPOCH).map_or(0, |since| {
+        u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+    });
+    let at = LocalTime {
+        time: millis,
+        offset,
+    }
+    .civil(millis);
+    let when = format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}",
+        at.year, at.month, at.day, at.hour, at.minute
+    );
+    let mut line = format!(
+        "── {} ",
+        texts.text_with("scrollback-restored", &[("when", Arg::Text(&when))])
+    );
+    let shown = line.chars().count();
+    line.extend(std::iter::repeat_n(
+        '─',
+        usize::from(columns).saturating_sub(shown),
+    ));
+    line
 }
 
 /// The frame of `kept` on the screens, if it is one that a window can

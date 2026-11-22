@@ -170,6 +170,7 @@ language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
 restore-windows = "always"           # system | always | never: the windows open again as Lokyr starts
+restore-scrollback = true            # true | false: the panes show again what they showed as Lokyr quit
 
 [updates]
 check = false                        # true | false: a check for a newer version, once a day at most
@@ -1571,6 +1572,23 @@ Whether the windows that were open as you quit Lokyr open again as it starts: ea
 - The quick terminal and the man pages' windows are not kept.
 - Lokyr keeps the windows as it quits, in `~/Library/Application Support/lokyr/state/` on macOS, not in the config file: after a crash or a force quit, the windows of the quit before open again. Quitting with no window open, or while this key keeps none, forgets them.
 - A file that a newer Lokyr wrote, or that cannot be read, is left aside, as a notice tells, and Lokyr opens a new window, as without it.
+- It applies as you quit, and at the next start.
+
+### `restore-scrollback`
+
+<sub>Platforms: macOS · not released yet</sub>
+
+Whether the panes that open again with your windows show what they showed as you quit: their text, its colors and styles, its links, and the commands that your shell marked.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- It applies while the windows open again, as [`restore-windows`](#restore-windows) says: with no window kept, there is no scrollback to show either.
+- Each pane shows its scrollback and its screen as they were, up to the prompt where you typed, then a line that tells when they were kept, then a new shell's prompt. The commands' marks in the gutter, the blocks and the jumps between prompts work on the restored commands too, of their exit status, their command line and their times.
+- Lokyr keeps all that the pane held within its [`[scrollback] limit`](#limit), in a file of each pane in `~/Library/Application Support/lokyr/state/scrollback/` on macOS, readable by your account alone. A pane full at the default limit takes some 1.4 MB on disk and 12 ms of the quit. At the next start each pane reads its file on its own thread, so that the window opens as soon as it would without them, and the rows show a few milliseconds later. As the panes share the scrollback's [`budget`](#budget), all of them together take no more than some ten full ones.
+- What a program showed on its own screen, as vim or less, is not kept: the pane shows what the shell had printed before it. Images are not kept either.
+- It is off by default, as what the panes showed may hold what you would not keep, such as a token that a command printed. Turned off again, it keeps none, and takes away at once what was kept.
 - It applies as you quit, and at the next start.
 
 ## `[updates]`

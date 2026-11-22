@@ -81,11 +81,18 @@ Lokyr can open the windows that were open when you quit it: each where it was, w
 restore-windows = "always"   # open the last windows again at every start
 ```
 
-Each pane starts a new shell, in the folder where its shell was: what the panes showed, and the programs that ran in them, don't come back.
+Each pane starts a new shell, in the folder where its shell was. The programs that ran in the panes don't come back. With [`[app] restore-scrollback`](CONFIGURATION.md#restore-scrollback) set to `true`, what they showed does: each pane shows its scrollback again, its colors, links and commands too, up to the prompt where you typed, then a line that tells when it was kept, then the new shell's prompt. The gutter's marks, the blocks and the jumps between prompts work on the restored commands. Lokyr keeps all that a pane held within its [`[scrollback] limit`](CONFIGURATION.md#limit), in a file of each pane that only your account can read, and removes it once the pane shows it again. It's off by default, as what the panes showed may hold what you wouldn't keep, such as a token that a command printed. · not released yet
+
+```toml
+[app]
+restore-scrollback = true    # the panes show again what they showed
+```
+
+What a program showed on its own screen, such as vim or less, isn't kept: the pane shows what the shell had printed before it. Images aren't kept either.
 
 Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
 
-**Try it**: set `restore-windows = "always"`, open a second tab with ⌘T, and run `cd /usr/share` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`.
+**Try it**: set `restore-windows = "always"` and `restore-scrollback = true`, open a second tab with ⌘T, and run `cd /usr/share` and `ls` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`, its `ls` and the files it listed above the new prompt.
 
 ## Open and close tabs
 
@@ -209,6 +216,7 @@ title-shortcut = true             # the window's keys, such as ⌥⌘1, in its t
 
 [app]
 restore-windows = "system"        # "always" opens your last windows again
+restore-scrollback = false        # true: their panes show what they showed
 quit-after-last-window-closed = false
 
 [plugins.tabs]

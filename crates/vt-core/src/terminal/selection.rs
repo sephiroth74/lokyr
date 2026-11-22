@@ -504,7 +504,7 @@ fn push_cells(text: &mut String, row: ListRow<'_>, columns: Range<u16>) {
 
 /// The style of `row`'s cell at `x`: its own, or, of a cell that an erase
 /// left of a background alone and no style, that background.
-fn style_at(row: ListRow<'_>, x: u16) -> Style {
+pub(super) fn style_at(row: ListRow<'_>, x: u16) -> Style {
     let cell = row.cell(x);
     match cell.content() {
         Content::BgPalette(index) => Style {

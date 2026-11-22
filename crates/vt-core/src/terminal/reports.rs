@@ -464,7 +464,7 @@ impl Terminal {
 }
 
 /// The SGR parameters that give a pen its style, from a reset.
-fn sgr(style: &Style) -> String {
+pub(super) fn sgr(style: &Style) -> String {
     let mut sgr = String::from("0");
     let mut add = |parameter: &str| {
         sgr.push(';');

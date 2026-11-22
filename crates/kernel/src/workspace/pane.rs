@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_pty::{Exit, Program, Size};
+pub use lokyr_session::Restored;
 use lokyr_session::{Options, Reader, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Style;
@@ -110,6 +111,10 @@ pub struct Environment {
     /// The directory of the shells' integration, which the user's shell
     /// loads, if the config has it.
     pub shell_integration: Option<PathBuf>,
+    /// What the pane shows before its program's first output, as a pane
+    /// that opens again shows what it showed as the app quit; none of a
+    /// new pane.
+    pub restored: Option<Restored>,
 }
 
 impl Default for Environment {
@@ -122,6 +127,7 @@ impl Default for Environment {
             directory: None,
             version: env!("CARGO_PKG_VERSION").to_owned(),
             shell_integration: None,
+            restored: None,
         }
     }
 }
@@ -427,6 +433,7 @@ impl Pane {
         // the color scheme on at once would be told of, is the user's.
         options.colors = Some(colors.clone());
         options.cell_size = Some((grid.cell_width, grid.cell_height));
+        options.restored.clone_from(&environment.restored);
         match Session::spawn(&options, wake) {
             Ok(session) => {
                 pane.session = Some(session);
@@ -1732,6 +1739,7 @@ mod tests {
             shell_integration: Some(
                 "/Applications/Lokyr.app/Contents/Resources/shell-integration".into(),
             ),
+            restored: None,
         };
         let grid = Grid {
             columns: 80,

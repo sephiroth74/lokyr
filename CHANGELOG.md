@@ -11,6 +11,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Added
 
 - The plugin API draws a line above a list's row, `divider` of a list's item, as a sidebar divides its groups.
+- With `[app] restore-scrollback = true`, the panes that open again with your windows show what they showed as you quit: their scrollback, its colors and links, and the commands that your shell marked, whose gutter marks, blocks and jumps work as before, up to the prompt where you typed, then a line that tells when it was kept, then a new shell. Lokyr keeps all that a pane held within its `[scrollback] limit`, in a file of each pane that only your account can read, removed once the pane shows it again. It's off by default, as what the panes showed may hold what you wouldn't keep.
 
 ### Changed
 

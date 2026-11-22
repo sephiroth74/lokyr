@@ -1,6 +1,7 @@
 //! The terminal state: the screens with their cursor, the modes, and what
 //! the parser's actions do to them.
 
+mod archive;
 mod charsets;
 mod clipboard;
 mod colors;
