@@ -35,7 +35,7 @@ Instruments' recording hung as it saved, now and then, the session's first steps
 | Idle, interrupt wakeups, four rounds of 60 s | 0.37, 0.35, 0.35 and 0.32/s | 0.35, 0.35, 0.35 and 0.35/s | ≤ 0.5/s |
 | Footprint without the GPU's, at rest, four rounds | 28.6, 29.0, 28.7 and 28.7 MB | 28.7, 28.8, 28.7 and 28.5 MB | ≤ 35 MB |
 | GPU memory | 30.6 MB | 30.6 MB | |
-| `cat` of 1 GiB of ASCII on screen, median of 8 | 265.6 MiB/s | 269.5 MiB/s | ≥ 294.9 MiB/s |
+| `cat` of 1 GiB of ASCII on screen, median of 8 | 265.6 MiB/s | 269.5 MiB/s | ≥ 275 MiB/s, Ghostty's of [the comparison of 21 and 22 November](compare-F5a-78.md) less 10 %; 294.9 before |
 | `seq 1 10000000` | 159.4 MiB/s | 185.9 MiB/s | |
 | Colored text, SGR | 195.1 MiB/s | 191.9 MiB/s | |
 | CJK and emoji | 203.3 MiB/s | 204.6 MiB/s | |

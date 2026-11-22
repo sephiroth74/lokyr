@@ -1,0 +1,328 @@
+== 2026-11-21 23:08:54 setup check startup idle energycat
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:08  up 9 days, 11:46, 309 users, load averages: 4.03 3.01 3.44
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:08:54 setup, load { 4.03 3.01 3.44 }
+615:619: execution error: Terminal got an error: AppleEvent timed out. (-1712)
+23:11:00 check, load { 3.42 3.27 3.50 }
+23:11:00 check lokyr
+23:11:05 lokyr 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+23:11:05 check kitty
+23:11:10 kitty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-kitty | 
+23:11:10 check iterm2
+window id 68549
+23:11:19 iterm2 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-new | 
+23:11:19 done check
+23:11:19 startup, load { 3.48 3.29 3.50 }
+23:11:19 startup lokyr 1
+23:11:35 startup kitty 1
+23:11:45 startup iterm2 1
+23:11:55 startup kitty 2
+23:12:06 startup lokyr 2
+23:12:21 startup iterm2 2
+23:12:31 done startup
+23:12:31 idle, load { 3.24 3.23 3.46 }
+23:12:31 idle lokyr
+23:13:48 idle kitty
+23:15:16 idle iterm2
+23:16:44 done idle
+23:16:44 energycat, load { 2.70 2.52 3.05 }
+23:16:44 energycat lokyr
+23:16:54 energycat kitty
+23:17:09 energycat iterm2
+window id 69066
+23:17:36 done energycat
+23:17:36 done, load { 2.93 2.56 3.03 }
+== 2026-11-21 23:17:46 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:17  up 9 days, 11:55, 325 users, load averages: 2.71 2.52 3.01
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:17:46 throughput, load { 2.71 2.52 3.01 }
+23:17:46 throughput lokyr
+23:22:48 done throughput
+23:22:48 done, load { 3.43 3.21 3.19 }
+== 2026-11-21 23:22:58 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:22  up 9 days, 12 hrs, 325 users, load averages: 3.06 3.14 3.17
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:22:58 throughput, load { 3.06 3.14 3.17 }
+23:22:58 throughput kitty
+23:31:32 done throughput
+23:31:32 done, load { 2.97 3.39 3.36 }
+== 2026-11-21 23:31:42 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:31  up 9 days, 12:09, 325 users, load averages: 2.82 3.34 3.35
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:31:43 throughput, load { 2.82 3.34 3.35 }
+23:31:43 throughput iterm2
+window id 69096
+23:37:48 done throughput
+23:37:48 done, load { 2.98 3.48 3.43 }
+== 2026-11-21 23:37:58 restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:37  up 9 days, 12:15, 326 users, load averages: 2.60 3.38 3.39
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:37:59 restore, load { 2.60 3.38 3.39 }
+0:19: execution error: Terminal got an error: User canceled. (-128)
+23:38:10 com.apple.Terminal.plist kept: its app still runs, which would write its own settings over it
+compare.py: com.apple.Terminal.plist not put back, in /Users/taacral1/Library/Application Support/lokyr-bench/compare-saved: run `restore` again once iTerm2 and Terminal.app quit
+23:38:10 done, load { 2.74 3.38 3.40 }
+== 2026-11-21 23:39:23 restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:39  up 9 days, 12:17, 309 users, load averages: 2.91 3.34 3.38
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:39:23 restore, load { 2.91 3.34 3.38 }
+23:39:23 restored iTerm2's and Terminal.app's settings
+23:39:23 done, load { 2.92 3.33 3.37 }
+== 2026-11-21 23:40:30 setup open restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+23:40  up 9 days, 12:18, 309 users, load averages: 2.28 3.08 3.28
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+23:40:30 setup, load { 2.28 3.08 3.28 }
+23:40:30 open, load { 2.28 3.08 3.28 }
+23:40:30 open lokyr - quit it to open the next
+00:09:26 open kitty - quit it to open the next
+00:20:42 open iterm2 - quit it to open the next
+window id 69152
+00:23:13 done open
+00:23:14 restore, load { 2.83 2.65 2.37 }
+00:23:14 restored iTerm2's and Terminal.app's settings
+00:23:14 done, load { 2.83 2.65 2.37 }
+== 2026-11-22 00:23:32 setup open restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:23  up 9 days, 13:01, 309 users, load averages: 2.94 2.69 2.39
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:23:32 setup, load { 2.94 2.69 2.39 }
+00:23:33 open, load { 2.94 2.69 2.39 }
+00:23:33 open lokyr - quit it to open the next
+00:26:46 done open
+00:26:46 restore, load { 3.25 2.81 2.48 }
+00:26:47 restored iTerm2's and Terminal.app's settings
+00:26:47 done, load { 3.25 2.81 2.48 }
+== 2026-11-22 00:31:32 setup
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:31  up 9 days, 13:09, 309 users, load averages: 3.61 2.79 2.52
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:31:32 setup, load { 3.72 2.83 2.53 }
+615:619: execution error: Terminal got an error: AppleEvent timed out. (-1712)
+00:33:37 done, load { 1.50 2.27 2.35 }
+== 2026-11-22 00:33:48 check startup idle energycat
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:33  up 9 days, 13:11, 310 users, load averages: 1.73 2.30 2.35
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:33:48 check, load { 1.73 2.30 2.35 }
+compare.py: terminal running: quit it first, as the measures end every process of the terminals that they measure, and run this from a terminal that they do not measure
+00:33:48 startup, load { 1.67 2.27 2.35 }
+compare.py: terminal running: quit it first, as the measures end every process of the terminals that they measure, and run this from a terminal that they do not measure
+00:33:48 idle, load { 1.67 2.27 2.35 }
+compare.py: terminal running: quit it first, as the measures end every process of the terminals that they measure, and run this from a terminal that they do not measure
+00:33:49 energycat, load { 1.67 2.27 2.35 }
+compare.py: terminal running: quit it first, as the measures end every process of the terminals that they measure, and run this from a terminal that they do not measure
+00:33:49 done, load { 1.67 2.27 2.35 }
+== 2026-11-22 00:33:59 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:33  up 9 days, 13:11, 310 users, load averages: 1.57 2.23 2.33
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:33:59 throughput, load { 1.57 2.23 2.33 }
+00:33:59 throughput lokyr
+00:38:57 done throughput
+00:38:57 done, load { 3.82 3.16 2.72 }
+== 2026-11-22 00:39:08 check startup idle energycat
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:39  up 9 days, 13:16, 309 users, load averages: 3.54 3.12 2.71
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:39:08 check, load { 3.54 3.12 2.71 }
+00:39:08 check ghostty
+00:39:13 ghostty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-ghostty | 
+00:39:13 check alacritty
+00:39:18 alacritty 40 120 | /tmp/lokyr/compare-zdotdir /tmp/lokyr/compare-xdg xterm-256color | 
+00:39:18 done check
+00:39:18 startup, load { 3.84 3.20 2.74 }
+00:39:19 startup ghostty 1
+00:39:27 startup alacritty 1
+00:39:35 startup ghostty 2
+00:39:43 startup alacritty 2
+00:39:51 done startup
+00:39:51 idle, load { 3.73 3.25 2.78 }
+00:39:51 idle ghostty
+00:41:08 idle alacritty
+00:42:26 done idle
+00:42:26 energycat, load { 1.86 2.60 2.58 }
+00:42:26 energycat ghostty
+00:42:36 energycat alacritty
+00:42:49 done energycat
+00:42:49 done, load { 2.47 2.69 2.62 }
+== 2026-11-22 00:42:59 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:42  up 9 days, 13:20, 309 users, load averages: 2.32 2.65 2.60
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:42:59 throughput, load { 2.32 2.65 2.60 }
+00:43:00 throughput lokyr
+00:47:58 done throughput
+00:47:58 done, load { 4.40 3.54 3.01 }
+== 2026-11-22 00:48:08 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:48  up 9 days, 13:25, 309 users, load averages: 3.87 3.46 2.99
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:48:09 throughput, load { 3.87 3.46 2.99 }
+00:48:09 throughput ghostty
+00:53:15 done throughput
+00:53:15 done, load { 4.49 3.81 3.26 }
+== 2026-11-22 00:53:26 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 0:53  up 9 days, 13:31, 309 users, load averages: 4.17 3.77 3.25
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+00:53:26 throughput, load { 4.17 3.77 3.25 }
+00:53:26 throughput alacritty
+01:00:33 done throughput
+01:00:33 done, load { 3.39 3.72 3.44 }
+== 2026-11-22 01:00:43 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 1:00  up 9 days, 13:38, 309 users, load averages: 2.94 3.61 3.40
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+01:00:43 throughput, load { 2.94 3.61 3.40 }
+01:00:44 throughput kitty
+01:07:57 done throughput
+01:07:57 done, load { 3.20 3.36 3.36 }
+== 2026-11-22 01:08:07 throughput
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 1:08  up 9 days, 13:45, 309 users, load averages: 2.86 3.28 3.33
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+01:08:07 throughput, load { 2.72 3.24 3.31 }
+01:08:08 throughput iterm2
+window id 69503
+01:10:03 done throughput
+01:10:03 done, load { 3.40 3.43 3.38 }
+== 2026-11-22 01:10:14 restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 1:10  up 9 days, 13:48, 310 users, load averages: 3.50 3.45 3.39
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+01:10:14 restore, load { 3.50 3.45 3.39 }
+01:10:14 restored iTerm2's and Terminal.app's settings
+01:10:14 done, load { 3.50 3.45 3.39 }
+== 2026-11-22 01:10:14 setup open restore
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=37683299)	100%; charged; 0:00 remaining present: true
+ 1:10  up 9 days, 13:48, 310 users, load averages: 3.50 3.45 3.39
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          Main Display: Yes
+01:10:15 setup, load { 3.50 3.45 3.39 }
+01:10:15 open, load { 3.50 3.45 3.39 }
+01:10:15 open ghostty - quit it to open the next
+01:13:28 open alacritty - quit it to open the next
+01:16:42 done open
+01:16:42 restore, load { 2.41 2.89 3.13 }
+01:16:43 restored iTerm2's and Terminal.app's settings
+01:16:43 done, load { 2.41 2.89 3.13 }

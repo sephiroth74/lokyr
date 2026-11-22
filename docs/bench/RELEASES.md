@@ -10,17 +10,17 @@ Measures of different sessions compare within a few percent alone: a session's l
 
 ## At a glance
 
-1.4.0 against 1.3.0, both measured in 1.4.0's session, [ab-F5a-78](ab-F5a-78.md), but a measure that names another: each measure's change, the share of its budget, the best of the other terminals, of [the comparison of 13 November 2026](compare-F3-268.md) and [the window's motion](motion-F3-152.md), with Lokyr's own value of that session where its conditions differ, and whether it is as before, better, or worse beyond its rounds' spread.
+1.4.0 against 1.3.0, both measured in 1.4.0's session, [ab-F5a-78](ab-F5a-78.md), but a measure that names another: each measure's change, the share of its budget, the best of the other terminals, of [the comparison of 21 and 22 November 2026](compare-F5a-78.md) and [the window's motion](motion-F3-152.md), with Lokyr's own value of that session where its conditions differ, and whether it is as before, better, or worse beyond its rounds' spread.
 
 | Measure | 1.3.0 | 1.4.0 | Change | Budget | The best of the others | |
 |---|---|---|---|---|---|---|
 | Startup, its gap to the minimal app's first window | 53.4 ms | 60.9 ms | +7.5 ms, +14 % | ≤ 35 ms, 174 % of it | — | ❌ Over its budget |
-| Latency, a key to its echo, p50 | 14.5 ms | 13.6 ms | −0.9 ms, −6 % | ≤ 33.3 ms, 41 % of it | Terminal.app 18.4, Lokyr 18.5 then | ✔ As before |
-| Latency, a key to its echo, p99 | 29.8 ms | 27.5 ms | −2.3 ms, −8 % | ≤ 75 ms, 37 % of it | Alacritty 46, Lokyr 48.2 then | ✔ As before |
-| Memory at rest, without the GPU's | 28.7 MB | 28.7 MB | ±0.0 MB, ±0 % | ≤ 35 MB, 82 % of it | Alacritty 31.1, Lokyr 27.8 then | ✔ As before |
-| Idle, interrupt wakeups | 0.35/s | 0.35/s | +0.00/s, +1 % | ≤ 0.5/s, 70 % of it | Alacritty 0.37, Lokyr 0.35 then | ✔ As before |
+| Latency, a key to its echo, p50 | 14.5 ms | 13.6 ms | −0.9 ms, −6 % | ≤ 33.3 ms, 41 % of it | Alacritty 23.6, Lokyr 22.4 then | ✔ As before |
+| Latency, a key to its echo, p99 | 29.8 ms | 27.5 ms | −2.3 ms, −8 % | ≤ 75 ms, 37 % of it | kitty 33.1, Lokyr 29.5 then | ✔ As before |
+| Memory at rest, without the GPU's | 28.7 MB | 28.7 MB | ±0.0 MB, ±0 % | ≤ 35 MB, 82 % of it | Alacritty 31.3, Lokyr 28.6 then | ✔ As before |
+| Idle, interrupt wakeups | 0.35/s | 0.35/s | +0.00/s, +1 % | ≤ 0.5/s, 70 % of it | Alacritty 0.33, Lokyr 0.35 then | ✔ As before |
 | Idle, package idle wakeups | 0.00/s | 0.00/s | ±0.00/s | ≤ 0/s | — | ✔ As before |
-| `cat` of 1 GiB of ASCII on screen | 265.6 MiB/s | 269.5 MiB/s | +3.9 MiB/s, +1 % | ≥ 294.9 MiB/s | Ghostty 328, Lokyr 318 then | ❌ Over its budget |
+| `cat` of 1 GiB of ASCII on screen | 265.6 MiB/s | 269.5 MiB/s | +3.9 MiB/s, +1 % | ≥ 275 MiB/s | Ghostty 305.5, Lokyr 293.5 then | ❌ Over its budget |
 | `seq 1 10000000` | 159.4 MiB/s | 185.9 MiB/s | +26.5 MiB/s, +17 % | — | — | ✔ Better |
 | Colored text, SGR | 195.1 MiB/s | 191.9 MiB/s | −3.2 MiB/s, −2 % | — | — | ✔ As before |
 | CJK and emoji | 203.3 MiB/s | 204.6 MiB/s | +1.3 MiB/s, +1 % | — | — | ✔ As before |
@@ -36,11 +36,11 @@ Measures of different sessions compare within a few percent alone: a session's l
 | A live resize, opaque, the compositor's delay, p95 | 21.0 ms | 13.4 ms | −7.6 ms, −36 % | — | Ghostty 27.7 | ✔ As before |
 | A live resize, translucent with a blur, the compositor's delay, p95 | 13.4 ms | 28.4 ms | +15.0 ms, +111 % | — | Ghostty 27.5 | ✔ As before |
 
-The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of Ghostty and Alacritty less 10 %, of [the comparison of 13 November 2026](compare-F3-268.md): Ghostty's 328 MiB/s.
+The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a display at 120 Hz, are of these sessions' 60 Hz here: 33.3 and 75 ms. The throughput's of `cat` is the faster of Ghostty and Alacritty less 10 %, of [the comparison of 21 and 22 November 2026](compare-F5a-78.md): Ghostty's 305.5 MiB/s.
 
 ## Over the releases
 
-Each measure over the last eight releases, a dot of each release, its budget a dashed line, and the best of the other terminals a dotted one, of [the comparison of 13 November 2026](compare-F3-268.md), and of [the window's motion](motion-F3-152.md) for the window's motion, measured once of their versions then, Lokyr's own value of that session beside it where its conditions differ from the releases' sessions, the latency's by Typometer, of the screen; of the columns of [the table](#every-measure): different sessions, which compare within a few percent alone. A panel without a dashed line has no budget, as `seq`'s, SGR's, CJK's and the window's motion; without a dotted one, no other terminal was measured of it: that comparison timed no minimal app beside the others' first windows, which their startup's gap needs, nor the four workloads but `cat`, nor a frame's CPU.
+Each measure over the last eight releases, a dot of each release, its budget a dashed line, and the best of the other terminals a dotted one, of [the comparison of 21 and 22 November 2026](compare-F5a-78.md), and of [the window's motion](motion-F3-152.md) for the window's motion, measured once of their versions then, Lokyr's own value of that session beside it where its conditions differ from the releases' sessions, the latency's by Typometer, of the screen; of the columns of [the table](#every-measure): different sessions, which compare within a few percent alone. A panel without a dashed line has no budget, as `seq`'s, SGR's, CJK's and the window's motion; without a dotted one, no other terminal was measured of it: that comparison timed no minimal app beside the others' first windows, which their startup's gap needs, nor the four workloads but `cat`, nor a frame's CPU.
 
 ![Starting and typing: the startup's gap to a minimal app; a key to its echo, at 60 Hz; the others' by Typometer](releases/start.svg)
 
@@ -75,7 +75,7 @@ Each release's measures in its own session: ▲ better and ▼ worse than the re
 | Footprint without the GPU's, MB | ≤ 35 | 26.8 | 27.2 ▲ | 28.6 ²¹ | 27.6 | 28.3 | 28.4 ²² | 27.6 ²³ | 28.7 ²⁴ |
 | GPU memory, MB |  | 30.1 | 30.1 | 30.1 | 30.1 | 30.6 | 30.6 | 14.2 ²⁵ | 30.6 ²⁶ |
 | **Output on screen** | | | | | | | | | |
-| `cat` of 1 GiB of ASCII, MiB/s | ≥ 294.9 ²⁷ | 314.3 | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁸ | 314.9 | 308.6 | 269.5 ✖ ²⁸ |
+| `cat` of 1 GiB of ASCII, MiB/s | ≥ 275.0 ²⁷ | 314.3 | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁸ | 314.9 | 308.6 | 269.5 ✖ ²⁸ |
 | `seq 1 10000000`, MiB/s |  | 220.3 | 222.1 | 223.8 | 220.9 | 192.6 ¹⁸ | 217.9 | 218.3 | 185.9 ▲ |
 | Colored text, SGR, MiB/s |  | 285.5 | 285.6 | 288.9 | 284.7 | 234.7 ¹⁸ | 286.3 | 285.2 | 191.9 |
 | CJK and emoji, MiB/s |  | 217.4 | 215.3 | 216.5 | 214.9 | 207.8 ¹⁸ | 214.9 | 213.2 | 204.6 |
@@ -132,7 +132,7 @@ Notes:
 24. 1.4.0 · Footprint without the GPU's, MB: the median of four rounds.
 25. 1.3.0 · GPU memory, MB: of a display at a scale of 1, as 1.2.0's in the same session.
 26. 1.4.0 · GPU memory, MB: of a display at a scale of 2, as 1.3.0's in the same session.
-27. The budget · `cat` of 1 GiB of ASCII, MiB/s: Ghostty's 328 MiB/s of the comparison of 13 November 2026 less 10 %; 275 of the first comparison's before.
+27. The budget · `cat` of 1 GiB of ASCII, MiB/s: Ghostty's 305.5 MiB/s of the comparison of 21 and 22 November 2026 less 10 %; 294.9 of the comparison of 13 November 2026 before, 275 of the first comparison's before that.
 28. 1.4.0 · `cat` of 1 GiB of ASCII, MiB/s: 1.3.0's 265.6 in the same session, both below the budget, of runs of 199 to 285 MiB/s, [ab-F5a-78](ab-F5a-78.md#results).
 29. 0.8.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [rest-F4-58](rest-F4-58.md#the-windows-motion-on-the-m1).
 30. 0.9.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings: 0.8.0's within that noise, [ab-F4-42](ab-F4-42.md#the-windows-motion).
@@ -169,6 +169,7 @@ Every session's report, the newest first.
 
 | Date | Report |
 |---|---|
+| 22 November 2026 | [Lokyr against the other terminals, of 1.4.0's code](compare-F5a-78.md) |
 | 21 November 2026 | [1.4.0 against 1.3.0](ab-F5a-78.md) |
 | 18 November 2026 | [1.3.0 against 1.2.0](ab-F5a-17.md) |
 | 16 November 2026 | [1.2.0 against 1.1.0](ab-F3b-29.md) |
