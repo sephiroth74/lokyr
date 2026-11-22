@@ -108,6 +108,12 @@ pub(crate) struct Backend {
     drag_image: Option<DragImage>,
     /// The target of the color panel's choices, once it shows.
     color_target: Option<Retained<crate::color_panel::ColorTarget>>,
+    /// The windows that leave full screen to hide, as their session hides,
+    /// and what waits for them: the windows to show, and the one to bring
+    /// forward, of the session that shows, which the system would show in
+    /// full screen too while one of the app's is.
+    leaving_full_screen: usize,
+    after_full_screen: Vec<(WindowId, bool)>,
 }
 
 impl Backend {
@@ -136,6 +142,25 @@ impl Backend {
             updates: Updates::default(),
             drag_image: None,
             color_target: None,
+            leaving_full_screen: 0,
+            after_full_screen: Vec::new(),
+        }
+    }
+
+    /// A window that left full screen to hide hid: once none is left, the
+    /// windows that waited for them show, and the one to bring forward
+    /// comes.
+    pub(crate) fn left_full_screen(&mut self) {
+        self.leaving_full_screen = self.leaving_full_screen.saturating_sub(1);
+        if self.leaving_full_screen > 0 {
+            return;
+        }
+        for (window, focus) in std::mem::take(&mut self.after_full_screen) {
+            if focus {
+                self.focus_window(window);
+            } else {
+                self.set_window_hidden(window, false);
+            }
         }
     }
 
@@ -541,9 +566,14 @@ impl Platform for Backend {
         // Once placed, so that its own placing keeps nothing.
         window.set_remember(attributes.remember);
         // The window is in the map before it takes the focus, whose event
-        // follows this call.
+        // follows this call; after the windows that leave full screen to
+        // hide, as the system would open it in full screen too.
         self.windows.insert(id, window);
-        self.windows[&id].show();
+        if self.leaving_full_screen > 0 {
+            self.after_full_screen.push((id, true));
+        } else {
+            self.windows[&id].show();
+        }
         Ok(id)
     }
 
@@ -578,6 +608,12 @@ impl Platform for Backend {
         let Some(closing) = self.windows.remove(&window) else {
             return;
         };
+        // One that left full screen to hide waits for nothing more.
+        if closing.leaves_full_screen() {
+            self.left_full_screen();
+        }
+        self.after_full_screen
+            .retain(|(waiting, _)| *waiting != window);
         // An alert on the window closes with it, unanswered, and so does
         // its context menu.
         self.alerts.retain(|_, open| open.window != Some(window));
@@ -662,6 +698,11 @@ impl Platform for Backend {
     }
 
     fn focus_window(&mut self, window: WindowId) {
+        // It waits for the windows that leave full screen to hide.
+        if self.leaving_full_screen > 0 {
+            self.after_full_screen.push((window, true));
+            return;
+        }
         // A hidden quick window would take the keys off the screen.
         if let Some(window) = self.windows.get(&window)
             && !window.is_hidden_quick()
@@ -692,9 +733,16 @@ impl Platform for Backend {
     }
 
     fn set_window_hidden(&mut self, window: WindowId, hidden: bool) {
+        // Shown, it waits for the windows that leave full screen to hide.
+        if !hidden && self.leaving_full_screen > 0 {
+            self.after_full_screen.push((window, false));
+            return;
+        }
         // A quick window hides of its own place.
-        if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick()) {
-            open.set_hidden(hidden);
+        if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick())
+            && open.set_hidden(hidden)
+        {
+            self.leaving_full_screen += 1;
         }
     }
 

@@ -2493,6 +2493,9 @@ impl<B: Backend> App<B> {
         page: Option<String>,
         directory: Option<PathBuf>,
     ) -> Option<WindowId> {
+        // The windows of a session left hide first, as a new session's
+        // window opens.
+        self.settle_sessions(platform);
         // Of its cells, at the scale of the screen that it opens on; a man
         // page's of its own, which it neither keeps nor restores.
         let window_config = &self.config.window;

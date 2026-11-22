@@ -30,7 +30,6 @@ impl<B: Backend> App<B> {
             return;
         }
         self.open_window(platform);
-        self.settle_sessions(platform);
     }
 
     /// Switches to the session used before the active one, if there is one.
@@ -219,12 +218,16 @@ impl<B: Backend> App<B> {
     }
 
     /// Shows the windows of the active session, and hides those of the
-    /// others, as the workspace's sessions say, at a turn's end: the active
-    /// one's shown first, where they were, the last of them to have had the
-    /// keyboard taking it again, as a switch brings them, then the others'
-    /// hidden, so that the keyboard goes to none of theirs on the way.
-    /// Hidden, a window draws nothing. Nothing changes of no switch, nor of
-    /// a window that opened in the session where it shows.
+    /// others, as the workspace's sessions say, at a turn's end: the others'
+    /// hidden first, as the system shows a window in full screen too while
+    /// one of the app's with the keyboard is, which the platform takes out
+    /// of it before it hides it; then the active one's shown, where they
+    /// were, the last of them to have had the keyboard taking it again, as
+    /// a switch brings them. The keyboard that the system gives a window of
+    /// the others for a moment on the way tells nothing, as the window no
+    /// longer has it as its event comes. Hidden, a window draws nothing.
+    /// Nothing changes of no switch, nor of a window that opened in the
+    /// session where it shows.
     pub(super) fn settle_sessions(&mut self, platform: &mut dyn Platform) {
         let active = self.workspace.active_session();
         // The session that the app starts in shows of its own.
@@ -245,6 +248,12 @@ impl<B: Backend> App<B> {
             return;
         }
         self.shown_session = Some(active);
+        for &window in &hidden {
+            platform.set_window_hidden(window, true);
+            if let Some(state) = self.windows.get_mut(&window) {
+                state.session_hidden = true;
+            }
+        }
         for &window in &shown {
             platform.set_window_hidden(window, false);
             if let Some(state) = self.windows.get_mut(&window) {
@@ -261,12 +270,6 @@ impl<B: Backend> App<B> {
                 .or_else(|| windows.last().copied());
             if let Some(front) = front {
                 platform.focus_window(front);
-            }
-        }
-        for &window in &hidden {
-            platform.set_window_hidden(window, true);
-            if let Some(state) = self.windows.get_mut(&window) {
-                state.session_hidden = true;
             }
         }
         platform.set_command_enabled(LAST_SESSION, self.workspace.last_session().is_some());
