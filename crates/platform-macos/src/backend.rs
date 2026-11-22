@@ -691,6 +691,13 @@ impl Platform for Backend {
         ))
     }
 
+    fn set_window_hidden(&mut self, window: WindowId, hidden: bool) {
+        // A quick window hides of its own place.
+        if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick()) {
+            open.set_hidden(hidden);
+        }
+    }
+
     fn set_window_floating(&mut self, window: WindowId, floating: bool) {
         // A quick window floats of its own place.
         if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick()) {

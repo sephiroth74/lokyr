@@ -188,6 +188,9 @@ pub(crate) struct Window<B: Backend> {
     /// Whether it floats above the other applications' windows, as the
     /// user chose.
     pub(crate) floating: bool,
+    /// Whether the app hid it, as the windows of a session that is not
+    /// active hide.
+    pub(crate) session_hidden: bool,
     /// Whether it shows opaque, of a config that makes it translucent, as
     /// View › Use Transparency left it, until the config's opacity or blur
     /// changes.
@@ -436,6 +439,7 @@ impl<B: Backend> Window<B> {
             notified_at: None,
             bell_marked: false,
             floating: false,
+            session_hidden: false,
             opaque: false,
             backdrop: None,
             mouse: Mouse::default(),

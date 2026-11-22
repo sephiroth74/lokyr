@@ -168,6 +168,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Zoom",
             "Cycle Through Windows cmd+`",
             "-",
+            "Sessions",
+            "-",
             "Float on Top",
             "Go to Next Agent alt+cmd+a",
             "Show Agents… alt+shift+cmd+a",
@@ -339,7 +341,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 139);
+    assert_eq!(app.keymap.bindings().len(), 140);
 }
 
 #[test]
@@ -425,8 +427,10 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ),
             ("pane.search-web", "Search the Web", Category::Edit),
             ("window.close", "Close Window", Category::Windows),
+            ("window.close-session", "Close Session", Category::Windows),
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
+            ("window.new-session", "New Session", Category::Windows),
             ("window.next", "Cycle Through Windows", Category::Windows),
             ("window.next-agent", "Go to Next Agent", Category::Windows),
             (
@@ -434,7 +438,17 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "Cycle Back Through Windows",
                 Category::Windows
             ),
+            (
+                "window.rename-session",
+                "Rename Session…",
+                Category::Windows
+            ),
             ("window.set-title", "Set Title…", Category::Windows),
+            (
+                "window.switch-to-last-session",
+                "Switch to Last Session",
+                Category::Windows
+            ),
             (
                 "window.toggle-cursor-guide",
                 "Show Cursor Guide",

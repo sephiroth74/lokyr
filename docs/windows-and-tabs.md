@@ -18,6 +18,7 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Pinned tabs**, kept at the start of the bar, and **groups** of tabs under a name and a color. · Since 1.3
 - **A tab you closed**, back with ⇧⌘T. · Since 1.3
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
+- **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -33,7 +34,7 @@ A pane closes when its shell exits, such as after `exit`, as [`close-on-exit`](C
 
 ## Move between windows
 
-Each window takes a number when it opens, the lowest that no other open window has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
+Each window takes a number when it opens, the lowest that no other open window of its [session](#use-sessions) has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
 
 - **⌥⌘1 to ⌥⌘9** bring that window forward.
 - **⌘\`** brings forward the next window, in the order they opened, and **⇧⌘\`** the one before. The key is the one left of 1, whatever your keyboard's layout prints on it.
@@ -43,6 +44,19 @@ Each window takes a number when it opens, the lowest that no other open window h
 [`title-shortcut`](CONFIGURATION.md#title-shortcut) hides the keys in the titlebar.
 
 **Try it**: press ⌘N: the new window's titlebar shows ⌥⌘2. Press ⌥⌘1: the first window comes forward.
+
+## Use sessions
+
+A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide. The programs in hidden windows keep running, and hidden windows draw nothing. · not released yet
+
+- **Window › Sessions › New Session** opens a session with one window of a new shell, and hides the windows you had.
+- **Window › Sessions › Switch to Last Session**, ⌃⌘L, switches to the session you used before. Press it again to come back.
+- **Window › Sessions › Rename Session…** names the session. The name shows in the titlebar of its windows, before their keys, such as `api · ⌥⌘1`.
+- **Window › Sessions › Close Session** closes the session's windows. Lokyr asks first while a program other than a shell runs in one of them.
+
+Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in.
+
+**Try it**: choose Window › Sessions › New Session: your windows hide and a new one opens. Press ⌃⌘L: your windows come back.
 
 ## Float a window or use full screen
 
@@ -237,6 +251,7 @@ close-button = "hover"            # "always" or "never"
 | ⌥⌘1 to ⌥⌘9 | `cmd+alt+1` to `cmd+alt+9` | Bring that window forward |
 | ⌘\`, ⇧⌘\` | `` cmd+` ``, `` cmd+shift+` `` | Bring the next or the previous window forward |
 | ⇧⌘I | `cmd+shift+i` | Give the window a title |
+| ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |
@@ -255,6 +270,7 @@ close-button = "hover"            # "always" or "never"
 - **The quick terminal and man pages' windows** don't open again when Lokyr starts.
 - **macOS's own window tabs**, and its Prefer tabs setting, don't apply: Lokyr's tabs are its own.
 - **Keys reach the first nine** windows and tabs: bind more in [`[keys]`](CONFIGURATION.md#bindings).
+- **Sessions don't come back yet when Lokyr starts**: the windows of every session open again in one. A window with its tabs in the titlebar doesn't show its session's name. · not released yet
 
 ## Troubleshooting
 

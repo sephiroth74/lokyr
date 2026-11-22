@@ -183,6 +183,17 @@ impl Workspace {
         true
     }
 
+    /// Takes `window` out of the sessions, as a man page's window, which
+    /// shows whichever session is active; whether it is open.
+    pub fn leave_sessions(&mut self, window: WindowId) -> bool {
+        let Some(shown) = self.windows.get_mut(&window) else {
+            return false;
+        };
+        let session = shown.session.take();
+        self.session_lost_window(session);
+        true
+    }
+
     /// The session that a window of `tab`, which comes from the window it
     /// is in, if it is in one, is of: that window's, or the active one.
     pub(super) fn session_for(&self, from: Option<WindowId>) -> Option<SessionId> {

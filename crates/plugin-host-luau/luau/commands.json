@@ -1266,6 +1266,15 @@
   {
     "capabilities": [],
     "category": "windows",
+    "name": "window.close-session",
+    "params": [],
+    "plugin": null,
+    "title": "Close Session",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
     "name": "window.goto",
     "params": [
       {
@@ -1285,6 +1294,15 @@
     "params": [],
     "plugin": null,
     "title": "New Window",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.new-session",
+    "params": [],
+    "plugin": null,
+    "title": "New Session",
     "when": null
   },
   {
@@ -1317,10 +1335,28 @@
   {
     "capabilities": [],
     "category": "windows",
+    "name": "window.rename-session",
+    "params": [],
+    "plugin": null,
+    "title": "Rename Session…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
     "name": "window.set-title",
     "params": [],
     "plugin": null,
     "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.switch-to-last-session",
+    "params": [],
+    "plugin": null,
+    "title": "Switch to Last Session",
     "when": null
   },
   {

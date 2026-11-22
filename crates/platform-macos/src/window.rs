@@ -437,9 +437,30 @@ impl Window {
         &self.ns_window
     }
 
-    /// Brings the window in front of the others, with the focus.
+    /// Brings the window in front of the others, with the focus; one that
+    /// [`Window::set_hidden`] hid shows again, in the Window menu too.
     pub(crate) fn show(&self) {
+        self.ns_window.setExcludedFromWindowsMenu(false);
         self.ns_window.makeKeyAndOrderFront(None);
+    }
+
+    /// Hides the window, off the screen, the Window menu and the windows'
+    /// cycle, as the windows of a session that is not active hide, or shows
+    /// it again where it was, in front of the app's others, without the
+    /// keyboard. Hidden, it draws nothing from then, before the system tells
+    /// that it does not show; shown, it draws at once.
+    pub(crate) fn set_hidden(&self, hidden: bool) {
+        self.ns_window.setExcludedFromWindowsMenu(hidden);
+        if hidden {
+            self.ns_window.orderOut(None);
+        } else {
+            self.ns_window.orderFront(None);
+        }
+        if self.occluded.replace(hidden) != hidden
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(self.id, WindowEvent::Occluded(hidden)));
+        }
     }
 
     /// Asks for a frame. Returns whether it is due at once, rather than at
