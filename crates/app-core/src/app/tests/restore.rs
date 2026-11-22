@@ -568,3 +568,85 @@ fn a_pane_s_scrollback_shows_again_above_its_new_program() {
     );
     let _ = std::fs::remove_dir_all(base);
 }
+
+/// The bytes of the files in `folder`, none of a folder that is not there.
+fn folder_bytes(folder: &std::path::Path) -> u64 {
+    std::fs::read_dir(folder)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter_map(|entry| entry.metadata().ok())
+                .map(|metadata| metadata.len())
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+/// The panes' scrollback's cost at the quit and at the next start, of 1,
+/// 10 and 50 tabs of a pane each, empty, half full and full, of the
+/// default limit and budget, `restore-scrollback` off and on, as
+/// `cargo test --release -p lokyr-app-core --lib scrollback_costs --
+/// --ignored --nocapture --test-threads 1` prints them: the windows' keep,
+/// the next start's, and the files' bytes.
+#[test]
+#[ignore = "a measure, of a release build"]
+fn scrollback_costs() {
+    use lokyr_vt_core::parser::Parser;
+    let base = real_directory("scrollback-costs");
+    // Lines of 94 cells, of the panes' 100 columns, so that each takes a
+    // row: some 12 000 fill a pane of the default limit.
+    let line = |n: usize| {
+        format!(
+            "{n:06} \x1b[32mgreen\x1b[0m plain \x1b[1mbold\x1b[0m {}\r\n",
+            "text ".repeat(14)
+        )
+    };
+    println!("panes\tfill\tkept\tquit ms\tstart ms\tfiles MB");
+    for panes in [1_usize, 10, 50] {
+        for (fill, lines) in [("empty", 0_usize), ("half", 6_000), ("full", 20_000)] {
+            for keep in [false, true] {
+                let state = base.join(format!("{panes}-{fill}-{keep}"));
+                let mut config = restoring();
+                config.app.restore_scrollback = keep;
+                // A run of `panes` tabs, each of `lines` lines, kept.
+                let mut fake = Fake::default();
+                let mut app = app_of(config.clone(), quiet()).with_state(Some(state.clone()));
+                fake.start(&mut app);
+                let window = fake.windows().next().unwrap();
+                fake.send(&mut app, window, WindowEvent::Focused(true));
+                for _ in 1..panes {
+                    app.run(&mut fake, "tabs.new", Args::new());
+                }
+                run_until(&mut fake, &mut app, |_, app| {
+                    app.workspace.panes().count() == panes
+                });
+                let mut parser = Parser::new();
+                for pane in app.workspace.panes() {
+                    let mut terminal = pane.terminal().unwrap();
+                    for n in 0..lines {
+                        parser.advance(&mut *terminal, line(n).as_bytes());
+                    }
+                }
+                let started = Instant::now();
+                app.keep_windows(&fake);
+                let quit = started.elapsed();
+                drop(app);
+                let files = folder_bytes(&scrollback::folder(&state));
+                // The next start, of the windows kept.
+                let mut fake = Fake::default();
+                let mut app = app_of(config, quiet()).with_state(Some(state.clone()));
+                let started = Instant::now();
+                fake.start(&mut app);
+                let start = started.elapsed();
+                assert_eq!(app.workspace.panes().count(), panes);
+                println!(
+                    "{panes}\t{fill}\t{keep}\t{:.1}\t{:.1}\t{:.2}",
+                    quit.as_secs_f64() * 1000.0,
+                    start.as_secs_f64() * 1000.0,
+                    files as f64 / 1e6
+                );
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(base);
+}

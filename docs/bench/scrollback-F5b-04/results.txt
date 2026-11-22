@@ -1,0 +1,21 @@
+# cargo test --release -p lokyr-app-core --lib scrollback_costs -- --ignored --nocapture --test-threads 1
+# 22 November 2026, an M5 Pro on AC power, the load average 3.1 to 3.3
+panes	fill	kept	quit ms	start ms	files MB
+1	empty	false	1.1	13.0	0.00
+1	empty	true	1.0	9.7	0.00
+1	half	false	0.9	9.3	0.00
+1	half	true	7.9	14.9	0.73
+1	full	false	0.8	8.4	0.00
+1	full	true	13.1	17.1	1.44
+10	empty	false	0.7	24.1	0.00
+10	empty	true	0.8	24.9	0.00
+10	half	false	1.0	28.6	0.00
+10	half	true	61.8	71.7	7.26
+10	full	false	1.1	33.4	0.00
+10	full	true	122.5	93.3	13.66
+50	empty	false	1.0	139.7	0.00
+50	empty	true	1.1	160.1	0.00
+50	half	false	1.5	152.7	0.00
+50	half	true	123.0	298.1	12.82
+50	full	false	1.5	158.3	0.00
+50	full	true	110.9	300.0	11.42
