@@ -199,7 +199,7 @@ Of no version, planned for 1.4 before: `ssh` in your shell installing Lokyr's te
 ### F5b — Sessions and iTerm2 power features
 
 **1.5, sessions**:
-- **The scrollback restored** with the windows, which F3 restores: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback` on by default, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon.
+- **The scrollback restored** with the windows, which F3 restores: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback`, off by default, as what the panes showed may hold a secret, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon.
 - **Named sessions**: a session of windows, tabs and splits, a fuzzy switcher in the palette, the last two toggled, and saved layouts of windows, tabs, splits, folders and commands.
 - **Input broadcast** to the panes of a tab or a window, the host's, the input method's text and pastes too, of a mark on the panes that take it.
 - **Floating panes**, and popups that run a command and close, as fzf's or lazygit's, which plugins may open.
