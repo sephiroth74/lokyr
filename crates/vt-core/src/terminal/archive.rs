@@ -9,7 +9,9 @@
 //!   end, of Lokyr's own options.
 //!
 //! The images are left out, as are the shell's prompt where the user types,
-//! which a new shell draws again, and the empty rows that end the screen.
+//! which a new shell draws again, and the empty rows that end the screen;
+//! what its row holds before it, as output of no last line break that
+//! bash's prompt follows, is kept.
 //! The input that a program hides, as a password, never reaches the grid.
 
 use std::fmt::Write as _;
@@ -30,26 +32,49 @@ impl Terminal {
     pub fn archive(&self, bound: usize) -> Vec<u8> {
         let rows = &self.primary.rows;
         let marks = self.archived_marks();
-        // The rows up to the prompt where the user types, without the empty
-        // ones that end them.
-        let mut end = self.live_prompt_index().unwrap_or(rows.total_rows());
-        while end > 0
-            && row_at(rows, end - 1).is_some_and(is_blank)
-            && !marks.iter().any(|mark| mark.index == end - 1)
-        {
-            end -= 1;
+        // The rows up to the prompt where the user types, and its row's
+        // cells and marks before it, as output of no last line break leaves
+        // them there; of no such prompt, every row but the empty ones that
+        // end them.
+        let live = self.live_prompt();
+        let mut end = live.map_or(rows.total_rows(), |(index, _)| index);
+        let partial = live.and_then(|(index, col)| {
+            let row = row_at(rows, index)?;
+            let limit = text_end(row).min(col);
+            let mut own = marks
+                .iter()
+                .filter(|mark| mark.index == index && mark.col < col)
+                .peekable();
+            if limit == 0 && own.peek().is_none() {
+                return None;
+            }
+            Some((row_bytes(row, own, true, Some(limit)), col, limit))
+        });
+        if partial.is_none() {
+            while end > 0
+                && row_at(rows, end - 1).is_some_and(is_blank)
+                && !marks.iter().any(|mark| mark.index == end - 1)
+            {
+                end -= 1;
+            }
         }
         // Each row's bytes, the newest first, as many as the bound holds.
         let mut chunks: Vec<String> = Vec::new();
         let mut size = 0;
         let mut first = end;
+        let partial = partial.filter(|(chunk, ..)| chunk.len() <= bound);
+        if let Some((chunk, ..)) = &partial {
+            size += chunk.len();
+            chunks.push(chunk.clone());
+        }
         for index in (0..end).rev() {
             let Some(row) = row_at(rows, index) else {
                 break;
             };
             let at = marks.partition_point(|mark| mark.index < index);
             let own = marks[at..].iter().take_while(|mark| mark.index == index);
-            let chunk = row_bytes(row, own, index + 1 == end);
+            let last = index + 1 == end && partial.is_none();
+            let chunk = row_bytes(row, own, last, None);
             if size + chunk.len() > bound {
                 break;
             }
@@ -64,21 +89,43 @@ impl Terminal {
         for chunk in chunks.iter().rev() {
             bytes.push_str(chunk);
         }
+        // The marks written, of the rows kept and of the prompt's row before
+        // it.
+        let cut = partial.as_ref().map(|&(_, col, _)| col);
+        let written = |mark: &ArchivedMark| {
+            (first..end).contains(&mark.index)
+                || cut.is_some_and(|col| mark.index == end && mark.col < col)
+        };
         // The ends of commands kept whose marks are on the rows left out,
         // as a shell marks a command's end where its next prompt starts.
         let kept = |order: (usize, u8)| {
             marks
                 .iter()
-                .any(|mark| mark.order.0 == order.0 && (first..end).contains(&mark.index))
+                .any(|mark| mark.order.0 == order.0 && written(mark))
         };
         let ends: Vec<&ArchivedMark> = marks
             .iter()
-            .filter(|mark| mark.index >= end && mark.ends() && kept(mark.order))
+            .filter(|mark| mark.index >= end && !written(mark) && mark.ends() && kept(mark.order))
             .collect();
         if !ends.is_empty() {
-            bytes.push_str("\r\n");
-            for mark in ends {
-                bytes.push_str(&mark.bytes);
+            match partial.as_ref().map(|&(_, _, limit)| limit) {
+                // At their columns on the prompt's row, after its cells.
+                Some(limit) => {
+                    let mut at = limit;
+                    for mark in ends {
+                        if mark.index == end && mark.col > at {
+                            let _ = write!(bytes, "\x1b[{}C", mark.col - at);
+                            at = mark.col;
+                        }
+                        bytes.push_str(&mark.bytes);
+                    }
+                }
+                None => {
+                    bytes.push_str("\r\n");
+                    for mark in ends {
+                        bytes.push_str(&mark.bytes);
+                    }
+                }
             }
         }
         bytes.push_str("\x1b[0m");
@@ -108,17 +155,23 @@ fn text_end(row: ListRow<'_>) -> u16 {
 /// The bytes that write `row` again, of `marks`, its own in the order of
 /// their columns, the pen and the link set anew at its start: its cells up
 /// to its last that holds something, or all of a row that soft-wraps, so
-/// that the next row's text wraps on from it; the marks past its text at
-/// their columns, the cursor moved there; a line feed after a row that
-/// does not wrap, but the archive's `last`.
+/// that the next row's text wraps on from it, or up to `limit`, of the
+/// prompt's row; the marks past its text at their columns, the cursor
+/// moved there; a line feed after a row that does not wrap, but the
+/// archive's `last`.
 fn row_bytes<'a>(
     row: ListRow<'_>,
     marks: impl Iterator<Item = &'a ArchivedMark>,
     last: bool,
+    limit: Option<u16>,
 ) -> String {
     let cols = row.cols();
     let wraps = row.metadata().has(RowFlag::SoftWrapped);
-    let end = if wraps && !last { cols } else { text_end(row) };
+    let end = match limit {
+        Some(limit) => limit,
+        None if wraps && !last => cols,
+        None => text_end(row),
+    };
     let mut bytes = String::new();
     let mut style: Option<Style> = None;
     let mut link: Option<&[u8]> = None;
