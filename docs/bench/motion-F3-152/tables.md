@@ -1,3 +1,5 @@
+# The window's motion and the cursor's fades: the means
+
 ## drag: means of the two rounds
 | Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
 |---|---|---|---|---|---|---|---|
