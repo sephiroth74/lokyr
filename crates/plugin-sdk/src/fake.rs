@@ -3648,10 +3648,13 @@ impl FakeHost {
     /// opens, and owes its opening and the pane's move from `from`.
     fn new_tab_of(&mut self, pane: PaneId, from: TabId, place: Option<(WindowId, usize)>) {
         let tab = TabId(self.next_id());
+        // Of the window that it left, for a window of its own to be of that
+        // window's session, as the app's.
+        let left = self.tabs.get(&from).map_or(WindowId(0), |from| from.window);
         self.tabs.insert(
             tab,
             FakeTab {
-                window: WindowId(0),
+                window: left,
                 layout: Layout::Pane(pane),
                 active: pane,
                 zoomed: None,
@@ -4645,7 +4648,25 @@ impl Calling<'_> {
                 Response::Text(branch.cloned())
             }
             Request::Agents => Response::Agents(host.agents.clone()),
-            Request::SessionFolders => Response::SessionFolders(host.session_folders.clone()),
+            // Of no folder that a session was opened in, as the app's.
+            Request::SessionFolders => {
+                let folders = &host.session_folders;
+                let sessions: Vec<&str> = host
+                    .sessions
+                    .iter()
+                    .filter_map(|session| session.folder.as_deref())
+                    .collect();
+                let (configured, recent) = host::without_sessions(
+                    folders.configured.clone(),
+                    folders.recent.clone(),
+                    &sessions,
+                );
+                Response::SessionFolders(SessionFolders {
+                    configured,
+                    recent,
+                    ..folders.clone()
+                })
+            }
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),

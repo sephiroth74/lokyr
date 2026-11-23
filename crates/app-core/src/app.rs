@@ -2639,14 +2639,18 @@ impl<B: Backend> App<B> {
         self.draw(platform, window, size);
     }
 
-    /// The lowest number, from 1, that no open window of `session` has, or
-    /// of none.
+    /// The lowest number, from 1, that no open window that shows beside a
+    /// window of `session` has: of `session`, or of none, as a man page's
+    /// window shows in every session; of any session, for a window of
+    /// none.
     fn free_number(&self, session: Option<workspace::SessionId>) -> u32 {
         let taken: BTreeSet<u32> = self
             .windows
             .values()
             .filter_map(|state| self.workspace.window(state.window))
-            .filter(|shown| shown.session() == session)
+            .filter(|shown| {
+                session.is_none() || shown.session().is_none() || shown.session() == session
+            })
             .filter_map(workspace::Window::number)
             .collect();
         (1..).find(|number| !taken.contains(number)).unwrap_or(1)

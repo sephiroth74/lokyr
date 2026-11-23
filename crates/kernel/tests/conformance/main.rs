@@ -813,7 +813,10 @@ fn on_kernel(
     plugins.set_state_directory(Some(state.to_path_buf()));
     plugins.set_temporary_directory(Some(world.files.join("temporary")), |_| Ok(()));
     assert!(plugins.activate(&mut kernel.context()).is_empty());
-    let deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
+    // The quick windows that the scenario opens, as the app opens them,
+    // which close as it ends, as the fake host's go with it.
+    let mut quick: Vec<lokyr_kernel::workspace::WindowId> = Vec::new();
+    let mut deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
         let start = Instant::now();
         while plugins.waiting() {
             plugins.serve(&mut kernel.context());
@@ -839,6 +842,15 @@ fn on_kernel(
                 // hears, as the app shows it.
                 AppRequest::ShowPage { plugin, page } => {
                     plugins.page_shown(&plugin, &page, true);
+                }
+                AppRequest::OpenQuickWindow {
+                    window, directory, ..
+                } => {
+                    let pane = kernel
+                        .spawner
+                        .spawn(PaneId::new(), None, directory.as_deref());
+                    kernel.workspace.open_quick_window(pane, window);
+                    quick.push(window);
                 }
                 _ => {}
             }
@@ -881,6 +893,9 @@ fn on_kernel(
         kernel.clock += Duration::from_millis(step.wait);
         plugins.timers_due(kernel.clock);
         deliver(&mut plugins, kernel);
+    }
+    for window in quick {
+        kernel.workspace.close_window(window);
     }
     trace()
 }

@@ -241,12 +241,13 @@ impl Workspace {
     }
 
     /// The session that a window of `tab`, which comes from the window it
-    /// is in, if it is in one, is of: that window's, or the active one.
+    /// is in, if it is in one, is of: that window's, or the active one, as
+    /// a tab out of the quick terminal's window or a man page's, of no
+    /// session, joins the session that shows.
     pub(super) fn session_for(&self, from: Option<WindowId>) -> Option<SessionId> {
-        match from.and_then(|window| self.windows.get(&window)) {
-            Some(window) => window.session,
-            None => Some(self.sessions.active),
-        }
+        from.and_then(|window| self.windows.get(&window))
+            .and_then(|window| window.session)
+            .or(Some(self.sessions.active))
     }
 
     /// Takes away `session`, which lost a window, if it has none left and is

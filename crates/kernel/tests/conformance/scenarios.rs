@@ -1469,6 +1469,145 @@ fn sessions(world: &World) -> Scenario {
                     }),
                 ),
             ]),
+            // A quick window, of no session, opened in the second session.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (Request::SwitchSession(session(1)), Response::Done),
+                    (
+                        Request::OpenQuickWindow {
+                            place: QuickPlace::default(),
+                            directory: None,
+                        },
+                        Response::Window(Some(window(0))),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(1)],
+            },
+            // A tab of it split, then a pane and a tab out of it, each in a
+            // window of the session that shows.
+            ask(vec![
+                (
+                    Request::NewTab {
+                        window: window(0),
+                        index: None,
+                        directory: None,
+                    },
+                    Response::Tab {
+                        tab: tab(0),
+                        pane: pane(0),
+                    },
+                ),
+                (
+                    Request::Split {
+                        pane: pane(0),
+                        direction: Direction::Vertical,
+                        side: Side::Second,
+                    },
+                    Response::Pane(Some(pane(1))),
+                ),
+                (Request::PaneToNewWindow(pane(1)), Response::Done),
+                (
+                    Request::TabToNewWindow {
+                        tab: tab(0),
+                        at: None,
+                    },
+                    Response::Done,
+                ),
+            ]),
+            // Back to the first, the second hidden of its two windows.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![
+                            SessionInfo {
+                                folder: Some(src.clone()),
+                                ..info(1, "work", true, vec![window(1), window(2)])
+                            },
+                            info(0, "", false, vec![w]),
+                        ]),
+                    ),
+                    (Request::SwitchSession(session(0)), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(1), changed(0)],
+            },
+            // The hidden session's last window closed: it goes, the one that
+            // shows staying.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::ClosePane {
+                            pane: pane(1),
+                            ask: false,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::CloseTab {
+                            tab: tab(0),
+                            ask: false,
+                            keep: 0,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(1)],
+            },
+            // A session of a window out of the quick one, whose last window
+            // closes as it shows: it goes, the first one shown again.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![info(0, "", true, vec![w])]),
+                    ),
+                    (new("again", None), Response::Session(session(2))),
+                    (
+                        Request::NewTab {
+                            window: window(0),
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(1),
+                            pane: pane(2),
+                        },
+                    ),
+                    (
+                        Request::TabToNewWindow {
+                            tab: tab(1),
+                            at: None,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(2)],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::CloseTab {
+                        tab: tab(1),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![changed(2), changed(0), changed(2)],
+            },
+            ask(vec![(
+                Request::Sessions,
+                Response::Sessions(vec![info(0, "", true, vec![w])]),
+            )]),
         ],
     }
 }

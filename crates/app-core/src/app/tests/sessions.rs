@@ -218,6 +218,23 @@ fn the_quick_terminal_and_a_man_page_s_window_show_in_every_session() {
             None
         );
     }
+    // The man page's window numbers beside every session's windows, as it
+    // shows in each: the new session's first window takes the number after
+    // it, and a man page's opened then the one after them all.
+    let number = |app: &App, window: WindowId| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .and_then(workspace::Window::number)
+    };
+    let second = opened(&fake, &[first, quick, page])[0];
+    assert_eq!(number(&app, first), Some(1));
+    assert_eq!(number(&app, page), Some(2));
+    assert_eq!(number(&app, second), Some(1));
+    assert_eq!(number(&app, quick), None);
+    let later = app
+        .open_window_running(&mut fake, &program, Some("man ls".to_owned()), None)
+        .unwrap();
+    assert_eq!(number(&app, later), Some(3));
 }
 
 #[test]

@@ -2514,10 +2514,7 @@ impl Workspace {
         if self.tabs.get(&tab)?.layout.panes().len() == 1 {
             return self.tab_to_new_window(tab);
         }
-        let session = self
-            .window_of_tab(tab)
-            .and_then(|from| self.windows.get(&from));
-        let session = session.and_then(|from| from.session);
+        let session = self.session_for(self.window_of_tab(tab));
         self.detach_pane(pane);
         let created = self.new_tab(pane);
         let window = self.window_for(created);

@@ -2947,6 +2947,40 @@ fn lokyr_starts_in_a_session_of_no_name_whose_windows_show() {
 }
 
 #[test]
+fn a_tab_or_a_pane_out_of_a_window_of_no_session_joins_the_active_one() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    // The quick terminal's window, of two tabs, the second of two panes.
+    let quick = workspace.open_quick_window(pane("sleep 30"), WindowId::new());
+    let tab = workspace.open_tab(quick, pane("sleep 30"), 1).unwrap();
+    let alone = workspace.window(quick).unwrap().tabs()[0];
+    let shown = workspace.tab(tab).unwrap().active_pane();
+    let split = workspace
+        .split(shown, Direction::Horizontal, pane("sleep 30"), Side::Second)
+        .unwrap();
+    // A pane out of it, and a tab, each in a window of the session that
+    // shows, which a switch hides.
+    let of_pane = workspace.pane_to_new_window(split).unwrap();
+    let of_tab = workspace.tab_to_new_window(alone).unwrap();
+    for window in [of_pane, of_tab] {
+        assert_eq!(workspace.window(window).unwrap().session(), Some(work));
+    }
+    assert_eq!(workspace.window(quick).unwrap().session(), None);
+    assert!(workspace.switch_session(first));
+    assert!(!workspace.in_active_session(of_pane) && !workspace.in_active_session(of_tab));
+    // A man page's window, of no session too: a tab out of it joins the
+    // session that shows then.
+    let man = workspace.open_window(pane("sleep 30"));
+    assert!(workspace.leave_sessions(man));
+    workspace.open_tab(man, pane("sleep 30"), 1).unwrap();
+    let out = workspace.window(man).unwrap().tabs()[1];
+    let moved = workspace.tab_to_new_window(out).unwrap();
+    assert_eq!(workspace.window(moved).unwrap().session(), Some(first));
+}
+
+#[test]
 fn a_new_session_is_switched_to_and_the_last_two_toggle() {
     let mut workspace = Workspace::new();
     let first = workspace.active_session();

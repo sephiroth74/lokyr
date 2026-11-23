@@ -76,6 +76,38 @@ pub fn check_session_directory(directory: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The folders that the switcher lists, `configured` then `recent`, as
+/// they are named, each once and none of `sessions`, the folders that
+/// sessions were opened in, as their real paths tell, which the system
+/// resolves of their links, as `/tmp` of `/private/tmp` on macOS: a recent
+/// folder that is a configured one, or a session's, by another path, goes.
+pub fn without_sessions(
+    configured: Vec<String>,
+    recent: Vec<String>,
+    sessions: &[&str],
+) -> (Vec<String>, Vec<String>) {
+    let real = |folder: &str| {
+        std::fs::canonicalize(folder).unwrap_or_else(|_| std::path::PathBuf::from(folder))
+    };
+    let mut seen: Vec<std::path::PathBuf> = sessions.iter().map(|folder| real(folder)).collect();
+    let mut keep = |folders: Vec<String>| -> Vec<String> {
+        folders
+            .into_iter()
+            .filter(|folder| {
+                let path = real(folder);
+                let fresh = !seen.contains(&path);
+                if fresh {
+                    seen.push(path);
+                }
+                fresh
+            })
+            .collect()
+    };
+    let configured = keep(configured);
+    let recent = keep(recent);
+    (configured, recent)
+}
+
 /// `path`, a path absolute or from `~`, of the home directory for `~`, as
 /// a session opened in a folder keeps it; as it is without a home
 /// directory.
