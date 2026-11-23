@@ -5142,6 +5142,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.send_text(&text);
                 }
             }
+            // As the user's keys: to the pane and those that its window
+            // broadcasts to.
+            Asked::SendTextBroadcast { pane: id, text } => {
+                for target in context.workspace.broadcast_panes(PaneId::of(id.0)) {
+                    if let Some(found) = context.workspace.pane_mut(target) {
+                        found.send_text(&text);
+                    }
+                }
+            }
             // The line, as a paste, bracketed as the program asks, then
             // Return, as the user types it; of no question, as it runs.
             Asked::RunLine { pane: id, line } => {
@@ -6821,6 +6830,7 @@ impl Host<'_, '_> {
             | Asked::Clear(pane)
             | Asked::Paste { pane, .. }
             | Asked::PasteBroadcast { pane, .. }
+            | Asked::SendTextBroadcast { pane, .. }
             | Asked::SetPaneBroadcast { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {

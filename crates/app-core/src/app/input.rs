@@ -150,8 +150,11 @@ impl<B: Backend> App<B> {
                 // A key that deletes or types over a selection of the
                 // command line takes its place, as the shell in front
                 // announced; of no selection that the pointer made, a
-                // click's included, the terminal is not looked at.
+                // click's included, the terminal is not looked at; nor
+                // while the keys go to other panes too, whose lines the
+                // replacement's arrows and deletions would make others.
                 if let [key] = &keys[..]
+                    && others.is_empty()
                     && self.config.cursor.click_to_move
                     && state.selecting.as_ref().is_some_and(Selecting::selects)
                     && replaces_selection(key, options)

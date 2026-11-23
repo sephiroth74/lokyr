@@ -960,6 +960,37 @@ fn read_of(app: &App, pane: PaneId) -> String {
 }
 
 #[test]
+fn a_binding_of_send_text_reaches_every_pane_that_takes_the_broadcast() {
+    let mut config = Config::parse(
+        "[keys]\n\"cmd+j\" = { command = \"pane.send-text\", args = { text = \"Z\" } }\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    let (mut fake, mut app, window, a, b) = two_panes_of(
+        config,
+        raw_reader("a", false),
+        &raw_reader("b", false),
+        false,
+    );
+    let shown = app.windows[&window].window;
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ready-a") && read_of(app, b).contains("ready-b")
+    });
+    // Alone, the pane with the keyboard; broadcast, both.
+    fake.send(&mut app, window, command_key(KeyCode::KeyJ, "j"));
+    run_until(&mut fake, &mut app, |_, app| read_of(app, a).contains('Z'));
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(!read_of(&app, b).contains('Z'), "{}", read_of(&app, b));
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    fake.send(&mut app, window, command_key(KeyCode::KeyJ, "j"));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ZZ") && read_of(app, b).contains('Z')
+    });
+}
+
+#[test]
 fn a_popup_s_keys_reach_it_alone_under_a_broadcast_which_it_takes_none_of() {
     let (mut fake, mut app, window, a, b) =
         two_panes(raw_reader("a", false), &raw_reader("b", false));

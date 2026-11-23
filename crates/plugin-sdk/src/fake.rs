@@ -5169,6 +5169,7 @@ impl Calling<'_> {
             | Request::Clear(pane)
             | Request::Paste { pane, .. }
             | Request::PasteBroadcast { pane, .. }
+            | Request::SendTextBroadcast { pane, .. }
             | Request::SetPaneBroadcast { pane, .. }
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }

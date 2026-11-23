@@ -993,6 +993,15 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Sends text as the user's keys reach a pane: to it, and to the other
+    /// panes that its window broadcasts the input to, as it is, its
+    /// control characters too, as [`Request::SendText`] sends it to one.
+    SendTextBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// The text.
+        text: String,
+    },
     /// Puts the plugin's view of the status bar on `side`, in place of its
     /// manifest's side, or of the one asked before, until the plugin stops;
     /// no capability, as it moves the plugin's own view within the bar.
@@ -1443,6 +1452,7 @@ impl Request {
             Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
             Self::Paste { .. }
             | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
             | Self::SendText { .. }
             | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
@@ -1666,6 +1676,7 @@ impl Request {
             | Self::SetBroadcast { .. }
             | Self::SetPaneBroadcast { .. }
             | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
@@ -2357,6 +2368,7 @@ impl Request {
             | Self::SetBroadcast { .. }
             | Self::SetPaneBroadcast { .. }
             | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }

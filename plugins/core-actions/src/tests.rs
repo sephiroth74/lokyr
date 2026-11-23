@@ -238,7 +238,7 @@ fn sending_text_sends_it_as_it_is() {
         .unwrap();
     assert_eq!(
         host.take_done(),
-        [Request::SendText {
+        [Request::SendTextBroadcast {
             pane: PaneId(9),
             text: "\u{17}\u{1b}b".to_owned(),
         }]

@@ -229,6 +229,7 @@ Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and w
 - **Press the same keys again**, or choose Off, to type into one pane again.
 - **Leave a pane out**: right-click it and choose Leave Broadcast. It then takes only what you type into it. Join Broadcast takes it back.
 - **A paste of several lines** that a program would run line by line asks once for all the panes.
+- **Your keys bound to `pane.send-text`**, such as the line-editing keys that the [configuration guide](CONFIGURATION.md#bindings) shows, reach every pane too, so that the lines stay alike. A key typed over a selection of the command line goes as typed, to every pane, rather than replacing the selection.
 - **Clicks and scrolls** go to one pane, and a pane whose program ended takes nothing.
 - **A popup** takes none of it, and what you type into a popup goes to it alone. The panes that a zoom hides take none either.
 

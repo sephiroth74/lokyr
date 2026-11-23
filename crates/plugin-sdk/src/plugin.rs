@@ -1178,6 +1178,16 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Sends `text` as the user's keys reach `pane`: to it, and to the other
+    /// panes that its window broadcasts the input to, as
+    /// [`Request::SendTextBroadcast`] says.
+    pub fn send_text_broadcast(&mut self, pane: PaneId, text: &str) -> Result<(), Error> {
+        self.done(Request::SendTextBroadcast {
+            pane,
+            text: text.to_owned(),
+        })
+    }
+
     /// Sends `text` to `pane`'s program as it is, as this call returns, its
     /// control characters too, as typed keys would, which can run
     /// commands; the view comes back to the screen.

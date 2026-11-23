@@ -1669,6 +1669,20 @@ fn broadcast(world: &World) -> Scenario {
                         },
                         failed(Code::NotFound, "there is no pane 999999"),
                     ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: p,
+                            text: "\u{15}".to_owned(),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: NO_PANE,
+                            text: "\u{15}".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
                 ],
                 posts: Vec::new(),
                 heard: vec![changed.clone(), changed.clone()],
