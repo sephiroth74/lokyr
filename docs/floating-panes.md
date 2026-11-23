@@ -55,7 +55,7 @@ Bind `pane.popup` to a key in the config's `[keys]`, with the command to run:
 "ctrl+cmd+n" = { command = "pane.popup", args = { command = "vim notes.md", folder = "~/notes" } }
 ```
 
-- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in. `folder` names another, such as `"~/notes"`.
+- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in. `folder` names another, such as `"~/notes"`: a folder that isn't there opens no popup, rather than running the command somewhere else.
 - **Its size**: `width` and `height` are shares of the tab, from `0.05` to `1`: `0.8` and `0.7` when you leave them out.
 - **When it closes**: when the command exits with the status 0, or when you interrupt it, such as with Control-C, or Escape in `fzf`. When the command fails, the popup stays open with a line that tells how it ended, so that you can read its error, until you press a key. This holds whatever [`close-on-exit`](CONFIGURATION.md#close-on-exit) says.
 - **Your keys**: the command gets them all, Escape too.

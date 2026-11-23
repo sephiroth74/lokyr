@@ -5819,6 +5819,17 @@ impl Calling<'_> {
             }
             Request::Split { pane, .. } => {
                 self.known_pane(*pane)?;
+                let floating = self
+                    .host
+                    .floating
+                    .values()
+                    .any(|held| held.panes.iter().any(|floating| floating.pane == *pane));
+                if floating || self.not_popup(*pane).is_err() {
+                    return Err(Error::new(
+                        Code::Failed,
+                        crate::message::FLOATING_SPLITS_NOT,
+                    ));
+                }
                 let new = PaneId(self.host.next_id());
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))
@@ -5831,6 +5842,11 @@ impl Calling<'_> {
                 height,
             } => {
                 crate::host::check_popup(command, folder.as_deref(), *width, *height)
+                    .and_then(|()| {
+                        folder
+                            .as_deref()
+                            .map_or(Ok(()), crate::host::check_popup_folder)
+                    })
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 match window {
                     Some(window) => self.known_window(*window)?,

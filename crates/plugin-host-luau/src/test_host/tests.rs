@@ -757,7 +757,7 @@ fn a_luau_plugin_opens_a_popup_and_hears_its_close_of_its_status() {
             assert(cx.register_command({ name = "popper.git", title = "Git", category = "view" }))
         end,
         on_command = function(cx, name, args)
-            assert(cx.open_popup(nil, "lazygit", "~/src", 0.9, nil))
+            assert(cx.open_popup(nil, "lazygit", "~", 0.9, nil))
         end,
         on_event = function(cx, events)
             for _, event in events do
@@ -776,7 +776,7 @@ fn a_luau_plugin_opens_a_popup_and_hears_its_close_of_its_status() {
             local popups = host.popups()
             assert(#popups == 1)
             local popup = popups[1]
-            assert(popup.command == "lazygit" and popup.folder == "~/src")
+            assert(popup.command == "lazygit" and popup.folder == "~")
             assert(popup.width == 0.9 and popup.height == 0.7 and popup.tab == host.tab())
             host.close_popup(popup.pane, 130)
             assert(#host.popups() == 0)

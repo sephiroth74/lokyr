@@ -213,7 +213,7 @@ impl<B: Backend> App<B> {
         args: &Args,
     ) -> Result<(), Error> {
         let command = match args.get("command") {
-            Some(Value::String(command)) if !command.trim().is_empty() => command.clone(),
+            Some(Value::String(command)) => command.clone(),
             _ => {
                 return Err(Error::new(
                     Code::MissingArgument,
@@ -235,6 +235,20 @@ impl<B: Backend> App<B> {
             _ => default,
         };
         let (width, height) = (share("width", POPUP_WIDTH), share("height", POPUP_HEIGHT));
+        // As a plugin's popup is checked: its command, its folder, which is
+        // there, and its shares.
+        lokyr_kernel::plugins::host::check_popup(
+            &command,
+            folder.as_deref(),
+            Some(width),
+            Some(height),
+        )
+        .and_then(|()| {
+            folder
+                .as_deref()
+                .map_or(Ok(()), lokyr_kernel::plugins::host::check_popup_folder)
+        })
+        .map_err(|message| Error::new(Code::Failed, message))?;
         let program = spawn::popup_program(self.popup_shell.as_deref(), &command);
         self.float_new(platform, Some(&program), folder.as_deref(), true, |_| {
             FloatingFrame::centered(width, height)

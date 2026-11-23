@@ -972,7 +972,8 @@ type Cx = {
     split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, Error?),
     -- A popup over the active tab of `window`, of the focused one for none: a floating pane in the tab's middle, of
     -- `width` and `height`, shares of its room, 0.8 and 0.7 by default, whose program is the user's login shell
-    -- running `command`, in `folder`, a path absolute or from `~`, the focused pane's for none: its pane's id. It
+    -- running `command`, in `folder`, a path absolute or from `~` of a folder that is there, the focused pane's for
+    -- none, never in a window that is hidden: its pane's id. It
     -- shows whether the tab's floating panes do, closes as the command exits with 0 or is interrupted, as with
     -- Control-C, and keeps its screen otherwise until a key; "popup-closed" tells the plugin its close. It takes
     -- `workspace-write` and `pty-write` · not released yet.

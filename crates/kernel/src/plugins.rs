@@ -4980,10 +4980,13 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 width,
                 height,
             } => {
+                // The tab that takes it, the settings' none, before the
+                // command starts.
                 let tab = window
                     .or(context.focused)
                     .and_then(|window| context.workspace.window(window))
-                    .map(crate::workspace::Window::active_tab);
+                    .map(crate::workspace::Window::active_tab)
+                    .filter(|&tab| context.workspace.tab(tab).is_some());
                 if let Some(tab) = tab {
                     let near = context
                         .workspace
@@ -6954,11 +6957,32 @@ impl Host<'_, '_> {
                 height,
             } => {
                 host::check_popup(command, folder.as_deref(), *width, *height)
+                    .and_then(|()| folder.as_deref().map_or(Ok(()), host::check_popup_folder))
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 let window = match window {
                     Some(window) => {
                         self.window(*window)?;
                         self.takes_tabs(*window)?;
+                        // A window that shows, of the active session, as a
+                        // popup shows to the user.
+                        let workspace = &self.context.workspace;
+                        let shows = workspace
+                            .window(WindowId::of(window.0))
+                            .is_some_and(|held| {
+                                !held.hidden()
+                                    && held
+                                        .session()
+                                        .is_none_or(|session| session == workspace.active_session())
+                            });
+                        if !shows {
+                            return Err(Error::new(
+                                Code::Failed,
+                                format!(
+                                    "the window {} is hidden, which a popup opens not in",
+                                    window.0
+                                ),
+                            ));
+                        }
                         Some(WindowId::of(window.0))
                     }
                     None if self.context.focused.is_none() => {
@@ -6986,6 +7010,20 @@ impl Host<'_, '_> {
                 side: new_side,
             } => {
                 self.known_pane(*pane)?;
+                // A floating pane splits not, of no layout of its own: its
+                // shell would start and go.
+                let floating = self
+                    .context
+                    .workspace
+                    .tab_of(PaneId::of(pane.0))
+                    .and_then(|tab| self.context.workspace.tab(tab))
+                    .is_some_and(|tab| tab.is_floating(PaneId::of(pane.0)));
+                if floating || self.not_popup(*pane).is_err() {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT,
+                    ));
+                }
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),

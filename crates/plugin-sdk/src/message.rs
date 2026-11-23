@@ -44,6 +44,10 @@ pub struct Call {
     pub request: Request,
 }
 
+/// The message of the error of a request that splits a floating pane,
+/// which floats over its tab's layout of no layout of its own.
+pub const FLOATING_SPLITS_NOT: &str = "a floating pane splits not";
+
 /// The message of the error of a request that moves a popup out of its
 /// tab, as a popup stays over the tab that it opened in.
 pub const POPUP_STAYS: &str = "a popup stays over its tab";
