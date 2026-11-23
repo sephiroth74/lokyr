@@ -223,7 +223,7 @@ Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that flo
 - **Move one**: drag its title bar.
 - **Resize one**: drag its edges or its corners.
 - **Bring one forward**: click it. The pane you click takes the keyboard, whether it floats or not.
-- **Close one**: press ⌘W, choose Shell › Pane › Close Pane, or exit its shell, as for any pane.
+- **Close one**: click the × at the right of its title, press ⌘W, choose Shell › Pane › Close Pane, or exit its shell. Lokyr asks first while a program other than a shell runs there.
 - **Float a pane of the splits**: right-click it and choose Float Pane. A floating pane goes back into the splits, beside the pane you used last, with Move Pane into Splits.
 - **Keep them**: they come back with their tab when Lokyr opens your windows again, each where it was, with what it showed when [`restore-scrollback`](CONFIGURATION.md#restore-scrollback) is on.
 

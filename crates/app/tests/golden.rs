@@ -3249,6 +3249,8 @@ fn check_floating(dark: bool, scale: u32) {
         separator: tokens.get("separator").unwrap(),
         shadow: tokens.get("shadow"),
         title: tokens.get("text").unwrap(),
+        close: tokens.get("text.secondary").unwrap(),
+        close_hover: tokens.get("button.hover.bg").unwrap(),
     };
     let cell = *drawing.font.cell();
     let font = &mut drawing.font;
@@ -3258,6 +3260,7 @@ fn check_floating(dark: bool, scale: u32) {
         look,
         &cell,
         f64::from(scale),
+        false,
         |shown| font.glyph(shown),
     ));
     items.push(Item::Cells(inner_batch));

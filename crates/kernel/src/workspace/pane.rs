@@ -452,7 +452,7 @@ impl Pane {
                 let line = format!("\x1b[2m[{why}]\x1b[0m");
                 Parser::new().advance(&mut terminal, line.as_bytes());
                 terminal.snapshot(&mut pane.snapshot);
-                // A key closes the window, as after a program that ended.
+                // A key closes the pane, as after a program that ended.
                 pane.kept = true;
             }
         }

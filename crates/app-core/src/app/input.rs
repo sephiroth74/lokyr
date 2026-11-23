@@ -1195,6 +1195,7 @@ impl<B: Backend> App<B> {
         {
             return;
         }
+        self.floating_hovered(platform, window, Some(position));
         // A knob that a drag holds moves the view; a scroll bar under the
         // pointer shows.
         if self.bar_dragged(platform, window, position) {

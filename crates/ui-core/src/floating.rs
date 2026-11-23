@@ -1,7 +1,7 @@
 //! A floating pane's room over its tab's split panes, and its frame: a
 //! rounded box of the terminal's background, of a border and a shadow,
-//! under a thin header of the pane's title, its grid within the box below
-//! the header.
+//! under a thin header of the pane's title and of a button that closes the
+//! pane, its grid within the box below the header.
 
 use lokyr_render_core::{Color, Item, PlacedGlyph, Rect, Shadow, Shape};
 use lokyr_text_core::CellMetrics;
@@ -19,6 +19,9 @@ const INSET: f64 = 6.0;
 /// The room above and below the header's title, in points.
 const HEADER_MARGIN: f64 = 3.0;
 
+/// The radius of the corners of the close button's hover, in points.
+const CLOSE_RADIUS: f64 = 4.0;
+
 /// A floating pane's room in its window, in pixels from the content's top
 /// left corner: its box, its header across the box's top, and its grid.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -29,6 +32,9 @@ pub struct Room {
     pub header: Rect,
     /// Its grid's room, of whole cells from its top left corner.
     pub grid: Rect,
+    /// Its close button, a square at the header's right end, over the
+    /// grid's right edge.
+    pub close: Rect,
 }
 
 /// A floating pane's frame over its tab's room: its top left corner and its
@@ -81,10 +87,20 @@ pub fn room(frame: Shares, content: Rect, cell: (u32, u32), scale: f64) -> Room 
         width: width.saturating_sub(2 * inset),
         height: height.saturating_sub(header.height + inset),
     };
+    // A cell's height each way, in the header's middle.
+    let size = cell.1.min(header.height);
+    let close = Rect {
+        x: (grid.x + i32::try_from(grid.width).unwrap_or(0) - i32::try_from(size).unwrap_or(0))
+            .max(grid.x),
+        y: header.y + i32::try_from((header.height - size) / 2).unwrap_or(0),
+        width: size,
+        height: size,
+    };
     Room {
         outer,
         header,
         grid,
+        close,
     }
 }
 
@@ -101,18 +117,24 @@ pub struct Look {
     pub shadow: Option<Color>,
     /// Its title's.
     pub title: Color,
+    /// Its close button's cross.
+    pub close: Color,
+    /// Its close button's background under the pointer.
+    pub close_hover: Color,
 }
 
 /// The drawings of `room`'s frame, under its grid's cells: its box, the
-/// line under its header, and its `title`, of glyphs of `cell`'s size that
+/// line under its header, its `title`, of glyphs of `cell`'s size that
 /// `glyph` gives, a cell a character, cut with an ellipsis where it would
-/// pass the header, on a display of `scale`.
+/// reach the close button, and the button's cross, on its hover's
+/// background where the pointer `hovers` it, on a display of `scale`.
 pub fn frame(
     room: &Room,
     title: &str,
     look: Look,
     cell: &CellMetrics,
     scale: f64,
+    hovers: bool,
     mut glyph: impl FnMut(&CellText<'_>) -> Option<AtlasGlyph>,
 ) -> Vec<Item> {
     let border = scale.round().max(1.0) as f32;
@@ -139,9 +161,13 @@ pub fn frame(
         height: border as u32,
     };
     // The title, from the grid's left edge, of the columns that the header
-    // holds.
+    // holds before the close button and a cell's gap.
     let left = room.grid.x;
-    let columns = (room.grid.width / cell.width.max(1)) as usize;
+    let columns = (room
+        .grid
+        .width
+        .saturating_sub(room.close.width + cell.width)
+        / cell.width.max(1)) as usize;
     let mut shown: Vec<char> = title.chars().collect();
     if shown.len() > columns {
         shown.truncate(columns.saturating_sub(1));
@@ -152,30 +178,55 @@ pub fn frame(
     let margin = (room.header.height.saturating_sub(cell.height)) / 2;
     let baseline = room.header.y + i32::try_from(margin + cell.baseline).unwrap_or(0);
     let mut glyphs = Vec::new();
-    for (column, character) in (0..).zip(shown) {
-        if character == ' ' {
-            continue;
-        }
+    let mut place = |text: &str, pen: i32, color: Color, glyphs: &mut Vec<PlacedGlyph>| {
         let text = CellText {
-            text: character.encode_utf8(&mut buffer),
+            text,
             style: &style,
             wide: false,
             dark: true,
         };
-        let Some(found) = glyph(&text) else {
+        if let Some(found) = glyph(&text) {
+            glyphs.push(PlacedGlyph {
+                region: found.region,
+                x: pen + found.left,
+                y: baseline - found.top,
+                color,
+                weight: found.smoothed,
+            });
+        }
+    };
+    for (column, character) in (0..).zip(shown) {
+        if character == ' ' {
             continue;
-        };
+        }
         let pen = left + i32::try_from(column * cell.width).unwrap_or(i32::MAX);
-        glyphs.push(PlacedGlyph {
-            region: found.region,
-            x: pen + found.left,
-            y: baseline - found.top,
-            color: look.title,
-            weight: found.smoothed,
+        place(
+            character.encode_utf8(&mut buffer),
+            pen,
+            look.title,
+            &mut glyphs,
+        );
+    }
+    // The close button's cross, in its square's middle.
+    let pen =
+        room.close.x + i32::try_from(room.close.width.saturating_sub(cell.width) / 2).unwrap_or(0);
+    place("×", pen, look.close, &mut glyphs);
+    let mut shapes = vec![shape];
+    if hovers {
+        shapes.push(Shape {
+            rect: room.close,
+            radius: (CLOSE_RADIUS * scale) as f32,
+            fill: look.close_hover,
+            border: 0.0,
+            border_color: Color::CLEAR,
+            shadow: None,
+            arc: None,
+            knockout: false,
+            mark: None,
         });
     }
     vec![
-        Item::Shapes(vec![shape]),
+        Item::Shapes(shapes),
         Item::Rect {
             rect: line,
             color: look.separator,
@@ -225,6 +276,17 @@ mod tests {
                 y: 214,
                 width: 476,
                 height: 244
+            }
+        );
+        // The close button, a cell's height square at the grid's right
+        // edge, in the header's middle.
+        assert_eq!(
+            room.close,
+            Rect {
+                x: 716,
+                y: 176,
+                width: 32,
+                height: 32
             }
         );
         // The least frame: a cell past its header and insets, within the

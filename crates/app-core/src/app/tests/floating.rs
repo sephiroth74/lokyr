@@ -307,3 +307,34 @@ fn a_popup_shows_of_its_own_and_leaves_the_hidden_floating_panes_hidden() {
     assert!(!app.workspace.tab(tab).unwrap().floating_shown());
     assert_eq!(app.focused(window), Some(first));
 }
+
+#[test]
+fn a_floating_pane_s_close_button_shows_its_hover_and_closes_it() {
+    let (mut fake, mut app, window) = started_running(idle());
+    let first = app.focused(window).unwrap();
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let scale = fake.window(window).unwrap().size.scale;
+    let (_, room) = app.windows[&window].floating_rooms[0];
+    let middle = |rect: lokyr_render_core::Rect| Point {
+        x: (f64::from(rect.x) + f64::from(rect.width) / 2.0) / scale,
+        y: (f64::from(rect.y) + f64::from(rect.height) / 2.0) / scale,
+    };
+    let close = middle(room.close);
+    // Its hover under the pointer, none past it or out of the window.
+    fake.send(&mut app, window, moved(close, Modifiers::NONE));
+    assert_eq!(app.windows[&window].floating_close_hover, Some(floating));
+    fake.send(&mut app, window, moved(middle(room.grid), Modifiers::NONE));
+    assert_eq!(app.windows[&window].floating_close_hover, None);
+    fake.send(&mut app, window, moved(close, Modifiers::NONE));
+    fake.send(&mut app, window, WindowEvent::MouseExited);
+    assert_eq!(app.windows[&window].floating_close_hover, None);
+    // A click on it closes the pane, of a shell alone, at once, which
+    // starts no move.
+    fake.send(&mut app, window, click(true, close, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, close, Modifiers::NONE, 1));
+    assert!(app.workspace.pane(floating).is_none());
+    assert!(app.windows[&window].floating_drag.is_none());
+    assert_eq!(app.focused(window), Some(first));
+}

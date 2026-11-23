@@ -960,7 +960,7 @@ fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
         })
         .collect();
     assert!(
-        shown.contains("[il programma è uscito con codice 3; un tasto chiude la finestra]"),
+        shown.contains("[il programma è uscito con codice 3; un tasto chiude il pannello]"),
         "{shown:?}"
     );
 }

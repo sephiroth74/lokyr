@@ -1401,11 +1401,14 @@ impl<B: Backend> App<B> {
                         "text.secondary"
                     })
                     .unwrap_or(Color::CLEAR),
+                close: tokens.get("text.secondary").unwrap_or(Color::CLEAR),
+                close_hover: tokens.get("button.hover.bg").unwrap_or(Color::CLEAR),
             };
+            let hovers = state.floating_close_hover == Some(floating);
             let title = shown.header_title(true).unwrap_or_default();
             let glyph = |text: &cells::CellText<'_>| weighed(font, text);
             items.extend(lokyr_ui_core::floating::frame(
-                &room, &title, look, &cell, size.scale, glyph,
+                &room, &title, look, &cell, size.scale, hovers, glyph,
             ));
             items.extend(drawn);
             items.extend(over);

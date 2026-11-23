@@ -249,6 +249,8 @@ pub(crate) struct Window<B: Backend> {
     pub(crate) divider_drag: Option<DividerDrag>,
     /// The floating pane that the pointer moves or resizes, while it does.
     pub(crate) floating_drag: Option<FloatingDrag>,
+    /// The floating pane whose close button the pointer is over, if one.
+    pub(crate) floating_close_hover: Option<PaneId>,
     /// Its panes' scroll bars, as its last frame laid them out; what it
     /// keeps of each between its frames; the bar under the pointer, if
     /// one; the drag of a knob under way, if one is; and when the next
@@ -480,6 +482,7 @@ impl<B: Backend> Window<B> {
             dividers: Vec::new(),
             divider_drag: None,
             floating_drag: None,
+            floating_close_hover: None,
             bars: Vec::new(),
             bars_kept: std::collections::BTreeMap::new(),
             bar_hover: None,

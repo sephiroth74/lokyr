@@ -66,6 +66,26 @@ fn on_header(room: &Room, position: Point, scale: f64) -> bool {
         && (top..top + f64::from(room.header.height) / scale).contains(&position.y)
 }
 
+/// Whether `position`, in points, is on `room`'s close button, on a display
+/// of `scale`.
+fn on_close(room: &Room, position: Point, scale: f64) -> bool {
+    let points = |pixels: i32| f64::from(pixels) / scale;
+    let (left, top) = (points(room.close.x), points(room.close.y));
+    (left..left + f64::from(room.close.width) / scale).contains(&position.x)
+        && (top..top + f64::from(room.close.height) / scale).contains(&position.y)
+}
+
+/// The floating pane of `rooms` in front at `position`, in points, on a
+/// display of `scale`, and its room.
+fn front_at(rooms: &[(PaneId, Room)], position: Point, scale: f64) -> Option<(PaneId, Room)> {
+    rooms.iter().rev().copied().find(|(_, room)| {
+        let points = |pixels: i32| f64::from(pixels) / scale;
+        let (left, top) = (points(room.outer.x), points(room.outer.y));
+        (left..left + f64::from(room.outer.width) / scale).contains(&position.x)
+            && (top..top + f64::from(room.outer.height) / scale).contains(&position.y)
+    })
+}
+
 /// The pointer's areas of the floating panes `rooms`, the one in front
 /// first, on a display of `scale`: for each, its edges and corners, of the
 /// frame's resize pointers, its header, of the arrow, and its box, of
@@ -362,14 +382,17 @@ impl<B: Backend> App<B> {
         if button != MouseButton::Left {
             return false;
         }
-        let Some(&(pane, room)) = state.floating_rooms.iter().rev().find(|(_, room)| {
-            let points = |pixels: i32| f64::from(pixels) / scale;
-            let (left, top) = (points(room.outer.x), points(room.outer.y));
-            (left..left + f64::from(room.outer.width) / scale).contains(&position.x)
-                && (top..top + f64::from(room.outer.height) / scale).contains(&position.y)
-        }) else {
+        let Some((pane, room)) = front_at(&state.floating_rooms, position, scale) else {
             return false;
         };
+        // Its close button closes it, as a pane's close asks while a
+        // program other than a shell runs there.
+        if on_close(&room, position, scale) {
+            state.floating_close_hover = None;
+            self.ask_close_part(platform, lokyr_kernel::plugins::Closing::Pane(pane));
+            platform.request_frame(window);
+            return true;
+        }
         let grab = match edge_at(&room, position, scale) {
             Some(edge) => FloatingGrab::Resize(edge),
             None if on_header(&room, position, scale) => FloatingGrab::Move,
@@ -436,6 +459,33 @@ impl<B: Backend> App<B> {
             platform.request_frame(window);
         }
         true
+    }
+
+    /// The pointer moved to `position` over `window`, or left it, of none:
+    /// the close button of the floating pane in front under it shows its
+    /// hover, which a frame draws as it changes.
+    pub(super) fn floating_hovered(
+        &mut self,
+        platform: &mut dyn Platform,
+        window: WindowId,
+        position: Option<Point>,
+    ) {
+        let Some(scale) = platform.window_size(window).map(|size| size.scale) else {
+            return;
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let hovered = position
+            .and_then(|position| {
+                front_at(&state.floating_rooms, position, scale)
+                    .filter(|(_, room)| on_close(room, position, scale))
+            })
+            .map(|(pane, _)| pane);
+        if state.floating_close_hover != hovered {
+            state.floating_close_hover = hovered;
+            platform.request_frame(window);
+        }
     }
 
     /// The keyboard moved in `window` as its floating panes changed, which
