@@ -294,3 +294,22 @@ fn a_line_that_wraps_into_the_prompt_s_row_comes_back_whole() {
     let wider = fed(40, 6, &terminal.archive(usize::MAX));
     assert_eq!(lines(&wider), ["$ x", &"x".repeat(25)]);
 }
+
+#[test]
+fn a_command_that_runs_as_the_app_quits_comes_back_ended() {
+    // `tail -f`, of output and no end, as the app quits.
+    let terminal = fed(
+        30,
+        6,
+        b"\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\tail -f log\x1b]133;C;cmdline_url=tail%20-f%20log\x1b\\\r\nline one\r\n",
+    );
+    assert!(terminal.commands()[0].end.is_none());
+    let restored = restored(&terminal, 30);
+    let commands = restored.commands();
+    assert_eq!(commands.len(), 1);
+    // Ended, of no status, at the quit's time.
+    assert!(commands[0].end.is_some());
+    assert_eq!(commands[0].status, None);
+    assert!(commands[0].ended.is_some());
+    assert_eq!(lines(&restored), ["$ tail -f log", "line one"]);
+}

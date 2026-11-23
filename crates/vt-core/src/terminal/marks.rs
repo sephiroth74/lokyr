@@ -691,7 +691,7 @@ impl ArchivedMark {
 }
 
 /// The milliseconds of `time` since the Unix epoch, none before it.
-fn millis(time: SystemTime) -> u128 {
+pub(super) fn millis(time: SystemTime) -> u128 {
     time.duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis())
 }

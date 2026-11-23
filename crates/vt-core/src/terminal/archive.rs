@@ -17,7 +17,7 @@
 use std::fmt::Write as _;
 
 use super::Terminal;
-use super::marks::ArchivedMark;
+use super::marks::{ArchivedMark, millis};
 use super::reports::sgr;
 use super::selection::{row_at, style_at};
 use crate::page::{Content, ListRow, RowFlag, Style, StyleId, Width};
@@ -127,6 +127,25 @@ impl Terminal {
                     }
                 }
             }
+        }
+        // A command kept that started and did not end, as one that ran as
+        // the app quit, ends now, of no status, so that it does not run for
+        // good once read back.
+        let last = marks
+            .iter()
+            .filter(|mark| written(mark))
+            .map(|mark| mark.order.0)
+            .max();
+        let running = last.is_some_and(|last| {
+            marks.iter().any(|mark| mark.order == (last, 2))
+                && !marks.iter().any(|mark| mark.order == (last, 3))
+        });
+        if running {
+            let _ = write!(
+                bytes,
+                "\x1b]133;D;lokyr_ended={}\x1b\\",
+                millis(std::time::SystemTime::now())
+            );
         }
         bytes.push_str("\x1b[0m");
         bytes.into_bytes()

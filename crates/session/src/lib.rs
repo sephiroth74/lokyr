@@ -753,9 +753,28 @@ fn replay(shared: &Shared, parser: &mut Parser, restored: &Restored) {
     line.push_str("\x1b[0;2m");
     line.push_str(&restored.line);
     line.push_str("\x1b[0m\r\n");
+    // What the rows left but the rows, as a file's bytes may: the pen and
+    // the modes of a soft reset, the mouse's, the focus's, bracketed paste,
+    // the alternate screen, the keyboard's flags, the titles; then the
+    // folder, the tab's color and the bells, which the new shell tells.
+    line.push_str(LEFT_AS_NEW);
     read(parser, line.as_bytes());
+    shared.terminal.lock_in_turn().forget_told();
     shared.changed(false);
 }
+
+/// The sequences that leave a terminal of the modes that a reading may set
+/// as a new one has them, its rows kept: DECSTR, the mouse's reports and
+/// encodings off, the focus's reports, bracketed paste, the primary screen,
+/// the keyboard's flags of none, and empty titles.
+const LEFT_AS_NEW: &str = concat!(
+    "\x1b[!p",
+    "\x1b[?9;1000;1001;1002;1003;1005;1006;1015;1016l",
+    "\x1b[?1004;2004l",
+    "\x1b[?1049l",
+    "\x1b[=0;1u",
+    "\x1b]0;\x1b\\",
+);
 
 fn read_output(
     shared: &Shared,
