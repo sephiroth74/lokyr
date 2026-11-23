@@ -94,7 +94,8 @@ pub struct SessionInfo {
 /// The folders that the sessions' switcher lists, each an absolute path:
 /// those of the config's `[sessions] folders`, in their order, and those
 /// that the panes' shells told last, the latest first, of this machine and
-/// there still.
+/// there still; each once, and none that a session was opened in, as
+/// their real paths tell, whatever the path that names them.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionFolders {
     /// The config's.

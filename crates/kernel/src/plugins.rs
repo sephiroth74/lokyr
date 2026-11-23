@@ -6475,14 +6475,20 @@ impl Host<'_, '_> {
                 .into_iter()
                 .map(|folder| folder.to_string_lossy().into_owned())
                 .collect();
-                let recent = self
-                    .context
-                    .workspace
+                let workspace = &self.context.workspace;
+                let recent = workspace
                     .recent_folders()
                     .iter()
                     .filter(|folder| std::path::Path::new(folder).is_dir())
                     .cloned()
                     .collect();
+                let sessions: Vec<&str> = workspace
+                    .sessions()
+                    .into_iter()
+                    .filter_map(crate::workspace::Session::folder)
+                    .collect();
+                let (configured, recent) =
+                    crate::session_folders::without_sessions(configured, recent, &sessions);
                 Response::SessionFolders(host::SessionFolders {
                     configured,
                     recent,

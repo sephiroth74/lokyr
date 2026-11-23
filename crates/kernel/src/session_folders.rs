@@ -1,7 +1,9 @@
 //! The folders that the sessions' switcher lists of the config's `[sessions]
 //! folders`: each a path from `/` or `~`, a folder of its own, or of a last
 //! part `*`, the folders in it, of one level, but those whose names start
-//! with a dot, in their names' order.
+//! with a dot, in their names' order; and, beside them, the recent ones,
+//! each once and none that a session was opened in, as their real paths
+//! tell, which a link or a shell's own path to a folder names otherwise.
 
 use std::path::{Path, PathBuf};
 
@@ -55,6 +57,37 @@ pub fn listed(patterns: &[String], home: Option<&Path>) -> Vec<PathBuf> {
     folders
 }
 
+/// The folders that the switcher lists, `configured` then `recent`, as
+/// they are named, each once and none of `sessions`, the folders that
+/// sessions were opened in, as their real paths tell, which the system
+/// resolves of their links, as `/tmp` of `/private/tmp` on macOS: a recent
+/// folder that is a configured one, or a session's, by another path, goes.
+pub fn without_sessions(
+    configured: Vec<String>,
+    recent: Vec<String>,
+    sessions: &[&str],
+) -> (Vec<String>, Vec<String>) {
+    let real =
+        |folder: &str| std::fs::canonicalize(folder).unwrap_or_else(|_| PathBuf::from(folder));
+    let mut seen: Vec<PathBuf> = sessions.iter().map(|folder| real(folder)).collect();
+    let mut keep = |folders: Vec<String>| -> Vec<String> {
+        folders
+            .into_iter()
+            .filter(|folder| {
+                let path = real(folder);
+                let fresh = !seen.contains(&path);
+                if fresh {
+                    seen.push(path);
+                }
+                fresh
+            })
+            .collect()
+    };
+    let configured = keep(configured);
+    let recent = keep(recent);
+    (configured, recent)
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -98,5 +131,28 @@ mod tests {
         // Of no home, the patterns of `~` list nothing.
         assert!(super::listed(&patterns, None).is_empty());
         let _ = fs::remove_dir_all(&home);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_of_a_session_or_listed_already_goes_whatever_its_path() {
+        let root = std::env::temp_dir().join(format!("lokyr-switcher-real-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for folder in ["src/api", "src/web", "notes"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        // A link to `src`, as `/tmp` is to `/private/tmp`.
+        std::os::unix::fs::symlink(root.join("src"), root.join("link")).unwrap();
+        let path = |folder: &str| root.join(folder).display().to_string();
+        let (configured, recent) = without_sessions(
+            vec![path("src/api"), path("src/web"), path("link/api")],
+            vec![path("link/web"), path("notes"), path("notes"), path("gone")],
+            &[&path("link/web")],
+        );
+        // `web` is the session's, by either path; `api` is listed once, and
+        // a folder that is not there still lists of its name.
+        assert_eq!(configured, [path("src/api")]);
+        assert_eq!(recent, [path("notes"), path("gone")]);
+        let _ = fs::remove_dir_all(&root);
     }
 }
