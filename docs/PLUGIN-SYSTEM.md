@@ -324,8 +324,8 @@ type FloatingPane = {
     height: number,
 }
 
--- A tab's floating panes, which show or hide together, from the one at the back to the one in front · not released
--- yet.
+-- A tab's floating panes, which show or hide together, from the one at the back to the one in front
+-- · not released yet.
 type FloatingPanes = {
     shown: boolean,
     panes: { FloatingPane }?,
@@ -621,8 +621,8 @@ type Event =
     | { kind: "group-changed", group: GroupId, window: WindowId }
     -- A session was made, renamed, switched to or from, or went, of no window left or closed · not released yet.
     | { kind: "session-changed", session: SessionId }
-    -- A window's broadcast of the typed input changed: where it goes, or a pane of it left out or taken back in · not
-    -- released yet.
+    -- A window's broadcast of the typed input changed: where it goes, or a pane of it left out or taken back in
+    -- · not released yet.
     | { kind: "broadcast-changed", window: WindowId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
@@ -953,8 +953,8 @@ type Cx = {
     recent_tabs: (window: WindowId) -> ({ TabInfo }?, Error?),
     -- A window's groups of tabs, in the order of their tabs.
     groups: (window: WindowId) -> ({ GroupInfo }?, Error?),
-    -- The sessions, in the order of their use, the active one first and the one before it second · not released
-    -- yet.
+    -- The sessions, in the order of their use, the active one first and the one before it second
+    -- · not released yet.
     sessions: () -> ({ SessionInfo }?, Error?),
     -- The folders that the sessions' switcher lists, of `process-read` · not released yet.
     session_folders: () -> (SessionFolders?, Error?),
@@ -1100,8 +1100,8 @@ type Cx = {
     -- drag of its edge left it, as the bar's view lays its tabs out across or down.
     set_tab_bar_place: (place: BarPlace) -> (boolean, Error?),
     -- Puts the plugin's view of the status bar on a side, "start", "center" or "end", in place of its manifest's
-    -- `[contributes.status-bar] side`, until it stops; of no capability, as it moves its own view alone · not released
-    -- yet.
+    -- `[contributes.status-bar] side`, until it stops; of no capability, as it moves its own view alone
+    -- · Since 1.4.
     set_status_bar_side: (side: StatusBarSide) -> (boolean, Error?),
     -- Puts the plugin's tab bar of one window at its own place, over the place of every window, as a window of a
     -- single tab shows its title in its titlebar; nil gives it that place again.
