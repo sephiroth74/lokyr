@@ -162,7 +162,7 @@ Each token, what it colors, and its rule, the color that it takes where a theme 
 | `separator` | The lines between groups | `text / 10%` |
 | `pane.divider` | The lines between split panes | `text / 16%` |
 | `pane.drop` | The half of a pane that a dragged tab lights | light `accent / 25%`, dark `accent / 30%` |
-| `broadcast.ring` | The ring round each pane that takes its window's broadcast of the typed input | `red` |
+| `broadcast.ring` | The ring round each pane that takes its window's broadcast of the typed input · not released yet | `red` |
 | `shadow` | The shadows under panels | light `#000000 / 25%`, dark `#000000 / 50%` |
 | `panel.bg` | The panels' background: the find bar, the palette, the menus | light `mix(background, foreground, 4%)`, dark `mix(background, foreground, 6%)` |
 | `panel.border` | The panels' border | light `text / 14%`, dark `text / 12%` |

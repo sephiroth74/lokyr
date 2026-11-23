@@ -28,7 +28,7 @@ Press ⌃⌘O: `fzf` opens in the middle of the tab. Press Escape: the popup clo
 
 ## Open, show and hide floating panes
 
-- **Shell › New Floating Pane**, ⇧⌥⌘F, opens a floating pane over the tab. Its shell starts in the folder of the pane you were in. Each new one opens a little down and to the right of the one before.
+- **Shell › New Floating Pane**, ⇧⌥⌘F, opens a floating pane over the tab. Its shell starts in the folder of the pane you were in, as [`new-directory`](CONFIGURATION.md#new-directory) says by default. Each new one opens a little down and to the right of the one before.
 - **Shell › Show or Hide Floating Panes**, ⌥⌘F, hides the tab's floating panes together, their programs running, and shows them again. On a tab with none, it opens one.
 - **Click a pane** to give it the keyboard, whether it floats or not. The floating pane that you click comes in front of the others.
 
@@ -55,10 +55,10 @@ Bind `pane.popup` to a key in the config's `[keys]`, with the command to run:
 "ctrl+cmd+n" = { command = "pane.popup", args = { command = "vim notes.md", folder = "~/notes" } }
 ```
 
-- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in. `folder` names another, such as `"~/notes"`: a folder that isn't there opens no popup, rather than running the command somewhere else.
+- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in, as [`new-directory`](CONFIGURATION.md#new-directory) says by default. `folder` names another, such as `"~/notes"`: a folder that isn't there opens no popup, rather than running the command somewhere else.
 - **Its size**: `width` and `height` are shares of the tab, from `0.05` to `1`: `0.8` and `0.7` when you leave them out.
 - **When it closes**: when the command exits with the status 0, or when you interrupt it, such as with Control-C, or Escape in `fzf`. When the command fails, the popup stays open with a line that tells how it ended, so that you can read its error, until you press a key. This holds whatever [`close-on-exit`](CONFIGURATION.md#close-on-exit) says.
-- **Your keys**: the command gets them all, Escape too.
+- **Your keys**: Escape and every key that no shortcut of Lokyr's takes go to the command. Lokyr's shortcuts, such as ⌘W or ⌥⌘F, still work.
 - **On its own**: a popup shows whether the tab's other floating panes show or not. ⌥⌘F shows or hides those under it, and the popup keeps the keyboard.
 
 You can move, resize and close a popup as any floating pane. A popup stays over its tab: it doesn't go into the splits, to another tab or to a window, and when the tab's last split pane closes, the popup closes with the tab.

@@ -42,7 +42,7 @@
 # The half of a pane that a dragged tab lights.
 "pane.drop" = { light = "accent / 25%", dark = "accent / 30%" }
 # The ring round each pane that takes its window's broadcast of the typed
-# input.
+# input · not released yet.
 "broadcast.ring" = "red"
 # The shadows under panels.
 "shadow" = { light = "#000000 / 25%", dark = "#000000 / 50%" }

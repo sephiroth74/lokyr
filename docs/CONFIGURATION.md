@@ -793,7 +793,7 @@ The folder that the first window's shell starts in, as Lokyr starts.
 
 <sub>Platforms: macOS</sub>
 
-The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's or a split's.
+The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's, a split's, a floating pane's or a popup's, of a popup that names no folder of its own · not released yet.
 
 | Values | Default |
 |---|---|
