@@ -13,7 +13,7 @@
 
 ## Budgets
 
-Figures are for Apple Silicon (M-series), release builds. They are targets to confirm with the F2 prototype. If one turns out to be unrealistic, changing it is an explicit decision, never a silent one. The [F0 baseline](bench/baseline-F0.md) of existing terminals revised the startup, footprint and idle budgets. Every release's measures stand side by side in [the releases' table](bench/RELEASES.md), with the features that each brought and what they cost.
+Figures are for Apple Silicon (M-series), release builds. Every release is measured against them before it ships; changing one is an explicit decision, never a silent one. The [F0 baseline](bench/baseline-F0.md) of existing terminals revised the startup, footprint and idle budgets. Every release's measures stand side by side in [the releases' table](bench/RELEASES.md), with the features that each brought and what they cost.
 
 | Metric | Target | How it is measured |
 |---|---|---|
@@ -26,6 +26,23 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 | Throughput | Within 10% of the faster of Ghostty and Alacritty, but in vtebench's bottom region, with its lines of one character | vtebench; `cat` of a 1 GB file, headless and on screen |
 | CPU per frame | ≤ 2 ms p99 (4K, 4 panes); a frame that draws glyphs that the atlas lacks, ≤ 10 ms, of which it starts looking up faces for 2 ms and draws glyphs for 2 ms at most, the rest left to the frames after, set on 31 October 2026 from [the glyphs' measures](bench/glyphs-F2-146.md) | `tracing` spans + signposts; `lokyr --bench output` |
 | Luau plugin activation | ≤ 5 ms, compilation included | `just bench-luau`: a fresh VM's making, its code's compilation and its `activate`, of the template that `sleip new` makes and of a plugin of 2000 lines, in both executions, and its VM's heap |
+
+## Where Lokyr stands
+
+Lokyr 1.4.0, of 22 November 2026, against its budgets, of [its A/B against 1.3.0](bench/ab-F5a-78.md) and the sessions after it, and against the other terminals of [the comparison of 21 and 22 November 2026](bench/compare-F5a-78.md), each of its version of that day. [The releases' table](bench/RELEASES.md) holds these figures for the last eight releases.
+
+| Measure | 1.4.0 | Budget | Against the other terminals |
+|---|---|---|---|
+| Startup, the gap to a minimal AppKit app's first window, of the notarized disk image | 20.8 ms, [its session](bench/startup-F5a-79.md) | ≤ 35 ms | The first window in 253 ms, the first of five; Alacritty 271 ms |
+| A key to its echo on screen at 60 Hz, in the app, median and 99th percentile | 13.6 and 27.5 ms | ≤ 33.3 and ≤ 75 ms | By Typometer, 22.4 and 29.5 ms, the first of five at both; Alacritty 23.6 at the median, kitty 33.1 at the 99th percentile |
+| Memory at rest, without the GPU's | 28.7 MB | ≤ 35 MB | The least of five; Alacritty 31.3 MB |
+| Interrupt wakeups at rest | 0.35 a second, and no package idle wakeup | ≤ 0.5 a second | The second of five; Alacritty 0.33 |
+| `cat` of 1 GiB of ASCII on screen | 304.4 MiB/s, [at rest](bench/rest-F5a-123.md) | ≥ 275 MiB/s | 293.5 MiB/s in the comparison, the second of five; Ghostty 305.5 |
+| The CPU's energy to show that GiB | — | — | 16.8 J, the least of five; kitty 42.2 J |
+| A frame on the CPU, ASCII, 99th percentile | 0.445 ms | ≤ 2 ms | — |
+| Scrolling by pixels, a trackpad's swipe, the frames a second | 60.8 at 60 Hz and 123.3 at 120 Hz, a frame at 99 % and 98.6 % of the refreshes, [its sessions](bench/ab-F5a-78.md#scrolling-by-pixels) | — | — |
+
+The figures of one session compare within it alone: a session's load and display move them by a few percent, which is why each release's A/B measures the release before beside it.
 
 ## How to measure
 
@@ -40,7 +57,7 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 - **Cold**: after `sudo purge` on macOS, or after dropping the page cache on Linux. `lokyr-bench startup --cold --warmup 0` runs `sudo purge` before each launch, after a `sudo -v`. Cold, a window shows before its first frame, as the font and the shaders come from the disk: the first window understates the startup.
 
 **Latency**
-- **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`) of the first frame with new output after it. `lokyr --bench latency [--keys <n>] [--flood]` opens a window whose program echoes the keys, `cat` in raw mode, and prints a histogram as JSON as it quits: of `n` keys that it posts to its own queue of events, one every 40 to 62 ms, or of those typed in it; with `--flood`, beside a window that `yes` floods. Later, a p50/p99 histogram is exposed over IPC.
+- **In the app**: for every key press, `NSEvent.timestamp` is compared with the presentation time (`MTLDrawable.presentedTime`) of the first frame with new output after it. `lokyr --bench latency [--keys <n>] [--flood]` opens a window whose program echoes the keys, `cat` in raw mode, and prints a histogram as JSON as it quits: of `n` keys that it posts to its own queue of events, one every 40 to 62 ms, or of those typed in it; with `--flood`, beside a window that `yes` floods.
 - **External check**: an occasional run with Typometer or a high-speed camera calibrates the internal measurement.
 
 **Idle**
@@ -79,11 +96,11 @@ Figures are for Apple Silicon (M-series), release builds. They are targets to co
 |---|---|---|---|
 | Micro: parser per scenario, cell writes, style dedup, reflow, search over 100k and 1M lines, shaping cache | `criterion` | locally and on the dedicated Mac | report |
 | Instruction counts of vtebench's scenarios and of text as `cat` prints it, against those of the commit that a push or a pull request starts from | `gungraun` (callgrind), `just instructions` | Linux CI (valgrind does not run on Apple Silicon) | +3% blocks |
-| End-to-end wall-clock times | `tools/bench` harness | dedicated Mac (self-hosted runner), nightly | +10% opens an issue |
+| End-to-end: startup, latency, idle, memory, output, frames on the CPU, the window's motion, scrolling | `lokyr-bench`, `lokyr --bench`, Typometer | each release's A/B on a Mac, against the release before, in one session of balanced orders | a budget missed, or a cost past the session's spread, is fixed or decided before the release |
 | Memory: opening and closing tabs, full scrollback | integration tests | macOS and Linux CI | the budgets above |
-| Binary size | `cargo bloat` | CI | a budget per release, with and without the Luau runtime |
+| The bundle's and the disk image's sizes | the release's build | each release | told in its notes |
 
-Results history is published (e.g. on bencher.dev, or as JSON in a branch of the repo), so trends are visible and not just jumps.
+Every release's results are kept in [`releases.json`](bench/releases.json) and shown side by side in [the releases' table](bench/RELEASES.md), with their charts, so trends are visible and not just jumps.
 
 ## Techniques and the budgets they serve
 
@@ -112,4 +129,4 @@ To compare Lokyr fairly with Ghostty, Alacritty, kitty, WezTerm and iTerm2:
 - multiple runs, reporting median and spread;
 - terminal versions recorded alongside the results.
 
-[The comparison of 31 October 2026](bench/compare-F2-134.md) takes these conditions, and more, with the tools of each measure; [the comparison of 13 November 2026](bench/compare-F3-268.md) takes them again, of every terminal's version of that day.
+[The comparison of 31 October 2026](bench/compare-F2-134.md) takes these conditions, and more, with the tools of each measure; [the comparison of 13 November 2026](bench/compare-F3-268.md) and [the comparison of 21 and 22 November 2026](bench/compare-F5a-78.md), of 1.4.0's code, take them again, of every terminal's version of each day. The README's charts are of the latest.
