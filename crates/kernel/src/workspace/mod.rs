@@ -422,6 +422,18 @@ impl Tab {
         &self.floating
     }
 
+    /// The layout's pane that had the keyboard last.
+    pub fn split_active(&self) -> PaneId {
+        self.split_active
+    }
+
+    /// Whether `pane` is one of its popups.
+    pub fn is_popup(&self, pane: PaneId) -> bool {
+        self.floating
+            .iter()
+            .any(|floating| floating.pane == pane && floating.popup)
+    }
+
     /// Whether its floating panes show.
     pub fn floating_shown(&self) -> bool {
         self.floating_shown

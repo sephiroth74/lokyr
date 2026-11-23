@@ -63,6 +63,7 @@ tip-layouts = Window › Sessions › Save Session as Layout… saves your windo
 tip-session-switcher = Press { $keys } to switch to a session, or to open one in a project's folder: add folders = ["~/src/*"] to a [sessions] section of your config to list your projects.
 tip-last-session = Press { $keys } to switch to the session that you used before, its windows where you left them.
 tip-floating = Press { $keys } for a pane that floats over the tab, such as a scratch shell; drag its title to move it, and press ⌥⌘F to hide it and show it again.
+tip-popup = Bind a key to `pane.popup` with a command, such as lazygit, to run it in a popup over the tab that closes as the command ends.
 tip-broadcast = Press { $keys } to type into every pane of the tab at once, such as the same command on several servers; a red ring marks each pane, and the same keys stop it.
 tip-smooth-scroll = Set smooth-scroll = true under [window] in the config, and the trackpad scrolls the text by pixels, gliding on as you lift your fingers; a mouse wheel's step glides too.
 tip-cursor-guide = Press { $keys }, or View › Show Cursor Guide, for a band across the cursor's row that shows where it is.

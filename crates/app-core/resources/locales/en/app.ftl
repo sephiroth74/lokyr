@@ -27,6 +27,7 @@ command-pane-new-floating = New Floating Pane
 command-pane-toggle-floating = Show or Hide Floating Panes
 command-pane-float = Float Pane
 command-pane-move-into-splits = Move Pane into Splits
+command-pane-popup = Open Popup
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…

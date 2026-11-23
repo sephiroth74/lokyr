@@ -19,6 +19,7 @@ command-pane-new-floating = Nuovo pannello flottante
 command-pane-toggle-floating = Mostra o nascondi i pannelli flottanti
 command-pane-float = Rendi flottante il pannello
 command-pane-move-into-splits = Sposta il pannello nelle divisioni
+command-pane-popup = Apri popup
 command-window-goto = Vai alla finestra
 command-window-next-agent = Vai al prossimo agente
 command-window-next = Passa alla finestra successiva

@@ -418,6 +418,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::Panes
             ),
             ("pane.new-floating", "New Floating Pane", Category::Panes),
+            ("pane.popup", "Open Popup", Category::Panes),
             ("pane.search-web", "Search the Web", Category::Edit),
             (
                 "pane.toggle-floating",

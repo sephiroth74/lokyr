@@ -690,14 +690,21 @@ impl Tab {
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
         scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
-        // Its layout's panes, then its floating ones, as the keyboard's
-        // index counts them and their files are named.
-        let panes = tab.panes();
+        // Its layout's panes, then its floating ones but its popups, which
+        // no quit keeps, as the keyboard's index counts them and their
+        // files are named: the keyboard of a popup the layout's pane's that
+        // had it last.
+        let panes: Vec<_> = tab
+            .panes()
+            .into_iter()
+            .filter(|&pane| !tab.is_popup(pane))
+            .collect();
         let index = |pane| panes.iter().position(|&id| id == pane);
         let layout = Layout::of(workspace, tab.layout(), directory, scrollback);
         let floating = tab
             .floating()
             .iter()
+            .filter(|floating| !floating.popup)
             .map(|floating| Floating {
                 pane: Layout::of(
                     workspace,
@@ -715,7 +722,9 @@ impl Tab {
             title: tab.own_title().map(str::to_owned),
             color: tab.own_color().map(hex),
             layout,
-            active: index(tab.active_pane()).unwrap_or(0),
+            active: index(tab.active_pane())
+                .or_else(|| index(tab.split_active()))
+                .unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
             pinned: tab.marks().pinned,
             group: None,

@@ -3,7 +3,9 @@
 //! show or hide together. The one that takes the keyboard comes in front;
 //! as they hide, the layout's pane that had it last takes it back. A
 //! floating pane closes as any pane, and the one in front takes the place
-//! of the layout's last pane as it closes, so that the tab stays.
+//! of the layout's last pane as it closes, so that the tab stays. A popup
+//! is a floating pane that runs a command, which closes as it ends, and
+//! which no quit keeps.
 
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 
@@ -93,6 +95,8 @@ pub struct Floating {
     pub pane: PaneId,
     /// Its frame over the tab's room.
     pub frame: FloatingFrame,
+    /// Whether it is a popup, of a command that closes it as it ends.
+    pub popup: bool,
 }
 
 impl Workspace {
@@ -100,9 +104,38 @@ impl Workspace {
     /// floating panes, which show: it takes the tab's keyboard. Its id, or
     /// none of a tab that is not there or the settings'.
     pub fn float_pane(&mut self, tab: TabId, new: Pane, frame: FloatingFrame) -> Option<PaneId> {
+        self.float(tab, new, frame, false)
+    }
+
+    /// Floats `new`, a popup of its command, over `tab`'s layout, as
+    /// [`Workspace::float_pane`] floats a pane.
+    pub fn open_popup(&mut self, tab: TabId, new: Pane, frame: FloatingFrame) -> Option<PaneId> {
+        self.float(tab, new, frame, true)
+    }
+
+    /// Whether `pane` is a popup.
+    pub fn is_popup(&self, pane: PaneId) -> bool {
+        self.tab_of
+            .get(&pane)
+            .and_then(|tab| self.tabs.get(tab))
+            .is_some_and(|tab| tab.is_popup(pane))
+    }
+
+    /// Floats `new` over `tab`'s layout, in `frame`, a popup or not.
+    fn float(
+        &mut self,
+        tab: TabId,
+        new: Pane,
+        frame: FloatingFrame,
+        popup: bool,
+    ) -> Option<PaneId> {
         let shown = self.tabs.get_mut(&tab)?;
         let id = new.id();
-        shown.floating.push(Floating { pane: id, frame });
+        shown.floating.push(Floating {
+            pane: id,
+            frame,
+            popup,
+        });
         shown.floating_shown = true;
         self.panes.insert(id, new);
         self.tab_of.insert(id, tab);
@@ -163,7 +196,11 @@ impl Workspace {
         if shown.zoomed == Some(pane) {
             shown.zoomed = None;
         }
-        shown.floating.push(Floating { pane, frame });
+        shown.floating.push(Floating {
+            pane,
+            frame,
+            popup: false,
+        });
         shown.floating_shown = true;
         self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
         self.focus_pane(pane);

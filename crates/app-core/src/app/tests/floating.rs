@@ -149,3 +149,111 @@ fn a_floating_pane_s_context_menu_moves_it_into_the_splits_and_a_split_one_float
     let items = open(&mut fake, &mut app, Point { x: 10.0, y: 10.0 });
     assert!(items.contains(&"Float Pane".to_owned()), "{items:?}");
 }
+
+/// The arguments of a popup of `command`, and of `more`.
+fn popup_of(command: &str, more: &[(&str, Value)]) -> Args {
+    let mut args = Args::new();
+    args.insert("command".to_owned(), Value::String(command.to_owned()));
+    for (name, value) in more {
+        args.insert((*name).to_owned(), value.clone());
+    }
+    args
+}
+
+/// The text of the rows of `pane`'s screen that show some.
+fn pane_rows(app: &App, pane: PaneId) -> Vec<String> {
+    let pane = app.workspace.pane(pane).unwrap();
+    (0..8)
+        .filter_map(|row| {
+            pane.line_text(row, 0)
+                .map(|(text, _)| text.trim_end().to_owned())
+        })
+        .filter(|text| !text.is_empty())
+        .collect()
+}
+
+#[test]
+fn a_popup_closes_as_its_command_ends_or_is_interrupted_and_a_failed_one_waits_for_a_key() {
+    let (mut fake, mut app, window) = started_running(idle());
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let first = app.focused(window).unwrap();
+    // In the room's middle, of the shares that a popup takes, with the
+    // keyboard; Escape goes to its program, which it leaves open.
+    app.run(&mut fake, POPUP, popup_of("read line", &[]));
+    let popup = app.focused(window).unwrap();
+    assert_ne!(popup, first);
+    assert!(app.workspace.is_popup(popup));
+    assert_eq!(
+        frame_of(&app, popup),
+        FloatingFrame::centered(0.8, 0.7),
+        "{:?}",
+        app.workspace.tab(tab).unwrap().floating()
+    );
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", Modifiers::NONE, true),
+    );
+    assert_eq!(app.focused(window), Some(popup));
+    // Its command's end of 0, as Return ends the read, closes it, the
+    // layout's pane taking the keyboard back.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", Modifiers::NONE, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(popup).is_none()
+    });
+    assert_eq!(app.focused(window), Some(first));
+    // An interrupt closes it too, the signal's or the status of a program
+    // that takes it, as fzf's of Escape.
+    for command in ["kill -INT $$", "exit 130"] {
+        app.run(&mut fake, POPUP, popup_of(command, &[]));
+        let interrupted = app.focused(window).unwrap();
+        assert_ne!(interrupted, first);
+        run_until(&mut fake, &mut app, |_, app| {
+            app.workspace.pane(interrupted).is_none()
+        });
+    }
+    // A failed one, in its folder and of its shares, keeps its screen and
+    // the line of its status until a key closes it, whatever
+    // `close-on-exit` says.
+    app.config.window.close_on_exit = CloseOnExit::Always;
+    let folder = real_directory("popup-folder");
+    app.run(
+        &mut fake,
+        POPUP,
+        popup_of(
+            "pwd; exit 3",
+            &[
+                (
+                    "folder",
+                    Value::String(folder.to_string_lossy().into_owned()),
+                ),
+                ("width", Value::Number(0.5)),
+                ("height", Value::Integer(1)),
+            ],
+        ),
+    );
+    let failed = app.focused(window).unwrap();
+    assert_eq!(frame_of(&app, failed), FloatingFrame::centered(0.5, 1.0));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(failed).is_some_and(Pane::is_kept)
+    });
+    let rows = pane_rows(&app, failed);
+    assert_eq!(rows[0], folder.to_string_lossy(), "{rows:?}");
+    assert!(rows.iter().any(|row| row.contains("code 3")), "{rows:?}");
+    fake.send(&mut app, window, key());
+    assert!(app.workspace.pane(failed).is_none());
+    assert_eq!(app.focused(window), Some(first));
+    assert_eq!(fake.windows().count(), 1);
+    // Of no command, or of a blank one, none opens.
+    app.run(&mut fake, POPUP, Args::new());
+    app.run(&mut fake, POPUP, popup_of("  ", &[]));
+    assert!(app.workspace.tab(tab).unwrap().floating().is_empty());
+    assert_eq!(app.focused(window), Some(first));
+    let _ = std::fs::remove_dir_all(&folder);
+}

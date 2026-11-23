@@ -249,6 +249,9 @@ const TOGGLE_FLOATING: &str = "pane.toggle-floating";
 /// shows.
 const FLOAT_PANE: &str = "pane.float";
 const DOCK_PANE: &str = "pane.move-into-splits";
+/// The command that opens a popup of its `command` over the active tab's
+/// panes, which closes as the command ends.
+const POPUP: &str = "pane.popup";
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -656,6 +659,9 @@ pub struct App<B: Backend> {
     /// The program that an `ssh` link runs, `ssh` as the system finds it,
     /// or the tests' own.
     ssh: PathBuf,
+    /// The shell that runs a popup's command, of its `-c`, in place of the
+    /// login shell, as the tests give one.
+    popup_shell: Option<PathBuf>,
     /// The config in force.
     config: Config,
     /// The file of the config, if it has one.
@@ -1114,6 +1120,7 @@ impl<B: Backend> App<B> {
             program: Program::LoginShell,
             man: None,
             ssh: PathBuf::from("ssh"),
+            popup_shell: None,
             config,
             config_file: path.map(|path| ConfigFile {
                 path,
@@ -3354,17 +3361,24 @@ impl<B: Backend> App<B> {
             })
             .collect();
         for (window, id, page) in panes {
+            let popup = self.workspace.is_popup(id);
             let Some(pane) = self.workspace.pane_mut(id) else {
                 continue;
             };
             // A man page's window keeps the page, from its top, and a
-            // script's pane what it printed.
+            // script's pane what it printed; a popup closes of its own
+            // rule, whatever `close-on-exit` says.
             let close = if page || self.scripts.contains(&id) {
                 CloseOnExit::Never
             } else {
                 close
             };
-            match pane.exited(close, now, &self.texts) {
+            let exited = if popup {
+                pane.popup_exited(now, &self.texts)
+            } else {
+                pane.exited(close, now, &self.texts)
+            };
+            match exited {
                 Some(Exited::Close) => {
                     closing.push((window, id));
                     ended.push(window);
@@ -3593,6 +3607,7 @@ impl<B: Backend> App<B> {
                     self.float_or_dock(platform, name == FLOAT_PANE);
                     Ok(())
                 }
+                POPUP => self.open_popup(platform, &args),
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -6104,6 +6119,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (TOGGLE_FLOATING, "pane-toggle-floating", Category::Panes),
         (FLOAT_PANE, "pane-float", Category::Panes),
         (DOCK_PANE, "pane-move-into-splits", Category::Panes),
+        (POPUP, "pane-popup", Category::Panes),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -6133,6 +6149,28 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 kind: Kind::String,
                 default: None,
             }]
+        } else if name == POPUP {
+            // Its command, of no default; its folder, the pane's in front's
+            // for none; and its shares of the tab's room.
+            let param = |name: &str, kind, default| Param {
+                name: name.to_owned(),
+                kind,
+                default,
+            };
+            vec![
+                param("command", Kind::String, None),
+                param("folder", Kind::String, Some(Value::String(String::new()))),
+                param(
+                    "width",
+                    Kind::Number,
+                    Some(Value::Number(floating::POPUP_WIDTH)),
+                ),
+                param(
+                    "height",
+                    Kind::Number,
+                    Some(Value::Number(floating::POPUP_HEIGHT)),
+                ),
+            ]
         } else if name == NEW_THEME {
             ["theme", "variant"]
                 .map(|name| Param {
@@ -6149,6 +6187,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         // the workspace's writes, and a layout's commands typed into its
         // shells.
         let capabilities = if name == OPEN_LAYOUT
+            || name == POPUP
             || BROADCASTS.contains(&name)
             || name == LEAVE_BROADCAST
             || name == JOIN_BROADCAST

@@ -1475,6 +1475,37 @@ impl Pane {
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.
     /// The line that a kept screen shows is in `texts`.
     pub fn exited(&mut self, close: CloseOnExit, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| match close {
+                CloseOnExit::Always => true,
+                CloseOnExit::Never => false,
+                CloseOnExit::Clean => exit.is_some_and(Exit::success),
+            },
+            now,
+            texts,
+        )
+    }
+
+    /// What a popup does once its command has ended, as
+    /// [`Pane::exited`] tells it: it closes as the command exits with 0 or
+    /// an interrupt ends it, as Control-C, and keeps its screen otherwise,
+    /// with the line of how the command ended, until a key closes it.
+    pub fn popup_exited(&mut self, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| exit.is_some_and(|exit| exit.success() || exit.interrupted()),
+            now,
+            texts,
+        )
+    }
+
+    /// What the window does once the program has ended, `closes` of its
+    /// status telling whether it closes, as [`Pane::exited`] tells it.
+    fn ended_as(
+        &mut self,
+        closes: impl FnOnce(Option<Exit>) -> bool,
+        now: Instant,
+        texts: &Texts,
+    ) -> Option<Exited> {
         if self.kept {
             return None;
         }
@@ -1494,12 +1525,7 @@ impl Pane {
         };
         let told = session.lock().command_status();
         let exit = status(exit, told, self.through_login);
-        let closes = match close {
-            CloseOnExit::Always => true,
-            CloseOnExit::Never => false,
-            CloseOnExit::Clean => exit.is_some_and(Exit::success),
-        };
-        if closes {
+        if closes(exit) {
             return Some(Exited::Close);
         }
         self.kept = true;

@@ -719,6 +719,44 @@ fn sessions_past_the_bounds_keep_within_them_the_active_one_whole() {
 }
 
 #[test]
+fn a_tab_keeps_no_popup_and_the_keyboard_of_one_goes_to_its_layout() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane());
+    let tab = workspace.window(window).unwrap().active_tab();
+    let first = workspace.tab(tab).unwrap().active_pane();
+    workspace
+        .float_pane(
+            tab,
+            pane(),
+            workspace::FloatingFrame::new(0.1, 0.2, 0.5, 0.4),
+        )
+        .unwrap();
+    let popup = workspace
+        .open_popup(tab, pane(), workspace::FloatingFrame::centered(0.8, 0.7))
+        .unwrap();
+    assert!(workspace.is_popup(popup));
+    assert_eq!(workspace.tab(tab).unwrap().active_pane(), popup);
+    let mut names = Vec::new();
+    let kept = Kept::of(
+        &workspace,
+        &[(window, None)],
+        Some(window),
+        |_| None,
+        |_, index| {
+            names.push(index);
+            None
+        },
+    );
+    // The layout's pane and the floating one, the popup none; the keyboard
+    // the layout's pane's, which had it last.
+    assert_eq!(names, [0, 1]);
+    let held = &kept.windows[0].tabs[0];
+    assert_eq!(held.floating.len(), 1);
+    assert_eq!(held.active, 0);
+    assert_eq!(workspace.tab(tab).unwrap().split_active(), first);
+}
+
+#[test]
 fn a_tab_keeps_its_floating_panes_their_frames_and_whether_they_show() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane());

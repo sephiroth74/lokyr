@@ -21,6 +21,7 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
 - **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · not released yet
 - **Floating panes** over a tab's splits, such as a scratch shell you show and hide with a key. · not released yet
+- **Popups**: a key of your own runs a command, such as `lazygit` or `fzf`, in a floating pane that closes as the command ends. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -226,6 +227,23 @@ Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that flo
 - **Keep them**: they come back with their tab when Lokyr opens your windows again, each where it was, with what it showed when [`restore-scrollback`](CONFIGURATION.md#restore-scrollback) is on.
 
 **Try it**: press ⇧⌥⌘F and run `top`. Press ⌥⌘F to hide it and ⌥⌘F again to see it still running.
+
+### Run a command in a popup
+
+A popup is a floating pane in the middle of the tab that runs one command and closes when the command ends, such as a Git client or a fuzzy finder. Bind `pane.popup` to a key in the config's `[keys]`, with the command to run: · not released yet
+
+```toml
+[keys]
+"ctrl+cmd+g" = { command = "pane.popup", args = { command = "lazygit" } }
+"ctrl+cmd+o" = { command = "pane.popup", args = { command = "fzf | xargs open", width = 0.6, height = 0.5 } }
+```
+
+- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in. `folder` names another, such as `"~/src"`.
+- **Its size**: `width` and `height` are shares of the tab, from `0.05` to `1`: `0.8` and `0.7` when you leave them out.
+- **When it closes**: when the command exits with the status 0, or when you interrupt it, such as with Control-C, or Escape in `fzf`. When it fails, the popup stays open with a line that tells how it ended, so that you can read its error, until you press a key. This holds whatever [`close-on-exit`](CONFIGURATION.md#close-on-exit) says.
+- **Your keys**: the command gets them all, Escape too.
+
+A popup hides with the tab's other floating panes, and Lokyr does not open it again when it opens your windows.
 
 ## Type into several panes at once
 

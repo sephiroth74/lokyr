@@ -2,12 +2,16 @@
 //! of the tab's shown or hidden, from the Shell menu; a pane of the splits
 //! that floats, and a floating one that goes into the splits, from its
 //! context menu; a floating pane moved by its header and resized by its
-//! edges and corners, of the frame's resize pointers.
+//! edges and corners, of the frame's resize pointers; and a popup, a
+//! floating pane of a command that a binding names, which closes as the
+//! command ends.
 
+use lokyr_kernel::commands::{Args, Code, Error, Value};
 use lokyr_kernel::workspace::{FloatingFrame, Pane, PaneId};
 use lokyr_platform_core::{
     FrameEdge, MouseButton, Platform, Point, PointerArea, PointerShape, Size, WindowId,
 };
+use lokyr_pty::Program;
 use lokyr_ui_core::floating::Room;
 
 use super::{App, spawn};
@@ -22,6 +26,11 @@ const EDGE: f64 = 5.0;
 /// and how far each one more moves from the one before, down and right.
 const NEW_SHARE: f64 = 0.6;
 const CASCADE: f64 = 0.04;
+
+/// The shares of the tab's room that a popup takes across and down, of a
+/// command that asks for none.
+pub(super) const POPUP_WIDTH: f64 = 0.8;
+pub(super) const POPUP_HEIGHT: f64 = 0.7;
 
 /// The edge or the corner of `room`'s box at `position`, in points, on a
 /// display of `scale`, within [`EDGE`] of it; none inside.
@@ -154,26 +163,89 @@ impl<B: Backend> App<B> {
     /// focused one, in the room's middle, each one more down and right of
     /// the one before.
     pub(super) fn new_floating_pane(&mut self, platform: &mut dyn Platform) {
+        self.float_new(platform, None, None, false, |count| {
+            let offset = CASCADE * (count % 5) as f64;
+            let start = (1.0 - NEW_SHARE) / 2.0 + offset - CASCADE * 2.0;
+            FloatingFrame::new(start, start, NEW_SHARE, NEW_SHARE)
+        });
+    }
+
+    /// Opens a popup over the active tab of the window that acts, or has
+    /// the focus, as `args` say: its `command`, which the login shell runs,
+    /// in its `folder`, the focused pane's of none, in the room's middle of
+    /// its `width` and `height`, shares of the room.
+    pub(super) fn open_popup(
+        &mut self,
+        platform: &mut dyn Platform,
+        args: &Args,
+    ) -> Result<(), Error> {
+        let command = match args.get("command") {
+            Some(Value::String(command)) if !command.trim().is_empty() => command.clone(),
+            _ => {
+                return Err(Error::new(
+                    Code::MissingArgument,
+                    "a popup takes the `command` that it runs",
+                ));
+            }
+        };
+        let folder = match args.get("folder") {
+            Some(Value::String(folder)) if !folder.is_empty() => Some(folder.clone()),
+            _ => None,
+        };
+        let share = |name: &str, default: f64| match args.get(name) {
+            Some(Value::Number(share)) => *share,
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "a share is 1 at most; a larger one is the whole room"
+            )]
+            Some(Value::Integer(share)) => *share as f64,
+            _ => default,
+        };
+        let (width, height) = (share("width", POPUP_WIDTH), share("height", POPUP_HEIGHT));
+        let program = match &self.popup_shell {
+            Some(shell) => Program::command(shell, ["-c", command.as_str()]),
+            None => Program::LoginCommand {
+                command: command.into(),
+            },
+        };
+        self.float_new(platform, Some(&program), folder.as_deref(), true, |_| {
+            FloatingFrame::centered(width, height)
+        });
+        Ok(())
+    }
+
+    /// Floats a new pane, a popup or not, over the active tab of the window
+    /// that acts, or has the focus, of `program`, the app's for none, in
+    /// `folder`, the focused pane's for none, in the frame that `frame`
+    /// gives of how many floating panes the tab has; whether it opened.
+    fn float_new(
+        &mut self,
+        platform: &mut dyn Platform,
+        program: Option<&Program>,
+        folder: Option<&str>,
+        popup: bool,
+        frame: impl FnOnce(usize) -> FloatingFrame,
+    ) -> bool {
         let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
-            return;
+            return false;
         };
         let Some(shown) = self.windows.get(&window).map(|state| state.window) else {
-            return;
+            return false;
         };
         let Some(tab) = self
             .workspace
             .window(shown)
             .map(lokyr_kernel::workspace::Window::active_tab)
         else {
-            return;
+            return false;
         };
         let Some(count) = self.workspace.tab(tab).map(|held| held.floating().len()) else {
-            return;
+            return false;
         };
         let near = self.workspace.focused(shown).map(Pane::id);
         let dark = platform.appearance() == lokyr_platform_core::Appearance::Dark;
         let mut panes = spawn::Spawner {
-            program: &self.program,
+            program: program.unwrap_or(&self.program),
             environment: &self.environment,
             budget: &self.budget,
             colors: &self.theme.variant(dark).colors,
@@ -186,15 +258,19 @@ impl<B: Backend> App<B> {
             &mut panes,
             PaneId::new(),
             near.and_then(|near| self.workspace.pane(near)),
-            None,
+            folder,
         );
-        let offset = CASCADE * (count % 5) as f64;
-        let start = (1.0 - NEW_SHARE) / 2.0 + offset - CASCADE * 2.0;
-        let frame = FloatingFrame::new(start, start, NEW_SHARE, NEW_SHARE);
-        if self.workspace.float_pane(tab, pane, frame).is_some() {
+        let frame = frame(count);
+        let opened = if popup {
+            self.workspace.open_popup(tab, pane, frame)
+        } else {
+            self.workspace.float_pane(tab, pane, frame)
+        };
+        if opened.is_some() {
             self.keyboard_moved_in(platform, window);
             platform.request_frame(window);
         }
+        opened.is_some()
     }
 
     /// Shows the floating panes of the active tab of the window that acts,

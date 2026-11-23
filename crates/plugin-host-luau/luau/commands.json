@@ -783,6 +783,45 @@
     "when": "pane.focused"
   },
   {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.popup",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "command"
+      },
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "folder"
+      },
+      {
+        "default": {
+          "number": 0.8
+        },
+        "kind": "number",
+        "name": "width"
+      },
+      {
+        "default": {
+          "number": 0.7
+        },
+        "kind": "number",
+        "name": "height"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Popup",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "view",
     "name": "pane.prompt-next",
