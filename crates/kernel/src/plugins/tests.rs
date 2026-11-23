@@ -3546,6 +3546,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 status: None,
                 pinned: false,
                 group: None,
+                broadcast: false,
             },
             host::TabInfo {
                 id: tab,
@@ -3569,6 +3570,7 @@ fn a_plugin_opens_a_tab_and_a_split_of_the_ids_that_its_call_gets() {
                 status: None,
                 pinned: false,
                 group: None,
+                broadcast: false,
             },
         ]
     );

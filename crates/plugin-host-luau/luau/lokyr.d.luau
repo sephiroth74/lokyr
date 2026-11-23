@@ -1098,6 +1098,7 @@ export type TabInfo = {
     status: TabStatus?,
     pinned: boolean?,
     group: GroupId?,
+    broadcast: boolean?,
 }
 
 export type TabKind =

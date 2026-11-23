@@ -622,6 +622,7 @@ mod tests {
             ("separator", veil(0.1)),
             ("pane.divider", veil(0.16)),
             ("pane.drop", accent.with_alpha(pick(0.25, 0.3))),
+            ("broadcast.ring", palette[1]),
             ("shadow", shadow.with_alpha(pick(0.25, 0.5))),
             ("panel.bg", panel),
             ("panel.border", veil(pick(0.14, 0.12))),

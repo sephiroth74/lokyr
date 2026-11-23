@@ -158,7 +158,7 @@ const PINNED: &str = "bar-pinned";
 const GROUP: &str = "bar-group";
 
 /// The messages of what accessibility calls a tab's marks.
-const MARKS: [&str; 8] = [
+const MARKS: [&str; 9] = [
     "bar-mark-activity",
     "bar-mark-bell",
     "bar-mark-running",
@@ -167,6 +167,7 @@ const MARKS: [&str; 8] = [
     "bar-mark-waiting",
     "bar-mark-done",
     "bar-mark-error",
+    "bar-mark-broadcast",
 ];
 
 static CATALOGS: [(&str, &str); 2] = [
@@ -810,6 +811,7 @@ impl Tabs {
             waiting: marked(cx, 5, marks.waiting),
             done: marked(cx, 6, marks.done),
             error: marked(cx, 7, marks.error),
+            broadcast: marked(cx, 8, marks.broadcast),
         };
         let texts = bar::BarTexts {
             marks,

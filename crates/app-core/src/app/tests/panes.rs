@@ -1031,3 +1031,63 @@ fn a_broadcast_s_keys_text_and_pastes_reach_each_pane_that_takes_them_of_its_own
     settle(&mut fake, &mut app);
     assert!(!read_of(&app, b).contains("m1"), "{}", read_of(&app, b));
 }
+
+/// The rectangles of `window`'s last frame of the color of the theme's
+/// `token`.
+fn rects_of(app: &App, window: WindowId, token: &str) -> Vec<lokyr_render_core::Rect> {
+    let state = &app.windows[&window];
+    let color = state
+        .chrome_tokens
+        .as_ref()
+        .and_then(|(_, tokens)| tokens.get(token))
+        .expect("the token's color");
+    let surface = state.surface.as_ref().expect("a surface");
+    let last = surface.last.lock().unwrap();
+    last.as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_render_core::Item::Rect { rect, color: of } if *of == color => Some(*rect),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn each_pane_that_takes_the_broadcast_shows_a_ring_of_its_color() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
+    let shown = app.windows[&window].window;
+    let frame = |fake: &mut Fake, app: &mut App| {
+        fake.send(app, window, WindowEvent::Frame);
+        rects_of(app, window, "broadcast.ring")
+    };
+    // Off: no ring.
+    assert!(frame(&mut fake, &mut app).is_empty());
+    // To the tab's panes: four sides round each, within its room.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    let rings = frame(&mut fake, &mut app);
+    assert_eq!(rings.len(), 8, "{rings:?}");
+    let rooms: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .views
+        .iter()
+        .map(|view| view.rect)
+        .collect();
+    for room in &rooms {
+        let within = |rect: &lokyr_render_core::Rect| {
+            rect.x >= room.x
+                && rect.y >= room.y
+                && rect.x + rect.width as i32 <= room.x + room.width as i32
+                && rect.y + rect.height as i32 <= room.y + room.height as i32
+        };
+        assert_eq!(rings.iter().filter(|rect| within(rect)).count(), 4);
+    }
+    // A pane left out: the other's ring alone.
+    assert!(app.workspace.set_pane_broadcast(b, true));
+    assert_eq!(frame(&mut fake, &mut app).len(), 4);
+    let _ = a;
+    // Off again: none.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Off));
+    assert!(frame(&mut fake, &mut app).is_empty());
+}

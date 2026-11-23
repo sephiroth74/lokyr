@@ -19,6 +19,7 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **A tab you closed**, back with ⇧⌘T. · Since 1.3
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
 - **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
+- **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -212,6 +213,20 @@ style = "seamless"
 
 **Try it**: with two tabs open, add these lines to your config file and save it: the tabs move to a column on the left.
 
+## Type into several panes at once
+
+Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and what you type into the pane with the keyboard goes to every pane of the tab too: your keys, the text of an input method, and what you paste with ⌘V or drop. Each pane takes it as its own program asks, such as with bracketed paste in one and without it in another. A red ring marks each pane that takes it, and a megaphone marks the tab. · not released yet
+
+- **To the Window's Panes**, ⇧⌥⌘I, sends it to every pane of the window, in all its tabs.
+- **Press the same keys again**, or choose Off, to type into one pane again.
+- **Leave a pane out**: right-click it and choose Leave Broadcast. It then takes only what you type into it. Join Broadcast takes it back.
+- **A paste of several lines** that a program would run line by line asks once for all the panes.
+- **Clicks and scrolls** go to one pane, and a pane whose program ended takes nothing.
+
+The ring's color is the theme's [`broadcast.ring`](themes/authoring.md), red by default.
+
+**Try it**: split a tab with ⌘D, press ⌥⌘I, and type `uname -n`: both panes run it. Press ⌥⌘I again to type into one pane.
+
 ## Settings
 
 ```toml
@@ -246,6 +261,8 @@ close-button = "hover"            # "always" or "never"
 | ⇧⌘I | `cmd+shift+i` | Give the window a title |
 | ⌃⌘S | `cmd+ctrl+s` | Switch to a session, or open one in a folder · not released yet |
 | ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
+| ⌥⌘I | `cmd+alt+i` | Send what you type to every pane of the tab, or to one pane again · not released yet |
+| ⇧⌥⌘I | `cmd+alt+shift+i` | Send what you type to every pane of the window, or to one pane again · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |

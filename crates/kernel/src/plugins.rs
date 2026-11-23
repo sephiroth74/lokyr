@@ -8019,6 +8019,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent_message: marks.agent_message.filter(|_| reads),
         pinned: marks.pinned,
         group: tab.group().map(Into::into),
+        broadcast: workspace.broadcasts_tab(tab.id()),
         status: marks
             .status
             .filter(|_| reads)
@@ -8088,6 +8089,7 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     })
 }
 

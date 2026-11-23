@@ -6,7 +6,7 @@
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::BroadcastTo;
 
-use super::{PaneId, WindowId, Workspace};
+use super::{PaneId, TabId, WindowId, Workspace};
 
 impl Workspace {
     /// Where `window`'s typed input goes beside the pane that has its
@@ -42,6 +42,23 @@ impl Workspace {
             }
         }
         true
+    }
+
+    /// Whether the panes of `tab` take its window's broadcast: every tab's
+    /// of a broadcast to the window's panes, the window's active tab's of
+    /// a broadcast to the tab's.
+    pub fn broadcasts_tab(&self, tab: TabId) -> bool {
+        let Some(window) = self.window_of_tab(tab) else {
+            return false;
+        };
+        match self.broadcast(window) {
+            BroadcastTo::Off => false,
+            BroadcastTo::Tab => self
+                .windows
+                .get(&window)
+                .is_some_and(|shown| shown.active == tab),
+            BroadcastTo::Window => true,
+        }
     }
 
     /// The panes of `window` left out of its broadcast, in their order.

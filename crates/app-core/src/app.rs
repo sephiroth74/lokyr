@@ -58,6 +58,7 @@ mod access;
 pub(crate) use access::TreeCursor;
 mod agents;
 mod asks;
+mod broadcast;
 pub(crate) mod chrome;
 mod claude_code;
 mod consent;
@@ -219,6 +220,23 @@ const SESSIONS: [&str; 5] = [
     SAVE_LAYOUT,
     CLOSE_SESSION,
 ];
+
+/// The command that sends the window's typed input to the pane with its
+/// keyboard alone.
+const BROADCAST_OFF: &str = "window.broadcast-off";
+/// The command that sends the window's typed input to every pane of its
+/// tab too, or to the pane with its keyboard alone again.
+const BROADCAST_TAB: &str = "window.broadcast-to-tab";
+/// The command that sends the window's typed input to every pane of the
+/// window too, or to the pane with its keyboard alone again.
+const BROADCAST_WINDOW: &str = "window.broadcast-to-window";
+/// The broadcast's commands, which the Shell menu's Broadcast Input shows,
+/// ticked as the window in front broadcasts.
+const BROADCASTS: [&str; 3] = [BROADCAST_OFF, BROADCAST_TAB, BROADCAST_WINDOW];
+/// The commands that leave the pane with the keyboard out of its window's
+/// broadcast and take it back in, which its context menu shows.
+const LEAVE_BROADCAST: &str = "pane.leave-broadcast";
+const JOIN_BROADCAST: &str = "pane.join-broadcast";
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -3543,6 +3561,14 @@ impl<B: Backend> App<B> {
                     }
                     Ok(())
                 }
+                BROADCAST_OFF | BROADCAST_TAB | BROADCAST_WINDOW => {
+                    self.broadcast_to(platform, name);
+                    Ok(())
+                }
+                LEAVE_BROADCAST | JOIN_BROADCAST => {
+                    self.leave_broadcast(platform, name == LEAVE_BROADCAST);
+                    Ok(())
+                }
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -4655,9 +4681,17 @@ impl<B: Backend> App<B> {
             | WorkspaceEvent::PaneChanged { .. }
             | WorkspaceEvent::GroupChanged { .. }
             | WorkspaceEvent::SessionChanged { .. } => return,
-            // The panes that take the window's input, which it marks.
+            // The panes that take the window's input, which it rings, and
+            // the menu's ticks of the window in front.
             WorkspaceEvent::BroadcastChanged { window } => {
-                vec![showing(self, workspace::WindowId::of(window.0))]
+                let front = platform.focused_window();
+                self.show_broadcast(platform, front);
+                let shown = showing(self, workspace::WindowId::of(window.0));
+                // What accessibility calls its panes changes too.
+                if let Some(state) = shown.and_then(|shown| self.windows.get_mut(&shown)) {
+                    state.access_changed = true;
+                }
+                vec![shown]
             }
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 self.close_strayed_panels(platform);
@@ -5746,6 +5780,7 @@ impl<B: Backend> App<B> {
                     self.session_focused(platform, window);
                     self.show_floating(platform, Some(window));
                     self.show_opacity(platform, Some(window));
+                    self.show_broadcast(platform, Some(window));
                 }
                 // The plugins hear it, but of a question on the window, which
                 // takes the focus as a part of it, and of the settings' window
@@ -6032,6 +6067,15 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (SWITCH_SESSION, "window-switch-session", Category::Windows),
         (SAVE_LAYOUT, "window-save-layout", Category::Windows),
         (OPEN_LAYOUT, "window-open-layout", Category::Windows),
+        (BROADCAST_OFF, "window-broadcast-off", Category::Input),
+        (BROADCAST_TAB, "window-broadcast-to-tab", Category::Input),
+        (
+            BROADCAST_WINDOW,
+            "window-broadcast-to-window",
+            Category::Input,
+        ),
+        (LEAVE_BROADCAST, "pane-leave-broadcast", Category::Panes),
+        (JOIN_BROADCAST, "pane-join-broadcast", Category::Panes),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -6076,7 +6120,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         // plugin that declares them runs them of the same capabilities:
         // the workspace's writes, and a layout's commands typed into its
         // shells.
-        let capabilities = if name == OPEN_LAYOUT {
+        let capabilities = if name == OPEN_LAYOUT
+            || BROADCASTS.contains(&name)
+            || name == LEAVE_BROADCAST
+            || name == JOIN_BROADCAST
+        {
             vec![
                 lokyr_kernel::commands::Capability::WorkspaceWrite,
                 lokyr_kernel::commands::Capability::PtyWrite,

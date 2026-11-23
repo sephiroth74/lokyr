@@ -1288,6 +1288,19 @@ impl FakeHost {
         self
     }
 
+    /// Sends `window`'s typed input to `to`, as the user's menu does, which
+    /// a read of the window's broadcast and of its tabs tells, the change
+    /// owed.
+    pub fn set_broadcast(&mut self, window: WindowId, to: crate::host::BroadcastTo) -> &mut Self {
+        if to == crate::host::BroadcastTo::Off {
+            self.broadcasts.remove(&window);
+        } else {
+            self.broadcasts.insert(window, to);
+        }
+        self.changed(WorkspaceEvent::BroadcastChanged { window });
+        self
+    }
+
     /// Makes the folder of the absolute path `folder` a git repository's
     /// of the branch `branch`, or no repository's of none, which a read of
     /// the branch of a folder within it gives.
@@ -2605,6 +2618,11 @@ impl FakeHost {
             status: marks.status.clone().filter(|_| reads),
             pinned: marks.pinned,
             group: tab.group,
+            broadcast: match self.broadcasts.get(&tab.window) {
+                Some(crate::host::BroadcastTo::Window) => true,
+                Some(crate::host::BroadcastTo::Tab) => window.active == id,
+                _ => false,
+            },
         })
     }
 

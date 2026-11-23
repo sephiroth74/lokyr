@@ -57,6 +57,7 @@ tip-sessions = Finestra › Sessioni › Nuova sessione apre una sessione a sé,
 tip-layouts = Finestra › Sessioni › Salva sessione come layout… salva finestre, tab e split in un file; aggiungi un comando a un pane lì, e il selettore apre il layout come nuova sessione che lo esegue.
 tip-session-switcher = Premi { $keys } per passare a una sessione o aprirne una nella cartella di un progetto: aggiungi folders = ["~/src/*"] a una sezione [sessions] della config per elencare i tuoi progetti.
 tip-last-session = Premi { $keys } per passare alla sessione che usavi prima, con le sue finestre dove le avevi lasciate.
+tip-broadcast = Premi { $keys } per scrivere in tutti i pannelli del tab insieme, per esempio lo stesso comando su più server; un anello rosso segna ogni pannello, e gli stessi tasti la fermano.
 tip-smooth-scroll = Imposta smooth-scroll = true in [window] nella config, e il trackpad scorre il testo a pixel, continuando a scivolare quando alzi le dita; anche lo scatto della rotella del mouse scivola.
 tip-cursor-guide = Premi { $keys }, o Vista › Mostra la guida del cursore, per una banda sulla riga del cursore che mostra dov'è.
 tip-transparency = Premi { $keys }, o Vista › Usa la trasparenza, per mostrare opaca una finestra traslucida mentre leggi, e di nuovo per vederci attraverso; la config resta com'è.

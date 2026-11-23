@@ -75,7 +75,11 @@ pub(super) const PARTS: [(&str, &str, &[&str]); 14] = [
             "scrollbar.mark.current",
         ],
     ),
-    ("panes", "part-panes", &["pane.divider", "pane.drop"]),
+    (
+        "panes",
+        "part-panes",
+        &["pane.divider", "pane.drop", "broadcast.ring"],
+    ),
     (
         "panel",
         "part-panel",

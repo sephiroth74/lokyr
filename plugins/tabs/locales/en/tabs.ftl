@@ -57,8 +57,9 @@ menu-color-gray = Gray
 menu-color-none = No Color
 
 # What accessibility calls a tab's marks: the output that came while it
-# did not show, its bell, a program that runs, the protected input, and
-# its agent's states.
+# did not show, its bell, a program that runs, the protected input, its
+# agent's states, and its panes taking the window's broadcast of the
+# typed input.
 bar-mark-activity = New Output
 bar-mark-bell = Bell
 bar-mark-running = Running
@@ -67,3 +68,4 @@ bar-mark-working = Agent Working
 bar-mark-waiting = Agent Waiting
 bar-mark-error = Agent Failed
 bar-mark-done = Agent Done
+bar-mark-broadcast = Broadcasting Input

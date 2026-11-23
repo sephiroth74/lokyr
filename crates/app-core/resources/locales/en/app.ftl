@@ -18,6 +18,11 @@ command-window-close-session = Close Session
 command-window-switch-session = Switch to Session
 command-window-save-layout = Save Session as Layout…
 command-window-open-layout = Open Layout
+command-window-broadcast-off = Stop Broadcasting Input
+command-window-broadcast-to-tab = Broadcast Input to the Tab's Panes
+command-window-broadcast-to-window = Broadcast Input to the Window's Panes
+command-pane-leave-broadcast = Leave Broadcast
+command-pane-join-broadcast = Join Broadcast
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…
@@ -117,6 +122,11 @@ menu-bring-all-to-front = Bring All to Front
 menu-emoji-symbols = Emoji & Symbols
 menu-appearance = Appearance
 menu-sessions = Sessions
+# The Shell menu's submenu of where the typed input goes, and its items.
+menu-broadcast = Broadcast Input
+menu-broadcast-off = Off
+menu-broadcast-tab = To the Tab's Panes
+menu-broadcast-window = To the Window's Panes
 menu-appearance-system = Automatic
 menu-appearance-light = Light
 menu-appearance-dark = Dark
@@ -257,8 +267,10 @@ notice-copy = Copy the details
 notice-plugin-titled = { $title } — { $plugin }
 notice-close = Close
 
-# What an accessibility client, as VoiceOver, calls a pane.
+# What an accessibility client, as VoiceOver, calls a pane, and one that
+# takes its window's broadcast of the typed input.
 access-pane = Terminal
+access-pane-broadcast = Terminal, Broadcasting Input
 
 # The question of a theme's file that the Finder opens with Lokyr, or that
 # is dropped on its icon, and its buttons, the default one first; and the

@@ -989,6 +989,7 @@ fn tabs(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let other = |id, active, pane| TabInfo {
         id,
@@ -1750,6 +1751,7 @@ fn groups(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group,
+        broadcast: false,
     };
     let shown = |name: &str, color, folded, tabs| GroupInfo {
         id: group(0),
@@ -4092,6 +4094,7 @@ fn workspace(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

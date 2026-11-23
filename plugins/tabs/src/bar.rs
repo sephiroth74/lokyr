@@ -319,6 +319,7 @@ pub(crate) struct MarkTexts {
     pub(crate) waiting: String,
     pub(crate) error: String,
     pub(crate) done: String,
+    pub(crate) broadcast: String,
 }
 
 impl Default for MarkTexts {
@@ -332,6 +333,7 @@ impl Default for MarkTexts {
             waiting: "Agent Waiting".to_owned(),
             error: "Agent Failed".to_owned(),
             done: "Agent Done".to_owned(),
+            broadcast: "Broadcasting Input".to_owned(),
         }
     }
 }
@@ -1452,7 +1454,8 @@ fn tip(node: Node, tab: &Shown<'_>) -> Node {
 }
 
 /// The marks of `tab` before its title, of `texts` to accessibility: the
-/// protected input's lock, its agent's state, or the dot of the status
+/// protected input's lock, the broadcast's megaphone, its agent's state,
+/// or the dot of the status
 /// that its program tells of its session, its bell, and its program's
 /// progress in a ring, where it shows `at` a ring; or a spinner of a
 /// program that runs, prints of its own and tells no progress, but a
@@ -1491,6 +1494,19 @@ fn ranked_marks(tab: &TabInfo, texts: &MarkTexts, at: ProgressAt) -> Vec<(u8, No
     let mut marks = Vec::new();
     if tab.secure {
         marks.push((2, Node::icon("lock").label(texts.secure.as_str())));
+    }
+    // Its panes take the window's broadcast of the typed input, of the
+    // color of their ring.
+    if tab.broadcast {
+        marks.push((
+            2,
+            Node::icon("megaphone")
+                .label(texts.broadcast.as_str())
+                .style(Style {
+                    color: Some(Token::from("broadcast.ring")),
+                    ..Style::default()
+                }),
+        ));
     }
     if let Some(agent) = tab.agent {
         let (icon, color, label) = match agent {

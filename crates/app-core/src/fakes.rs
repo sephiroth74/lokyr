@@ -61,7 +61,7 @@ impl lokyr_render_core::Renderer for Renderer {
         Ok(())
     }
 
-    fn draw(&mut self, target: &Surface, _list: &DisplayList) -> Result<bool, String> {
+    fn draw(&mut self, target: &Surface, list: &DisplayList) -> Result<bool, String> {
         if target
             .refuses
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
@@ -73,6 +73,9 @@ impl lokyr_render_core::Renderer for Renderer {
         }
         self.frames += 1;
         target.frames.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut last) = target.last.lock() {
+            *last = Some(list.clone());
+        }
         Ok(true)
     }
 
@@ -130,6 +133,8 @@ pub(crate) struct Surface {
     /// How many draws into it give no drawable, as a layer whose every
     /// drawable is in use, the next first.
     pub(crate) refuses: AtomicUsize,
+    /// The last frame drawn into it.
+    pub(crate) last: std::sync::Mutex<Option<DisplayList>>,
 }
 
 impl lokyr_render_core::Surface for Surface {

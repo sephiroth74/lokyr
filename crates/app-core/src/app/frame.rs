@@ -608,6 +608,13 @@ impl<B: Backend> App<B> {
         } else {
             Vec::new()
         };
+        // The rooms of the panes that take the window's broadcast of the
+        // typed input, but those left out and those whose programs ended.
+        let broadcasting: Vec<Rect> = views
+            .iter()
+            .filter(|view| self.takes_broadcast(view.pane))
+            .map(|view| view.rect)
+            .collect();
         // A window of no pane, as of the settings tab, draws its chrome and
         // its views alone.
         if views.is_empty() {
@@ -1300,6 +1307,17 @@ impl<B: Backend> App<B> {
         if !bar_shapes.is_empty() {
             items.push(Item::Shapes(bar_shapes));
         }
+        // A ring round each pane that takes the window's broadcast, under
+        // the waiting agents'.
+        if let Some(color) = tokens.get("broadcast.ring") {
+            let width = (RING * size.scale).round().max(1.0) as u32;
+            items.extend(
+                broadcasting
+                    .iter()
+                    .flat_map(|&room| ring(room, width))
+                    .map(|rect| Item::Rect { rect, color }),
+            );
+        }
         // A ring round each pane whose agent waits for the user, of its
         // tab's mark's color.
         if let Some(color) = tokens.get("progress.paused") {
@@ -1867,7 +1885,8 @@ impl Gap {
     }
 }
 
-/// The width, in points, of the ring round a pane whose agent waits.
+/// The width, in points, of the ring round a pane whose agent waits, and
+/// round one that takes its window's broadcast.
 const RING: f64 = 2.0;
 
 /// The four sides of a ring of `width` pixels inside `room`.

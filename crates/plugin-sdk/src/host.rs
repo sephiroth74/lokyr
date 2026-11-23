@@ -483,6 +483,11 @@ pub struct TabInfo {
     /// The group that it is in, if it is in one.
     #[serde(default)]
     pub group: Option<GroupId>,
+    /// Whether its panes take its window's broadcast of the typed input:
+    /// every tab's of a broadcast to the window's panes, the active one's
+    /// of a broadcast to the tab's.
+    #[serde(default)]
+    pub broadcast: bool,
 }
 
 /// The status that a program tells of its session, as iTerm2's OSC 21337
