@@ -8,10 +8,13 @@
 //! guide anew, checks the theme guide's tokens against the rules, and writes
 //! the released commands' file of the app's, the commands' reference made
 //! anew of none marked (on a Mac, as its keys are). A page's mark is of its text
-//! as Markdown reads it: in code, a block or a span, as a guide that shows
-//! the mark, it is no mark; in a heading, or in HTML, it is refused. Every
-//! other occurrence of the words, in any case, is left and told, and
-//! `cargo xtask release` refuses to release while one is left.
+//! as Markdown reads it: in a code block's comment, of the block's language,
+//! as the Luau reference's `-- … · not released yet`, it is one too; in other
+//! code, a block or a span, as a guide that shows the mark, and in a block
+//! whose info string says `example`, it is no mark; in a heading, or in
+//! HTML, it is refused. Every other occurrence of the words, in any case, is
+//! left and told, and `cargo xtask release` refuses to release while one is
+//! left.
 
 use std::fs;
 use std::ops::Range;
@@ -20,7 +23,7 @@ use std::process::{Command, ExitCode};
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail, ensure};
-use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
 use regex::Regex;
 
 /// The mark of what no release has yet, in a page or a schema's text.
@@ -177,14 +180,19 @@ impl Kind {
 /// The lines of `text`, from 1, that hold the words of a mark, in any
 /// form but in a page's code, or a schema's key of no release.
 fn marked(text: &str, kind: Kind) -> Vec<usize> {
-    let code = match kind {
-        Kind::Page => read(text).code,
-        Kind::Text => Vec::new(),
+    let (code, comments) = match kind {
+        Kind::Page => {
+            let read = read(text);
+            (read.code, read.comments)
+        }
+        Kind::Text => (Vec::new(), Vec::new()),
     };
+    let within =
+        |ranges: &[Range<usize>], at: usize| ranges.iter().any(|range| range.contains(&at));
     let mut starts: Vec<usize> = WORDS
         .find_iter(text)
         .map(|found| found.start())
-        .filter(|&at| !code.iter().any(|code| code.contains(&at)))
+        .filter(|&at| !within(&code, at) || within(&comments, at))
         .collect();
     if kind == Kind::Text {
         starts.extend(NEXT.find_iter(text).map(|found| found.start()));
@@ -233,12 +241,37 @@ fn released(text: &str, since: &str, kind: Kind) -> (String, usize) {
 }
 
 /// What a page's Markdown holds, of byte ranges: the marks that a release
-/// makes its own, in its text, outside its code, headings and HTML; and
-/// its code, blocks and spans, whose words are no mark.
+/// makes its own, in its text, outside its code, headings and HTML, and in
+/// its code blocks' comments; its code, blocks and spans, whose words are no
+/// mark but in a comment; and the comments of its code blocks, of the
+/// languages that [`comment_of`] knows, but of a block of an example.
 #[derive(Debug, Default)]
 struct Read {
     marks: Vec<Range<usize>>,
     code: Vec<Range<usize>>,
+    comments: Vec<Range<usize>>,
+}
+
+/// What starts a line's comment in a code block whose info string is
+/// `info`, of its first word, the language; none of a language of no
+/// comment that a mark goes in, as Markdown's or a console's, and of a
+/// block whose info string says `example`, which shows the mark as it is.
+fn comment_of(info: &str) -> Option<&'static str> {
+    let mut words = info
+        .split([' ', ',', '{', '}'])
+        .filter(|word| !word.is_empty());
+    let language = words.next()?.to_ascii_lowercase();
+    if words.any(|word| word.eq_ignore_ascii_case("example")) {
+        return None;
+    }
+    match language.as_str() {
+        "luau" | "lua" | "sql" => Some("--"),
+        "toml" | "sh" | "bash" | "zsh" | "fish" | "shell" | "python" | "py" | "ruby" | "yaml"
+        | "yml" | "ini" | "just" | "justfile" | "make" | "makefile" => Some("#"),
+        "rust" | "rs" | "js" | "javascript" | "ts" | "typescript" | "swift" | "c" | "cpp"
+        | "go" | "java" | "kotlin" | "jsonc" | "json5" => Some("//"),
+        _ => None,
+    }
 }
 
 /// The marks and the code of the page `text`, as Markdown reads it.
@@ -253,13 +286,37 @@ fn read(text: &str) -> Read {
     // that follow one another.
     let mut runs: Vec<Range<usize>> = Vec::new();
     let (mut blocks, mut headings) = (0usize, 0usize);
+    // What starts a comment in the code block under way, if its language
+    // has one.
+    let mut comment: Option<&str> = None;
     for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
         match event {
-            Event::Start(Tag::CodeBlock(_)) => {
+            Event::Start(Tag::CodeBlock(kind)) => {
+                comment = match &kind {
+                    CodeBlockKind::Fenced(info) => comment_of(info),
+                    CodeBlockKind::Indented => None,
+                };
                 read.code.push(range);
                 blocks += 1;
             }
-            Event::End(TagEnd::CodeBlock) => blocks = blocks.saturating_sub(1),
+            Event::End(TagEnd::CodeBlock) => {
+                blocks = blocks.saturating_sub(1);
+                comment = None;
+            }
+            // Each line's comment of the block's text, from what starts it
+            // to the line's end.
+            Event::Text(_) if blocks > 0 => {
+                if let Some(start) = comment {
+                    let mut at = range.start;
+                    for line in text[range.clone()].split_inclusive('\n') {
+                        if let Some(found) = line.find(start) {
+                            read.comments
+                                .push(at + found..at + line.trim_end_matches('\n').len());
+                        }
+                        at += line.len();
+                    }
+                }
+            }
             Event::Start(Tag::Heading { .. }) => headings += 1,
             Event::End(TagEnd::Heading(_)) => headings = headings.saturating_sub(1),
             Event::Code(_) => read.code.push(range),
@@ -270,6 +327,8 @@ fn read(text: &str) -> Read {
             _ => {}
         }
     }
+    runs.extend(read.comments.iter().cloned());
+    runs.sort_by_key(|run| run.start);
     for run in runs {
         let mut at = run.start;
         while let Some(found) = text[at..run.end].find(MARK) {
@@ -399,6 +458,53 @@ mod tests {
             "{}",
             token.description
         );
+    }
+
+    #[test]
+    fn a_code_block_s_comment_takes_the_release_and_an_example_s_stays() {
+        // A Luau comment's mark, of its own line and after code, and a
+        // TOML one's: the release's; the code before a comment, a string
+        // of the words, Markdown's block and an example's comment, as they
+        // were.
+        let text = "```luau\n-- A popup over the tab · not released yet.\nopen_popup: () -> PaneId -- its pane · not released yet\nlocal s = \"· not released yet\"\n```\n\n```toml\n[window]\n# Its share · not released yet\nwidth = 0.8\n```\n\n```markdown\n- **A key** · not released yet\n```\n\n```luau example\n-- Mark it so · not released yet\n```\n\n> ```lua\n> -- In a quote · not released yet\n> ```\n";
+        assert_eq!(marked(text, Kind::Page), [2, 3, 9, 22]);
+        let (made, marks) = released(text, "1.5", Kind::Page);
+        assert_eq!(marks, 4, "{made}");
+        assert!(
+            made.contains("-- A popup over the tab · Since 1.5.\n"),
+            "{made}"
+        );
+        assert!(
+            made.contains("-> PaneId -- its pane · Since 1.5\n"),
+            "{made}"
+        );
+        assert!(
+            made.contains("local s = \"· not released yet\"\n"),
+            "{made}"
+        );
+        assert!(made.contains("# Its share · Since 1.5\n"), "{made}");
+        assert!(made.contains("> -- In a quote · Since 1.5\n"), "{made}");
+        assert!(
+            made.contains("- **A key** · not released yet\n```"),
+            "{made}"
+        );
+        assert!(
+            made.contains("-- Mark it so · not released yet\n```"),
+            "{made}"
+        );
+        assert!(marked(&made, Kind::Page).is_empty(), "{made}");
+        // A comment's mark of another form is told, and stays.
+        let text = "```luau\n-- A popup (not released yet)\n```\n";
+        assert_eq!(released(text, "1.5", Kind::Page).1, 0);
+        assert_eq!(marked(text, Kind::Page), [2]);
+        // The languages: Luau's, a shell's and Rust's comments; none of
+        // Markdown, a console, no info, or an example of any language.
+        assert_eq!(comment_of("luau"), Some("--"));
+        assert_eq!(comment_of("sh"), Some("#"));
+        assert_eq!(comment_of("Rust"), Some("//"));
+        for none in ["markdown", "console", "", "luau example", "toml,example"] {
+            assert_eq!(comment_of(none), None, "{none}");
+        }
     }
 
     #[test]
