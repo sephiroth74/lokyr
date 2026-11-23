@@ -513,7 +513,7 @@ The actions come with the features that they belong to, from Terminal's (T), iTe
 | F2 | Open Link (T, i); Look Up “word” (T); Open man Page for “word” (T); Copy, Paste (T, i, G); Select All, Clear (i) |
 | F3, with the tabs, the splits and the plugins' items | Split Right, Left, Down and Up, Close Split (G, i); New Window and New Tab at the folder under the pointer (T); move the pane to a tab or a window (i); rename the tab (G); Search man Page Index (T); Search the Web, with the engine in the config (T, i); Copy Link Address (i) |
 | F5a, with the OSC 133 marks and the blocks | mark a line, as a bookmark too (T); the command's details, run it again, select its output, fold it (i) |
-| F5b, with the broadcast and the floating panes | leave the window's broadcast and join it again (i), float a pane or move a floating one into the splits · not released yet; lock a pane or make it read-only (i, G); annotate the selection, add a trigger, save the selection as a snippet (i) |
+| F5b, with the broadcast and the floating panes | lock a pane or make it read-only (i, G); annotate the selection, add a trigger, save the selection as a snippet (i); leave the window's broadcast and join it again (i), float a pane or move a floating one into the splits · not released yet |
 | F5c, with the links' smart selection | open a `file:line` in the editor, Quick Look the link, the smart selection's own actions (i) |
 | Plugins, from F4 | the selection as pretty-printed JSON, Base64 decoded or encoded, the colors that it names (i) |
 | Tools, later | reset the terminal, the inspector, the terminal's modes (G, i) |

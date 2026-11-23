@@ -15,7 +15,9 @@ mod bar;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
+};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     BarPlace, Color, GroupId, GroupInfo, MenuItem, MenuPlace, ScreenPoint, TabId, TabInfo, WindowId,
@@ -230,6 +232,16 @@ fn commands() -> [Spec; 20] {
     ]
 }
 
+/// The capabilities that the command `name` takes of a plugin that runs
+/// it, of what it does: a tab's title and color, its look; the others open,
+/// close, move, select, pin or group the tabs, the workspace's writes.
+fn capabilities(name: &str) -> Vec<Capability> {
+    match name {
+        RENAME | SET_COLOR => vec![Capability::PaneView],
+        _ => vec![Capability::WorkspaceWrite],
+    }
+}
+
 /// The most tabs whose keys a tab bar shows, from the first.
 const NUMBERED: usize = 9;
 
@@ -322,7 +334,7 @@ impl Plugin for Tabs {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category: Category::Tabs,
-                capabilities: Vec::new(),
+                capabilities: capabilities(name),
                 params: param
                     .into_iter()
                     .map(|(name, kind, default)| Param {
@@ -533,8 +545,14 @@ impl Plugin for Tabs {
             return Ok(());
         };
         let tab = &tabs[at];
+        // The tab's panes, its floating ones hidden too, which a tab's read
+        // lists while they show alone: the pane closes while it has others.
+        let several = tab.panes.len() > 1
+            || cx
+                .floating_panes(tab.id)
+                .is_ok_and(|floating| !floating.panes.is_empty());
         match name {
-            CLOSE if tab.panes.len() > 1 => cx.close_pane(tab.focused, true),
+            CLOSE if several => cx.close_pane(tab.focused, true),
             // A pinned tab stays, as its key closes no pinned tab.
             CLOSE if tab.pinned => Ok(()),
             CLOSE => cx.close_tab_kept(tab.id, true, self.settings.reopen_seconds),

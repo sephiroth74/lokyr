@@ -180,6 +180,57 @@ impl SlotView {
             .as_ref()
             .is_some_and(|placed| placed.options.role == Role::Tooltip)
     }
+
+    /// The pane that the view goes with, if one: a pane's header's, or a
+    /// panel's anchored to a pane's cell, cursor, corner or top.
+    pub(crate) fn pane(&self) -> Option<lokyr_kernel::workspace::PaneId> {
+        use lokyr_kernel::plugins::ui::Anchor;
+        let pane = match &self.view {
+            ViewId::PaneHeader(pane) => *pane,
+            _ => match self.placed.as_ref()?.options.anchor {
+                Anchor::Cell { pane, .. }
+                | Anchor::PaneCorner { pane, .. }
+                | Anchor::Cursor(pane)
+                | Anchor::PaneTop(pane) => pane,
+                _ => return None,
+            },
+        };
+        Some(lokyr_kernel::workspace::PaneId::of(pane.0))
+    }
+
+    /// Whether the view goes with a pane of the splits under the floating
+    /// panes `floating`, which its window draws it under and whose boxes
+    /// take the pointer before it.
+    pub(crate) fn under_floating(
+        &self,
+        floating: &[(
+            lokyr_kernel::workspace::PaneId,
+            lokyr_ui_core::floating::Room,
+        )],
+    ) -> bool {
+        !floating.is_empty()
+            && self
+                .pane()
+                .is_some_and(|pane| floating.iter().all(|&(of, _)| of != pane))
+    }
+}
+
+/// Whether the point `(x, y)`, in pixels, lies within one of the floating
+/// panes' boxes `floating`.
+pub(crate) fn in_floating(
+    floating: &[(
+        lokyr_kernel::workspace::PaneId,
+        lokyr_ui_core::floating::Room,
+    )],
+    (x, y): (f32, f32),
+) -> bool {
+    floating.iter().any(|(_, room)| {
+        let outer = room.outer;
+        x >= outer.x as f32
+            && y >= outer.y as f32
+            && x < (outer.x + i32::try_from(outer.width).unwrap_or(i32::MAX)) as f32
+            && y < (outer.y + i32::try_from(outer.height).unwrap_or(i32::MAX)) as f32
+    })
 }
 
 impl<B: Backend> App<B> {
@@ -889,9 +940,11 @@ pub(super) fn paint<F: FontBackend>(
     room: (f32, f32),
     (dark, focused, now): (bool, Option<(u32, NodeId)>, Instant),
     (pictures, previews): (&BTreeMap<String, Pictures>, &Previews),
+    keep: impl Fn(&SlotView) -> bool,
 ) -> Vec<Item> {
     chrome
         .iter()
+        .filter(|view| keep(view))
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
             let focused = focused.and_then(|(id, node)| (id == view.id).then_some(node));

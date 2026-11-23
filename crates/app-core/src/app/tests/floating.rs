@@ -151,6 +151,22 @@ fn a_floating_pane_s_context_menu_moves_it_into_the_splits_and_a_split_one_float
     fake.send(&mut app, window, WindowEvent::Frame);
     let items = open(&mut fake, &mut app, Point { x: 10.0, y: 10.0 });
     assert!(items.contains(&"Float Pane".to_owned()), "{items:?}");
+    // Over a popup, which stays over its tab: neither.
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    app.run(&mut fake, POPUP, popup_of("sleep 30", &[]));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let (_, room) = *app.windows[&window].floating_rooms.last().unwrap();
+    let inside = Point {
+        x: (f64::from(room.grid.x) + f64::from(room.grid.width) / 2.0) / scale,
+        y: (f64::from(room.grid.y) + f64::from(room.grid.height) / 2.0) / scale,
+    };
+    let items = open(&mut fake, &mut app, inside);
+    assert!(
+        !items
+            .iter()
+            .any(|item| item.contains("Float") || item.contains("Splits")),
+        "{items:?}"
+    );
 }
 
 /// The arguments of a popup of `command`, and of `more`.
@@ -438,4 +454,100 @@ fn a_plugin_s_popup_tells_it_its_command_s_status_as_it_closes() {
         }]
     );
     assert_eq!(app.focused(window), Some(first));
+}
+
+#[test]
+fn command_w_of_hidden_floating_panes_closes_the_split_pane_not_the_tab() {
+    let (mut fake, mut app, window) = started_running(idle());
+    let first = app.focused(window).unwrap();
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    command(&mut fake, &mut app, TOGGLE_FLOATING);
+    assert_eq!(app.focused(window), Some(first));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    // ⌘W of the tab's one split pane: it closes alone, the floating pane
+    // taking its place, the window and its tab staying.
+    fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(first).is_none()
+    });
+    assert_eq!(fake.windows().count(), 1);
+    assert!(app.workspace.pane(floating).is_some());
+    assert_eq!(app.focused(window), Some(floating));
+}
+
+#[test]
+fn a_floating_pane_s_gutter_marks_draw_over_its_box() {
+    // A command that ended, of a gutter's mark, then a prompt.
+    let program = shell(
+        "printf '\\033]133;A\\007$ \\033]133;B\\007true\\033]133;C\\007\\r\\n\\033]133;D;0\\007\\033]133;A\\007ready $ '; sleep 30",
+    );
+    let (mut fake, mut app, window) = super::scrollbars::drawn(Config::default(), program);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(floating).is_some_and(|pane| {
+            pane.line_text(1, 0)
+                .is_some_and(|(text, _)| text.contains("ready"))
+        })
+    });
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let state = &app.windows[&window];
+    let (_, room) = state.floating_rooms[0];
+    let items = &state.shown.as_ref().expect("a frame").items;
+    let shapes = |item: &Item| match item {
+        Item::Shapes(shapes) => shapes.clone(),
+        _ => Vec::new(),
+    };
+    let boxed = items
+        .iter()
+        .position(|item| shapes(item).iter().any(|shape| shape.rect == room.outer))
+        .expect("the floating pane's box");
+    // Its mark, in the box's inset left of its grid, after the box.
+    let marked = items.iter().rposition(|item| {
+        shapes(item).iter().any(|shape| {
+            shape.rect.x >= room.outer.x
+                && shape.rect.x < room.grid.x
+                && shape.rect.y >= room.grid.y
+                && shape.rect != room.outer
+        })
+    });
+    assert!(
+        marked.is_some_and(|at| at > boxed),
+        "the mark at {marked:?}, the box at {boxed}"
+    );
+}
+
+#[test]
+fn a_floating_pane_s_close_button_takes_its_top_from_the_edge_and_the_edge_the_rest() {
+    let (mut fake, mut app, window) = started_running(idle());
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let scale = fake.window(window).unwrap().size.scale;
+    let points = |pixels: i32| f64::from(pixels) / scale;
+    let (_, room) = app.windows[&window].floating_rooms[0];
+    // The top edge's band, beside the button: a resize, which closes
+    // nothing.
+    let band = Point {
+        x: points(room.outer.x) + f64::from(room.outer.width) / scale / 3.0,
+        y: points(room.outer.y) + 1.0,
+    };
+    fake.send(&mut app, window, click(true, band, Modifiers::NONE, 1));
+    assert!(app.windows[&window].floating_drag.is_some());
+    fake.send(&mut app, window, click(false, band, Modifiers::NONE, 1));
+    assert!(app.workspace.pane(floating).is_some());
+    // The button's top, within the band: it closes, of no resize.
+    let top = Point {
+        x: points(room.close.x) + f64::from(room.close.width) / scale / 2.0,
+        y: points(room.close.y) + 0.5,
+    };
+    assert!(top.y < points(room.outer.y) + 5.0, "within the edge's band");
+    fake.send(&mut app, window, click(true, top, Modifiers::NONE, 1));
+    assert!(app.windows[&window].floating_drag.is_none());
+    fake.send(&mut app, window, click(false, top, Modifiers::NONE, 1));
+    assert!(app.workspace.pane(floating).is_none());
 }

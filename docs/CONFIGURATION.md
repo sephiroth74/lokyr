@@ -793,7 +793,7 @@ The folder that the first window's shell starts in, as Lokyr starts.
 
 <sub>Platforms: macOS</sub>
 
-The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's or a split's.
+The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's, a split's, a floating pane's or a popup's, of a popup that names no folder of its own · not released yet.
 
 | Values | Default |
 |---|---|
@@ -1803,7 +1803,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `o`, `y`, `enter`, `shift+y`, `escape`, `q`, `ctrl+c` | `copy-mode.act` | Its `action`: `o` swaps the selection's ends, `swap`; `y` and `enter` copy the selection, or the cursor's line without one, and end the mode, the selection staying, `copy`; `shift+y` copies the cursor's line and ends, `copy-line`; `escape` takes the count away, or else the selection, or else ends, `back`; `q` and `ctrl+c` end, the selection taken away, `exit`. A line's copy leaves the blanks at its end out |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
 | `cmd+shift+t` | `tabs.reopen` | Brings back the tab that you closed last, at its place, as you left it, within [`reopen-seconds`](#reopen-seconds) of its close; again, the one before · Since 1.3 |
-| `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
+| `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits or floating panes, hidden ones too; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]` | `tabs.next` | Shows the next tab, the first after the last |
 | `cmd+shift+[` | `tabs.prev` | Shows the previous tab, the last before the first |
 | `ctrl+tab` | `tabs.switch` | Shows the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control is the one used last; or the next tab, as [`control-tab`](#control-tab) says |

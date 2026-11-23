@@ -1669,6 +1669,20 @@ fn broadcast(world: &World) -> Scenario {
                         },
                         failed(Code::NotFound, "there is no pane 999999"),
                     ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: p,
+                            text: "\u{15}".to_owned(),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: NO_PANE,
+                            text: "\u{15}".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
                 ],
                 posts: Vec::new(),
                 heard: vec![changed.clone(), changed.clone()],
@@ -1731,9 +1745,9 @@ fn broadcast(world: &World) -> Scenario {
 
 /// A plugin's popups: one over the focused window's active tab, which a
 /// later write of the call closes, its close heard of no status, as its
-/// command ran still; one of a window, a folder and shares, closed too;
-/// and what is refused: a blank command, a share past the room, a window
-/// that is not there.
+/// command ran still; one of a window, a folder and shares, which moves
+/// to no window, closed too; and what is refused: a blank command, a share
+/// past the room, a window that is not there.
 fn popups(world: &World) -> Scenario {
     let open = |window, command: &str, folder: Option<&str>, width, height| Request::OpenPopup {
         window,
@@ -1763,6 +1777,10 @@ fn popups(world: &World) -> Scenario {
                 (
                     open(Some(world.window), "fzf", Some("~"), Some(0.5), Some(0.4)),
                     Response::Pane(Some(pane(1))),
+                ),
+                (
+                    Request::PaneToNewWindow(pane(1)),
+                    failed(Code::Failed, "a popup stays over its tab"),
                 ),
                 (
                     open(None, "  ", None, None, None),

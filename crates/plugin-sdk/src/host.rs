@@ -136,6 +136,17 @@ pub fn check_popup(
     Ok(())
 }
 
+/// Whether a popup's `folder`, a path absolute or from `~`, is a folder
+/// that is there, as a popup runs its command there or not at all; why not
+/// otherwise.
+pub fn check_popup_folder(folder: &str) -> Result<(), String> {
+    if std::path::Path::new(&home_expanded(folder)).is_dir() {
+        Ok(())
+    } else {
+        Err(format!("a popup's folder `{folder}` is not there"))
+    }
+}
+
 /// The folders that the switcher lists, `configured` then `recent`, as
 /// they are named, each once and none of `sessions`, the folders that
 /// sessions were opened in, as their real paths tell, which the system

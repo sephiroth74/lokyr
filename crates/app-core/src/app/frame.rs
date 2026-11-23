@@ -1217,6 +1217,9 @@ impl<B: Backend> App<B> {
                 }),
             )
         };
+        // A floating pane's go over its box, drawn with its cells.
+        let mut floating_extras: std::collections::BTreeMap<PaneId, Vec<Item>> =
+            std::collections::BTreeMap::new();
         for (pane, snapshot, at, width, dim) in shown() {
             let selected = self
                 .plugins
@@ -1224,6 +1227,11 @@ impl<B: Backend> App<B> {
             if !(looks.dividers || looks.failed_tint || selected.is_some()) {
                 continue;
             }
+            let items = if floating_ids.contains(&pane) {
+                floating_extras.entry(pane).or_default()
+            } else {
+                &mut items
+            };
             // Within the pane and its paddings, as a selected block's
             // outline goes past the edges of the view that cut it, and of
             // its rows, a share of a row up as they draw.
@@ -1266,7 +1274,15 @@ impl<B: Backend> App<B> {
                     looks.bars,
                 )
                 .map(faded(dim));
-                if rows.clip.is_none() {
+                if floating_ids.contains(&pane) {
+                    let marks: Vec<Shape> = marks.collect();
+                    if !marks.is_empty() {
+                        floating_extras
+                            .entry(pane)
+                            .or_default()
+                            .extend(rows.clipped(vec![Item::Shapes(marks)]));
+                    }
+                } else if rows.clip.is_none() {
                     shapes.extend(marks);
                 } else {
                     let marks: Vec<Shape> = marks.collect();
@@ -1343,7 +1359,14 @@ impl<B: Backend> App<B> {
                 over.push(faded(dim)(band(below, thickness, line, false)));
             }
             pinned.push(Item::Shapes(over));
-            items.extend(rows.clipped(pinned));
+            if floating_ids.contains(&pane) {
+                floating_extras
+                    .entry(pane)
+                    .or_default()
+                    .extend(rows.clipped(pinned));
+            } else {
+                items.extend(rows.clipped(pinned));
+            }
         }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {
@@ -1377,6 +1400,9 @@ impl<B: Backend> App<B> {
         // The floating panes over the layout's, from the back to the front:
         // each its frame, of its header and title, its cells, the images
         // over its text, and its rings.
+        // Where the floating panes start, under which the views of the
+        // panes of the splits go.
+        let floating_at = items.len();
         for &(floating, room) in &state.floating_rooms {
             let Some(at) = floating_drawn
                 .iter()
@@ -1385,6 +1411,7 @@ impl<B: Backend> App<B> {
                 continue;
             };
             let (_, drawn, over) = floating_drawn.swap_remove(at);
+            let extras = floating_extras.remove(&floating).unwrap_or_default();
             let Some(shown) = self.workspace.pane(floating) else {
                 continue;
             };
@@ -1411,6 +1438,7 @@ impl<B: Backend> App<B> {
                 &room, &title, look, &cell, size.scale, hovers, glyph,
             ));
             items.extend(drawn);
+            items.extend(extras);
             items.extend(over);
             let own = [(floating, room.grid)];
             if broadcasting.iter().any(|&(pane, _)| pane == floating) {
@@ -1460,6 +1488,18 @@ impl<B: Backend> App<B> {
             Target::Node { panel, node } => Some((panel, node)),
             Target::Pane => None,
         };
+        // The views of the panes of the splits under the floating panes,
+        // as a header's pill or a find bar; the others over them.
+        let floating = &state.floating_rooms;
+        let mut under = chrome::paint(
+            &state.chrome,
+            font,
+            tokens,
+            room,
+            (chrome_dark, focused_node, now),
+            (&self.pictures, &self.previews),
+            |view| view.under_floating(floating),
+        );
         let mut painted = chrome::paint(
             &state.chrome,
             font,
@@ -1467,14 +1507,17 @@ impl<B: Backend> App<B> {
             room,
             (chrome_dark, focused_node, now),
             (&self.pictures, &self.previews),
+            |view| !view.under_floating(floating),
         );
         // Under an opaque titlebar, the chrome in its band goes over it, of
         // its colors' own opacity, rather than knocking it out to the
         // window's.
         if opaque_bar && let Some(Item::Rect { rect: band, .. }) = bar_item(size, background, past)
         {
+            over_opaque(&mut under, band, opacity);
             over_opaque(&mut painted, band, opacity);
         }
+        items.splice(floating_at..floating_at, under);
         // The status bar's band across the window, under its plugins' views,
         // while one fills it.
         if let (Some(band), Some(fill)) = (state.status_bar, tokens.get("status-bar.bg")) {
@@ -1503,10 +1546,13 @@ impl<B: Backend> App<B> {
         if let Some((_, _, zone)) = chrome::column_edge(&state.chrome, &self.plugins, size.scale) {
             areas.push(points(&chrome::rect_of(zone), PointerShape::ResizeColumn));
         }
-        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
+        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale, |view| {
+            !view.under_floating(&state.floating_rooms)
+        }));
         // The floating panes' edges, headers and boxes, the one in front
-        // first, over the panes and the dividers under them: inside, the
-        // arrow over a program that takes the clicks, the I-beam otherwise.
+        // first, over the panes, their views and the dividers under them:
+        // inside, the arrow over a program that takes the clicks, the
+        // I-beam otherwise.
         let workspace = &self.workspace;
         areas.extend(super::floating::pointer_areas(
             &state.floating_rooms,
@@ -1525,6 +1571,10 @@ impl<B: Backend> App<B> {
                 }
             },
         ));
+        // The views of the panes of the splits, under the floating panes.
+        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale, |view| {
+            view.under_floating(&state.floating_rooms)
+        }));
         // The dividers' grab areas, under the slots' views.
         areas.extend(
             state
@@ -2485,6 +2535,7 @@ impl<B: Backend> App<B> {
             room,
             (chrome_dark, focused_node, now),
             (&self.pictures, &self.previews),
+            |_| true,
         );
         // The slots' views' pointers, moves and titlebar's parts, as the
         // panes' frame gives them.
@@ -2503,7 +2554,7 @@ impl<B: Backend> App<B> {
                 shape: PointerShape::ResizeColumn,
             });
         }
-        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
+        areas.extend(surfaces::pointer_areas(&state.chrome, size.scale, |_| true));
         if areas != state.pointer_areas {
             platform.set_pointer_areas(window, &areas);
             state.pointer_areas = areas;

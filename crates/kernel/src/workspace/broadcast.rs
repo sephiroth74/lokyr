@@ -74,19 +74,17 @@ impl Workspace {
     }
 
     /// The panes that the input typed into `pane` goes to: `pane` first,
-    /// then the others of its tab or of its window, in their order, as the
-    /// window's broadcast says, of a program that runs and not left out;
-    /// `pane` alone of a broadcast that is off, or of a pane left out.
+    /// then the others that take its window's broadcast, of its tab or of
+    /// the window, in their order, as [`Workspace::takes_broadcast`] tells
+    /// them; `pane` alone of a broadcast that is off, of a pane that takes
+    /// none, as one left out, one whose program ended, a popup or one of a
+    /// tab that does not broadcast.
     pub fn broadcast_panes(&self, pane: PaneId) -> Vec<PaneId> {
         let mut panes = vec![pane];
         let Some(window) = self.window_of_pane(pane) else {
             return panes;
         };
-        if self
-            .panes
-            .get(&pane)
-            .is_none_or(|shown| shown.broadcast_left)
-        {
+        if !self.takes_broadcast(pane) {
             return panes;
         }
         let others = match self.broadcast(window) {
@@ -94,13 +92,13 @@ impl Workspace {
             BroadcastTo::Tab => self
                 .tab_of(pane)
                 .and_then(|tab| self.tabs.get(&tab))
-                .map_or_else(Vec::new, super::Tab::shown_panes),
+                .map_or_else(Vec::new, takers),
             BroadcastTo::Window => self.windows.get(&window).map_or_else(Vec::new, |shown| {
                 shown
                     .tabs
                     .iter()
                     .filter_map(|tab| self.tabs.get(tab))
-                    .flat_map(super::Tab::shown_panes)
+                    .flat_map(takers)
                     .collect()
             }),
         };
@@ -114,6 +112,27 @@ impl Workspace {
         panes
     }
 
+    /// Whether `pane` takes its window's broadcast, and broadcasts what is
+    /// typed into it: a pane of a tab that broadcasts, as
+    /// [`Workspace::broadcasts_tab`] tells it, that shows, not hidden by a
+    /// zoom, nor a popup, which runs a command of its own, nor left out,
+    /// nor of a program that ended.
+    pub fn takes_broadcast(&self, pane: PaneId) -> bool {
+        let Some(shown) = self.panes.get(&pane) else {
+            return false;
+        };
+        if shown.broadcast_left || shown.is_kept() {
+            return false;
+        }
+        self.tab_of(pane).is_some_and(|tab| {
+            self.broadcasts_tab(tab)
+                && self
+                    .tabs
+                    .get(&tab)
+                    .is_some_and(|held| takers(held).contains(&pane))
+        })
+    }
+
     /// The window that holds `pane`, if one does.
     fn window_of_pane(&self, pane: PaneId) -> Option<WindowId> {
         self.tab_of(pane).and_then(|tab| self.window_of_tab(tab))
@@ -125,4 +144,21 @@ impl Workspace {
             window: window.into(),
         });
     }
+}
+
+/// The panes of `tab` that a broadcast reaches: those that show, but the
+/// panes that a zoom hides and the popups.
+fn takers(tab: &super::Tab) -> Vec<PaneId> {
+    let shown = match tab.zoomed() {
+        Some(zoomed) => {
+            let mut shown = vec![zoomed];
+            shown.extend(tab.shown_floating().map(|floating| floating.pane));
+            shown
+        }
+        None => tab.shown_panes(),
+    };
+    shown
+        .into_iter()
+        .filter(|&pane| !tab.is_popup(pane))
+        .collect()
 }

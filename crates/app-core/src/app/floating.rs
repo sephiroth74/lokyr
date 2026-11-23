@@ -110,6 +110,15 @@ pub(super) fn pointer_areas(
         let (right, bottom) = (left + width - EDGE, top + height - EDGE);
         let resize = PointerShape::ResizeFrame;
         areas.extend([
+            // The close button, which takes its press before the top edge
+            // under its top.
+            area(
+                points(room.close.x),
+                points(room.close.y),
+                f64::from(room.close.width) / scale,
+                f64::from(room.close.height) / scale,
+                PointerShape::Arrow,
+            ),
             area(left, top, EDGE, EDGE, resize(FrameEdge::TopLeft)),
             area(right, top, EDGE, EDGE, resize(FrameEdge::TopRight)),
             area(left, bottom, EDGE, EDGE, resize(FrameEdge::BottomLeft)),
@@ -152,9 +161,12 @@ fn dragged(frame: FloatingFrame, grab: FloatingGrab, (across, down): (f64, f64))
                 FrameEdge::BottomLeft => (true, false, false, true),
                 FrameEdge::BottomRight => (false, true, false, true),
             };
-            // An edge that moves moves alone, the opposite one staying.
+            // An edge that moves moves alone, the opposite one staying, and
+            // stops at the room's edge.
             if left {
-                let moved = across.min(width - lokyr_kernel::workspace::LEAST_FLOATING_SHARE);
+                let moved = across
+                    .min(width - lokyr_kernel::workspace::LEAST_FLOATING_SHARE)
+                    .max(-x);
                 x += moved;
                 width -= moved;
             }
@@ -162,7 +174,9 @@ fn dragged(frame: FloatingFrame, grab: FloatingGrab, (across, down): (f64, f64))
                 width += across;
             }
             if top {
-                let moved = down.min(height - lokyr_kernel::workspace::LEAST_FLOATING_SHARE);
+                let moved = down
+                    .min(height - lokyr_kernel::workspace::LEAST_FLOATING_SHARE)
+                    .max(-y);
                 y += moved;
                 height -= moved;
             }
@@ -199,7 +213,7 @@ impl<B: Backend> App<B> {
         args: &Args,
     ) -> Result<(), Error> {
         let command = match args.get("command") {
-            Some(Value::String(command)) if !command.trim().is_empty() => command.clone(),
+            Some(Value::String(command)) => command.clone(),
             _ => {
                 return Err(Error::new(
                     Code::MissingArgument,
@@ -221,6 +235,20 @@ impl<B: Backend> App<B> {
             _ => default,
         };
         let (width, height) = (share("width", POPUP_WIDTH), share("height", POPUP_HEIGHT));
+        // As a plugin's popup is checked: its command, its folder, which is
+        // there, and its shares.
+        lokyr_kernel::plugins::host::check_popup(
+            &command,
+            folder.as_deref(),
+            Some(width),
+            Some(height),
+        )
+        .and_then(|()| {
+            folder
+                .as_deref()
+                .map_or(Ok(()), lokyr_kernel::plugins::host::check_popup_folder)
+        })
+        .map_err(|message| Error::new(Code::Failed, message))?;
         let program = spawn::popup_program(self.popup_shell.as_deref(), &command);
         self.float_new(platform, Some(&program), folder.as_deref(), true, |_| {
             FloatingFrame::centered(width, height)
@@ -510,6 +538,24 @@ mod tests {
         // The left edge, the right one staying.
         let left = dragged(frame, FloatingGrab::Resize(FrameEdge::Left), (-0.1, 0.0));
         assert!(close(left.x(), 0.1) && close(left.width(), 0.5));
+        // The left edge past the room's, which stops there, the right one
+        // staying; the top alike.
+        let past = dragged(frame, FloatingGrab::Resize(FrameEdge::Left), (-0.5, 0.0));
+        assert!(close(past.x(), 0.0) && close(past.width(), 0.6), "{past:?}");
+        let past = dragged(frame, FloatingGrab::Resize(FrameEdge::Top), (0.0, -0.5));
+        assert!(
+            close(past.y(), 0.0) && close(past.height(), 0.6),
+            "{past:?}"
+        );
+        let past = dragged(
+            frame,
+            FloatingGrab::Resize(FrameEdge::TopLeft),
+            (-0.5, -0.5),
+        );
+        assert!(
+            close(past.x() + past.width(), 0.6) && close(past.y() + past.height(), 0.6),
+            "{past:?}"
+        );
         // The bottom right corner, within the room.
         let corner = dragged(
             frame,

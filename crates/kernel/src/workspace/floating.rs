@@ -218,8 +218,12 @@ impl Workspace {
 
     /// Moves the floating pane `pane` into its tab's layout, on the right
     /// of the layout's pane that had the keyboard last, half and half, with
-    /// the keyboard. Whether it is a floating pane.
+    /// the keyboard. Whether it is a floating pane, and not a popup, which
+    /// stays over its tab.
     pub fn dock_floating(&mut self, pane: PaneId) -> bool {
+        if self.is_popup(pane) {
+            return false;
+        }
         let Some(&tab) = self.tab_of.get(&pane) else {
             return false;
         };

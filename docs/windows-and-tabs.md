@@ -108,7 +108,7 @@ Pinned tabs come back pinned, and groups come back with their names, colors and 
 
 Press ⌘T, choose Shell › New Tab, or click the + at the bar's end to open a tab after the others. Its shell starts in the folder of the pane you were in, which your shell reports with [shell integration](shell-integration.md).
 
-Press ⌘W, or choose Shell › Close Tab, to close the tab, or only the pane you're in while the tab has splits. You can also middle-click a tab, or click the close button that shows when you point at it. Lokyr asks first while a program other than a shell runs there. Close Other Tabs, in a tab's context menu, closes the window's other tabs.
+Press ⌘W, or choose Shell › Close Tab, to close the tab, or only the pane you're in while the tab has splits or floating panes, hidden ones too. You can also middle-click a tab, or click the close button that shows when you point at it. Lokyr asks first while a program other than a shell runs there. Close Other Tabs, in a tab's context menu, closes the window's other tabs.
 
 While a window has a single tab, the bar hides, and the titlebar shows the tab's title and marks. Set [`hide-when-single`](CONFIGURATION.md#hide-when-single) to `false` to keep the bar.
 
@@ -229,7 +229,9 @@ Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and w
 - **Press the same keys again**, or choose Off, to type into one pane again.
 - **Leave a pane out**: right-click it and choose Leave Broadcast. It then takes only what you type into it. Join Broadcast takes it back.
 - **A paste of several lines** that a program would run line by line asks once for all the panes.
+- **Your keys bound to `pane.send-text`**, such as the line-editing keys that the [configuration guide](CONFIGURATION.md#bindings) shows, reach every pane too, so that the lines stay alike. A key typed over a selection of the command line goes as typed, to every pane, rather than replacing the selection.
 - **Clicks and scrolls** go to one pane, and a pane whose program ended takes nothing.
+- **A popup** takes none of it, and what you type into a popup goes to it alone. The panes that a zoom hides take none either.
 
 The ring's color is the theme's [`broadcast.ring`](themes/authoring.md), red by default.
 
@@ -274,7 +276,7 @@ close-button = "hover"            # "always" or "never"
 | ⇧⌥⌘F | `cmd+alt+shift+f` | Float a new pane over the tab · not released yet |
 | ⌥⌘F | `cmd+alt+f` | Show or hide the tab's floating panes · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
-| ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
+| ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits or floating panes |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |
 | ⇧⌘], ⇧⌘[ | `cmd+shift+]`, `cmd+shift+[` | Show the next or the previous tab |
 | ⌃Tab, ⌃⇧Tab | `ctrl+tab`, `ctrl+shift+tab` | Show the tab you used before, or go the other way · Since 1.3 |

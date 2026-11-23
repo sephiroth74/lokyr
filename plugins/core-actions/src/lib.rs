@@ -319,9 +319,11 @@ impl Plugin for CoreActions {
             return Ok(());
         }
         if name == SEND_TEXT {
-            // The registry checked that the text is there, a string.
+            // The registry checked that the text is there, a string; as the
+            // user's keys, to the panes that the window broadcasts to too,
+            // so that a line's edit reaches every line typed alike.
             return match args.get("text") {
-                Some(Value::String(text)) => cx.send_text(pane, text),
+                Some(Value::String(text)) => cx.send_text_broadcast(pane, text),
                 _ => Ok(()),
             };
         }

@@ -6020,3 +6020,81 @@ fn a_popup_s_plugin_hears_it_close_of_its_command_s_status_and_one_of_no_pty_wri
     assert!(refused.message.contains("pty-write"), "{refused:?}");
     assert!(app.workspace.tab(tab).unwrap().floating().is_empty());
 }
+
+#[test]
+fn a_popup_of_no_folder_there_or_of_a_hidden_window_opens_not_nor_does_a_floating_pane_split() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let spawn = || {
+        Pane::spawn(
+            &Program::command("/bin/sh", ["-c", "sleep 30"]),
+            &Environment::default(),
+            &Settings::default(),
+            GRID,
+            &Colors::default(),
+            &Texts::new("en", &crate::l10n::KERNEL),
+            || {},
+        )
+    };
+    let floating = app
+        .workspace
+        .float_pane(
+            tab,
+            spawn(),
+            crate::workspace::FloatingFrame::new(0.2, 0.2, 0.5, 0.5),
+        )
+        .unwrap();
+    let hidden = app.workspace.open_window(spawn());
+    assert!(app.workspace.set_window_hidden(hidden, true));
+    app.focused = Some(window);
+    let errors: Rc<RefCell<Vec<Error>>> = Rc::default();
+    let seen = Rc::clone(&errors);
+    let floating_id = host::PaneId(floating.get());
+    let hidden_id = host::WindowId(hidden.get());
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "acme/popper",
+            scripted(
+                |cx| cx.register_command(command("popper.go")),
+                move |cx, _, _| {
+                    let mut seen = seen.borrow_mut();
+                    seen.extend(
+                        cx.open_popup(None, "ls", Some("/no/such/folder"), None, None)
+                            .err(),
+                    );
+                    seen.extend(cx.open_popup(Some(hidden_id), "ls", None, None, None).err());
+                    seen.extend(
+                        cx.split(floating_id, host::Direction::Horizontal, host::Side::Second)
+                            .err(),
+                    );
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let panes = app.workspace.panes_of(window).len();
+    plugins
+        .run("popper.go", Args::new(), &mut app.context())
+        .unwrap();
+    let messages: Vec<String> = errors
+        .borrow()
+        .iter()
+        .map(|error| error.message.clone())
+        .collect();
+    assert_eq!(
+        messages,
+        [
+            "a popup's folder `/no/such/folder` is not there".to_owned(),
+            format!(
+                "the window {} is hidden, which a popup opens not in",
+                hidden.get()
+            ),
+            lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT.to_owned(),
+        ]
+    );
+    // No pane started of them.
+    assert_eq!(app.workspace.panes_of(window).len(), panes);
+}

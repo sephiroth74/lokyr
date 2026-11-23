@@ -2673,7 +2673,7 @@ fn a_popup_opens_over_the_focused_window_s_tab_and_its_close_is_owed_of_its_stat
     let kept = Rc::clone(&opened);
     let mut probe = Probe::new(move |cx, _| {
         kept.borrow_mut()
-            .push(cx.open_popup(None, "lazygit", Some("~/src"), None, Some(0.5)));
+            .push(cx.open_popup(None, "lazygit", Some("~"), None, Some(0.5)));
         Ok(())
     });
     host.activate(&mut probe).unwrap();
@@ -2685,7 +2685,7 @@ fn a_popup_opens_over_the_focused_window_s_tab_and_its_close_is_owed_of_its_stat
             pane: popup,
             tab,
             command: "lazygit".to_owned(),
-            folder: Some("~/src".to_owned()),
+            folder: Some("~".to_owned()),
             width: crate::host::POPUP_WIDTH,
             height: 0.5,
         }]

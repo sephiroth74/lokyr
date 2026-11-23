@@ -990,3 +990,51 @@ fn a_replay_leaves_its_rows_alone() {
     assert_eq!(terminal.title(), "");
     assert_eq!(terminal.bells(), 0);
 }
+
+#[test]
+fn a_command_key_reaches_the_program_of_its_keyboard_flags_as_they_are_now() {
+    // A program that prints each byte that it reads, then turns the kitty
+    // keyboard protocol on once it reads `k`.
+    let script = r#"stty raw -echo; echo ready; while :; do c=$(dd bs=1 count=1 2>/dev/null); printf 'got:%s;' "$(printf %s "$c" | od -An -tx1 | tr -d ' ')"; [ "$c" = k ] && printf '\033[>1u'; done"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
+    let key = |c, mods| KeyEvent {
+        key: Key::Char(c),
+        action: KeyAction::Press,
+        mods,
+        text: "",
+        unmodified: "",
+        base_layout: None,
+    };
+    let command = Mods {
+        super_key: true,
+        ..Mods::NONE
+    };
+    // Of no flags, ⌘J sends nothing: `x` comes alone.
+    session.key(&key('j', command), KeyOptions::default());
+    session.key(
+        &KeyEvent {
+            text: "x",
+            unmodified: "x",
+            ..key('x', Mods::NONE)
+        },
+        KeyOptions::default(),
+    );
+    wait_for(&session, "x", |terminal| shows(terminal, "got:78;"));
+    assert!(!shows(&session.lock(), "got:6a;"));
+    // Once the program turns the protocol on, of no snapshot taken since,
+    // ⌘J reaches it, of the protocol's sequence.
+    session.key(
+        &KeyEvent {
+            text: "k",
+            unmodified: "k",
+            ..key('k', Mods::NONE)
+        },
+        KeyOptions::default(),
+    );
+    wait_for(&session, "the flags", |terminal| {
+        terminal.keyboard_flags() != lokyr_vt_core::terminal::KeyboardFlags::NONE
+    });
+    session.key(&key('j', command), KeyOptions::default());
+    wait_for(&session, "⌘J", |terminal| shows(terminal, "got:1b;"));
+}

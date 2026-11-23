@@ -4198,6 +4198,78 @@ fn a_backspace_over_a_selection_of_the_command_line_takes_it_away() {
     assert_eq!(app.workspace.focused(shown).unwrap().selection(), None);
 }
 
+#[test]
+fn a_backspace_over_a_selection_under_a_broadcast_goes_as_typed_to_every_pane() {
+    use lokyr_kernel::plugins::host::BroadcastTo;
+    use lokyr_kernel::workspace::{Direction, Side};
+    let (mut fake, mut app, window) = configured("", prompt_shell(";cl=line"));
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "$ echo hello")
+    });
+    let shown = app.windows[&window].window;
+    let first = app.focused(window).unwrap();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        &fake,
+        &prompt_shell(";cl=line"),
+        &lokyr_kernel::workspace::Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let second = app
+        .workspace
+        .split(first, Direction::Horizontal, pane, Side::Second)
+        .unwrap();
+    app.workspace.focus_pane(first);
+    let text_of = |app: &App, pane: PaneId| -> Vec<String> {
+        let pane = app.workspace.pane(pane).unwrap();
+        (0..12)
+            .filter_map(|row| pane.line_text(row, 0).map(|(text, _)| text))
+            .collect()
+    };
+    run_until(&mut fake, &mut app, |_, app| {
+        text_of(app, second)
+            .iter()
+            .any(|line| line.contains("$ echo hello"))
+    });
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    let row = prompt_row(&app, window);
+    fake.send(
+        &mut app,
+        window,
+        click(true, cell(7, row), Modifiers::default(), 1),
+    );
+    fake.send(&mut app, window, moved(cell(10, row), Modifiers::default()));
+    fake.send(
+        &mut app,
+        window,
+        click(false, cell(10, row), Modifiers::default(), 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        typed(lokyr_platform_core::KeyCode::Backspace, "\u{7f}", false),
+    );
+    // The Backspace as typed, to both: no arrows of the focused pane's
+    // selection, which the other's line would not follow.
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "sent ")
+            && text_of(app, second)
+                .iter()
+                .any(|line| line.contains("sent "))
+    });
+    assert!(shows(&app, window, "sent 7f"), "{:?}", screen(&app, window));
+    assert!(!shows(&app, window, "1b5b44"), "{:?}", screen(&app, window));
+    assert!(
+        text_of(&app, second)
+            .iter()
+            .any(|line| line.trim_end() == "sent 7f"),
+        "{:?}",
+        text_of(&app, second)
+    );
+}
+
 /// The press of `code`, of `mods`, typing `text` as macOS gives it.
 fn mac_key(code: KeyCode, text: &str, mods: Modifiers) -> lokyr_platform_core::KeyEvent {
     lokyr_platform_core::KeyEvent {

@@ -142,6 +142,7 @@ export type Cx = {
     set_broadcast: (window: WindowId, to: BroadcastTo) -> (true?, string?, number?),
     set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (true?, string?, number?),
     paste_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
+    send_text_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
     set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),

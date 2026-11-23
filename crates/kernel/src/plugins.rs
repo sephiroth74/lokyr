@@ -4980,10 +4980,13 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 width,
                 height,
             } => {
+                // The tab that takes it, the settings' none, before the
+                // command starts.
                 let tab = window
                     .or(context.focused)
                     .and_then(|window| context.workspace.window(window))
-                    .map(crate::workspace::Window::active_tab);
+                    .map(crate::workspace::Window::active_tab)
+                    .filter(|&tab| context.workspace.tab(tab).is_some());
                 if let Some(tab) = tab {
                     let near = context
                         .workspace
@@ -5140,6 +5143,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SendText { pane: id, text } => {
                 if let Some(pane) = pane(id) {
                     pane.send_text(&text);
+                }
+            }
+            // As the user's keys: to the pane and those that its window
+            // broadcasts to.
+            Asked::SendTextBroadcast { pane: id, text } => {
+                for target in context.workspace.broadcast_panes(PaneId::of(id.0)) {
+                    if let Some(found) = context.workspace.pane_mut(target) {
+                        found.send_text(&text);
+                    }
                 }
             }
             // The line, as a paste, bracketed as the program asks, then
@@ -5891,6 +5903,21 @@ impl Host<'_, '_> {
             } if opened.get() == tab.0 => Some(*pane),
             _ => None,
         })
+    }
+
+    /// That `pane` is no popup, of the workspace's or of the call's writes
+    /// so far, as a popup stays over its tab; `failed` otherwise.
+    fn not_popup(&self, pane: host::PaneId) -> Result<(), Error> {
+        let opened = self.writes.iter().any(
+            |write| matches!(write, Write::OpenPopup { pane: opened, .. } if opened.get() == pane.0),
+        );
+        if opened || self.context.workspace.is_popup(PaneId::of(pane.0)) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::POPUP_STAYS,
+            ));
+        }
+        Ok(())
     }
 
     /// Whether the call's writes so far open the pane `pane`, of a new tab
@@ -6806,6 +6833,7 @@ impl Host<'_, '_> {
             | Asked::Clear(pane)
             | Asked::Paste { pane, .. }
             | Asked::PasteBroadcast { pane, .. }
+            | Asked::SendTextBroadcast { pane, .. }
             | Asked::SetPaneBroadcast { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
@@ -6929,11 +6957,32 @@ impl Host<'_, '_> {
                 height,
             } => {
                 host::check_popup(command, folder.as_deref(), *width, *height)
+                    .and_then(|()| folder.as_deref().map_or(Ok(()), host::check_popup_folder))
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 let window = match window {
                     Some(window) => {
                         self.window(*window)?;
                         self.takes_tabs(*window)?;
+                        // A window that shows, of the active session, as a
+                        // popup shows to the user.
+                        let workspace = &self.context.workspace;
+                        let shows = workspace
+                            .window(WindowId::of(window.0))
+                            .is_some_and(|held| {
+                                !held.hidden()
+                                    && held
+                                        .session()
+                                        .is_none_or(|session| session == workspace.active_session())
+                            });
+                        if !shows {
+                            return Err(Error::new(
+                                Code::Failed,
+                                format!(
+                                    "the window {} is hidden, which a popup opens not in",
+                                    window.0
+                                ),
+                            ));
+                        }
                         Some(WindowId::of(window.0))
                     }
                     None if self.context.focused.is_none() => {
@@ -6961,6 +7010,20 @@ impl Host<'_, '_> {
                 side: new_side,
             } => {
                 self.known_pane(*pane)?;
+                // A floating pane splits not, of no layout of its own: its
+                // shell would start and go.
+                let floating = self
+                    .context
+                    .workspace
+                    .tab_of(PaneId::of(pane.0))
+                    .and_then(|tab| self.context.workspace.tab(tab))
+                    .is_some_and(|tab| tab.is_floating(PaneId::of(pane.0)));
+                if floating || self.not_popup(*pane).is_err() {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT,
+                    ));
+                }
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),
@@ -7077,10 +7140,12 @@ impl Host<'_, '_> {
             Asked::SetTabTitle { tab, .. } | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }
-            Asked::ClosePane { pane, .. }
-            | Asked::FocusPane(pane)
-            | Asked::PaneToNewWindow(pane) => {
+            Asked::ClosePane { pane, .. } | Asked::FocusPane(pane) => {
                 self.known_pane(*pane)?;
+            }
+            Asked::PaneToNewWindow(pane) => {
+                self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
             }
             Asked::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;
@@ -7105,6 +7170,7 @@ impl Host<'_, '_> {
             }
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
             }

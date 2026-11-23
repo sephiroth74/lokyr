@@ -13,8 +13,8 @@ use lokyr_vt_core::page::Style;
 use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, FoldMark, InputModes, KeyboardFlags, Look, Origin, RowCells,
-    Scroll, Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, FoldMark, InputModes, Look, Origin, RowCells, Scroll, Selected,
+    SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
@@ -793,15 +793,12 @@ impl Pane {
     /// Sends `event` to the program, with `options`. A key with Command
     /// held, which the menus did not take, is the app's: it reaches the
     /// program only through the kitty protocol, which reports Super, as
-    /// xterm's sequences have no Command.
+    /// xterm's sequences have no Command, of the terminal's flags as they
+    /// are now, whether a frame showed the pane since or not.
     pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
-        let Some(session) = &self.session else {
-            return;
-        };
-        if event.mods.super_key && self.snapshot.keyboard_flags() == KeyboardFlags::NONE {
-            return;
+        if let Some(session) = &self.session {
+            session.key(event, options);
         }
-        session.key(event, options);
     }
 
     /// Sends `text`, which an input method committed.
