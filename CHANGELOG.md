@@ -24,7 +24,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - In the settings window, a key's More info and Docs links line up with its description above them, as a link shows no box.
 - The settings window's sidebar lists Lokyr's own sections first, then, after a line, those of the plugins that you installed.
-- The Shell menu gathers the splits into a Split submenu and the panes' other commands, such as Select Next Pane and Zoom Pane, into a Pane submenu.
+- The Shell menu gathers the splits into a Split submenu and the panes' other commands, such as Select Next Pane and Zoom Pane, into a Pane submenu, and sets the tab groups' commands, such as New Group with Tab, apart from the tabs' with a line.
 - In the settings window, a key at its default shows no Reset link, rather than a dimmed one, and the Theme Editor's Reset shows under a color's field once you change the color.
 
 ### Fixed

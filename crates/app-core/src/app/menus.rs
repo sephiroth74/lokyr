@@ -717,7 +717,7 @@ pub(super) fn main_menu(
                     && !taken.contains(&command.name.as_str())
             })
             .map(|command| Shown {
-                group: (command.category, namespace(&command.name), false),
+                group: (command.category, family(&command.name), false),
                 title: command.title.clone(),
                 id: command.name.clone(),
                 shortcut: keymap.shortcut(&command.name).and_then(shortcut),
@@ -1275,6 +1275,29 @@ fn taken(items: &[MenuEntry], of: impl Fn(MenuPlace) -> bool) -> Vec<&str> {
 /// The namespace of the command `name`, before its `.`.
 fn namespace(name: &str) -> String {
     name.split('.').next().unwrap_or_default().to_owned()
+}
+
+/// The `tabs` plugin's commands of the tabs' groups, which the menus part
+/// from its commands of the tabs.
+const TAB_GROUPS: [&str; 7] = [
+    "tabs.new-group",
+    "tabs.add-to-group",
+    "tabs.remove-from-group",
+    "tabs.rename-group",
+    "tabs.set-group-color",
+    "tabs.fold-group",
+    "tabs.ungroup",
+];
+
+/// The family of the command `name` in the menus, a line between one and
+/// the next: its namespace, or the tabs' groups of their own, a name of a
+/// `.` that no namespace has.
+fn family(name: &str) -> String {
+    if TAB_GROUPS.contains(&name) {
+        "tabs.groups".to_owned()
+    } else {
+        namespace(name)
+    }
 }
 
 /// The prefix of the ids of the plugins' items of the menus, which no
