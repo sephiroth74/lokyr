@@ -21,3 +21,4 @@ menu-select-right = Seleziona pannello a destra
 menu-select-up = Seleziona pannello sopra
 menu-select-down = Seleziona pannello sotto
 menu-pane = Pannello
+menu-split = Dividi

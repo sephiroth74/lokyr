@@ -105,18 +105,26 @@ fn the_commands_register_with_their_parameters_and_their_titles() {
             let message = format!("command-{} =", name.replace('.', "-"));
             assert!(catalog.contains(&message), "{message}");
         }
-        for (.., title) in ITEMS {
+        for (.., title, submenu) in ITEMS {
             if let Some(title) = title {
                 assert!(catalog.contains(&format!("{title} =")), "{title}");
             }
+            assert!(catalog.contains(&format!("{submenu} =")), "{submenu}");
         }
     }
 }
 
 #[test]
-fn the_menus_items_split_and_select_by_direction_and_the_context_moves_and_closes() {
+fn the_menus_items_split_select_and_act_in_their_submenus_and_the_context_moves_and_closes() {
     let (host, _) = host();
-    let items: Vec<(MenuPlace, &str, Option<&Value>, Option<&str>)> = host
+    type Item<'a> = (
+        MenuPlace,
+        &'a str,
+        Option<&'a Value>,
+        Option<&'a str>,
+        Option<&'a str>,
+    );
+    let items: Vec<Item<'_>> = host
         .menu_items()
         .iter()
         .map(|item| {
@@ -125,29 +133,40 @@ fn the_menus_items_split_and_select_by_direction_and_the_context_moves_and_close
                 item.command.as_str(),
                 item.args.get("direction"),
                 item.title.as_deref(),
+                item.submenu.as_deref(),
             )
         })
         .collect();
     let to = |name: &str| Value::String(name.to_owned());
     let (right, left, down, up) = (to("right"), to("left"), to("down"), to("up"));
+    let (split, pane) = (Some("menu-split"), Some("menu-pane"));
+    // The Shell menu's splits in a submenu, its panes' commands in
+    // another; the context menu's in one.
     assert_eq!(
         items,
         [
-            (BAR, SPLIT, Some(&right), Some("menu-split-right")),
-            (BAR, SPLIT, Some(&left), Some("menu-split-left")),
-            (BAR, SPLIT, Some(&down), Some("menu-split-down")),
-            (BAR, SPLIT, Some(&up), Some("menu-split-up")),
-            (BAR, FOCUS, Some(&left), Some("menu-select-left")),
-            (BAR, FOCUS, Some(&right), Some("menu-select-right")),
-            (BAR, FOCUS, Some(&up), Some("menu-select-up")),
-            (BAR, FOCUS, Some(&down), Some("menu-select-down")),
-            (CONTEXT, SPLIT, Some(&right), Some("menu-split-right")),
-            (CONTEXT, SPLIT, Some(&left), Some("menu-split-left")),
-            (CONTEXT, SPLIT, Some(&down), Some("menu-split-down")),
-            (CONTEXT, SPLIT, Some(&up), Some("menu-split-up")),
-            (CONTEXT, MOVE_TO_TAB, None, None),
-            (CONTEXT, MOVE_TO_WINDOW, None, None),
-            (CONTEXT, CLOSE, None, None),
+            (BAR, SPLIT, Some(&right), Some("menu-split-right"), split),
+            (BAR, SPLIT, Some(&left), Some("menu-split-left"), split),
+            (BAR, SPLIT, Some(&down), Some("menu-split-down"), split),
+            (BAR, SPLIT, Some(&up), Some("menu-split-up"), split),
+            (BAR, FOCUS_NEXT, None, None, pane),
+            (BAR, FOCUS_PREV, None, None, pane),
+            (BAR, FOCUS, Some(&left), Some("menu-select-left"), pane),
+            (BAR, FOCUS, Some(&right), Some("menu-select-right"), pane),
+            (BAR, FOCUS, Some(&up), Some("menu-select-up"), pane),
+            (BAR, FOCUS, Some(&down), Some("menu-select-down"), pane),
+            (BAR, ZOOM, None, None, pane),
+            (BAR, EQUALIZE, None, None, pane),
+            (BAR, MOVE_TO_TAB, None, None, pane),
+            (BAR, MOVE_TO_WINDOW, None, None, pane),
+            (BAR, CLOSE, None, None, pane),
+            (CONTEXT, SPLIT, Some(&right), Some("menu-split-right"), pane),
+            (CONTEXT, SPLIT, Some(&left), Some("menu-split-left"), pane),
+            (CONTEXT, SPLIT, Some(&down), Some("menu-split-down"), pane),
+            (CONTEXT, SPLIT, Some(&up), Some("menu-split-up"), pane),
+            (CONTEXT, MOVE_TO_TAB, None, None, pane),
+            (CONTEXT, MOVE_TO_WINDOW, None, None, pane),
+            (CONTEXT, CLOSE, None, None, pane),
         ]
     );
 }

@@ -79,22 +79,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Fold Group",
             "Ungroup",
             "-",
-            "Select Next Pane cmd+]",
-            "Select Previous Pane cmd+[",
-            "Zoom Pane shift+cmd+Enter",
-            "Equalize Panes",
-            "Move Pane to New Tab",
-            "Move Pane to New Window",
-            "Close Pane",
-            "-",
-            "Split Right cmd+d",
-            "Split Left",
-            "Split Down shift+cmd+d",
-            "Split Up",
-            "Select Pane Left alt+cmd+ArrowLeft",
-            "Select Pane Right alt+cmd+ArrowRight",
-            "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown",
+            "Split",
+            "Pane",
             "-",
             "Broadcast Input"
         ]
@@ -219,22 +205,8 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Fold Group",
             "Ungroup",
             "-",
-            "Select Next Pane cmd+]",
-            "Select Previous Pane cmd+[",
-            "Zoom Pane shift+cmd+Enter",
-            "Equalize Panes",
-            "Move Pane to New Tab",
-            "Move Pane to New Window",
-            "Close Pane",
-            "-",
-            "Split Right cmd+d",
-            "Split Left",
-            "Split Down shift+cmd+d",
-            "Split Up",
-            "Select Pane Left alt+cmd+ArrowLeft",
-            "Select Pane Right alt+cmd+ArrowRight",
-            "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown",
+            "Split",
+            "Pane",
             "-",
             "Broadcast Input"
         ]
@@ -1266,19 +1238,11 @@ fn context_item(fake: &Fake, window: WindowId, title: &str) -> String {
         .unwrap_or_else(|| panic!("no item “{title}”"))
 }
 
-/// The id of the item of `title` of the menu bar's menu at `index`.
+/// The id of the item of `title` of the menu bar's menu at `index`, or of
+/// one of its submenus.
 fn bar_item(fake: &Fake, index: usize, title: &str) -> String {
-    fake.main_menu().unwrap().menus[index]
-        .items
-        .iter()
-        .find_map(|item| match item {
-            MenuItem::Command {
-                title: shown,
-                command,
-                ..
-            } if shown == title => Some(command.clone()),
-            _ => None,
-        })
+    commands_of(&fake.main_menu().unwrap().menus[index].items)
+        .find_map(|(shown, command)| (shown == title).then(|| command.clone()))
         .unwrap_or_else(|| panic!("no item “{title}”"))
 }
 
@@ -1927,4 +1891,59 @@ fn a_block_s_submenu_acts_on_the_block_under_the_click() {
             fake.clipboard_text().as_deref() == Some(copied)
         });
     }
+}
+
+#[test]
+fn the_shell_menu_s_splits_and_panes_go_into_their_submenus_of_their_keys() {
+    let (fake, _, _) = bound("", reader(""));
+    let submenu = |title: &str| -> Vec<(String, bool)> {
+        fake.main_menu().unwrap().menus[1]
+            .items
+            .iter()
+            .find_map(|item| match item {
+                MenuItem::Submenu(menu) if menu.title == title => Some(menu),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no submenu “{title}”"))
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command {
+                    title, shortcut, ..
+                } => Some((title.clone(), shortcut.is_some())),
+                _ => None,
+            })
+            .collect()
+    };
+    let titled = |items: &[(&str, bool)]| -> Vec<(String, bool)> {
+        items
+            .iter()
+            .map(|&(title, keys)| (title.to_owned(), keys))
+            .collect()
+    };
+    assert_eq!(
+        submenu("Split"),
+        titled(&[
+            ("Split Right", true),
+            ("Split Left", false),
+            ("Split Down", true),
+            ("Split Up", false),
+        ])
+    );
+    assert_eq!(
+        submenu("Pane"),
+        titled(&[
+            ("Select Next Pane", true),
+            ("Select Previous Pane", true),
+            ("Select Pane Left", true),
+            ("Select Pane Right", true),
+            ("Select Pane Above", true),
+            ("Select Pane Below", true),
+            ("Zoom Pane", true),
+            ("Equalize Panes", false),
+            ("Move Pane to New Tab", false),
+            ("Move Pane to New Window", false),
+            ("Close Pane", false),
+        ])
+    );
 }
