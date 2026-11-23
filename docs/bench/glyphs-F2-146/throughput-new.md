@@ -1,3 +1,5 @@
+# The VT core's throughput, after a frame's new glyphs
+
 | Input | Bytes timed | VT core | alacritty_terminal | Ratio |
 |---|---|---|---|---|
 | cursor_motion | 8.5 MiB | 497.4 MiB/s | 409.5 MiB/s | 1.21 |

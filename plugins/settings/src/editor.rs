@@ -1165,9 +1165,11 @@ fn reads(name: &str, text: &str) -> bool {
 
 /// The field of the value of `token`, of the theme that `editing` edits,
 /// under its row: the value as the theme gives it, or the text typed, of
-/// its rule or its default as its placeholder; Reset, an underlined link,
-/// which puts its value back as the Editor first showed the theme, dimmed
-/// while it has it; and why the last value written was refused.
+/// its rule or its default as its placeholder; and under the field, why
+/// the last value written was refused, and Reset, an underlined link at
+/// the right, which puts its value back as the Editor first showed the
+/// theme, of none while it has it, so that the field keeps its width as
+/// the link comes and goes.
 fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> Node {
     let placeholder = match &token.origin {
         TokenOrigin::Rule { text } => text.clone(),
@@ -1188,37 +1190,55 @@ fn value_editor(cx: &mut Cx<'_>, token: &ThemeToken, editing: Editing<'_>) -> No
             min_width: Length::Points(0.0),
             ..Layout::default()
         });
-    let mut line = vec![field];
-    // Reset, of the value as the Editor first showed the theme, dimmed
-    // while the color has it.
-    if let Some(original) = editing.original {
-        let changed = own_value(token, editing.theme).as_deref() != original;
-        let mut reset = Node::button(message(cx, "editor-reset", &[]).as_str())
-            .key(format!("{RESET}{}", token.name).as_str());
-        if let Kind::Button(button) = &mut reset.kind {
-            button.link = true;
-            button.disabled = !changed;
-        }
-        line.push(reset);
-    }
-    let mut parts = vec![Node::container(line).layout(Layout {
+    let mut parts = vec![Node::container(vec![field]).layout(Layout {
         direction: Direction::Row,
-        gap: 8.0,
         align: Align::Center,
         width: Length::Fraction(1.0),
         ..Layout::default()
     })];
-    if let Some(why) = editing.refused {
-        parts.push(
-            Node::text(why)
-                .key(format!("editor-refused:{}", token.name).as_str())
-                .style(Style {
-                    color: Some(Token::from("text.warning")),
-                    text_size: Some(TextSize::Small),
-                    ..Style::default()
-                })
-                .layout(super::wrapped()),
-        );
+    // Reset, of the value as the Editor first showed the theme, while the
+    // color has another.
+    let reset = editing
+        .original
+        .filter(|original| own_value(token, editing.theme).as_deref() != *original)
+        .map(|_| {
+            let mut reset = Node::button(message(cx, "editor-reset", &[]).as_str())
+                .key(format!("{RESET}{}", token.name).as_str());
+            if let Kind::Button(button) = &mut reset.kind {
+                button.link = true;
+            }
+            reset
+        });
+    let refused = editing.refused.map(|why| {
+        Node::text(why)
+            .key(format!("editor-refused:{}", token.name).as_str())
+            .style(Style {
+                color: Some(Token::from("text.warning")),
+                text_size: Some(TextSize::Small),
+                ..Style::default()
+            })
+            .layout(Layout {
+                grow: 1.0,
+                ..super::wrapped()
+            })
+    });
+    if refused.is_some() || reset.is_some() {
+        // The refusal at the left, taking the room, Reset at the right.
+        let room = || {
+            Node::container(Vec::new()).layout(Layout {
+                grow: 1.0,
+                ..Layout::default()
+            })
+        };
+        let mut below = vec![refused.unwrap_or_else(room)];
+        below.extend(reset);
+        parts.push(Node::container(below).layout(Layout {
+            direction: Direction::Row,
+            gap: 8.0,
+            align: Align::Start,
+            width: Length::Fraction(1.0),
+            ..Layout::default()
+        }));
     }
     Node::container(parts)
         .key(format!("editor-editing:{}", token.name).as_str())
