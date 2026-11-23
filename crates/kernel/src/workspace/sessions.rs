@@ -137,6 +137,24 @@ impl Workspace {
         Some(id)
     }
 
+    /// Adds a session of `name`, of no window until one opens in it, after
+    /// the others in the order of their use, the active one staying, as the
+    /// sessions kept open again: its id.
+    pub fn add_session(&mut self, name: &str) -> SessionId {
+        let id = SessionId::new();
+        self.sessions.list.insert(
+            id,
+            Session {
+                id,
+                name: name.to_owned(),
+                folder: None,
+                used: 0,
+            },
+        );
+        self.session_changed(id);
+        id
+    }
+
     /// Switches to the session `id`, whose windows show, the active one's
     /// hidden, their programs running; whether it is there.
     pub fn switch_session(&mut self, id: SessionId) -> bool {

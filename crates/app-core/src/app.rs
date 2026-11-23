@@ -895,6 +895,10 @@ pub struct App<B: Backend> {
     session_fronts: BTreeMap<workspace::SessionId, WindowId>,
     /// The session whose windows show, as the app showed them last.
     shown_session: Option<workspace::SessionId>,
+    /// The windows kept of each session that has not shown since the app
+    /// started, which open as it first shows, their shells starting then,
+    /// and which the app keeps again as it quits.
+    pending_windows: BTreeMap<workspace::SessionId, Vec<lokyr_kernel::state::windows::Window>>,
     /// The tabs and the panes, of their windows, that plugins close, whose
     /// closing the user is asked to confirm, by their alerts.
     part_asks: BTreeMap<AlertId, (WindowId, plugins::Closing)>,
@@ -1171,6 +1175,7 @@ impl<B: Backend> App<B> {
             session_asks: BTreeMap::new(),
             session_fronts: BTreeMap::new(),
             shown_session: None,
+            pending_windows: BTreeMap::new(),
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
             choice_asks: BTreeMap::new(),

@@ -2,7 +2,9 @@
 //! `[app] restore-windows` says: their frames, tabs, splits and the
 //! directories of their panes, whose programs start anew; and, as
 //! `[app] restore-scrollback` says, what each pane showed, its scrollback
-//! within `[scrollback] limit`, which it shows again.
+//! within `[scrollback] limit`, which it shows again. Every session comes
+//! back, the active one shown: the windows of the others open as each first
+//! shows, so that the start pays for the windows that show alone.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -83,7 +85,7 @@ impl<B: Backend> App<B> {
             let mut archives: Vec<(String, Vec<u8>)> = Vec::new();
             // The directory that its shell told last, of this machine, as a
             // new pane's; its program's otherwise.
-            let kept = Kept::of(
+            let mut kept = Kept::of(
                 &self.workspace,
                 &shown,
                 front,
@@ -104,6 +106,7 @@ impl<B: Backend> App<B> {
                     Some(name)
                 },
             );
+            self.keep_pending(state, &mut kept, &mut archives);
             if !kept.windows.is_empty() {
                 // The panes' files first, so that the windows name none that
                 // is not there.
@@ -125,6 +128,38 @@ impl<B: Backend> App<B> {
             eprintln!(
                 "lokyr: the panes' scrollback kept for the next start cannot be forgotten: {error}"
             );
+        }
+    }
+
+    /// Appends to `kept` the windows of the sessions that have not shown
+    /// since the app started, as they were kept, of the files of their
+    /// panes' scrollback, read for `archives` of their new names, after
+    /// those of the panes kept before them, as the config keeps any.
+    fn keep_pending(&self, state: &Path, kept: &mut Kept, archives: &mut Vec<(String, Vec<u8>)>) {
+        let keeps_scrollback = self.config.app.restore_scrollback;
+        let mut index = kept.panes();
+        let mut pending = Vec::new();
+        for session in self.workspace.sessions() {
+            let Some(windows) = self.pending_windows.get(&session.id()) else {
+                continue;
+            };
+            for window in windows {
+                let mut window = window.clone();
+                window.rename_scrollbacks(|name| {
+                    let at = index;
+                    index += 1;
+                    let rows = name
+                        .filter(|_| keeps_scrollback)
+                        .and_then(|name| scrollback::take(state, &name).ok().flatten())?;
+                    let name = scrollback::name(at);
+                    archives.push((name.clone(), rows.rows));
+                    Some(name)
+                });
+                pending.push((session.id(), window));
+            }
+        }
+        if !pending.is_empty() {
+            kept.append(&self.workspace, pending);
         }
     }
 
@@ -166,8 +201,35 @@ impl<B: Backend> App<B> {
                 return false;
             }
         };
+        // The sessions, the first the one that the app starts in, the
+        // others after it in the order of their use.
+        let first = self.workspace.active_session();
+        let sessions: Vec<workspace::SessionId> = kept
+            .sessions_to_open()
+            .into_iter()
+            .enumerate()
+            .map(|(index, session)| {
+                let id = if index == 0 {
+                    self.workspace.rename_session(first, &session.name);
+                    first
+                } else {
+                    self.workspace.add_session(&session.name)
+                };
+                self.workspace.set_session_folder(id, session.folder);
+                id
+            })
+            .collect();
         let mut front = None;
         for (index, window) in kept.windows.iter().enumerate() {
+            // A hidden session's windows open as it first shows.
+            let session = sessions[window.session_index(sessions.len())];
+            if session != first {
+                self.pending_windows
+                    .entry(session)
+                    .or_default()
+                    .push(window.clone());
+                continue;
+            }
             let opened = self.restore_window(platform, window);
             if kept.front == Some(index) {
                 front = opened;
@@ -186,7 +248,7 @@ impl<B: Backend> App<B> {
     /// Opens the window `kept`, at its frame, on a screen that is there, of
     /// its tabs and splits, each pane in its directory, or, where that is
     /// not one, in the home directory.
-    fn restore_window(
+    pub(super) fn restore_window(
         &mut self,
         platform: &mut dyn Platform,
         kept: &windows::Window,

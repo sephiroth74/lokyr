@@ -212,9 +212,8 @@ fn app_of(config: Config, program: Program) -> App {
 
 /// Keeps, in `state`, windows of a pane each at `frames`.
 fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
-    let kept = Kept {
-        version: windows::VERSION,
-        windows: frames
+    let kept = Kept::new(
+        frames
             .iter()
             .map(|&frame| windows::Window {
                 frame,
@@ -232,10 +231,11 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                 }],
                 active: 0,
                 groups: Vec::new(),
+                session: None,
             })
             .collect(),
-        front: None,
-    };
+        None,
+    );
     windows::write(state, &kept).unwrap();
 }
 
@@ -310,6 +310,7 @@ fn a_window_of_a_display_that_went_opens_on_one_that_is_there() {
         tabs: Vec::new(),
         active: 0,
         groups: Vec::new(),
+        session: None,
     });
     windows::write(&state, &kept).unwrap();
     let mut fake = Fake::default();
@@ -664,5 +665,116 @@ fn scrollback_costs() {
             }
         }
     }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// The rows of the screen of the pane of `window`, a window of a pane.
+fn rows_of(app: &App, window: WindowId) -> Vec<String> {
+    let shown = app.windows[&window].window;
+    let pane = app.workspace.focused(shown).unwrap();
+    let terminal = pane.terminal().unwrap();
+    (0..terminal.rows()).map(|y| terminal.row_text(y)).collect()
+}
+
+/// The names of `app`'s sessions, in the order of their use.
+fn session_names(app: &App) -> Vec<String> {
+    app.workspace
+        .sessions()
+        .iter()
+        .map(|session| session.name().to_owned())
+        .collect()
+}
+
+/// The session of `app` of the name `name`.
+fn session_of(app: &App, name: &str) -> workspace::SessionId {
+    app.workspace
+        .sessions()
+        .iter()
+        .find(|session| session.name() == name)
+        .map(|session| session.id())
+        .unwrap()
+}
+
+#[test]
+fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
+    let base = real_directory("restore-sessions");
+    let state = base.join("state");
+    // A run of three sessions: home of two windows, api, then web, active,
+    // each window's pane of a line of its own.
+    let mut fake = Fake::default();
+    let mut app = app(
+        restoring_scrollback(),
+        shell("printf 'kept in %s\\n' \"$LOKYR_TEST_MARK\"; exec sleep 30"),
+    )
+    .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    let home = app.workspace.active_session();
+    app.workspace.rename_session(home, "home");
+    fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+    for name in ["api", "web"] {
+        fake.send_app(&mut app, AppEvent::Command("window.new-session".to_owned()));
+        let session = app.workspace.active_session();
+        app.workspace.rename_session(session, name);
+    }
+    assert_eq!(fake.windows().count(), 4);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows.keys().all(|&window| {
+            rows_of(app, window)
+                .iter()
+                .any(|row| row.starts_with("kept"))
+        })
+    });
+    app.quit(&mut fake);
+    // The next start: every session, the one that was active shown, of its
+    // window alone; the others' windows open as each first shows.
+    let started = |state: &std::path::Path| {
+        let mut fake = Fake::default();
+        let mut app = super::app(restoring_scrollback(), shell("exec sleep 30"))
+            .with_state(Some(state.to_path_buf()));
+        fake.start(&mut app);
+        (fake, app)
+    };
+    let (mut fake, mut app) = started(&state);
+    assert_eq!(session_names(&app), ["web", "api", "home"]);
+    assert_eq!(fake.windows().count(), 1);
+    let api = session_of(&app, "api");
+    assert!(app.workspace.session_windows(api).is_empty());
+    let named = |name: &str| {
+        lokyr_kernel::commands::Args::from([(
+            "name".to_owned(),
+            lokyr_kernel::commands::Value::String(name.to_owned()),
+        )])
+    };
+    app.run(&mut fake, "window.switch-session", named("home"));
+    assert_eq!(fake.windows().count(), 3);
+    let home = session_of(&app, "home");
+    assert_eq!(app.workspace.session_windows(home).len(), 2);
+    for window in app.workspace.session_windows(home) {
+        let (&shown, _) = app
+            .windows
+            .iter()
+            .find(|(_, state)| state.window == window)
+            .unwrap();
+        assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+        assert!(!fake.window(shown).unwrap().hidden);
+    }
+    // Quit with api never shown: its window is kept as it was, of its
+    // scrollback, and shows it as api first shows after the next start.
+    app.quit(&mut fake);
+    let (mut fake, mut app) = started(&state);
+    assert_eq!(session_names(&app), ["home", "web", "api"]);
+    assert_eq!(fake.windows().count(), 2);
+    app.run(&mut fake, "window.switch-session", named("api"));
+    let api = session_of(&app, "api");
+    let [window] = app.workspace.session_windows(api)[..] else {
+        panic!("one window of api");
+    };
+    let (&shown, _) = app
+        .windows
+        .iter()
+        .find(|(_, state)| state.window == window)
+        .unwrap();
+    assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+    app.quit(&mut fake);
     let _ = std::fs::remove_dir_all(base);
 }

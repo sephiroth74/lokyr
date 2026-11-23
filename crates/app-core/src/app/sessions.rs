@@ -152,6 +152,8 @@ impl<B: Backend> App<B> {
     /// Closes `session`'s windows, as their own closes do, and the session,
     /// which goes with its last window, unless it is the only one.
     fn close_session(&mut self, platform: &mut dyn Platform, session: SessionId) {
+        // Of windows kept that never showed, nothing is left.
+        self.pending_windows.remove(&session);
         let windows = self.windows_of_session(session);
         for window in windows {
             self.close(platform, window);
@@ -261,6 +263,13 @@ impl<B: Backend> App<B> {
     /// session where it shows.
     pub(super) fn settle_sessions(&mut self, platform: &mut dyn Platform) {
         let active = self.workspace.active_session();
+        // A session that has not shown since the app started opens its
+        // windows, as they were kept, their shells starting now.
+        if let Some(pending) = self.pending_windows.remove(&active) {
+            for window in &pending {
+                self.restore_window(platform, window);
+            }
+        }
         // The session that the app starts in shows of its own.
         let switched = self.shown_session.is_some_and(|shown| shown != active);
         let mut shown = Vec::new();

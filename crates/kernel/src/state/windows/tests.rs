@@ -46,9 +46,12 @@ fn sample() -> Kept {
         scrollback: None,
     };
     Kept {
+        sessions: Vec::new(),
+        of_sessions: Vec::new(),
         version: VERSION,
         windows: vec![
             Window {
+                session: None,
                 frame: Some(Frame {
                     x: 40.0,
                     y: 60.0,
@@ -118,6 +121,7 @@ fn sample() -> Kept {
                 ],
             },
             Window {
+                session: None,
                 frame: None,
                 tabs: vec![Tab {
                     title: None,
@@ -229,6 +233,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
     let mut kept = sample();
     kept.windows = (0..=MOST_WINDOWS)
         .map(|_| Window {
+            session: None,
             frame: None,
             tabs: Vec::new(),
             active: 0,
@@ -367,6 +372,7 @@ fn a_window_of_another_workspace_or_of_no_tab_is_left_out() {
     assert_eq!(kept.windows.len(), 1);
     assert_eq!(kept.front, None);
     let empty = Window {
+        session: None,
         frame: None,
         tabs: Vec::new(),
         active: 0,
@@ -438,4 +444,97 @@ fn each_pane_names_its_scrollback_s_file_in_the_layout_s_order() {
             scrollback: None
         }
     );
+}
+
+#[test]
+fn the_windows_keep_their_sessions_in_the_order_of_their_use() {
+    let mut workspace = Workspace::new();
+    let home = workspace.active_session();
+    let first = workspace.open_window(pane());
+    let api = workspace.new_session("api").unwrap();
+    workspace.set_session_folder(api, Some("/src/api".to_owned()));
+    let second = workspace.open_window(pane());
+    let web = workspace.new_session("web").unwrap();
+    let third = workspace.open_window(pane());
+    assert!(workspace.rename_session(home, "home"));
+    let shown = [(first, None), (second, None), (third, None)];
+    let kept = Kept::of(&workspace, &shown, Some(third), |_| None, |_, _| None);
+    // The active one first, then the one before it.
+    assert_eq!(
+        kept.sessions,
+        [
+            Session {
+                name: "web".to_owned(),
+                folder: None
+            },
+            Session {
+                name: "api".to_owned(),
+                folder: Some("/src/api".to_owned())
+            },
+            Session {
+                name: "home".to_owned(),
+                folder: None
+            },
+        ]
+    );
+    let of: Vec<Option<usize>> = kept.windows.iter().map(|window| window.session).collect();
+    assert_eq!(of, [Some(2), Some(1), None]);
+    assert_eq!(kept.windows[1].session_index(3), 1);
+    assert_eq!(kept.windows[2].session_index(3), 0);
+    // Written and read, the same.
+    let state = state("sessions");
+    write(&state, &kept).unwrap();
+    assert_eq!(read(&state).unwrap(), Some(kept.clone()));
+    let _ = fs::remove_dir_all(&state);
+    // Of one session of no name nor folder, none, as before sessions.
+    let mut plain = Workspace::new();
+    let alone = plain.open_window(pane());
+    let kept = Kept::of(&plain, &[(alone, None)], None, |_| None, |_, _| None);
+    assert!(kept.sessions.is_empty() && kept.windows[0].session.is_none());
+    assert_eq!(kept.sessions_to_open(), [Session::default()]);
+    let _ = (web, api);
+}
+
+#[test]
+fn a_session_that_never_showed_keeps_its_windows_and_their_files_new_names() {
+    let mut workspace = Workspace::new();
+    let first = workspace.open_window(pane());
+    let later = workspace.add_session("later");
+    assert_eq!(workspace.active_session(), workspace.sessions()[0].id());
+    let mut kept = Kept::of(&workspace, &[(first, None)], None, |_| None, |_, _| None);
+    // A window kept of a pane of a file, whose name the window takes anew.
+    let mut window = Window {
+        session: None,
+        frame: None,
+        tabs: vec![Tab {
+            title: None,
+            color: None,
+            layout: Layout::Pane {
+                directory: None,
+                scrollback: Some("7.scrollback".to_owned()),
+            },
+            active: 0,
+            zoomed: None,
+            pinned: false,
+            group: None,
+        }],
+        active: 0,
+        groups: Vec::new(),
+    };
+    let mut index = kept.panes();
+    window.rename_scrollbacks(|name| {
+        index += 1;
+        name.map(|_| super::super::scrollback::name(index - 1))
+    });
+    kept.append(&workspace, vec![(later, window)]);
+    assert_eq!(kept.sessions.len(), 2);
+    assert_eq!(kept.sessions[1].name, "later");
+    assert_eq!(kept.windows[1].session, Some(1));
+    assert_eq!(
+        kept.windows[1].tabs[0].layout.first_pane().scrollback,
+        Some("1.scrollback")
+    );
+    // A name that the file holds as no plugin could write it goes.
+    kept.sessions[1].name = "a\nb".to_owned();
+    assert_eq!(kept.sessions_to_open()[1].name, "");
 }

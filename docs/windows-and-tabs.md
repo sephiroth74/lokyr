@@ -114,6 +114,8 @@ What a program showed on its own screen, such as vim or less, isn't kept: the pa
 
 Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
 
+[Sessions](#use-sessions) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · not released yet
+
 **Try it**: set `restore-windows = "always"` and `restore-scrollback = true`, open a second tab with ⌘T, and run `cd /usr/share` and `ls` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`, its `ls` and the files it listed above the new prompt.
 
 ## Open and close tabs
@@ -279,7 +281,7 @@ close-button = "hover"            # "always" or "never"
 - **The quick terminal and man pages' windows** don't open again when Lokyr starts.
 - **macOS's own window tabs**, and its Prefer tabs setting, don't apply: Lokyr's tabs are its own.
 - **Keys reach the first nine** windows and tabs: bind more in [`[keys]`](CONFIGURATION.md#bindings).
-- **Sessions don't come back yet when Lokyr starts**: the windows of every session open again in one. A window with its tabs in the titlebar doesn't show its session's name. · not released yet
+- **A window with its tabs in the titlebar doesn't show its session's name.** · not released yet
 
 ## Troubleshooting
 
