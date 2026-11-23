@@ -363,6 +363,37 @@ fn a_newer_or_unreadable_file_is_left_aside_with_a_notice() {
 }
 
 #[test]
+fn the_windows_that_the_last_run_left_out_are_told() {
+    let base = real_directory("restore-left");
+    let state = base.join("state");
+    keep_frames(&state, &[None]);
+    let mut file = kept(&state);
+    file.left = windows::Left {
+        windows: 3,
+        panes: 40,
+    };
+    windows::write(&state, &file).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(restoring(), quiet()).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    // The window kept opens, and a notice tells those that do not.
+    assert_eq!(fake.windows().count(), 1);
+    let notice = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert!(
+        notice
+            .text
+            .starts_with("3 windows of the last run, of 40 panes, do not open again"),
+        "{}",
+        notice.text
+    );
+    assert_eq!(notice.about, About::KeptWindows);
+    // Kept anew as it quits, of none left out.
+    app.quit(&mut fake);
+    assert!(kept(&state).left.is_none());
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
 fn the_windows_open_again_as_the_config_and_the_system_s_setting_say() {
     let base = real_directory("restore-setting");
     let state = base.join("state");

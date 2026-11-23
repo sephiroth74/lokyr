@@ -139,9 +139,10 @@ impl<B: Backend> App<B> {
     }
 
     /// Appends to `kept` the windows of the sessions that have not shown
-    /// since the app started, as they were kept, of the files of their
-    /// panes' scrollback, read for `archives` of their new names, after
-    /// those of the panes kept before them, as the config keeps any.
+    /// since the app started, as they were kept, while they fit, of the
+    /// files of their panes' scrollback, read for `archives` of their new
+    /// names, after those of the panes kept before them, as the config
+    /// keeps any.
     fn keep_pending(&self, state: &Path, kept: &mut Kept, archives: &mut Vec<(String, Vec<u8>)>) {
         let keeps_scrollback = self.config.app.restore_scrollback;
         let mut index = kept.panes();
@@ -151,23 +152,24 @@ impl<B: Backend> App<B> {
                 continue;
             };
             for window in windows {
-                let mut window = window.clone();
-                window.rename_scrollbacks(|name| {
-                    let at = index;
-                    index += 1;
-                    let rows = name
-                        .filter(|_| keeps_scrollback)
-                        .and_then(|name| scrollback::take(state, &name).ok().flatten())?;
-                    let name = scrollback::name(at);
-                    archives.push((name.clone(), rows.rows));
-                    Some(name)
-                });
-                pending.push((session.id(), window));
+                pending.push((session.id(), window.clone()));
             }
         }
-        if !pending.is_empty() {
-            kept.append(&self.workspace, pending);
+        if pending.is_empty() {
+            return;
         }
+        kept.append(&self.workspace, pending, |window| {
+            window.rename_scrollbacks(|name| {
+                let at = index;
+                index += 1;
+                let rows = name
+                    .filter(|_| keeps_scrollback)
+                    .and_then(|name| scrollback::take(state, &name).ok().flatten())?;
+                let name = scrollback::name(at);
+                archives.push((name.clone(), rows.rows));
+                Some(name)
+            });
+        });
     }
 
     /// Opens the windows kept as the app last quit, as the config says,
@@ -208,6 +210,21 @@ impl<B: Backend> App<B> {
                 return false;
             }
         };
+        // The windows that the last run could not keep, past the most that
+        // open.
+        if !kept.left.is_none() {
+            let text = format!(
+                "{} windows of the last run, of {} panes, do not open again, past the {} windows and {} panes that open",
+                kept.left.windows,
+                kept.left.panes,
+                windows::MOST_WINDOWS,
+                windows::MOST_PANES
+            );
+            self.report(
+                platform,
+                Diagnostic::new(Code::Failed, text, About::KeptWindows),
+            );
+        }
         // The sessions, the first the one that the app starts in, the
         // others after it in the order of their use.
         let first = self.workspace.active_session();

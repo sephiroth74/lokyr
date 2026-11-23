@@ -280,6 +280,7 @@ close-button = "hover"            # "always" or "never"
 - **A program can't move, resize or minimize its window**, nor read its title.
 - **Restored windows start new shells**: the panes' text and their programs don't come back, and a window that was in full screen opens out of it.
 - **The quick terminal and man pages' windows** don't open again when Lokyr starts.
+- **Lokyr keeps 100 windows and 256 panes at most** as it quits: those of the session that shows first, then the other sessions' from the one you used last. A notice at the next start tells how many it left out. · not released yet
 - **macOS's own window tabs**, and its Prefer tabs setting, don't apply: Lokyr's tabs are its own.
 - **Keys reach the first nine** windows and tabs: bind more in [`[keys]`](CONFIGURATION.md#bindings).
 - **A window with its tabs in the titlebar doesn't show its session's name.** · not released yet
