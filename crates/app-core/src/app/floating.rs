@@ -274,7 +274,8 @@ impl<B: Backend> App<B> {
     }
 
     /// Shows the floating panes of the active tab of the window that acts,
-    /// or has the focus, or hides them; of a tab of none, a new one.
+    /// or has the focus, or hides them, its popups showing of their own; of
+    /// a tab of none but popups, a new one.
     pub(super) fn toggle_floating_panes(&mut self, platform: &mut dyn Platform) {
         let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
             return;
@@ -289,11 +290,12 @@ impl<B: Backend> App<B> {
         else {
             return;
         };
-        let Some((none, floating_shown)) = self
-            .workspace
-            .tab(tab)
-            .map(|held| (held.floating().is_empty(), held.floating_shown()))
-        else {
+        let Some((none, floating_shown)) = self.workspace.tab(tab).map(|held| {
+            (
+                held.floating().iter().all(|floating| floating.popup),
+                held.floating_shown(),
+            )
+        }) else {
             return;
         };
         if none {

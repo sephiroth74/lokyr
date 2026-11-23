@@ -4,8 +4,9 @@
 //! as they hide, the layout's pane that had it last takes it back. A
 //! floating pane closes as any pane, and the one in front takes the place
 //! of the layout's last pane as it closes, so that the tab stays. A popup
-//! is a floating pane that runs a command, which closes as it ends, and
-//! which no quit keeps.
+//! is a floating pane that runs a command, which closes as it ends, which
+//! shows of its own, whether the others show or not, and which no quit
+//! keeps.
 
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 
@@ -136,7 +137,8 @@ impl Workspace {
             frame,
             popup,
         });
-        shown.floating_shown = true;
+        // A popup shows of its own, the others as they were.
+        shown.floating_shown |= !popup;
         self.panes.insert(id, new);
         self.tab_of.insert(id, tab);
         self.changed(WorkspaceEvent::PaneCreated {
@@ -159,7 +161,14 @@ impl Workspace {
             return true;
         }
         held.floating_shown = shown;
-        let back = (!shown && held.is_floating(held.active)).then_some(held.split_active);
+        // The keyboard of a pane that hides to the popup in front, or to
+        // the layout's pane that had it last.
+        let back =
+            (!shown && held.is_floating(held.active) && !held.is_popup(held.active)).then(|| {
+                held.shown_floating()
+                    .last()
+                    .map_or(held.split_active, |front| front.pane)
+            });
         let front = held
             .floating
             .last()

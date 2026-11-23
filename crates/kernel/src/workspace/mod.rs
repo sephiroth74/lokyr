@@ -407,14 +407,20 @@ impl Tab {
         panes
     }
 
-    /// Its panes that show: its layout's, then its floating panes while
-    /// they show, from the back to the front.
+    /// Its panes that show: its layout's, then its floating panes that
+    /// show, from the back to the front.
     pub fn shown_panes(&self) -> Vec<PaneId> {
-        if self.floating_shown {
-            self.panes()
-        } else {
-            self.layout.panes()
-        }
+        let mut panes = self.layout.panes();
+        panes.extend(self.shown_floating().map(|floating| floating.pane));
+        panes
+    }
+
+    /// Its floating panes that show, from the back to the front: its
+    /// popups, which show of their own, and the others while they show.
+    pub fn shown_floating(&self) -> impl Iterator<Item = &Floating> {
+        self.floating
+            .iter()
+            .filter(|floating| floating.popup || self.floating_shown)
     }
 
     /// Its panes that float over its layout's, from the back to the front.
@@ -434,7 +440,8 @@ impl Tab {
             .any(|floating| floating.pane == pane && floating.popup)
     }
 
-    /// Whether its floating panes show.
+    /// Whether its floating panes show, but its popups, which show of their
+    /// own.
     pub fn floating_shown(&self) -> bool {
         self.floating_shown
     }
@@ -2344,11 +2351,9 @@ impl Workspace {
             // A floating pane: the keyboard to the one in front of those
             // left, or to the layout's pane that had it last.
             tab.floating.remove(at);
-            tab.floating
+            tab.shown_floating()
                 .last()
-                .map(|front| front.pane)
-                .filter(|_| tab.floating_shown)
-                .unwrap_or(tab.split_active)
+                .map_or(tab.split_active, |front| front.pane)
         } else if let Some(nearest) = tab.layout.remove(pane) {
             if tab.split_active == pane {
                 tab.split_active = nearest;
@@ -2437,7 +2442,8 @@ impl Workspace {
                 tab.floating.push(raised);
                 moved = true;
             }
-            if !tab.floating_shown {
+            // A popup shows of its own, the others hidden still.
+            if !tab.floating_shown && !tab.is_popup(pane) {
                 tab.floating_shown = true;
                 moved = true;
             }

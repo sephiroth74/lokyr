@@ -257,3 +257,53 @@ fn a_popup_closes_as_its_command_ends_or_is_interrupted_and_a_failed_one_waits_f
     assert_eq!(app.focused(window), Some(first));
     let _ = std::fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_popup_shows_of_its_own_and_leaves_the_hidden_floating_panes_hidden() {
+    let (mut fake, mut app, window) = started_running(idle());
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let first = app.focused(window).unwrap();
+    let rooms = |app: &App| -> Vec<PaneId> {
+        app.windows[&window]
+            .floating_rooms
+            .iter()
+            .map(|&(pane, _)| pane)
+            .collect()
+    };
+    // A floating pane, hidden.
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    command(&mut fake, &mut app, TOGGLE_FLOATING);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(rooms(&app).is_empty());
+    // A popup shows alone, the floating pane hidden still.
+    app.run(&mut fake, POPUP, popup_of("read line", &[]));
+    let popup = app.focused(window).unwrap();
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(!app.workspace.tab(tab).unwrap().floating_shown());
+    assert_eq!(rooms(&app), [popup]);
+    // The others show and hide under it, which keeps the keyboard.
+    command(&mut fake, &mut app, TOGGLE_FLOATING);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(rooms(&app), [floating, popup]);
+    assert_eq!(app.focused(window), Some(popup));
+    command(&mut fake, &mut app, TOGGLE_FLOATING);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert_eq!(rooms(&app), [popup]);
+    assert_eq!(app.focused(window), Some(popup));
+    // Its end leaves them hidden, the keyboard to the layout's pane.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", Modifiers::NONE, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(popup).is_none()
+    });
+    fake.send(&mut app, window, WindowEvent::Frame);
+    assert!(rooms(&app).is_empty());
+    assert!(!app.workspace.tab(tab).unwrap().floating_shown());
+    assert_eq!(app.focused(window), Some(first));
+}

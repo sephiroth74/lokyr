@@ -209,12 +209,11 @@ impl<B: Backend> App<B> {
             ),
             None => (Vec::new(), Vec::new()),
         };
-        // The tab's floating panes over its layout, while they show, from
-        // the back to the front, each in its frame of shares of the room.
+        // The tab's floating panes over its layout that show, from the back
+        // to the front, each in its frame of shares of the room.
         let floating: Vec<(PaneId, lokyr_ui_core::floating::Room)> = match tab {
-            Some(tab) if tab.floating_shown() => tab
-                .floating()
-                .iter()
+            Some(tab) => tab
+                .shown_floating()
                 .map(|floating| {
                     let frame = floating.frame;
                     let shares = lokyr_ui_core::floating::Shares {
@@ -228,7 +227,7 @@ impl<B: Backend> App<B> {
                     (floating.pane, room)
                 })
                 .collect(),
-            _ => Vec::new(),
+            None => Vec::new(),
         };
         state.dividers = lines;
         // Each pane's header at its room's top, and its grid below it.

@@ -223,6 +223,7 @@ Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that flo
 - **Move one**: drag its title bar.
 - **Resize one**: drag its edges or its corners.
 - **Bring one forward**: click it. The pane you click takes the keyboard, whether it floats or not.
+- **Close one**: press ⌘W, choose Shell › Pane › Close Pane, or exit its shell, as for any pane.
 - **Float a pane of the splits**: right-click it and choose Float Pane. A floating pane goes back into the splits, beside the pane you used last, with Move Pane into Splits.
 - **Keep them**: they come back with their tab when Lokyr opens your windows again, each where it was, with what it showed when [`restore-scrollback`](CONFIGURATION.md#restore-scrollback) is on.
 
@@ -243,7 +244,7 @@ A popup is a floating pane in the middle of the tab that runs one command and cl
 - **When it closes**: when the command exits with the status 0, or when you interrupt it, such as with Control-C, or Escape in `fzf`. When it fails, the popup stays open with a line that tells how it ended, so that you can read its error, until you press a key. This holds whatever [`close-on-exit`](CONFIGURATION.md#close-on-exit) says.
 - **Your keys**: the command gets them all, Escape too.
 
-A popup hides with the tab's other floating panes, and Lokyr does not open it again when it opens your windows.
+A popup shows on its own: the tab's floating panes that you hid stay hidden, and Show or Hide Floating Panes, ⌥⌘F, shows or hides them under it. Lokyr does not open a popup again when it opens your windows.
 
 ## Type into several panes at once
 
