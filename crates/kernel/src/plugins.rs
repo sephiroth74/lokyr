@@ -193,11 +193,12 @@ pub enum Request {
         /// Its column, from 1, if one is known.
         column: Option<u32>,
     },
-    /// Ask the user to confirm a paste of `text` into `pane`, whose
-    /// program takes its line breaks as Return.
+    /// Ask the user to confirm a paste of `text` into `panes`, of which
+    /// one's program at least takes its line breaks as Return: one question
+    /// for all, the first pane's window showing it.
     ConfirmPaste {
-        /// The pane.
-        pane: PaneId,
+        /// The panes, the one pasted into first.
+        panes: Vec<PaneId>,
         /// What to paste.
         text: String,
     },
@@ -5017,10 +5018,44 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 match paste::decide(&text, bracketed, context.confirm_paste) {
                     Paste::Now(text) => found.paste(&text),
                     Paste::Ask => requests.push(Request::ConfirmPaste {
-                        pane: PaneId::of(id.0),
+                        panes: vec![PaneId::of(id.0)],
                         text,
                     }),
                 }
+            }
+            // As the user pastes: into the pane and those that its window
+            // broadcasts to, each bracketed as its program asks, of one
+            // question for all.
+            Asked::PasteBroadcast { pane: id, text } => {
+                let panes = context.workspace.broadcast_panes(PaneId::of(id.0));
+                let bracketed: Vec<bool> = panes
+                    .iter()
+                    .map(|&target| {
+                        context
+                            .workspace
+                            .pane(target)
+                            .and_then(Pane::input_modes)
+                            .is_some_and(|modes| modes.bracketed_paste)
+                    })
+                    .collect();
+                match paste::decide_all(&text, &bracketed, context.confirm_paste) {
+                    Some(texts) => {
+                        for (&target, text) in panes.iter().zip(&texts) {
+                            if let Some(found) = context.workspace.pane(target) {
+                                found.paste(text);
+                            }
+                        }
+                    }
+                    None => requests.push(Request::ConfirmPaste { panes, text }),
+                }
+            }
+            Asked::SetBroadcast { window, to } => {
+                context.workspace.set_broadcast(WindowId::of(window.0), to);
+            }
+            Asked::SetPaneBroadcast { pane, left_out } => {
+                context
+                    .workspace
+                    .set_pane_broadcast(PaneId::of(pane.0), left_out);
             }
             Asked::SendText { pane: id, text } => {
                 if let Some(pane) = pane(id) {
@@ -6337,6 +6372,18 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            Asked::Broadcast(window) => {
+                let id = self.window(window)?.id();
+                let workspace = &*self.context.workspace;
+                Response::Broadcast(host::Broadcast {
+                    to: workspace.broadcast(id),
+                    left_out: workspace
+                        .broadcast_left_out(id)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                })
+            }
             // Their folders, the shells', to a plugin that reads the
             // processes alone.
             Asked::Sessions => {
@@ -6655,9 +6702,14 @@ impl Host<'_, '_> {
             | Asked::ClearScrollback(pane)
             | Asked::Clear(pane)
             | Asked::Paste { pane, .. }
+            | Asked::PasteBroadcast { pane, .. }
+            | Asked::SetPaneBroadcast { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SetBroadcast { window, .. } => {
+                self.window(*window)?;
             }
             Asked::SelectBlock { pane, command } => {
                 let found = self.pane(*pane)?;
@@ -7967,6 +8019,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent_message: marks.agent_message.filter(|_| reads),
         pinned: marks.pinned,
         group: tab.group().map(Into::into),
+        broadcast: workspace.broadcasts_tab(tab.id()),
         status: marks
             .status
             .filter(|_| reads)
@@ -8036,6 +8089,7 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     })
 }
 

@@ -310,6 +310,16 @@ type SessionFolders = {
     layouts: { string }, -- the names of the layouts, each opening as a new session of `window.open-layout`
 }
 
+-- Where a window's typed input goes beside the pane that has its keyboard: the keys, the input method's text and
+-- the pastes of ⌘V and of drops · not released yet.
+type BroadcastTo = "off" | "tab" | "window"
+
+-- A window's broadcast of the typed input · not released yet.
+type Broadcast = {
+    to: BroadcastTo,
+    left_out: { PaneId }?, -- the window's panes left out, which take their own input alone, in the order of their ids
+}
+
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the
 -- first part's share, from 0 to 1, or none to share it by their panes.
 type Layout =
@@ -594,6 +604,9 @@ type Event =
     | { kind: "group-changed", group: GroupId, window: WindowId }
     -- A session was made, renamed, switched to or from, or went, of no window left or closed · not released yet.
     | { kind: "session-changed", session: SessionId }
+    -- A window's broadcast of the typed input changed: where it goes, or a pane of it left out or taken back in · not
+    -- released yet.
+    | { kind: "broadcast-changed", window: WindowId }
     -- The keymap's bindings changed, as the config's or a plugin's: the keys of `keys_of` may be others.
     | { kind: "keys-changed" }
     -- A window took the keyboard's focus, or lost it, as a click goes to another app or another window; not as a question of
@@ -924,6 +937,8 @@ type Cx = {
     sessions: () -> ({ SessionInfo }?, Error?),
     -- The folders that the sessions' switcher lists, of `process-read` · not released yet.
     session_folders: () -> (SessionFolders?, Error?),
+    -- A window's broadcast of the typed input · not released yet.
+    broadcast: (window: WindowId) -> (Broadcast?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
     -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane
@@ -965,6 +980,11 @@ type Cx = {
     -- leaves the one used before it active · not released yet.
     new_session: (name: string?, directory: string?) -> (SessionId?, Error?),
     switch_session: (session: SessionId) -> (boolean, Error?),
+    -- Require `workspace-write` and `pty-write`: a window's typed input sent to `to` beside the pane that has its
+    -- keyboard, each key encoded of each pane's own terminal's modes, a pane of a program that ended taking none; a
+    -- pane left out, which takes its own input alone, or taken back in · not released yet.
+    set_broadcast: (window: WindowId, to: BroadcastTo) -> (boolean, Error?),
+    set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),
     focus_pane: (pane: PaneId) -> (boolean, Error?),
     move_tab: (tab: TabId, window: WindowId, index: number) -> (boolean, Error?),
@@ -1199,6 +1219,10 @@ type Cx = {
     -- Require `pty-write`: a paste, as ⌘V's, whose text of line breaks may ask for a confirmation first,
     -- and text sent as typed.
     paste: (pane: PaneId, text: string) -> (boolean, Error?),
+    -- A paste as ⌘V pastes into a pane: into it, and into the other panes that its window broadcasts the input
+    -- to, each bracketed as its program asks, of one question for all where one is asked; `paste`, `send_text` and
+    -- `run_line` reach their pane alone · not released yet.
+    paste_broadcast: (pane: PaneId, text: string) -> (boolean, Error?),
     send_text: (pane: PaneId, text: string) -> (boolean, Error?),
     -- Requires `terminal-read`: the command line that the shell edits at its prompt, as its cells show it, after its
     -- input's mark and before its output's (OSC 133), of no right prompt, its lines apart, without the spaces that end
@@ -1362,7 +1386,7 @@ type Plugin = {
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends of their exit statuses, as `shell_commands`, `shell_command`, `command_at`, `command-started` and `command-ended` | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories, a command's folder among them, the git branch of a folder, `git_branch`, and what their programs tell of their state, as an agent's and a session's status; hearing as a command that the shell marked starts and ends, `command-started` and `command-ended`, of no exit status · Since 1.4 | Medium: command lines can hold passwords |
-| `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
+| `workspace-write` | Opening, closing and moving windows, tabs and panes, a closed tab kept and given back, tabs pinned and grouped, sessions made and switched, the typed input broadcast to a tab or a window, with `pty-write`, the keyboard's focus between them, a split's ratio, the panes equalized and swapped, the zoom, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text, and a selection is what a copy takes |
 | `decorate` | Drawing over a pane: decorations and their labels, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held; the `click` event, a plain click on a pane's cell, and the `prompt-rows-menu` event, a context click on a block's pinned prompt rows · Since 1.4 | Low |

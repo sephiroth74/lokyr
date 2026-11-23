@@ -125,7 +125,7 @@ fn copy_and_paste_go_through_the_clipboard() {
         host.take_done(),
         [
             Request::SetClipboardText("ls -la".to_owned()),
-            Request::Paste {
+            Request::PasteBroadcast {
                 pane: PaneId(7),
                 text: "ls -la".to_owned(),
             },

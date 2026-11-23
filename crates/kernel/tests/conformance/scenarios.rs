@@ -23,13 +23,13 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
-    DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
-    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
-    MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
-    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionFolders,
-    SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
-    Viewport, WindowId, WindowInfo, check_file_name,
+    Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
+    CommandInfo, Decision, DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY,
+    Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES,
+    MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo,
+    PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery,
+    SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
+    TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -239,6 +239,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         tabs(world),
         groups(world),
         sessions(world),
+        broadcast(world),
         tab_changes(world, true),
         tab_changes(world, false),
         window_titles(world, true),
@@ -988,6 +989,7 @@ fn tabs(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let other = |id, active, pane| TabInfo {
         id,
@@ -1625,6 +1627,92 @@ fn sessions(world: &World) -> Scenario {
     }
 }
 
+/// A window's broadcast of the typed input: to its tab's panes, the world's
+/// pane left out, read back, then off again, each change told; a paste as
+/// the user's into a pane not there, and a window not there, refused.
+fn broadcast(world: &World) -> Scenario {
+    let (w, p) = (world.window, world.pane);
+    let changed = Event::Workspace(WorkspaceEvent::BroadcastChanged { window: w });
+    Scenario {
+        name: "the broadcast".to_owned(),
+        capabilities: None,
+        subscriptions: vec!["broadcast-changed".to_owned()],
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Broadcast(w),
+                        Response::Broadcast(Broadcast::default()),
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: w,
+                            to: BroadcastTo::Tab,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetPaneBroadcast {
+                            pane: p,
+                            left_out: true,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::PasteBroadcast {
+                            pane: NO_PANE,
+                            text: "ls".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Broadcast(w),
+                        Response::Broadcast(Broadcast {
+                            to: BroadcastTo::Tab,
+                            left_out: vec![p],
+                        }),
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: w,
+                            to: BroadcastTo::Off,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetPaneBroadcast {
+                            pane: p,
+                            left_out: false,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: NO_WINDOW,
+                            to: BroadcastTo::Window,
+                        },
+                        failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed],
+            },
+            ask(vec![(
+                Request::Broadcast(w),
+                Response::Broadcast(Broadcast::default()),
+            )]),
+        ],
+    }
+}
+
 /// A window's groups of tabs: one made of two tabs apart, which come next
 /// to one another, renamed by a later write of the same call; a tab added
 /// and taken out, its color taken away; folded, as the window shows a tab
@@ -1663,6 +1751,7 @@ fn groups(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group,
+        broadcast: false,
     };
     let shown = |name: &str, color, folded, tabs| GroupInfo {
         id: group(0),
@@ -4005,6 +4094,7 @@ fn workspace(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

@@ -211,16 +211,20 @@ impl<B: Backend> App<B> {
         if let Some((_, asked)) = self.open_asks.remove(&alert) {
             self.answer_open(platform, asked, button, suppressed);
         }
-        // Paste, as one line, or cancel.
-        if let Some((pane, text)) = self.paste_asks.remove(&alert)
+        // Paste, as one line, or cancel, into every pane that the paste
+        // went to.
+        if let Some((panes, text)) = self.paste_asks.remove(&alert)
             && button < 2
         {
-            if let Some(shown) = self.workspace.pane(pane) {
-                match button {
-                    0 => shown.paste(&text),
-                    _ => shown.paste(&paste::one_line(&text)),
+            let text = match button {
+                0 => text,
+                _ => paste::one_line(&text),
+            };
+            for pane in panes {
+                if let Some(shown) = self.workspace.pane(pane) {
+                    shown.paste(&text);
+                    self.workspace.typed(pane);
                 }
-                self.workspace.typed(pane);
             }
             if suppressed {
                 self.stop_confirming_pastes();
@@ -254,7 +258,7 @@ impl<B: Backend> App<B> {
             || self
                 .paste_asks
                 .values()
-                .any(|(asked, _)| Some(*asked) == pane)
+                .any(|(asked, _)| pane.is_some_and(|pane| asked.contains(&pane)))
     }
 
     /// Asks the user, with an alert on its window, whether `pane`'s
@@ -293,8 +297,9 @@ impl<B: Backend> App<B> {
     }
 
     /// Pastes `text` into `window`'s program as a paste of the clipboard
-    /// does: bracketed where the program asks, and asking first where
-    /// `confirm-paste` says so.
+    /// does, and into the other panes that the window broadcasts the input
+    /// to: each bracketed where its program asks, and asking first, once
+    /// for all, where `confirm-paste` says so of one of them.
     pub(super) fn paste_into(
         &mut self,
         platform: &mut dyn Platform,
@@ -304,32 +309,56 @@ impl<B: Backend> App<B> {
         let Some(id) = self.focused(window) else {
             return;
         };
-        let Some(pane) = self.workspace.pane(id) else {
+        if self.workspace.pane(id).is_none() {
             return;
-        };
-        let bracketed = pane
-            .input_modes()
-            .is_some_and(|modes| modes.bracketed_paste);
+        }
+        let panes = self.workspace.broadcast_panes(id);
+        let bracketed: Vec<bool> = panes
+            .iter()
+            .map(|&pane| {
+                self.workspace
+                    .pane(pane)
+                    .and_then(Pane::input_modes)
+                    .is_some_and(|modes| modes.bracketed_paste)
+            })
+            .collect();
         let confirm = if self.pastes_unconfirmed {
             ConfirmPaste::Never
         } else {
             self.config.clipboard.confirm_paste
         };
-        match paste::decide(&text, bracketed, confirm) {
-            paste::Paste::Now(text) => {
-                pane.paste(&text);
-                self.workspace.typed(id);
+        match paste::decide_all(&text, &bracketed, confirm) {
+            Some(texts) => {
+                for (&pane, text) in panes.iter().zip(&texts) {
+                    if let Some(shown) = self.workspace.pane(pane) {
+                        shown.paste(text);
+                        self.workspace.typed(pane);
+                    }
+                }
             }
-            paste::Paste::Ask => self.ask_paste(platform, id, text),
+            None => self.ask_paste(platform, panes, text),
         }
     }
 
-    /// Asks the user to confirm a paste of `text` into `pane`, whose
-    /// program takes its line breaks as Return: an alert in its window,
-    /// with the text's first lines as they would reach the program. A
-    /// paste while one waits for its answer goes.
-    pub(super) fn ask_paste(&mut self, platform: &mut dyn Platform, pane: PaneId, text: String) {
-        if self.paste_asks.values().any(|(asking, _)| *asking == pane) {
+    /// Asks the user to confirm a paste of `text` into `panes`, of which a
+    /// program at least takes its line breaks as Return: an alert in the
+    /// first pane's window, with the text's first lines as they would reach
+    /// the program. A paste into a pane while one waits for its answer
+    /// goes.
+    pub(super) fn ask_paste(
+        &mut self,
+        platform: &mut dyn Platform,
+        panes: Vec<PaneId>,
+        text: String,
+    ) {
+        let Some(&pane) = panes.first() else {
+            return;
+        };
+        if self
+            .paste_asks
+            .values()
+            .any(|(asking, _)| panes.iter().any(|pane| asking.contains(pane)))
+        {
             return;
         }
         let Some(window) = self.window_of(pane) else {
@@ -356,7 +385,7 @@ impl<B: Backend> App<B> {
             input: None,
         };
         let alert = platform.show_alert(Some(window), &alert);
-        self.paste_asks.insert(alert, (pane, text));
+        self.paste_asks.insert(alert, (panes, text));
     }
 
     /// Opens `target`, a URL or an absolute path, as a plugin asked, and as

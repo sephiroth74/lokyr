@@ -2166,6 +2166,7 @@ fn bar_tabs() -> Vec<TabInfo> {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let mut colored = tab(1, "lokyr — vim", false);
     colored.color = Some(Color::Rgb(0x3a, 0x7b, 0xe6));
@@ -2201,6 +2202,8 @@ enum BarTabs {
     Marked,
     Title,
     TitleProgress,
+    Broadcast,
+    TitleBroadcast,
 }
 
 /// A bar's tabs, the keys of each, and the config's keys past the look's.
@@ -2212,6 +2215,20 @@ impl BarTabs {
         let keys = |keys: &[&str]| keys.iter().map(|keys| Some((*keys).to_owned())).collect();
         match self {
             Self::Three => (bar_tabs(), keys(&["⌘1", "⌘2", "⌘3"]), Vec::new()),
+            // The active tab's panes take the window's broadcast of the
+            // typed input.
+            Self::Broadcast => {
+                let mut tabs = bar_tabs();
+                tabs[1].broadcast = true;
+                (tabs, keys(&["⌘1", "⌘2", "⌘3"]), Vec::new())
+            }
+            // A single tab's title, its panes taking the broadcast.
+            Self::TitleBroadcast => {
+                let mut tab = bar_tabs().swap_remove(1);
+                tab.id = TabId(1);
+                tab.broadcast = true;
+                (vec![tab], keys(&["⌘1"]), Vec::new())
+            }
             // A single tab whose bar hides, of its title in the titlebar,
             // of the protected input and a program that runs and prints.
             Self::Title => {
@@ -2288,6 +2305,7 @@ impl BarTabs {
                             status: None,
                             pinned: false,
                             group: None,
+                            broadcast: false,
                         }
                     })
                     .collect();
@@ -2434,7 +2452,7 @@ type Bar = (
 /// `[plugins.tabs]` asks for them, of their width and, in the titlebar and
 /// down a column, of their height, in points, the pointer over the third
 /// tab; a single tab, many, and the keys of the user's bindings.
-const BARS: [Bar; 32] = [
+const BARS: [Bar; 34] = [
     (
         "unified-groups",
         "unified",
@@ -2640,6 +2658,22 @@ const BARS: [Bar; 32] = [
         "left",
         (200.0, Some(200.0)),
         BarTabs::Marked,
+    ),
+    // The tabs' mark of the panes that take the window's broadcast of the
+    // typed input, and a single tab's title of it.
+    (
+        "unified-broadcast",
+        "unified",
+        "top",
+        (640.0, Some(40.0)),
+        BarTabs::Broadcast,
+    ),
+    (
+        "unified-title-broadcast",
+        "unified",
+        "top",
+        (640.0, Some(28.0)),
+        BarTabs::TitleBroadcast,
     ),
     // A single tab's title, across a titlebar of the system's height; of
     // its program's progress.

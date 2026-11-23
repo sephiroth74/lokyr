@@ -10,6 +10,11 @@ command-window-close-session = Chiudi sessione
 command-window-switch-session = Passa alla sessione
 command-window-save-layout = Salva sessione come layout…
 command-window-open-layout = Apri layout
+command-window-broadcast-off = Non trasmettere l'input
+command-window-broadcast-to-tab = Trasmetti l'input ai pannelli del tab
+command-window-broadcast-to-window = Trasmetti l'input ai pannelli della finestra
+command-pane-leave-broadcast = Esci dalla trasmissione
+command-pane-join-broadcast = Unisciti alla trasmissione
 command-window-goto = Vai alla finestra
 command-window-next-agent = Vai al prossimo agente
 command-window-next = Passa alla finestra successiva
@@ -115,6 +120,10 @@ menu-bring-all-to-front = Porta tutto in primo piano
 menu-emoji-symbols = Emoji e simboli
 menu-appearance = Aspetto
 menu-sessions = Sessioni
+menu-broadcast = Trasmetti input
+menu-broadcast-off = Disattivato
+menu-broadcast-tab = Ai pannelli del tab
+menu-broadcast-window = Ai pannelli della finestra
 menu-appearance-system = Automatico
 menu-appearance-light = Chiaro
 menu-appearance-dark = Scuro
@@ -220,8 +229,10 @@ notice-copy = Copia i dettagli
 notice-plugin-titled = { $title } — { $plugin }
 notice-close = Chiudi
 
-# What an accessibility client, as VoiceOver, calls a pane.
+# What an accessibility client, as VoiceOver, calls a pane, and one that
+# takes its window's broadcast of the typed input.
 access-pane = Terminale
+access-pane-broadcast = Terminale, input trasmesso
 
 theme-install-message = Installare il tema «{ $name }»?
 theme-install-detail = Lokyr lo copia nella sua cartella dei temi, { $folder }, dove la sezione [theme] della configurazione può nominarlo.

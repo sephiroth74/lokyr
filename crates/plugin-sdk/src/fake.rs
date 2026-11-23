@@ -582,6 +582,10 @@ pub struct FakeHost {
     session_uses: u64,
     /// The session of each window but the quick ones.
     window_sessions: BTreeMap<WindowId, SessionId>,
+    /// Where each window's typed input goes, of those that broadcast it.
+    broadcasts: BTreeMap<WindowId, crate::host::BroadcastTo>,
+    /// The panes left out of their windows' broadcasts.
+    broadcast_left: std::collections::BTreeSet<PaneId>,
     /// The folders that the sessions' switcher lists, as the test gave
     /// them.
     session_folders: SessionFolders,
@@ -771,6 +775,8 @@ impl FakeHost {
             active_session: FIRST_SESSION,
             session_uses: 0,
             window_sessions: BTreeMap::new(),
+            broadcasts: BTreeMap::new(),
+            broadcast_left: std::collections::BTreeSet::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
             registry: Vec::new(),
@@ -1279,6 +1285,19 @@ impl FakeHost {
     /// them tells.
     pub fn set_session_folders(&mut self, folders: SessionFolders) -> &mut Self {
         self.session_folders = folders;
+        self
+    }
+
+    /// Sends `window`'s typed input to `to`, as the user's menu does, which
+    /// a read of the window's broadcast and of its tabs tells, the change
+    /// owed.
+    pub fn set_broadcast(&mut self, window: WindowId, to: crate::host::BroadcastTo) -> &mut Self {
+        if to == crate::host::BroadcastTo::Off {
+            self.broadcasts.remove(&window);
+        } else {
+            self.broadcasts.insert(window, to);
+        }
+        self.changed(WorkspaceEvent::BroadcastChanged { window });
         self
     }
 
@@ -2375,6 +2394,27 @@ impl FakeHost {
                 }
             }
             Request::SwitchSession(session) => self.switch_session(*session),
+            Request::SetBroadcast { window, to } => {
+                let before = self.broadcasts.get(window).copied().unwrap_or_default();
+                if before != *to {
+                    if *to == crate::host::BroadcastTo::Off {
+                        self.broadcasts.remove(window);
+                    } else {
+                        self.broadcasts.insert(*window, *to);
+                    }
+                    self.changed(WorkspaceEvent::BroadcastChanged { window: *window });
+                }
+            }
+            Request::SetPaneBroadcast { pane, left_out } => {
+                let changed = if *left_out {
+                    self.broadcast_left.insert(*pane)
+                } else {
+                    self.broadcast_left.remove(pane)
+                };
+                if changed && let Some(window) = self.panes.get(pane).map(|shown| shown.window) {
+                    self.changed(WorkspaceEvent::BroadcastChanged { window });
+                }
+            }
             Request::AddToGroup { tab, group } => self.add_to_group(*tab, *group),
             Request::RemoveFromGroup(tab) => self.leave_group(*tab),
             Request::RenameGroup { group, name } => {
@@ -2578,6 +2618,11 @@ impl FakeHost {
             status: marks.status.clone().filter(|_| reads),
             pinned: marks.pinned,
             group: tab.group,
+            broadcast: match self.broadcasts.get(&tab.window) {
+                Some(crate::host::BroadcastTo::Window) => true,
+                Some(crate::host::BroadcastTo::Tab) => window.active == id,
+                _ => false,
+            },
         })
     }
 
@@ -4755,6 +4800,29 @@ impl Calling<'_> {
                 }
                 Response::Tabs(infos)
             }
+            Request::Broadcast(window) => {
+                if !host.windows.contains_key(window) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ));
+                }
+                let mut left_out: Vec<PaneId> = host
+                    .broadcast_left
+                    .iter()
+                    .copied()
+                    .filter(|pane| {
+                        host.panes
+                            .get(pane)
+                            .is_some_and(|shown| shown.window == *window)
+                    })
+                    .collect();
+                left_out.sort_unstable();
+                Response::Broadcast(crate::host::Broadcast {
+                    to: host.broadcasts.get(window).copied().unwrap_or_default(),
+                    left_out,
+                })
+            }
             // Their folders, the shells', to a plugin that reads the
             // processes alone.
             Request::Sessions => {
@@ -4914,12 +4982,18 @@ impl Calling<'_> {
             | Request::ClearScrollback(pane)
             | Request::Clear(pane)
             | Request::Paste { pane, .. }
+            | Request::PasteBroadcast { pane, .. }
+            | Request::SetPaneBroadcast { pane, .. }
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }
             | Request::FocusPane(pane)
             | Request::ClosePane { pane, .. }
             | Request::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
+                Response::Done
+            }
+            Request::SetBroadcast { window, .. } => {
+                self.known_window(*window)?;
                 Response::Done
             }
             Request::SetTabTitle { tab, .. } => {

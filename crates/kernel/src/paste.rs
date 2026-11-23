@@ -33,6 +33,24 @@ pub fn decide(text: &str, bracketed: bool, confirm: ConfirmPaste) -> Paste<'_> {
     }
 }
 
+/// What a paste of `text` does into several panes at once, as a broadcast
+/// of the typed input pastes, each asking for bracketed paste as
+/// `bracketed` says, in their order: each pane's own text now, or one
+/// question for all, where any of them would ask.
+pub fn decide_all<'a>(
+    text: &'a str,
+    bracketed: &[bool],
+    confirm: ConfirmPaste,
+) -> Option<Vec<Cow<'a, str>>> {
+    bracketed
+        .iter()
+        .map(|&bracketed| match decide(text, bracketed, confirm) {
+            Paste::Now(text) => Some(text),
+            Paste::Ask => None,
+        })
+        .collect()
+}
+
 /// The line of `text` when it is one with a single line break after it,
 /// CR, LF or CR LF, and nothing but spaces and tabs after that.
 fn line_ending(text: &str) -> Option<&str> {

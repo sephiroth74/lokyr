@@ -687,6 +687,30 @@
     "when": "pane.focused"
   },
   {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.join-broadcast",
+    "params": [],
+    "plugin": null,
+    "title": "Join Broadcast",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.leave-broadcast",
+    "params": [],
+    "plugin": null,
+    "title": "Leave Broadcast",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "edit",
     "name": "pane.look-up",
@@ -1261,6 +1285,42 @@
     "params": [],
     "plugin": "lokyr/tabs",
     "title": "Ungroup",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-off",
+    "params": [],
+    "plugin": null,
+    "title": "Stop Broadcasting Input",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-to-tab",
+    "params": [],
+    "plugin": null,
+    "title": "Broadcast Input to the Tab's Panes",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-to-window",
+    "params": [],
+    "plugin": null,
+    "title": "Broadcast Input to the Window's Panes",
     "when": null
   },
   {

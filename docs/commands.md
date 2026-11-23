@@ -94,6 +94,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
+| `pane.join-broadcast` | Join Broadcast |  | · not released yet |
+| `pane.leave-broadcast` | Leave Broadcast |  | · not released yet |
 | [`splits.close`](plugins/splits.md) | Close Pane |  |  |
 | [`splits.equalize`](plugins/splits.md) | Equalize Panes |  |  |
 | [`splits.focus`](plugins/splits.md) | Select Pane | `direction`, text | ⌥⌘← (`cmd+alt+left`), `direction = "left"`; ⌥⌘→ (`cmd+alt+right`), `direction = "right"`; ⌥⌘↑ (`cmd+alt+up`), `direction = "up"`; ⌥⌘↓ (`cmd+alt+down`), `direction = "down"` |
@@ -111,6 +113,9 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
 | [`pane.send-text`](plugins/core-actions.md) | Send Text | `text`, text |  |
+| `window.broadcast-off` | Stop Broadcasting Input |  | · not released yet |
+| `window.broadcast-to-tab` | Broadcast Input to the Tab's Panes |  | ⌥⌘I (`cmd+alt+i`) · not released yet |
+| `window.broadcast-to-window` | Broadcast Input to the Window's Panes |  | ⌥⇧⌘I (`cmd+alt+shift+i`) · not released yet |
 
 ## Clipboard
 

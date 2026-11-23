@@ -125,6 +125,9 @@ mark = "#ffd60a"
 divider = "#ffffff29"
 drop = "accent / 30%"
 
+[broadcast]                         # the panes that take a window's broadcast of the typed input
+ring = "#ff5f57"
+
 [progress]                          # the programs' progress
 track = "#ffffff24"
 normal = "accent"

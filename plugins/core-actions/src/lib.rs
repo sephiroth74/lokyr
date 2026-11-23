@@ -345,7 +345,9 @@ impl Plugin for CoreActions {
                 if let Some(text) = cx.clipboard_text()?
                     && !text.is_empty()
                 {
-                    cx.paste(pane, &text)?;
+                    // As the user pastes: into the panes that the window
+                    // broadcasts the input to too.
+                    cx.paste_broadcast(pane, &text)?;
                 }
                 Ok(())
             }

@@ -10,6 +10,7 @@ A tab of several panes, side by side and one above another: the commands that sp
 - **The pane that has the keyboard** stands out: the others fade a little toward their background, as `dim-inactive` says.
 - **A new pane** starts its shell in the folder of the pane that it splits, as the shell tells it.
 - **A tab dragged onto a pane** splits that pane, the tab's panes taking the half where it fell, as the [`tabs`](tabs.md) plugin's drag does.
+- **What you type can go to every pane** of the tab or of the window at once, with Shell › Broadcast Input, as [Windows and tabs](../windows-and-tabs.md#type-into-several-panes-at-once) describes. · not released yet
 
 ## Commands
 

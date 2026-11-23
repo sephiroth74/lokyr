@@ -94,7 +94,9 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Select Pane Left alt+cmd+ArrowLeft",
             "Select Pane Right alt+cmd+ArrowRight",
             "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown"
+            "Select Pane Below alt+cmd+ArrowDown",
+            "-",
+            "Broadcast Input"
         ]
     );
     assert_eq!(
@@ -232,7 +234,9 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Select Pane Left alt+cmd+ArrowLeft",
             "Select Pane Right alt+cmd+ArrowRight",
             "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown"
+            "Select Pane Below alt+cmd+ArrowDown",
+            "-",
+            "Broadcast Input"
         ]
     );
     assert_eq!(
@@ -341,7 +345,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 141);
+    assert_eq!(app.keymap.bindings().len(), 143);
 }
 
 #[test]
@@ -418,6 +422,8 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ),
             ("app.settings", "Settings…", Category::App),
             ("app.settings-window", "Open Settings Window", Category::App),
+            ("pane.join-broadcast", "Join Broadcast", Category::Panes),
+            ("pane.leave-broadcast", "Leave Broadcast", Category::Panes),
             ("pane.look-up", "Look Up", Category::Edit),
             ("pane.man-page", "Open man Page", Category::Windows),
             (
@@ -426,6 +432,21 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 Category::Windows
             ),
             ("pane.search-web", "Search the Web", Category::Edit),
+            (
+                "window.broadcast-off",
+                "Stop Broadcasting Input",
+                Category::Input
+            ),
+            (
+                "window.broadcast-to-tab",
+                "Broadcast Input to the Tab's Panes",
+                Category::Input
+            ),
+            (
+                "window.broadcast-to-window",
+                "Broadcast Input to the Window's Panes",
+                Category::Input
+            ),
             ("window.close", "Close Window", Category::Windows),
             ("window.close-session", "Close Session", Category::Windows),
             ("window.goto", "Go to Window", Category::Windows),

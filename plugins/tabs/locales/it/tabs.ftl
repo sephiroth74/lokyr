@@ -55,3 +55,4 @@ bar-mark-working = Agente al lavoro
 bar-mark-waiting = Agente in attesa
 bar-mark-error = Agente in errore
 bar-mark-done = Agente: fatto
+bar-mark-broadcast = Input trasmesso

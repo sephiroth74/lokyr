@@ -21,6 +21,7 @@ mod access;
 mod agents;
 mod asks;
 mod awake;
+mod broadcast;
 mod chrome;
 mod configs;
 mod consent;

@@ -31,6 +31,7 @@ fn tab(id: u64, title: &str, active: bool) -> TabInfo {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     }
 }
 
@@ -822,4 +823,46 @@ fn a_tab_dropped_after_a_group_s_pill_or_among_its_tabs_joins_it_and_elsewhere_l
     assert_eq!(drop_place(&tabs, &groups, TabId(5), 2), (3, None));
     // From another window, of no place among the tabs.
     assert_eq!(drop_place(&tabs, &groups, TabId(99), 1), (1, None));
+}
+
+#[test]
+fn a_tab_whose_panes_take_the_broadcast_shows_its_megaphone_of_the_ring_s_color() {
+    let quiet = tab(1, "quiet", false);
+    let broadcast = TabInfo {
+        broadcast: true,
+        ..tab(2, "broadcast", true)
+    };
+    let tabs = [quiet, broadcast];
+    for style in ["standard", "unified", "seamless"] {
+        for position in ["top", "left"] {
+            let text = |value: &str| Data::Text(value.to_owned());
+            let settings = Settings::of(&config(&[
+                ("style", text(style)),
+                ("position", text(position)),
+                ("close-button", text("never")),
+            ]));
+            let bar = bar(&tabs, &[], None, &settings).expect("a bar");
+            let place = format!("{style} at the {position}");
+            assert!(
+                marked(keyed(&bar, &tab_key(1)).unwrap()).is_empty(),
+                "{place}"
+            );
+            let shown = keyed(&bar, &tab_key(2)).unwrap();
+            assert_eq!(marked(shown), ["Broadcasting Input"], "{place}");
+            let mut left = vec![shown];
+            let mut megaphone = None;
+            while let Some(node) = left.pop() {
+                if matches!(&node.kind, Kind::Icon(icon) if icon == "megaphone") {
+                    megaphone = Some(node);
+                }
+                left.extend(&node.children);
+            }
+            let megaphone = megaphone.expect("the megaphone");
+            assert_eq!(
+                megaphone.style.color,
+                Some(Token::from("broadcast.ring")),
+                "{place}"
+            );
+        }
+    }
 }

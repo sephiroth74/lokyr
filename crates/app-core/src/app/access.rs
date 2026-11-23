@@ -38,7 +38,17 @@ impl<B: Backend> App<B> {
         };
         let views = self.lay_out_panes(window, size);
         let title = self.title_of(window);
-        let label = self.texts.text("access-pane");
+        // A pane that takes the window's broadcast tells it.
+        let labels: Vec<String> = views
+            .iter()
+            .map(|view| {
+                self.texts.text(if self.takes_broadcast(view.pane) {
+                    "access-pane-broadcast"
+                } else {
+                    "access-pane"
+                })
+            })
+            .collect();
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
@@ -53,10 +63,11 @@ impl<B: Backend> App<B> {
         state.access_cursors.sort_unstable();
         let panes: Vec<PaneAccess<'_>> = views
             .iter()
-            .filter_map(|view| {
+            .zip(&labels)
+            .filter_map(|(view, label)| {
                 Some(PaneAccess {
                     number: number(view.pane)?,
-                    label: &label,
+                    label,
                     snapshot: self.workspace.pane(view.pane)?.snapshot(),
                     grid: (view.rect.x as f32, view.rect.y as f32),
                     cell: (
