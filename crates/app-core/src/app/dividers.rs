@@ -101,6 +101,11 @@ impl<B: Backend> App<B> {
         if button != MouseButton::Left {
             return false;
         }
+        // A floating pane's box takes the press before what lies under it.
+        let at = ((position.x * scale) as f32, (position.y * scale) as f32);
+        if super::chrome::in_floating(&state.floating_rooms, at) {
+            return false;
+        }
         let Some(divider) = state
             .dividers
             .iter()

@@ -300,6 +300,11 @@ impl<B: Backend> App<B> {
         if button != MouseButton::Left {
             return false;
         }
+        // A floating pane's box takes the press before what lies under it.
+        let at = ((position.x * scale) as f32, (position.y * scale) as f32);
+        if super::chrome::in_floating(&state.floating_rooms, at) {
+            return false;
+        }
         let Some(bar) = state
             .bars
             .iter()
@@ -415,6 +420,13 @@ impl<B: Backend> App<B> {
         let Some(state) = self.windows.get_mut(&window) else {
             return;
         };
+        // A floating pane's box hides the bars under it from the pointer.
+        let position = position.filter(|position| {
+            !super::chrome::in_floating(
+                &state.floating_rooms,
+                ((position.x * scale) as f32, (position.y * scale) as f32),
+            )
+        });
         let under = position.and_then(|position| {
             state
                 .bars

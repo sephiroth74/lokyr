@@ -72,7 +72,9 @@ impl<B: Backend> App<B> {
         };
         let at = pixels(position, scale);
         let now = Instant::now();
-        let target = state.captured.or_else(|| under(&state.chrome, at));
+        let target = state
+            .captured
+            .or_else(|| under(&state.chrome, &state.floating_rooms, at));
         let mut events = Vec::new();
         let mut changed = false;
         if state.over != target {
@@ -157,7 +159,12 @@ impl<B: Backend> App<B> {
         // From a view to the one beside it, the move into it.
         let scale = platform.window_size(window).map(|size| size.scale);
         if let (Some(position), Some(scale)) = (platform.pointer_position(window), scale)
-            && under(&state.chrome, pixels(position, scale)).is_some()
+            && under(
+                &state.chrome,
+                &state.floating_rooms,
+                pixels(position, scale),
+            )
+            .is_some()
         {
             self.surface_moved(platform, window, position);
             return;
@@ -231,7 +238,7 @@ impl<B: Backend> App<B> {
             state.selecting.is_some_and(|selecting| selecting.held) || state.mouse.held().is_some();
         let target = match (pressed, state.captured) {
             (_, Some(captured)) => Some(captured),
-            (true, None) if !panes_hold => under(&state.chrome, at),
+            (true, None) if !panes_hold => under(&state.chrome, &state.floating_rooms, at),
             _ => None,
         };
         let Some(id) = target else {
@@ -465,7 +472,8 @@ impl<B: Backend> App<B> {
             return false;
         };
         let at = pixels(position, scale);
-        let Some(view) = under(&state.chrome, at).and_then(|id| view_mut(&mut state.chrome, id))
+        let Some(view) = under(&state.chrome, &state.floating_rooms, at)
+            .and_then(|id| view_mut(&mut state.chrome, id))
         else {
             return false;
         };
@@ -1096,11 +1104,15 @@ pub(super) fn focus_events<B: Backend>(state: &mut Window<B>) -> Vec<(String, Ui
 
 /// The slots' views' areas of the pointer's shapes over `chrome`, in
 /// points of a display of `scale`, the topmost first.
-pub(super) fn pointer_areas(chrome: &[SlotView], scale: f64) -> Vec<PointerArea> {
+pub(super) fn pointer_areas(
+    chrome: &[SlotView],
+    scale: f64,
+    keep: impl Fn(&SlotView) -> bool,
+) -> Vec<PointerArea> {
     chrome
         .iter()
         .rev()
-        .filter(|view| !view.is_tooltip())
+        .filter(|view| !view.is_tooltip() && keep(view))
         .filter_map(|view| Some((view, view.frame?)))
         .flat_map(|(view, frame)| {
             pointer::areas(&view.surface.tree, &view.surface.layout)
@@ -1234,11 +1246,22 @@ fn pixels(position: Point, scale: f64) -> (f32, f32) {
 /// The id of the slot's view or the panel of `chrome` under `at`, in
 /// pixels of the content, the topmost, as they draw, but the tooltips,
 /// which the pointer goes through.
-fn under(chrome: &[SlotView], (x, y): (f32, f32)) -> Option<u32> {
+fn under(
+    chrome: &[SlotView],
+    floating: &[(
+        lokyr_kernel::workspace::PaneId,
+        lokyr_ui_core::floating::Room,
+    )],
+    (x, y): (f32, f32),
+) -> Option<u32> {
+    // A view of a pane of the splits lies under the floating panes' boxes,
+    // which take the pointer before it.
+    let covered = super::chrome::in_floating(floating, (x, y));
     chrome
         .iter()
         .rev()
         .filter(|view| !view.is_tooltip())
+        .filter(|view| !(covered && view.under_floating(floating)))
         .find(|view| {
             view.frame.is_some_and(|frame| {
                 x >= frame.x
