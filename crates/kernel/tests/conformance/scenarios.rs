@@ -241,6 +241,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         groups(world),
         sessions(world),
         broadcast(world),
+        popups(world),
         tab_changes(world, true),
         tab_changes(world, false),
         window_titles(world, true),
@@ -1728,6 +1729,79 @@ fn broadcast(world: &World) -> Scenario {
     }
 }
 
+/// A plugin's popups: one over the focused window's active tab, which a
+/// later write of the call closes, its close heard of no status, as its
+/// command ran still; one of a window, a folder and shares, closed too;
+/// and what is refused: a blank command, a share past the room, a window
+/// that is not there.
+fn popups(world: &World) -> Scenario {
+    let open = |window, command: &str, folder: Option<&str>, width, height| Request::OpenPopup {
+        window,
+        command: command.to_owned(),
+        folder: folder.map(str::to_owned),
+        width,
+        height,
+    };
+    Scenario {
+        name: "the popups".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![Step {
+            wait: 0,
+            asks: vec![
+                (
+                    open(None, "lazygit", None, None, None),
+                    Response::Pane(Some(pane(0))),
+                ),
+                (
+                    Request::ClosePane {
+                        pane: pane(0),
+                        ask: false,
+                    },
+                    Response::Done,
+                ),
+                (
+                    open(Some(world.window), "fzf", Some("~"), Some(0.5), Some(0.4)),
+                    Response::Pane(Some(pane(1))),
+                ),
+                (
+                    open(None, "  ", None, None, None),
+                    failed(Code::Failed, "a popup's command is something past blanks"),
+                ),
+                (
+                    open(None, "ls", None, Some(1.5), None),
+                    failed(
+                        Code::Failed,
+                        "a popup's width and height are shares of its tab's room, past 0 and 1 at most, not 1.5",
+                    ),
+                ),
+                (
+                    open(Some(NO_WINDOW), "ls", None, None, None),
+                    failed(Code::NotFound, "there is no window 999999"),
+                ),
+                (
+                    Request::ClosePane {
+                        pane: pane(1),
+                        ask: false,
+                    },
+                    Response::Done,
+                ),
+            ],
+            posts: Vec::new(),
+            heard: vec![
+                Event::PopupClosed {
+                    pane: pane(0),
+                    status: None,
+                },
+                Event::PopupClosed {
+                    pane: pane(1),
+                    status: None,
+                },
+            ],
+        }],
+    }
+}
+
 /// A window's groups of tabs: one made of two tabs apart, which come next
 /// to one another, renamed by a later write of the same call; a tab added
 /// and taken out, its color taken away; folded, as the window shows a tab
@@ -2571,6 +2645,16 @@ fn capabilities(world: &World) -> Scenario {
                 lacks("pty-write"),
             ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
+            (
+                Request::OpenPopup {
+                    window: None,
+                    command: "lazygit".to_owned(),
+                    folder: None,
+                    width: None,
+                    height: None,
+                },
+                lacks("workspace-write"),
+            ),
             (
                 Request::SetClipboardText("x".to_owned()),
                 lacks("clipboard-write"),

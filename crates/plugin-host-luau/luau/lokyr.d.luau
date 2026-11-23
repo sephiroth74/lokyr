@@ -138,6 +138,7 @@ export type Cx = {
     switch_session: (session: SessionId) -> (true?, string?, number?),
     broadcast: (window: WindowId) -> (Broadcast?, string?, number?),
     floating_panes: (tab: TabId) -> (FloatingPanes?, string?, number?),
+    open_popup: (window: WindowId?, command: string, folder: string?, width: number?, height: number?) -> (PaneId?, string?, number?),
     set_broadcast: (window: WindowId, to: BroadcastTo) -> (true?, string?, number?),
     set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (true?, string?, number?),
     paste_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
@@ -219,6 +220,7 @@ export type Event =
     | { kind: "color-picked", color: string }
     | { kind: "color-panel-closed" }
     | { kind: "saved", id: number, path: string?, error: string? }
+    | { kind: "popup-closed", pane: PaneId, status: number? }
     | { kind: "package", id: number, line: Data }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
@@ -401,6 +403,14 @@ export type TestHost = {
     -- The notices that the plugin showed, in their order, the last the one
     -- that shows, each of its title or the plugin's namespace.
     notices: () -> { { level: NoticeLevel, title: string, text: string } },
+    -- The popups that the plugin opened and that are open, in the order of
+    -- their panes' ids.
+    popups: () -> { { pane: PaneId, tab: TabId, command: string, folder: string?, width: number,
+        height: number } },
+    -- Ends the command of the popup `pane` of `status`, of 128 and a
+    -- signal's number for a signal, or none, and closes the popup, as the
+    -- app does; the plugin hears `popup-closed`.
+    close_popup: (pane: PaneId, status: number?) -> (),
     -- The focused window, and the tab that it shows.
     window: () -> WindowId,
     tab: () -> TabId,

@@ -787,6 +787,14 @@ export type TestHost = {
     -- The notices that the plugin showed, in their order, the last the one
     -- that shows, each of its title or the plugin's namespace.
     notices: () -> { { level: NoticeLevel, title: string, text: string } },
+    -- The popups that the plugin opened and that are open, in the order of
+    -- their panes' ids.
+    popups: () -> { { pane: PaneId, tab: TabId, command: string, folder: string?, width: number,
+        height: number } },
+    -- Ends the command of the popup `pane` of `status`, of 128 and a
+    -- signal's number for a signal, or none, and closes the popup, as the
+    -- app does; the plugin hears `popup-closed`.
+    close_popup: (pane: PaneId, status: number?) -> (),
     -- The focused window, and the tab that it shows.
     window: () -> WindowId,
     tab: () -> TabId,

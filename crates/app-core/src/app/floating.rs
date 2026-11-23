@@ -28,9 +28,8 @@ const NEW_SHARE: f64 = 0.6;
 const CASCADE: f64 = 0.04;
 
 /// The shares of the tab's room that a popup takes across and down, of a
-/// command that asks for none.
-pub(super) const POPUP_WIDTH: f64 = 0.8;
-pub(super) const POPUP_HEIGHT: f64 = 0.7;
+/// command that asks for none, as of a plugin's.
+pub(super) use lokyr_kernel::plugins::host::{POPUP_HEIGHT, POPUP_WIDTH};
 
 /// The edge or the corner of `room`'s box at `position`, in points, on a
 /// display of `scale`, within [`EDGE`] of it; none inside.
@@ -222,12 +221,7 @@ impl<B: Backend> App<B> {
             _ => default,
         };
         let (width, height) = (share("width", POPUP_WIDTH), share("height", POPUP_HEIGHT));
-        let program = match &self.popup_shell {
-            Some(shell) => Program::command(shell, ["-c", command.as_str()]),
-            None => Program::LoginCommand {
-                command: command.into(),
-            },
-        };
+        let program = spawn::popup_program(self.popup_shell.as_deref(), &command);
         self.float_new(platform, Some(&program), folder.as_deref(), true, |_| {
             FloatingFrame::centered(width, height)
         });
@@ -266,6 +260,7 @@ impl<B: Backend> App<B> {
         let dark = platform.appearance() == lokyr_platform_core::Appearance::Dark;
         let mut panes = spawn::Spawner {
             program: program.unwrap_or(&self.program),
+            popup_shell: self.popup_shell.as_deref(),
             environment: &self.environment,
             budget: &self.budget,
             colors: &self.theme.variant(dark).colors,

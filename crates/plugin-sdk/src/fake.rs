@@ -393,6 +393,34 @@ pub struct FakeDecoration {
     pub look: DecorationLook,
 }
 
+/// A popup that the plugin opened: its pane, its tab, its command, its
+/// folder and its shares of the tab's room.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FakePopup {
+    /// Its pane.
+    pub pane: PaneId,
+    /// Its tab.
+    pub tab: TabId,
+    /// The command that it runs.
+    pub command: String,
+    /// The folder that it runs in, if the plugin gave one.
+    pub folder: Option<String>,
+    /// Its share of the tab's room across.
+    pub width: f64,
+    /// Its share of the tab's room down.
+    pub height: f64,
+}
+
+/// A popup that the fake host keeps: what the plugin opened, the pane that
+/// had its tab's keyboard before it, and its command's status, once the
+/// test ended it.
+#[derive(Clone, Debug, PartialEq)]
+struct KeptPopup {
+    popup: FakePopup,
+    back: PaneId,
+    status: Option<i32>,
+}
+
 /// A mark that the plugin laid in a pane's gutter: its pane, its row and
 /// its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -586,6 +614,9 @@ pub struct FakeHost {
     broadcasts: BTreeMap<WindowId, crate::host::BroadcastTo>,
     /// The floating panes of each tab that has some, as the test gave them.
     floating: BTreeMap<TabId, crate::host::FloatingPanes>,
+    /// The popups that the plugin opened, which close as the test ends
+    /// them or a close of their pane.
+    popups: BTreeMap<PaneId, KeptPopup>,
     /// The panes left out of their windows' broadcasts.
     broadcast_left: std::collections::BTreeSet<PaneId>,
     /// The folders that the sessions' switcher lists, as the test gave
@@ -779,6 +810,7 @@ impl FakeHost {
             window_sessions: BTreeMap::new(),
             broadcasts: BTreeMap::new(),
             floating: BTreeMap::new(),
+            popups: BTreeMap::new(),
             broadcast_left: std::collections::BTreeSet::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
@@ -1299,6 +1331,27 @@ impl FakeHost {
         floating: crate::host::FloatingPanes,
     ) -> &mut Self {
         self.floating.insert(tab, floating);
+        self
+    }
+
+    /// The popups that the plugin opened and that are open, in the order of
+    /// their panes' ids.
+    pub fn popups(&self) -> Vec<FakePopup> {
+        self.popups
+            .values()
+            .map(|kept| kept.popup.clone())
+            .collect()
+    }
+
+    /// Ends the command of the popup `pane` of `status`, of 128 and a
+    /// signal's number for a signal, or none, and closes the popup, as the
+    /// app does as its command exits with 0, or a key after it failed: its
+    /// plugin hears that it closed, of the status, owed.
+    pub fn close_popup(&mut self, pane: PaneId, status: Option<i32>) -> &mut Self {
+        if let Some(kept) = self.popups.get_mut(&pane) {
+            kept.status = status;
+            self.close_pane(pane);
+        }
         self
     }
 
@@ -1879,6 +1932,7 @@ impl FakeHost {
                     | Event::ColorPicked { .. }
                     | Event::ColorPanelClosed
                     | Event::Saved { .. }
+                    | Event::PopupClosed { .. }
                     | Event::Package { .. }
                     | Event::PackagesEnded { .. }
                     | Event::TabBarResized { .. }
@@ -2355,6 +2409,26 @@ impl FakeHost {
                     self.split(*pane, *direction, *side, new);
                 }
             }
+            Request::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                if let Opened::Pane(new) = opened {
+                    let window = window.or_else(|| self.focused_window());
+                    self.open_popup(
+                        window,
+                        new,
+                        (command.clone(), folder.clone()),
+                        (
+                            width.unwrap_or(crate::host::POPUP_WIDTH),
+                            height.unwrap_or(crate::host::POPUP_HEIGHT),
+                        ),
+                    );
+                }
+            }
             // A close that asks closes as the user's confirmation would,
             // which a test reads among the requests done.
             Request::CloseTab { tab, keep: 0, .. } => self.close_tab(*tab),
@@ -2734,6 +2808,53 @@ impl FakeHost {
 
     /// Splits `pane`'s part along `direction`, `new` on `side`, which ends
     /// its tab's zoom; the tab's keyboard stays where it was.
+    /// Opens the popup `pane` of `command` and `folder` over the active tab
+    /// of `window`, of `shares` of its room, with the tab's keyboard, as the
+    /// app floats it over the tab's layout.
+    fn open_popup(
+        &mut self,
+        window: Option<WindowId>,
+        pane: PaneId,
+        (command, folder): (String, Option<String>),
+        (width, height): (f64, f64),
+    ) {
+        let Some(window) = window else {
+            return;
+        };
+        let Some(tab) = self.windows.get(&window).map(|shown| shown.active) else {
+            return;
+        };
+        let Some(back) = self.tabs.get(&tab).map(|shown| shown.active) else {
+            return;
+        };
+        self.panes.insert(
+            pane,
+            FakePane {
+                window,
+                tab,
+                ..FakePane::default()
+            },
+        );
+        self.popups.insert(
+            pane,
+            KeptPopup {
+                popup: FakePopup {
+                    pane,
+                    tab,
+                    command,
+                    folder,
+                    width,
+                    height,
+                },
+                back,
+                status: None,
+            },
+        );
+        self.changed(WorkspaceEvent::PaneCreated { pane, tab });
+        self.changed(WorkspaceEvent::LayoutChanged { tab });
+        self.focus_pane(pane);
+    }
+
     fn split(&mut self, pane: PaneId, direction: Direction, side: Side, new: PaneId) {
         let Some(id) = self.panes.get(&pane).map(|pane| pane.tab) else {
             return;
@@ -3043,6 +3164,24 @@ impl FakeHost {
             return;
         };
         self.changed(WorkspaceEvent::PaneClosed { pane, tab });
+        // A popup, over its tab's layout, gives the keyboard back to the
+        // pane that had it before it, and its plugin hears its close.
+        if let Some(kept) = self.popups.remove(&pane) {
+            self.panes.remove(&pane);
+            self.changed(WorkspaceEvent::LayoutChanged { tab });
+            if self
+                .tabs
+                .get(&tab)
+                .is_some_and(|shown| shown.active == pane)
+            {
+                self.focus_pane(kept.back);
+            }
+            self.owed.push(Event::PopupClosed {
+                pane,
+                status: kept.status,
+            });
+            return;
+        }
         let left = self.detach_pane(pane, tab);
         self.panes.remove(&pane);
         if let Some(left) = left {
@@ -4344,6 +4483,12 @@ impl Calling<'_> {
                         .get(split)
                         .map(|split| split.tab)
                         .or_else(|| self.opened_tab_of(*split))
+                }
+                (Request::OpenPopup { window, .. }, Opened::Pane(opened)) if *opened == pane => {
+                    window
+                        .or_else(|| self.host.focused_window())
+                        .and_then(|window| self.host.windows.get(&window))
+                        .map(|shown| shown.active)
                 }
                 _ => None,
             })
@@ -5655,6 +5800,29 @@ impl Calling<'_> {
             }
             Request::Split { pane, .. } => {
                 self.known_pane(*pane)?;
+                let new = PaneId(self.host.next_id());
+                opened = Opened::Pane(new);
+                Response::Pane(Some(new))
+            }
+            Request::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                crate::host::check_popup(command, folder.as_deref(), *width, *height)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                match window {
+                    Some(window) => self.known_window(*window)?,
+                    None if self.host.focused_window().is_none() => {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            "no window has the focus, which a popup opens in",
+                        ));
+                    }
+                    None => {}
+                }
                 let new = PaneId(self.host.next_id());
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))

@@ -746,3 +746,61 @@ fn a_test_tells_the_plugin_s_reads_and_cuts_its_reads_of_rows_short() {
     assert_eq!(ran.len(), 1, "{ran:?}");
     assert_eq!(ran[0].failure, None, "{ran:?}");
 }
+
+#[test]
+fn a_luau_plugin_opens_a_popup_and_hears_its_close_of_its_status() {
+    // A plugin that runs lazygit in a popup, and tells its status as it
+    // closes.
+    const ENTRY: &str = r#"
+    return {
+        activate = function(cx)
+            assert(cx.register_command({ name = "popper.git", title = "Git", category = "view" }))
+        end,
+        on_command = function(cx, name, args)
+            assert(cx.open_popup(nil, "lazygit", "~/src", 0.9, nil))
+        end,
+        on_event = function(cx, events)
+            for _, event in events do
+                if event.kind == "popup-closed" then
+                    assert(cx.notify("lazygit ended: " .. tostring(event.status)))
+                end
+            end
+        end,
+    }
+    "#;
+    const TEST: &str = r#"
+    return {
+        runs_lazygit_in_a_popup = function(host)
+            host.activate()
+            host.command("popper.git")
+            local popups = host.popups()
+            assert(#popups == 1)
+            local popup = popups[1]
+            assert(popup.command == "lazygit" and popup.folder == "~/src")
+            assert(popup.width == 0.9 and popup.height == 0.7 and popup.tab == host.tab())
+            host.close_popup(popup.pane, 130)
+            assert(#host.popups() == 0)
+            local notices = host.notices()
+            assert(#notices == 1 and notices[1].text == "lazygit ended: 130", notices[1].text)
+        end,
+    }
+    "#;
+    let package = Package::new([
+        ("src/init.luau".to_owned(), ENTRY.to_owned()),
+        ("tests/popper.luau".to_owned(), TEST.to_owned()),
+    ]);
+    let ran = run_within(
+        &Plugin {
+            name: "acme/popper",
+            capabilities: &[Capability::WorkspaceWrite, Capability::PtyWrite],
+            uses: &[],
+            slots: &[],
+            package: &package,
+            messages: &[],
+            execution: Execution::Native,
+        },
+        DEADLINE,
+    );
+    assert_eq!(ran.len(), 1, "{ran:?}");
+    assert_eq!(ran[0].failure, None, "{ran:?}");
+}

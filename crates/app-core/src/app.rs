@@ -3378,6 +3378,14 @@ impl<B: Backend> App<B> {
             } else {
                 pane.exited(close, now, &self.texts)
             };
+            // A popup's plugin hears its command's status as it closes.
+            if popup && exited.is_some() {
+                let status = pane.exit_status().map(|exit| match exit {
+                    lokyr_pty::Exit::Code(code) => code,
+                    lokyr_pty::Exit::Signal(signal) => 128 + signal,
+                });
+                self.plugins.popup_ended(id, status);
+            }
             match exited {
                 Some(Exited::Close) => {
                     closing.push((window, id));
@@ -3783,6 +3791,7 @@ impl<B: Backend> App<B> {
         let dark = platform.appearance() == Appearance::Dark;
         let mut panes = spawn::Spawner {
             program: &self.program,
+            popup_shell: self.popup_shell.as_deref(),
             environment: &self.environment,
             budget: &self.budget,
             colors: &self.theme.variant(dark).colors,
