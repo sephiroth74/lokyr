@@ -22,5 +22,7 @@ menu-select-left = Select Pane Left
 menu-select-right = Select Pane Right
 menu-select-up = Select Pane Above
 menu-select-down = Select Pane Below
-# The title of the context menu's submenu of the panes' items.
+# The titles of the submenus of the panes' items, the context menu's and
+# the Shell menu's, and of the Shell menu's of the splits.
 menu-pane = Pane
+menu-split = Split
