@@ -603,6 +603,8 @@ impl Tab {
             zoomed: panes.iter().position(|pane| pane.zoomed),
             pinned: self.pinned,
             group: None,
+            floating: Vec::new(),
+            floating_shown: true,
         }
     }
 }

@@ -26,6 +26,7 @@ mod chrome;
 mod configs;
 mod consent;
 mod copy;
+mod floating;
 mod folders;
 mod frame;
 mod images;

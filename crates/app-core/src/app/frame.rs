@@ -1502,6 +1502,27 @@ impl<B: Backend> App<B> {
             areas.push(points(&chrome::rect_of(zone), PointerShape::ResizeColumn));
         }
         areas.extend(surfaces::pointer_areas(&state.chrome, size.scale));
+        // The floating panes' edges, headers and boxes, the one in front
+        // first, over the panes and the dividers under them: inside, the
+        // arrow over a program that takes the clicks, the I-beam otherwise.
+        let workspace = &self.workspace;
+        areas.extend(super::floating::pointer_areas(
+            &state.floating_rooms,
+            size.scale,
+            |pane| {
+                let clicks = workspace.pane(pane).is_some_and(|pane| {
+                    !pane.is_kept()
+                        && pane
+                            .shown_modes()
+                            .is_some_and(|modes| modes.mouse_tracking != MouseTracking::None)
+                });
+                if clicks {
+                    PointerShape::Arrow
+                } else {
+                    PointerShape::Text
+                }
+            },
+        ));
         // The dividers' grab areas, under the slots' views.
         areas.extend(
             state

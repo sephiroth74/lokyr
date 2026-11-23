@@ -79,6 +79,9 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Fold Group",
             "Ungroup",
             "-",
+            "New Floating Pane alt+shift+cmd+f",
+            "Show or Hide Floating Panes alt+cmd+f",
+            "-",
             "Split",
             "Pane",
             "-",
@@ -205,6 +208,9 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Fold Group",
             "Ungroup",
             "-",
+            "New Floating Pane alt+shift+cmd+f",
+            "Show or Hide Floating Panes alt+cmd+f",
+            "-",
             "Split",
             "Pane",
             "-",
@@ -317,7 +323,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 143);
+    assert_eq!(app.keymap.bindings().len(), 145);
 }
 
 #[test]
@@ -394,6 +400,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ),
             ("app.settings", "Settings…", Category::App),
             ("app.settings-window", "Open Settings Window", Category::App),
+            ("pane.float", "Float Pane", Category::Panes),
             ("pane.join-broadcast", "Join Broadcast", Category::Panes),
             ("pane.leave-broadcast", "Leave Broadcast", Category::Panes),
             ("pane.look-up", "Look Up", Category::Edit),
@@ -403,7 +410,18 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "Search man Page Index",
                 Category::Windows
             ),
+            (
+                "pane.move-into-splits",
+                "Move Pane into Splits",
+                Category::Panes
+            ),
+            ("pane.new-floating", "New Floating Pane", Category::Panes),
             ("pane.search-web", "Search the Web", Category::Edit),
+            (
+                "pane.toggle-floating",
+                "Show or Hide Floating Panes",
+                Category::Panes
+            ),
             (
                 "window.broadcast-off",
                 "Stop Broadcasting Input",
@@ -476,7 +494,16 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             _ => None,
         })
         .collect();
-    assert_eq!(titles, ["New Window", "Close Window", "Set Title…"]);
+    assert_eq!(
+        titles,
+        [
+            "New Window",
+            "Close Window",
+            "Set Title…",
+            "New Floating Pane",
+            "Show or Hide Floating Panes"
+        ]
+    );
     // A command that takes no argument rejects one, and does nothing.
     let mut args = Args::new();
     args.insert(

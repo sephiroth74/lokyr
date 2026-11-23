@@ -232,6 +232,8 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                     zoomed: None,
                     pinned: false,
                     group: None,
+                    floating: Vec::new(),
+                    floating_shown: true,
                 }],
                 active: 0,
                 groups: Vec::new(),
@@ -858,6 +860,8 @@ fn a_split_s_panes_show_their_restored_lines_on_one_row() {
                 zoomed: None,
                 pinned: false,
                 group: None,
+                floating: Vec::new(),
+                floating_shown: true,
             }],
             active: 0,
             groups: Vec::new(),
@@ -914,5 +918,60 @@ fn the_panes_files_go_of_a_windows_file_that_cannot_be_written() {
     });
     app.quit(&mut fake);
     assert!(!scrollback::folder(&state).exists());
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// The first rows of `pane`'s terminal, read from it, as a floating pane
+/// that no frame laid out yet copies no screen.
+fn rows_of_pane(app: &App, pane: PaneId) -> Vec<String> {
+    let pane = app.workspace.pane(pane).unwrap();
+    (0..6)
+        .filter_map(|row| {
+            pane.line_text(row, 0)
+                .map(|(text, _)| text.trim_end().to_owned())
+        })
+        .collect()
+}
+
+#[test]
+fn a_tab_s_floating_pane_comes_back_of_its_frame_and_its_scrollback() {
+    let base = real_directory("restore-floating");
+    let state = base.join("state");
+    let program = shell("printf 'kept %s\\n' \"$LOKYR_TEST_MARK\"; exec sleep 30");
+    let mut fake = Fake::default();
+    let mut app = app(restoring_scrollback(), program).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    fake.send_app(&mut app, AppEvent::Command(NEW_FLOATING.to_owned()));
+    let floating = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        rows_of_pane(app, floating)
+            .iter()
+            .any(|row| row.starts_with("kept"))
+    });
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let frame = app.workspace.tab(tab).unwrap().floating()[0].frame;
+    app.quit(&mut fake);
+    // The next start: the tab's floating pane over it, of its frame and of
+    // the keyboard, showing what it showed.
+    let mut fake = Fake::default();
+    let mut app =
+        super::app(restoring_scrollback(), shell("exec sleep 30")).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let held = app.workspace.tab(tab).unwrap();
+    assert_eq!(held.floating().len(), 1);
+    assert_eq!(held.floating()[0].frame, frame);
+    let floating = held.floating()[0].pane;
+    assert_eq!(held.active_pane(), floating);
+    run_until(&mut fake, &mut app, |_, app| {
+        rows_of_pane(app, floating)
+            .iter()
+            .any(|row| row.starts_with("kept"))
+    });
     let _ = std::fs::remove_dir_all(base);
 }

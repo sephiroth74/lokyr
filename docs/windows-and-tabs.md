@@ -20,6 +20,7 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
 - **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
 - **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · not released yet
+- **Floating panes** over a tab's splits, such as a scratch shell you show and hide with a key. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -213,6 +214,19 @@ style = "seamless"
 
 **Try it**: with two tabs open, add these lines to your config file and save it: the tabs move to a column on the left.
 
+## Float panes over a tab
+
+Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that floats over the tab's panes, in a box with its title at the top. Its shell starts in the folder of the pane you were in. A tab can hold several, each one more down and right of the one before. · not released yet
+
+- **Show or hide them**: Shell › Show or Hide Floating Panes, ⌥⌘F, hides the tab's floating panes together, their programs running, and shows them again. On a tab with none, it opens one.
+- **Move one**: drag its title bar.
+- **Resize one**: drag its edges or its corners.
+- **Bring one forward**: click it. The pane you click takes the keyboard, whether it floats or not.
+- **Float a pane of the splits**: right-click it and choose Float Pane. A floating pane goes back into the splits, beside the pane you used last, with Move Pane into Splits.
+- **Keep them**: they come back with their tab when Lokyr opens your windows again, each where it was, with what it showed when [`restore-scrollback`](CONFIGURATION.md#restore-scrollback) is on.
+
+**Try it**: press ⇧⌥⌘F and run `top`. Press ⌥⌘F to hide it and ⌥⌘F again to see it still running.
+
 ## Type into several panes at once
 
 Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and what you type into the pane with the keyboard goes to every pane of the tab too: your keys, the text of an input method, and what you paste with ⌘V or drop. Each pane takes it as its own program asks, such as with bracketed paste in one and without it in another. A red ring marks each pane that takes it, and a megaphone marks the tab. · not released yet
@@ -263,6 +277,8 @@ close-button = "hover"            # "always" or "never"
 | ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
 | ⌥⌘I | `cmd+alt+i` | Send what you type to every pane of the tab, or to one pane again · not released yet |
 | ⇧⌥⌘I | `cmd+alt+shift+i` | Send what you type to every pane of the window, or to one pane again · not released yet |
+| ⇧⌥⌘F | `cmd+alt+shift+f` | Float a new pane over the tab · not released yet |
+| ⌥⌘F | `cmd+alt+f` | Show or hide the tab's floating panes · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |

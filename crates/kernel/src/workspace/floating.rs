@@ -141,6 +141,64 @@ impl Workspace {
         true
     }
 
+    /// Floats `pane`, of its tab's layout, over the layout in `frame`, in
+    /// front, with the keyboard: its room goes to its sibling. Whether it is
+    /// a pane of a layout of more than one, which a tab keeps.
+    pub fn float_split_pane(&mut self, pane: PaneId, frame: FloatingFrame) -> bool {
+        let Some(&tab) = self.tab_of.get(&pane) else {
+            return false;
+        };
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        if !shown.layout.contains(pane) {
+            return false;
+        }
+        let Some(nearest) = shown.layout.remove(pane) else {
+            return false;
+        };
+        if shown.split_active == pane {
+            shown.split_active = nearest;
+        }
+        if shown.zoomed == Some(pane) {
+            shown.zoomed = None;
+        }
+        shown.floating.push(Floating { pane, frame });
+        shown.floating_shown = true;
+        self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
+        self.focus_pane(pane);
+        true
+    }
+
+    /// Moves the floating pane `pane` into its tab's layout, on the right
+    /// of the layout's pane that had the keyboard last, half and half, with
+    /// the keyboard. Whether it is a floating pane.
+    pub fn dock_floating(&mut self, pane: PaneId) -> bool {
+        let Some(&tab) = self.tab_of.get(&pane) else {
+            return false;
+        };
+        let Some(shown) = self.tabs.get_mut(&tab) else {
+            return false;
+        };
+        let Some(at) = shown.floating.iter().position(|of| of.pane == pane) else {
+            return false;
+        };
+        let beside = shown.split_active;
+        if !shown.layout.split(
+            beside,
+            super::Direction::Horizontal,
+            pane,
+            super::Side::Second,
+        ) {
+            return false;
+        }
+        shown.floating.remove(at);
+        shown.zoomed = None;
+        self.changed(WorkspaceEvent::LayoutChanged { tab: tab.into() });
+        self.focus_pane(pane);
+        true
+    }
+
     /// Moves or resizes the floating pane `pane` to `frame`, within its
     /// tab's room; whether it is a floating pane.
     pub fn move_floating(&mut self, pane: PaneId, frame: FloatingFrame) -> bool {

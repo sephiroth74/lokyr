@@ -2277,6 +2277,24 @@ fn ns_cursor(shape: PointerShape) -> Retained<NSCursor> {
         PointerShape::PointingHand => NSCursor::pointingHandCursor(),
         PointerShape::ResizeColumn => NSCursor::columnResizeCursor(),
         PointerShape::ResizeRow => NSCursor::rowResizeCursor(),
+        PointerShape::ResizeFrame(edge) => {
+            use lokyr_platform_core::FrameEdge;
+            use objc2_app_kit::{NSCursorFrameResizeDirections, NSCursorFrameResizePosition};
+            let position = match edge {
+                FrameEdge::Top => NSCursorFrameResizePosition::Top,
+                FrameEdge::Left => NSCursorFrameResizePosition::Left,
+                FrameEdge::Bottom => NSCursorFrameResizePosition::Bottom,
+                FrameEdge::Right => NSCursorFrameResizePosition::Right,
+                FrameEdge::TopLeft => NSCursorFrameResizePosition::TopLeft,
+                FrameEdge::TopRight => NSCursorFrameResizePosition::TopRight,
+                FrameEdge::BottomLeft => NSCursorFrameResizePosition::BottomLeft,
+                FrameEdge::BottomRight => NSCursorFrameResizePosition::BottomRight,
+            };
+            NSCursor::frameResizeCursorFromPosition_inDirections(
+                position,
+                NSCursorFrameResizeDirections::All,
+            )
+        }
     }
 }
 

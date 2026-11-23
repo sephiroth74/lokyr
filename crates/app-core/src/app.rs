@@ -63,6 +63,7 @@ pub(crate) mod chrome;
 mod claude_code;
 mod consent;
 pub(crate) mod dividers;
+mod floating;
 mod folders;
 pub(crate) mod frame;
 pub(crate) mod images;
@@ -237,6 +238,17 @@ const BROADCASTS: [&str; 3] = [BROADCAST_OFF, BROADCAST_TAB, BROADCAST_WINDOW];
 /// broadcast and take it back in, which its context menu shows.
 const LEAVE_BROADCAST: &str = "pane.leave-broadcast";
 const JOIN_BROADCAST: &str = "pane.join-broadcast";
+
+/// The command that floats a new pane over the active tab's panes.
+const NEW_FLOATING: &str = "pane.new-floating";
+/// The command that shows the active tab's floating panes, or hides them,
+/// or floats a new one over a tab of none.
+const TOGGLE_FLOATING: &str = "pane.toggle-floating";
+/// The commands that float the pane with the keyboard, of its tab's
+/// splits, and move a floating one into them, which its context menu
+/// shows.
+const FLOAT_PANE: &str = "pane.float";
+const DOCK_PANE: &str = "pane.move-into-splits";
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -3569,6 +3581,18 @@ impl<B: Backend> App<B> {
                     self.leave_broadcast(platform, name == LEAVE_BROADCAST);
                     Ok(())
                 }
+                NEW_FLOATING => {
+                    self.new_floating_pane(platform);
+                    Ok(())
+                }
+                TOGGLE_FLOATING => {
+                    self.toggle_floating_panes(platform);
+                    Ok(())
+                }
+                FLOAT_PANE | DOCK_PANE => {
+                    self.float_or_dock(platform, name == FLOAT_PANE);
+                    Ok(())
+                }
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -6076,6 +6100,10 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (LEAVE_BROADCAST, "pane-leave-broadcast", Category::Panes),
         (JOIN_BROADCAST, "pane-join-broadcast", Category::Panes),
+        (NEW_FLOATING, "pane-new-floating", Category::Panes),
+        (TOGGLE_FLOATING, "pane-toggle-floating", Category::Panes),
+        (FLOAT_PANE, "pane-float", Category::Panes),
+        (DOCK_PANE, "pane-move-into-splits", Category::Panes),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -6129,7 +6157,10 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 lokyr_kernel::commands::Capability::WorkspaceWrite,
                 lokyr_kernel::commands::Capability::PtyWrite,
             ]
-        } else if SESSIONS.contains(&name) || name == SWITCH_SESSION {
+        } else if SESSIONS.contains(&name)
+            || name == SWITCH_SESSION
+            || [NEW_FLOATING, TOGGLE_FLOATING, FLOAT_PANE, DOCK_PANE].contains(&name)
+        {
             vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
         } else {
             Vec::new()

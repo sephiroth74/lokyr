@@ -40,7 +40,7 @@ use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
 pub use agent::{Agent, AgentSettings, Hooked};
 use agent::{HOOKED, Told};
-pub use floating::{Floating, FloatingFrame};
+pub use floating::{Floating, FloatingFrame, LEAST_SHARE as LEAST_FLOATING_SHARE};
 pub use groups::Group;
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{

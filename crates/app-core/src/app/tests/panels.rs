@@ -1137,8 +1137,7 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
         (frame.x + frame.width / 2.0 - width / 2.0).abs() <= 1.0,
         "{frame:?} in {width}"
     );
-    // Typed: New Window first, of the app, then New Theme from Current…
-    // and New Session, then New Tab, of the tabs.
+    // Typed: the commands of the word, New Tab, of the tabs, among them.
     fake.send(
         &mut app,
         window,
@@ -1146,19 +1145,19 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     );
     frames(&mut fake, &mut app, window);
     // The arrows move the selection while the field takes the keys: down
-    // four times, up once, to New Tab.
-    for code in [
-        KeyCode::ArrowDown,
-        KeyCode::ArrowDown,
-        KeyCode::ArrowDown,
-        KeyCode::ArrowDown,
-        KeyCode::ArrowUp,
-    ] {
+    // one past New Tab, then up once to it.
+    let titles = palette_titles(&app, window);
+    let new_tab = titles
+        .iter()
+        .position(|title| title == "New Tab")
+        .unwrap_or_else(|| panic!("{titles:?}"));
+    let downs = std::iter::repeat_n(KeyCode::ArrowDown, new_tab + 1);
+    for code in downs.chain([KeyCode::ArrowUp]) {
         fake.send(&mut app, window, key_event(code, "", none, true));
     }
     frames(&mut fake, &mut app, window);
     assert!(focused_in(&app, window, "command-palette"));
-    assert_eq!(selected(&app), Some(3));
+    assert_eq!(selected(&app), Some(new_tab));
     // Return runs it, the palette closed.
     let tabs = |app: &App| {
         app.workspace

@@ -94,8 +94,12 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
+| `pane.float` | Float Pane |  | · not released yet |
 | `pane.join-broadcast` | Join Broadcast |  | · not released yet |
 | `pane.leave-broadcast` | Leave Broadcast |  | · not released yet |
+| `pane.move-into-splits` | Move Pane into Splits |  | · not released yet |
+| `pane.new-floating` | New Floating Pane |  | ⌥⇧⌘F (`cmd+alt+shift+f`) · not released yet |
+| `pane.toggle-floating` | Show or Hide Floating Panes |  | ⌥⌘F (`cmd+alt+f`) · not released yet |
 | [`splits.close`](plugins/splits.md) | Close Pane |  |  |
 | [`splits.equalize`](plugins/splits.md) | Equalize Panes |  |  |
 | [`splits.focus`](plugins/splits.md) | Select Pane | `direction`, text | ⌥⌘← (`cmd+alt+left`), `direction = "left"`; ⌥⌘→ (`cmd+alt+right`), `direction = "right"`; ⌥⌘↑ (`cmd+alt+up`), `direction = "up"`; ⌥⌘↓ (`cmd+alt+down`), `direction = "down"` |
