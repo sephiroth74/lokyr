@@ -782,3 +782,100 @@ fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
     app.quit(&mut fake);
     let _ = std::fs::remove_dir_all(base);
 }
+
+#[test]
+fn a_split_s_panes_show_their_restored_lines_on_one_row() {
+    let base = real_directory("restore-split-lines");
+    let state = base.join("state");
+    // A window of two panes side by side, each of its file.
+    let mut kept_rows =
+        lokyr_vt_core::terminal::Terminal::new(40, 10, lokyr_vt_core::terminal::Options::default());
+    lokyr_vt_core::parser::Parser::new().advance(&mut kept_rows, b"a line kept\r\n");
+    let bytes = kept_rows.archive(usize::MAX);
+    scrollback::write(
+        &state,
+        &[
+            (scrollback::name(0), bytes.clone()),
+            (scrollback::name(1), bytes),
+        ],
+    )
+    .unwrap();
+    let pane = |name: usize| windows::Layout::Pane {
+        directory: None,
+        scrollback: Some(scrollback::name(name)),
+        command: None,
+    };
+    let kept = Kept::new(
+        vec![windows::Window {
+            frame: None,
+            tabs: vec![windows::Tab {
+                title: None,
+                color: None,
+                layout: windows::Layout::Split {
+                    direction: windows::Direction::Horizontal,
+                    ratio: None,
+                    first: Box::new(pane(0)),
+                    second: Box::new(pane(1)),
+                },
+                active: 0,
+                zoomed: None,
+                pinned: false,
+                group: None,
+            }],
+            active: 0,
+            groups: Vec::new(),
+            session: None,
+        }],
+        None,
+    );
+    windows::write(&state, &kept).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(restoring_scrollback(), shell("exec sleep 30")).with_state(Some(state));
+    fake.start(&mut app);
+    let line_of = |app: &App, pane: PaneId| {
+        let terminal = app.workspace.pane(pane)?.terminal()?;
+        let rows: Vec<String> = (0..terminal.rows()).map(|y| terminal.row_text(y)).collect();
+        let at = rows
+            .iter()
+            .position(|row| row.starts_with("── Restored from"))?;
+        Some((
+            rows[at].clone(),
+            rows.get(at + 1).cloned().unwrap_or_default(),
+        ))
+    };
+    let panes: Vec<PaneId> = app.workspace.pane_ids();
+    assert_eq!(panes.len(), 2);
+    run_until(&mut fake, &mut app, |_, app| {
+        panes.iter().all(|&pane| line_of(app, pane).is_some())
+    });
+    for &pane in &panes {
+        let (line, next) = line_of(&app, pane).unwrap();
+        // Of its own length, its row alone, whatever the pane's width.
+        assert!(line.ends_with(" ──"), "{line:?}");
+        assert!(!next.starts_with('─'), "{next:?}");
+    }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn the_panes_files_go_of_a_windows_file_that_cannot_be_written() {
+    let base = real_directory("restore-failed-keep");
+    let state = base.join("state");
+    // A folder where the windows' file goes, which no write replaces.
+    std::fs::create_dir_all(state.join("windows.json")).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(
+        restoring_scrollback(),
+        shell("printf 'a line kept\\n'; exec sleep 30"),
+    )
+    .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |_, app| {
+        first_rows(app)
+            .iter()
+            .any(|row| row.contains("a line kept"))
+    });
+    app.quit(&mut fake);
+    assert!(!scrollback::folder(&state).exists());
+    let _ = std::fs::remove_dir_all(base);
+}

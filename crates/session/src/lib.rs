@@ -70,8 +70,8 @@ pub struct Restored {
     /// may take a while; none of rows that cannot be read, which shows
     /// nothing, not even the line.
     pub rows: Arc<dyn Fn() -> Option<Vec<u8>> + Send + Sync>,
-    /// The line under them that tells when they were kept, across the
-    /// terminal's width, which the terminal dims.
+    /// The line under them that tells when they were kept, which the
+    /// terminal dims.
     pub line: String,
 }
 

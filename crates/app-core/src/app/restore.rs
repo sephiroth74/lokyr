@@ -115,8 +115,15 @@ impl<B: Backend> App<B> {
                         "lokyr: the panes' scrollback cannot be kept for the next start: {error}"
                     );
                 }
+                // Of no windows' file, the panes' files of their new names
+                // go, which the windows' file before would name.
                 if let Err(error) = windows::write(state, &kept) {
                     eprintln!("lokyr: the windows cannot be kept for the next start: {error}");
+                    if let Err(error) = scrollback::forget(state) {
+                        eprintln!(
+                            "lokyr: the panes' scrollback kept for the next start cannot be forgotten: {error}"
+                        );
+                    }
                 }
                 return;
             }
@@ -302,7 +309,7 @@ impl<B: Backend> App<B> {
         let shown = kept.open(&mut self.workspace, |pane| {
             let restored = state
                 .zip(pane.scrollback)
-                .and_then(|(state, name)| restored(state, name, grid.columns, texts, offset));
+                .and_then(|(state, name)| restored(state, name, texts, offset));
             let directory = pane.directory.filter(|directory| {
                 let there = directory.is_dir();
                 if !there {
@@ -365,16 +372,10 @@ impl<B: Backend> App<B> {
 /// What the pane of the scrollback's file `name` in `state` shows again, as
 /// it opens: its rows, which the pane's own thread reads, as reading a
 /// file of a full pane's takes milliseconds that the first frame need not
-/// wait for, and the line under them of when they were kept, across
-/// `columns`, of the local time zone of `offset`; none of no such file. A
-/// file left aside shows nothing, as the log tells.
-fn restored(
-    state: &Path,
-    name: &str,
-    columns: u16,
-    texts: &Texts,
-    offset: i32,
-) -> Option<Restored> {
+/// wait for, and the line under them of when they were kept, of the
+/// local time zone of `offset`; none of no such file. A file left aside
+/// shows nothing, as the log tells.
+fn restored(state: &Path, name: &str, texts: &Texts, offset: i32) -> Option<Restored> {
     let time = scrollback::time(state, name)?;
     let (state, name) = (state.to_path_buf(), name.to_owned());
     Some(Restored {
@@ -387,14 +388,16 @@ fn restored(
                 None
             }
         }),
-        line: restored_line(texts, time, offset, columns),
+        line: restored_line(texts, time, offset),
     })
 }
 
 /// The line under a pane's restored scrollback: `── Restored from <date and
-/// time>`, of `time` in the local time zone of `offset`, as 2026-11-22
-/// 09:31, then a rule to `columns`.
-fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> String {
+/// time> ──`, of `time` in the local time zone of `offset`, as 2026-11-22
+/// 09:31: of its own length, as a pane of a split takes its width once its
+/// window lays it out, which may be after the line, so that a rule across
+/// the window's width would wrap.
+fn restored_line(texts: &Texts, time: SystemTime, offset: i32) -> String {
     let millis = time.duration_since(UNIX_EPOCH).map_or(0, |since| {
         u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
     });
@@ -407,16 +410,10 @@ fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> 
         "{:04}-{:02}-{:02} {:02}:{:02}",
         at.year, at.month, at.day, at.hour, at.minute
     );
-    let mut line = format!(
-        "── {} ",
+    format!(
+        "── {} ──",
         texts.text_with("scrollback-restored", &[("when", Arg::Text(&when))])
-    );
-    let shown = line.chars().count();
-    line.extend(std::iter::repeat_n(
-        '─',
-        usize::from(columns).saturating_sub(shown),
-    ));
-    line
+    )
 }
 
 /// The frame of `kept` on the screens, if it is one that a window can
