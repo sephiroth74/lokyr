@@ -487,7 +487,7 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         held(&tree, "field:family"),
         Some((Some(String::new()), "setting-unset".to_owned()))
     );
-    assert_eq!(reset_of(&tree, "family"), Some(true));
+    assert_eq!(reset_of(&tree, "family"), None);
     assert_eq!(
         text_of(&tree, "description:size").as_deref(),
         Some("What size does")
@@ -509,9 +509,9 @@ fn a_section_shows_each_key_s_control_of_its_value_in_force_marked_at_its_defaul
         labelled(&tree, "choose:scrollbar"),
         Some(("system".to_owned(), false))
     );
-    // At its default, of no text that says so, its link dimmed.
+    // At its default, of no text that says so, nor a link back to it.
     assert!(find_node(&tree, "default:scrollbar").is_none());
-    assert_eq!(reset_of(&tree, "scrollbar"), Some(true));
+    assert_eq!(reset_of(&tree, "scrollbar"), None);
     assert_eq!(
         switched(&tree, "set:opaque-titlebar"),
         Some((false, Some("opaque-titlebar".to_owned())))
@@ -579,7 +579,7 @@ fn a_number_and_a_text_are_written_from_their_fields_their_steps_and_back_to_the
         held(&tree, "field:size").map(|(text, _)| text),
         Some(Some("13".to_owned()))
     );
-    assert_eq!(reset_of(&tree, "size"), Some(true));
+    assert_eq!(reset_of(&tree, "size"), None);
     // A text, and an empty field back to the key's default.
     host.ui_event(&mut plugin, &submit("field:family", "Menlo"))
         .unwrap();
@@ -1975,7 +1975,7 @@ fn a_list_s_values_are_taken_away_and_added_and_its_default_given_back() {
     host.ui_event(&mut plugin, &choose(1)).unwrap();
     let tree = rendered(&mut host, &mut plugin);
     // Each value, of a link that takes it away, and a field that adds one;
-    // at its default, its Reset dimmed.
+    // at its default, of no Reset.
     assert_eq!(text_of(&tree, "item:programs:0").as_deref(), Some("claude"));
     assert_eq!(text_of(&tree, "item:programs:1").as_deref(), Some("codex"));
     assert!(matches!(
@@ -1983,7 +1983,7 @@ fn a_list_s_values_are_taken_away_and_added_and_its_default_given_back() {
         Kind::Button(button) if button.link
     ));
     assert!(held(&tree, "add:programs").is_some());
-    assert_eq!(reset_of(&tree, "programs"), Some(true));
+    assert_eq!(reset_of(&tree, "programs"), None);
     let _ = written(&mut host);
     host.ui_event(&mut plugin, &on("remove:programs:1", UiEventKind::Click))
         .unwrap();
@@ -2121,8 +2121,12 @@ fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     assert!(selected(&mut host).contains(&0));
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["font"], "{}", snapshot(&tree));
-    assert!(reset_of(&tree, "size").is_some(), "{}", snapshot(&tree));
-    assert!(reset_of(&tree, "family").is_none());
+    assert!(
+        find_node(&tree, "key:size").is_some(),
+        "{}",
+        snapshot(&tree)
+    );
+    assert!(find_node(&tree, "key:family").is_none());
 
     // Words in any order, of keys' names and what they do, across
     // sections: the first of them chosen, as the font's holds none.
@@ -2131,12 +2135,12 @@ fn a_search_shows_the_sections_and_the_keys_that_hold_its_words() {
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["window", "tabs"], "{}", snapshot(&tree));
     assert!(
-        reset_of(&tree, "scrollbar").is_some(),
+        find_node(&tree, "key:scrollbar").is_some(),
         "{}",
         snapshot(&tree)
     );
-    assert!(reset_of(&tree, "programs").is_some());
-    assert!(reset_of(&tree, "opaque-titlebar").is_none());
+    assert!(find_node(&tree, "key:programs").is_some());
+    assert!(find_node(&tree, "key:opaque-titlebar").is_none());
 }
 
 #[test]
@@ -2149,11 +2153,11 @@ fn a_search_chooses_its_first_section_where_the_chosen_one_holds_none() {
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["window"], "{}", snapshot(&tree));
     assert!(
-        reset_of(&tree, "scrollbar").is_some(),
+        find_node(&tree, "key:scrollbar").is_some(),
         "{}",
         snapshot(&tree)
     );
-    assert!(reset_of(&tree, "opaque-titlebar").is_none());
+    assert!(find_node(&tree, "key:opaque-titlebar").is_none());
 
     // A section's title shows all of its keys; the sidebar's items are of
     // the sections shown.
@@ -2162,11 +2166,11 @@ fn a_search_chooses_its_first_section_where_the_chosen_one_holds_none() {
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["tabs"], "{}", snapshot(&tree));
     assert!(
-        reset_of(&tree, "column-width").is_some(),
+        find_node(&tree, "key:column-width").is_some(),
         "{}",
         snapshot(&tree)
     );
-    assert!(reset_of(&tree, "background").is_some());
+    assert!(find_node(&tree, "key:background").is_some());
 }
 
 #[test]
@@ -2288,7 +2292,7 @@ fn a_search_of_no_match_says_so_and_its_button_empties_it() {
     let tree = rendered(&mut host, &mut plugin);
     assert_eq!(sidebar_of(&tree), ["font", "window", "theme", "tabs"]);
     assert!(
-        reset_of(&tree, "column-width").is_some(),
+        find_node(&tree, "key:column-width").is_some(),
         "{}",
         snapshot(&tree)
     );
@@ -3425,7 +3429,8 @@ fn a_plugin_s_switch_turns_it_on_and_its_keys_dim_while_it_is_off() {
     let disabled = |tree: &Node, key: &str| find_node(tree, key).map(|node| node.kind.disabled());
     assert_eq!(disabled(&tree, "field:border"), Some(true));
     assert_eq!(disabled(&tree, "set:dividers"), Some(true));
-    assert_eq!(disabled(&tree, "reset:border"), Some(true));
+    // At its default, of no Reset.
+    assert_eq!(disabled(&tree, "reset:border"), None);
     let row = find_node(&tree, "key:border").unwrap();
     let name = row
         .children

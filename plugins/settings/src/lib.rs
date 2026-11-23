@@ -2489,22 +2489,19 @@ fn key_row(
         ..Layout::default()
     });
     let mut value: Vec<Node> = control(cx, (section, key), typed).into_iter().collect();
-    // At the bottom right: the link back to the default, dimmed where the
+    // At the bottom right: the link back to the default, of none where the
     // key is there already.
     let mut marks = Vec::new();
     let at_default = key.value.is_none() || key.value == key.default;
     // A map's entries go one at a time, by their Remove.
-    if writable(&key.kind) && !matches!(key.kind, SettingKind::Map { .. }) {
-        let mut reset = Node::button(message(cx, "setting-reset", &[]))
+    if writable(&key.kind) && !matches!(key.kind, SettingKind::Map { .. }) && !at_default {
+        let reset = Node::button(message(cx, "setting-reset", &[]))
             .key(format!("{RESET}{name}").as_str())
             .as_link()
             .style(Style {
                 text_size: Some(TextSize::Small),
                 ..Style::default()
             });
-        if let Kind::Button(own) = &mut reset.kind {
-            own.disabled = at_default;
-        }
         marks.push(reset);
     }
     if !marks.is_empty() {

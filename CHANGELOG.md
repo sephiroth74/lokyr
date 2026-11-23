@@ -17,6 +17,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - In the settings window, a key's More info and Docs links line up with its description above them, as a link shows no box.
 - The settings window's sidebar lists Lokyr's own sections first, then, after a line, those of the plugins that you installed.
+- In the settings window, a key at its default shows no Reset link, rather than a dimmed one.
 
 ## [1.4.0] - 2026-11-22
 

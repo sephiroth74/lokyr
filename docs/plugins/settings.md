@@ -22,7 +22,7 @@ The Settings, Keys and Themes pages of the settings window: every key of your co
   - a text, a field, empty where your config leaves out a key of no default;
   - a list, as `[agents] programs`, its values under what it does, each of a **Remove** link, and a field that adds one as you press Return;
   - a table, its value as the config writes it, which you change in the file.
-- **A change** writes the key into your config file, keeping the rest of it and its comments, and applies at once, as saving the file would: a switch or a menu's value as you choose it, a field's value as your typing pauses, as you press Return and as you leave the field. An empty field, or **Reset**, the link at the row's bottom right, dimmed where the key is at its default, takes the key out of the file, its default in force again.
+- **A change** writes the key into your config file, keeping the rest of it and its comments, and applies at once, as saving the file would: a switch or a menu's value as you choose it, a field's value as your typing pauses, as you press Return and as you leave the field. An empty field, or **Reset**, the link at the row's bottom right, which shows once the key is off its default, takes the key out of the file, its default in force again.
 - **A value that the key does not take**, past its range, not a number, or a whole number's fraction, is not written, and the page tells why under the key, until a value is written.
 - **A config file that does not read** shows its error over the page, of its line and its column: the page shows the settings that applied last, and writes nothing until the file reads again.
 - **The page follows your config**: saving the file shows the new values at once, the fields too.
