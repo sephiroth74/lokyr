@@ -488,12 +488,18 @@ impl Session {
 
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
     /// have it, with the keyboard's `options`. A key that sends something
-    /// brings the view back to the screen, as typing does.
+    /// brings the view back to the screen, as typing does. A key with
+    /// Command held reaches the program only through the kitty protocol,
+    /// which reports Super, as xterm's sequences have no Command: of no
+    /// keyboard flags now, it sends nothing.
     pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
         let mut bytes = Vec::new();
         {
             let mut terminal = self.lock();
             let flags = terminal.keyboard_flags();
+            if event.mods.super_key && flags == lokyr_vt_core::terminal::KeyboardFlags::NONE {
+                return;
+            }
             input::encode_key(event, &terminal.input_modes(), flags, options, &mut bytes);
             typed(&mut terminal, &bytes);
         }
