@@ -533,8 +533,14 @@ impl Plugin for Tabs {
             return Ok(());
         };
         let tab = &tabs[at];
+        // The tab's panes, its floating ones hidden too, which a tab's read
+        // lists while they show alone: the pane closes while it has others.
+        let several = tab.panes.len() > 1
+            || cx
+                .floating_panes(tab.id)
+                .is_ok_and(|floating| !floating.panes.is_empty());
         match name {
-            CLOSE if tab.panes.len() > 1 => cx.close_pane(tab.focused, true),
+            CLOSE if several => cx.close_pane(tab.focused, true),
             // A pinned tab stays, as its key closes no pinned tab.
             CLOSE if tab.pinned => Ok(()),
             CLOSE => cx.close_tab_kept(tab.id, true, self.settings.reopen_seconds),

@@ -158,6 +158,29 @@ fn a_close_asks_first_of_the_tab_or_of_its_pane_while_it_has_splits() {
             ask: true
         }]
     );
+    // A tab of one split pane and a floating pane hidden: the pane closes,
+    // not the tab with the floating pane.
+    let (mut host, mut plugin) = self::host(&[1, 2], 1);
+    host.set_floating_panes(
+        TabId(1),
+        lokyr_plugin_sdk::host::FloatingPanes {
+            shown: false,
+            panes: vec![lokyr_plugin_sdk::host::FloatingPane {
+                pane: PaneId(9),
+                x: 0.2,
+                y: 0.2,
+                width: 0.6,
+                height: 0.6,
+            }],
+        },
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::ClosePane {
+            pane: PaneId(1),
+            ask: true
+        }]
+    );
 }
 
 #[test]

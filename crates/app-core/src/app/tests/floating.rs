@@ -439,3 +439,23 @@ fn a_plugin_s_popup_tells_it_its_command_s_status_as_it_closes() {
     );
     assert_eq!(app.focused(window), Some(first));
 }
+
+#[test]
+fn command_w_of_hidden_floating_panes_closes_the_split_pane_not_the_tab() {
+    let (mut fake, mut app, window) = started_running(idle());
+    let first = app.focused(window).unwrap();
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    command(&mut fake, &mut app, TOGGLE_FLOATING);
+    assert_eq!(app.focused(window), Some(first));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    // ⌘W of the tab's one split pane: it closes alone, the floating pane
+    // taking its place, the window and its tab staying.
+    fake.send(&mut app, window, command_key(KeyCode::KeyW, "w"));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(first).is_none()
+    });
+    assert_eq!(fake.windows().count(), 1);
+    assert!(app.workspace.pane(floating).is_some());
+    assert_eq!(app.focused(window), Some(floating));
+}

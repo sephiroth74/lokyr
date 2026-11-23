@@ -37,6 +37,7 @@ Press ⌃⌘O: `fzf` opens in the middle of the tab. Press Escape: the popup clo
 - **Move it**: drag its title bar. It stays within the tab.
 - **Resize it**: drag its edges or its corners. The pointer shows the way it resizes.
 - **Close it**: click the × at the right of its title, press ⌘W, choose Shell › Pane › Close Pane, or exit its shell. Lokyr asks first while a program other than a shell runs there.
+- **⌘W closes a pane, not the tab**, while the tab has floating panes, hidden ones too. When the pane you close is the tab's last split pane, the floating pane in front takes its place.
 
 ## Move a pane between the splits and the floating panes
 
