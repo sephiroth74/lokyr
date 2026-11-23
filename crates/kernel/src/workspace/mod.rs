@@ -452,9 +452,10 @@ impl Tab {
     }
 
     /// Whether `pane` is the tab's one pane, of its layout and of no other
-    /// floating, as a pane that moves out alone takes its tab along.
+    /// floating but popups, as a pane that moves out alone takes its tab
+    /// along, its popups with it.
     fn alone(&self, pane: PaneId) -> bool {
-        self.layout == Layout::Leaf(pane) && self.floating.is_empty()
+        self.layout == Layout::Leaf(pane) && self.floating.iter().all(|floating| floating.popup)
     }
 }
 
@@ -2359,14 +2360,32 @@ impl Workspace {
                 tab.split_active = nearest;
             }
             nearest
-        } else if let Some(front) = tab.floating.pop() {
+        } else if let Some(at) = tab.floating.iter().rposition(|floating| !floating.popup) {
             // Its layout's one pane, whose place the floating pane in front
-            // takes, so that the tab stays.
+            // takes, so that the tab stays; a popup, which runs a command of
+            // its own, never takes it.
+            let front = tab.floating.remove(at);
             tab.layout = Layout::Leaf(front.pane);
             tab.split_active = front.pane;
             front.pane
         } else {
-            // Its one pane.
+            // Its one pane, of no floating pane but popups, which close with
+            // the tab.
+            let popups: Vec<PaneId> = tab
+                .floating
+                .drain(..)
+                .map(|floating| floating.pane)
+                .collect();
+            for popup in popups {
+                self.tab_of.remove(&popup);
+                let gone = self.panes.remove(&popup);
+                self.agent_gone(popup, gone);
+                self.waiting.remove(&popup);
+                self.changed(WorkspaceEvent::PaneClosed {
+                    pane: popup.into(),
+                    tab: tab_id.into(),
+                });
+            }
             return Some((tab_id, Some(self.detach_tab(tab_id))));
         };
         let refocused = tab.active == pane;
@@ -2602,7 +2621,8 @@ impl Workspace {
 
     /// Moves `pane` out of its tab into a tab of its own in `window`, at
     /// `index` of its tabs, or at their end past them, and returns that
-    /// tab; a pane alone in its tab moves with it.
+    /// tab; a pane alone in its tab moves with it, and a popup, which stays
+    /// over its tab, not at all.
     pub fn pane_to_new_tab(
         &mut self,
         pane: PaneId,
@@ -2610,7 +2630,10 @@ impl Workspace {
         index: usize,
     ) -> Option<TabId> {
         let tab = *self.tab_of.get(&pane)?;
-        if !self.windows.contains_key(&window) || self.settings_window() == Some(window) {
+        if !self.windows.contains_key(&window)
+            || self.settings_window() == Some(window)
+            || self.is_popup(pane)
+        {
             return None;
         }
         if self.tabs.get(&tab)?.alone(pane) {
@@ -2629,9 +2652,13 @@ impl Workspace {
 
     /// Moves `pane` out of its tab into a window of its own, and returns
     /// that window; a pane alone in its tab moves with it, as
-    /// [`Workspace::tab_to_new_window`] moves a tab.
+    /// [`Workspace::tab_to_new_window`] moves a tab, and a popup not at
+    /// all.
     pub fn pane_to_new_window(&mut self, pane: PaneId) -> Option<WindowId> {
         let tab = *self.tab_of.get(&pane)?;
+        if self.is_popup(pane) {
+            return None;
+        }
         if self.tabs.get(&tab)?.alone(pane) {
             return self.tab_to_new_window(tab);
         }

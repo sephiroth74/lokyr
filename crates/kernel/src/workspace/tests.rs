@@ -3255,6 +3255,46 @@ fn a_broadcast_reaches_the_panes_that_show_but_popups_and_a_zoom_s_hidden_ones()
 }
 
 #[test]
+fn a_popup_stays_over_its_tab_and_closes_with_its_last_split_pane() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let a = workspace.tab(tab).unwrap().active_pane();
+    let popup = workspace
+        .open_popup(tab, pane("sleep 30"), FloatingFrame::centered(0.8, 0.7))
+        .unwrap();
+    // No move into the splits, a tab or a window.
+    assert!(!workspace.dock_floating(popup));
+    assert_eq!(workspace.pane_to_new_tab(popup, window, 1), None);
+    assert_eq!(workspace.pane_to_new_window(popup), None);
+    assert!(workspace.is_popup(popup));
+    // A floating pane takes the last split pane's place, the popup not.
+    let floating = workspace
+        .float_pane(tab, pane("sleep 30"), FloatingFrame::centered(0.5, 0.5))
+        .unwrap();
+    assert!(workspace.focus_pane(popup));
+    assert!(workspace.close_pane(a));
+    let held = workspace.tab(tab).unwrap();
+    assert_eq!(held.layout().panes(), [floating]);
+    assert!(workspace.is_popup(popup));
+    // Of popups alone, the tab closes with its last split pane, its popups
+    // told closed.
+    workspace.take_events();
+    assert!(workspace.close_pane(floating));
+    assert!(workspace.tab(tab).is_none());
+    assert!(workspace.pane(popup).is_none());
+    let closed: Vec<sdk::PaneId> = workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Changed(Change::PaneClosed { pane, .. }) => Some(pane),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(closed, [floating.into(), popup.into()]);
+}
+
+#[test]
 fn floating_panes_float_take_the_keyboard_hide_together_and_close() {
     let mut workspace = Workspace::new();
     let window = workspace.open_window(pane("sleep 30"));

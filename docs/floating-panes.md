@@ -61,7 +61,7 @@ Bind `pane.popup` to a key in the config's `[keys]`, with the command to run:
 - **Your keys**: the command gets them all, Escape too.
 - **On its own**: a popup shows whether the tab's other floating panes show or not. ⌥⌘F shows or hides those under it, and the popup keeps the keyboard.
 
-You can move, resize and close a popup as any floating pane.
+You can move, resize and close a popup as any floating pane. A popup stays over its tab: it doesn't go into the splits, to another tab or to a window, and when the tab's last split pane closes, the popup closes with the tab.
 
 ## Popups from plugins
 

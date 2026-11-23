@@ -4557,6 +4557,19 @@ impl Calling<'_> {
         self.host.held(pane).map(|_| ())
     }
 
+    /// That `pane` is no popup, held or that the call's writes so far
+    /// open, as a popup stays over its tab; `failed` otherwise.
+    fn not_popup(&self, pane: PaneId) -> Result<(), Error> {
+        let opened = self.writes.iter().any(|(request, opened)| {
+            matches!(request, Request::OpenPopup { .. })
+                && matches!(opened, Opened::Pane(new) if *new == pane)
+        });
+        if opened || self.host.popups.contains_key(&pane) {
+            return Err(Error::new(Code::Failed, crate::message::POPUP_STAYS));
+        }
+        Ok(())
+    }
+
     /// Whether `tab` is held, or the call's writes so far open it;
     /// `not-found` otherwise.
     fn known_tab(&self, tab: TabId) -> Result<(), Error> {
@@ -5160,9 +5173,13 @@ impl Calling<'_> {
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }
             | Request::FocusPane(pane)
-            | Request::ClosePane { pane, .. }
-            | Request::PaneToNewWindow(pane) => {
+            | Request::ClosePane { pane, .. } => {
                 self.known_pane(*pane)?;
+                Response::Done
+            }
+            Request::PaneToNewWindow(pane) => {
+                self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 Response::Done
             }
             Request::SetBroadcast { window, .. } => {
@@ -5673,6 +5690,7 @@ impl Calling<'_> {
             }
             Request::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 self.known_window(*window)?;
                 Response::Done
             }

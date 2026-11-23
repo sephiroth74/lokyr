@@ -3378,8 +3378,9 @@ impl<B: Backend> App<B> {
             } else {
                 pane.exited(close, now, &self.texts)
             };
-            // A popup's plugin hears its command's status as it closes.
-            if popup && exited.is_some() {
+            // A popup's plugin hears its command's status as it closes,
+            // which a pane of no plugin's popup takes nothing of.
+            if exited.is_some() {
                 let status = pane.exit_status().map(|exit| match exit {
                     lokyr_pty::Exit::Code(code) => code,
                     lokyr_pty::Exit::Signal(signal) => 128 + signal,

@@ -44,6 +44,10 @@ pub struct Call {
     pub request: Request,
 }
 
+/// The message of the error of a request that moves a popup out of its
+/// tab, as a popup stays over the tab that it opened in.
+pub const POPUP_STAYS: &str = "a popup stays over its tab";
+
 /// The error of a request of a tab's panes, title or color, of the settings
 /// tab, which has none of them.
 pub const SETTINGS_TAB: &str =

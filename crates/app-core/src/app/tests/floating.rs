@@ -151,6 +151,22 @@ fn a_floating_pane_s_context_menu_moves_it_into_the_splits_and_a_split_one_float
     fake.send(&mut app, window, WindowEvent::Frame);
     let items = open(&mut fake, &mut app, Point { x: 10.0, y: 10.0 });
     assert!(items.contains(&"Float Pane".to_owned()), "{items:?}");
+    // Over a popup, which stays over its tab: neither.
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    app.run(&mut fake, POPUP, popup_of("sleep 30", &[]));
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let (_, room) = *app.windows[&window].floating_rooms.last().unwrap();
+    let inside = Point {
+        x: (f64::from(room.grid.x) + f64::from(room.grid.width) / 2.0) / scale,
+        y: (f64::from(room.grid.y) + f64::from(room.grid.height) / 2.0) / scale,
+    };
+    let items = open(&mut fake, &mut app, inside);
+    assert!(
+        !items
+            .iter()
+            .any(|item| item.contains("Float") || item.contains("Splits")),
+        "{items:?}"
+    );
 }
 
 /// The arguments of a popup of `command`, and of `more`.

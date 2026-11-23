@@ -5893,6 +5893,21 @@ impl Host<'_, '_> {
         })
     }
 
+    /// That `pane` is no popup, of the workspace's or of the call's writes
+    /// so far, as a popup stays over its tab; `failed` otherwise.
+    fn not_popup(&self, pane: host::PaneId) -> Result<(), Error> {
+        let opened = self.writes.iter().any(
+            |write| matches!(write, Write::OpenPopup { pane: opened, .. } if opened.get() == pane.0),
+        );
+        if opened || self.context.workspace.is_popup(PaneId::of(pane.0)) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::POPUP_STAYS,
+            ));
+        }
+        Ok(())
+    }
+
     /// Whether the call's writes so far open the pane `pane`, of a new tab
     /// or of a split.
     fn opens_pane(&self, pane: host::PaneId) -> bool {
@@ -7077,10 +7092,12 @@ impl Host<'_, '_> {
             Asked::SetTabTitle { tab, .. } | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }
-            Asked::ClosePane { pane, .. }
-            | Asked::FocusPane(pane)
-            | Asked::PaneToNewWindow(pane) => {
+            Asked::ClosePane { pane, .. } | Asked::FocusPane(pane) => {
                 self.known_pane(*pane)?;
+            }
+            Asked::PaneToNewWindow(pane) => {
+                self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
             }
             Asked::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;
@@ -7105,6 +7122,7 @@ impl Host<'_, '_> {
             }
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
             }

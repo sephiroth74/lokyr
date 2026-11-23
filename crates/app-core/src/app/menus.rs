@@ -158,11 +158,14 @@ impl<B: Backend> App<B> {
             groups.push(self.commands.get(name).map(of).into_iter().collect());
         }
         // A pane of the splits floats, of a tab of more than one, and a
-        // floating one goes into the splits.
+        // floating one goes into the splits, but a popup, which stays over
+        // its tab.
         let placed = shown.and_then(|shown| {
             let pane = self.workspace.focused(shown)?.id();
             let tab = self.workspace.tab(self.workspace.tab_of(pane)?)?;
-            if tab.is_floating(pane) {
+            if tab.is_popup(pane) {
+                None
+            } else if tab.is_floating(pane) {
                 Some(DOCK_PANE)
             } else {
                 (tab.layout().panes().len() > 1).then_some(FLOAT_PANE)
