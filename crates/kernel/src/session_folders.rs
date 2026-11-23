@@ -57,36 +57,7 @@ pub fn listed(patterns: &[String], home: Option<&Path>) -> Vec<PathBuf> {
     folders
 }
 
-/// The folders that the switcher lists, `configured` then `recent`, as
-/// they are named, each once and none of `sessions`, the folders that
-/// sessions were opened in, as their real paths tell, which the system
-/// resolves of their links, as `/tmp` of `/private/tmp` on macOS: a recent
-/// folder that is a configured one, or a session's, by another path, goes.
-pub fn without_sessions(
-    configured: Vec<String>,
-    recent: Vec<String>,
-    sessions: &[&str],
-) -> (Vec<String>, Vec<String>) {
-    let real =
-        |folder: &str| std::fs::canonicalize(folder).unwrap_or_else(|_| PathBuf::from(folder));
-    let mut seen: Vec<PathBuf> = sessions.iter().map(|folder| real(folder)).collect();
-    let mut keep = |folders: Vec<String>| -> Vec<String> {
-        folders
-            .into_iter()
-            .filter(|folder| {
-                let path = real(folder);
-                let fresh = !seen.contains(&path);
-                if fresh {
-                    seen.push(path);
-                }
-                fresh
-            })
-            .collect()
-    };
-    let configured = keep(configured);
-    let recent = keep(recent);
-    (configured, recent)
-}
+pub use lokyr_plugin_sdk::host::without_sessions;
 
 #[cfg(test)]
 mod tests {

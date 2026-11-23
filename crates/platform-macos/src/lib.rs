@@ -23,6 +23,7 @@ mod double_taps;
 mod drag_image;
 mod fill;
 mod frame;
+mod full_screen;
 mod global_keys;
 mod keys;
 mod layer;

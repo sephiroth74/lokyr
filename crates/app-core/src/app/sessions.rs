@@ -87,7 +87,7 @@ impl<B: Backend> App<B> {
         {
             return;
         }
-        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+        let Some(window) = self.session_window(platform) else {
             return;
         };
         let name = self
@@ -134,7 +134,7 @@ impl<B: Backend> App<B> {
             self.close_session(platform, session);
             return;
         };
-        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+        let Some(window) = self.session_window(platform) else {
             return;
         };
         let program = self.program_name(program);
@@ -161,6 +161,7 @@ impl<B: Backend> App<B> {
     fn close_session(&mut self, platform: &mut dyn Platform, session: SessionId) {
         // Of windows kept that never showed, nothing is left.
         self.pending_windows.remove(&session);
+        self.workspace.set_session_waiting(session, false);
         let windows = self.windows_of_session(session);
         for window in windows {
             self.close(platform, window);
@@ -205,7 +206,7 @@ impl<B: Backend> App<B> {
     /// as, on the window in front, of the session's name at first.
     pub(super) fn ask_layout_name(&mut self, platform: &mut dyn Platform) {
         let session = self.workspace.active_session();
-        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+        let Some(window) = self.session_window(platform) else {
             return;
         };
         let name = self
@@ -377,6 +378,25 @@ impl<B: Backend> App<B> {
         Ok(())
     }
 
+    /// The window that a question of the active session's shows on: the
+    /// one in front, of the active session or of none, or the session's
+    /// last; not one of a session that hides, as it animates out of full
+    /// screen with the keyboard.
+    fn session_window(&self, platform: &dyn Platform) -> Option<WindowId> {
+        self.acting
+            .or_else(|| platform.focused_window())
+            .filter(|window| {
+                self.windows
+                    .get(window)
+                    .is_some_and(|state| !state.session_hidden)
+            })
+            .or_else(|| {
+                self.windows_of_session(self.workspace.active_session())
+                    .last()
+                    .copied()
+            })
+    }
+
     /// The folder of the layouts, beside the config file, if the app has
     /// one.
     fn layouts_folder(&self) -> Option<std::path::PathBuf> {
@@ -459,13 +479,6 @@ impl<B: Backend> App<B> {
     /// session where it shows.
     pub(super) fn settle_sessions(&mut self, platform: &mut dyn Platform) {
         let active = self.workspace.active_session();
-        // A session that has not shown since the app started opens its
-        // windows, as they were kept, their shells starting now.
-        if let Some(pending) = self.pending_windows.remove(&active) {
-            for window in &pending {
-                self.restore_window(platform, window);
-            }
-        }
         // The session that the app starts in shows of its own.
         let switched = self.shown_session.is_some_and(|shown| shown != active);
         let mut shown = Vec::new();
@@ -480,7 +493,13 @@ impl<B: Backend> App<B> {
                 }
             }
         }
-        if !switched && shown.is_empty() && hidden.is_empty() && self.shown_session.is_some() {
+        let pending = self.pending_windows.contains_key(&active);
+        if !switched
+            && !pending
+            && shown.is_empty()
+            && hidden.is_empty()
+            && self.shown_session.is_some()
+        {
             return;
         }
         self.shown_session = Some(active);
@@ -488,6 +507,15 @@ impl<B: Backend> App<B> {
             platform.set_window_hidden(window, true);
             if let Some(state) = self.windows.get_mut(&window) {
                 state.session_hidden = true;
+            }
+        }
+        // A session that has not shown since the app started opens its
+        // windows, as they were kept, their shells starting now: after the
+        // others hide, as they open shown.
+        if let Some(pending) = self.pending_windows.remove(&active) {
+            self.workspace.set_session_waiting(active, false);
+            for window in &pending {
+                self.restore_window(platform, window);
             }
         }
         for &window in &shown {

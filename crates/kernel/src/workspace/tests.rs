@@ -2939,11 +2939,91 @@ fn lokyr_starts_in_a_session_of_no_name_whose_windows_show() {
     let other = workspace.new_session("work").unwrap();
     assert!(workspace.in_active_session(quick) && workspace.in_active_session(settings));
     assert!(!workspace.in_active_session(window));
-    // A session of one window alone closes not as its last window goes.
+    // A session of no window goes as a switch leaves it; the only one
+    // closes not as its last window goes.
     assert!(workspace.switch_session(first));
-    assert!(workspace.close_session(other));
+    assert!(workspace.session(other).is_none());
     workspace.close_window(window);
     assert_eq!(session_ids(&workspace), [first]);
+}
+
+#[test]
+fn a_tab_or_a_pane_out_of_a_window_of_no_session_joins_the_active_one() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    // The quick terminal's window, of two tabs, the second of two panes.
+    let quick = workspace.open_quick_window(pane("sleep 30"), WindowId::new());
+    let tab = workspace.open_tab(quick, pane("sleep 30"), 1).unwrap();
+    let alone = workspace.window(quick).unwrap().tabs()[0];
+    let shown = workspace.tab(tab).unwrap().active_pane();
+    let split = workspace
+        .split(shown, Direction::Horizontal, pane("sleep 30"), Side::Second)
+        .unwrap();
+    // A pane out of it, and a tab, each in a window of the session that
+    // shows, which a switch hides.
+    let of_pane = workspace.pane_to_new_window(split).unwrap();
+    let of_tab = workspace.tab_to_new_window(alone).unwrap();
+    for window in [of_pane, of_tab] {
+        assert_eq!(workspace.window(window).unwrap().session(), Some(work));
+    }
+    assert_eq!(workspace.window(quick).unwrap().session(), None);
+    assert!(workspace.switch_session(first));
+    assert!(!workspace.in_active_session(of_pane) && !workspace.in_active_session(of_tab));
+    // A man page's window, of no session too: a tab out of it joins the
+    // session that shows then.
+    let man = workspace.open_window(pane("sleep 30"));
+    assert!(workspace.leave_sessions(man));
+    workspace.open_tab(man, pane("sleep 30"), 1).unwrap();
+    let out = workspace.window(man).unwrap().tabs()[1];
+    let moved = workspace.tab_to_new_window(out).unwrap();
+    assert_eq!(workspace.window(moved).unwrap().session(), Some(first));
+}
+
+#[test]
+fn a_switch_takes_away_the_session_that_it_leaves_of_no_window_but_one_waited_for() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    workspace.open_window(pane("sleep 30"));
+    // A session made, then another before a window opens in it.
+    let one = workspace.new_session("one").unwrap();
+    let two = workspace.new_session("two").unwrap();
+    assert_eq!(session_ids(&workspace), [two, first]);
+    assert!(workspace.session(one).is_none());
+    // A session whose windows wait to open, as the app keeps them, stays.
+    let kept = workspace.add_session("kept");
+    assert!(workspace.set_session_waiting(kept, true));
+    assert!(workspace.switch_session(kept));
+    assert!(workspace.session(two).is_none());
+    assert!(workspace.switch_session(first));
+    assert_eq!(session_ids(&workspace), [first, kept]);
+    // Its windows open: of none left, it goes as the others.
+    assert!(workspace.set_session_waiting(kept, false));
+    assert!(workspace.switch_session(kept));
+    assert!(workspace.switch_session(first));
+    assert_eq!(session_ids(&workspace), [first]);
+}
+
+#[test]
+fn a_closed_tab_comes_back_into_a_window_that_shows() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    let shown = workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    let hidden = workspace.open_window(pane("sleep 30"));
+    let tab = workspace.open_tab(hidden, pane("sleep 30"), 1).unwrap();
+    assert!(workspace.close_tab_kept(tab, Instant::now() + Duration::from_secs(60)));
+    // Its window hides with its session: the tab comes back into the
+    // window that shows, which the app gives.
+    assert!(workspace.switch_session(first));
+    let back = workspace.reopen_tab(shown).unwrap();
+    assert_eq!(workspace.window_of_tab(back), Some(shown));
+    // Of a window that shows, into it.
+    assert!(workspace.close_tab_kept(back, Instant::now() + Duration::from_secs(60)));
+    let again = workspace.reopen_tab(hidden).unwrap();
+    assert_eq!(workspace.window_of_tab(again), Some(shown));
+    let _ = work;
 }
 
 #[test]

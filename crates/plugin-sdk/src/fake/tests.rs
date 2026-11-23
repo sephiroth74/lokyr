@@ -2553,3 +2553,110 @@ fn the_fake_s_sessions_hold_their_windows_as_the_app_s() {
         .unwrap_err();
     assert_eq!(error.code, Code::NotFound);
 }
+
+#[test]
+fn the_fake_tells_a_session_s_folder_to_process_read_alone_and_checks_it() {
+    let mut folders = Vec::new();
+    for capabilities in [
+        vec![Capability::WorkspaceWrite],
+        vec![Capability::WorkspaceWrite, Capability::ProcessRead],
+    ] {
+        let mut host = FakeHost::new("acme/probe").with_capabilities(capabilities);
+        let refused = Rc::new(RefCell::new(Vec::new()));
+        let wrong = Rc::clone(&refused);
+        let mut new = Probe::new(move |cx, _| {
+            let long = format!("/{}", "a".repeat(host::MOST_SESSION_DIRECTORY));
+            for directory in [long.as_str(), "/tmp/a\u{1b}[2J"] {
+                let error = cx.new_session("bad", Some(directory)).unwrap_err();
+                wrong.borrow_mut().push(error.message);
+            }
+            cx.new_session("work", Some("/tmp"))?;
+            Ok(())
+        });
+        host.command(&mut new, "probe.go", Args::new()).unwrap();
+        assert_eq!(
+            *refused.borrow(),
+            [
+                "a session's folder is 1024 bytes at most, not 1025",
+                "a session's folder holds no control character",
+            ]
+        );
+        let read = Rc::new(RefCell::new(Vec::new()));
+        let seen = Rc::clone(&read);
+        let mut look = Probe::new(move |cx, _| {
+            *seen.borrow_mut() = cx.sessions()?;
+            Ok(())
+        });
+        host.command(&mut look, "probe.go", Args::new()).unwrap();
+        folders.push(read.borrow()[0].folder.clone());
+    }
+    assert_eq!(folders, [None, Some("/tmp".to_owned())]);
+}
+
+#[test]
+fn the_fake_s_moved_panes_and_the_switcher_s_folders_are_the_app_s() {
+    let mut host = FakeHost::new("acme/probe").with_capabilities(vec![
+        Capability::WorkspaceWrite,
+        Capability::ProcessRead,
+        Capability::GlobalHotkey,
+    ]);
+    host.pane(PaneId(1)).window = WindowId(1);
+    host.set_session_folders(SessionFolders {
+        configured: vec!["/src/api".to_owned(), "/src/web".to_owned()],
+        recent: vec!["/src/web".to_owned(), "/tmp/notes".to_owned()],
+        home: None,
+        layouts: Vec::new(),
+    });
+    // A session of a folder; a quick window, of two panes.
+    let quick = Rc::new(RefCell::new(None));
+    let kept = Rc::clone(&quick);
+    let mut open = Probe::new(move |cx, _| {
+        cx.new_session("api", Some("/src/api"))?;
+        let window = cx.open_quick_window(QuickPlace::default(), None)?;
+        kept.borrow_mut().replace(window);
+        Ok(())
+    });
+    host.command(&mut open, "probe.go", Args::new()).unwrap();
+    let quick = quick.borrow().unwrap();
+    let read = Rc::new(RefCell::new((Vec::new(), None)));
+    let seen = Rc::clone(&read);
+    let mut out = Probe::new(move |cx, _| {
+        let pane = cx.tabs(quick)?[0].panes[0];
+        let split = cx.split(pane, Direction::Horizontal, Side::Second)?;
+        cx.pane_to_new_window(split)?;
+        Ok(())
+    });
+    host.command(&mut out, "probe.go", Args::new()).unwrap();
+    let mut look = Probe::new(move |cx, _| {
+        *seen.borrow_mut() = (cx.sessions()?, Some(cx.session_folders()?));
+        Ok(())
+    });
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    let (sessions, folders) = read.borrow().clone();
+    // The pane's window in the session that shows, the quick one in none.
+    assert_eq!(sessions[0].name, "api");
+    assert_eq!(sessions[0].windows.len(), 1);
+    assert!(!sessions[0].windows.contains(&quick));
+    assert_eq!(sessions[1].windows, [WindowId(1)]);
+    // The switcher's folders, of none that a session was opened in, each
+    // once.
+    let folders = folders.unwrap();
+    assert_eq!(folders.configured, ["/src/web"]);
+    assert_eq!(folders.recent, ["/tmp/notes"]);
+    // A pane out of a window of a hidden session, in a window of that
+    // session.
+    let (api, first, window) = (sessions[0].id, sessions[1].id, sessions[0].windows[0]);
+    let mut hidden = Probe::new(move |cx, _| {
+        let pane = cx.tabs(window)?[0].panes[0];
+        let split = cx.split(pane, Direction::Horizontal, Side::Second)?;
+        cx.switch_session(first)?;
+        cx.pane_to_new_window(split)?;
+        Ok(())
+    });
+    host.command(&mut hidden, "probe.go", Args::new()).unwrap();
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    let sessions = read.borrow().0.clone();
+    assert_eq!(sessions[0].id, first);
+    assert_eq!(sessions[1].id, api);
+    assert_eq!(sessions[1].windows.len(), 2);
+}

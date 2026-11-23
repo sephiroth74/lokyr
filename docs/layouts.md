@@ -84,6 +84,7 @@ folder = "~/notes"
 - **A layout opens new shells**: the programs that ran when you saved it don't come back, and neither does what the panes showed. Add a `command` to start a program.
 - **A layout opens 256 panes at most**, as restored windows do.
 - **A file that doesn't read**, such as of a key that a layout lacks, opens nothing: a notice tells the file and the line of the error.
+- **A pane's command runs in its folder alone**: when the folder isn't there, such as on another Mac, the pane's shell starts in your home folder and the command doesn't run, as a notice tells.
 
 ## See also
 

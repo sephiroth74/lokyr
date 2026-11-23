@@ -691,7 +691,7 @@ impl ArchivedMark {
 }
 
 /// The milliseconds of `time` since the Unix epoch, none before it.
-fn millis(time: SystemTime) -> u128 {
+pub(super) fn millis(time: SystemTime) -> u128 {
     time.duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_millis())
 }
@@ -794,18 +794,18 @@ impl Terminal {
         marks
     }
 
-    /// The index in the primary screen's list of the row of the shell's
-    /// prompt where the user types, which a new shell draws again: the last
-    /// command's prompt, of no output's mark yet, if its row is in the
-    /// list.
-    pub(super) fn live_prompt_index(&self) -> Option<usize> {
+    /// The index in the primary screen's list of the row, and the column,
+    /// of the shell's prompt where the user types, which a new shell draws
+    /// again: the last command's prompt, of no output's mark yet, if its
+    /// row is in the list.
+    pub(super) fn live_prompt(&self) -> Option<(usize, u16)> {
         let last = self.commands.list.back()?;
         if last.output.is_some() {
             return None;
         }
         let rows = &self.primary.rows;
         let position = rows.pin_position(last.prompt?)?;
-        rows.row_index(position.page, position.row)
+        Some((rows.row_index(position.page, position.row)?, position.col))
     }
 
     /// Takes the times that an archive tells of the last command, of the

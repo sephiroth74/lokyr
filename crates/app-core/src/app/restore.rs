@@ -115,8 +115,15 @@ impl<B: Backend> App<B> {
                         "lokyr: the panes' scrollback cannot be kept for the next start: {error}"
                     );
                 }
+                // Of no windows' file, the panes' files of their new names
+                // go, which the windows' file before would name.
                 if let Err(error) = windows::write(state, &kept) {
                     eprintln!("lokyr: the windows cannot be kept for the next start: {error}");
+                    if let Err(error) = scrollback::forget(state) {
+                        eprintln!(
+                            "lokyr: the panes' scrollback kept for the next start cannot be forgotten: {error}"
+                        );
+                    }
                 }
                 return;
             }
@@ -132,9 +139,10 @@ impl<B: Backend> App<B> {
     }
 
     /// Appends to `kept` the windows of the sessions that have not shown
-    /// since the app started, as they were kept, of the files of their
-    /// panes' scrollback, read for `archives` of their new names, after
-    /// those of the panes kept before them, as the config keeps any.
+    /// since the app started, as they were kept, while they fit, of the
+    /// files of their panes' scrollback, read for `archives` of their new
+    /// names, after those of the panes kept before them, as the config
+    /// keeps any.
     fn keep_pending(&self, state: &Path, kept: &mut Kept, archives: &mut Vec<(String, Vec<u8>)>) {
         let keeps_scrollback = self.config.app.restore_scrollback;
         let mut index = kept.panes();
@@ -144,23 +152,24 @@ impl<B: Backend> App<B> {
                 continue;
             };
             for window in windows {
-                let mut window = window.clone();
-                window.rename_scrollbacks(|name| {
-                    let at = index;
-                    index += 1;
-                    let rows = name
-                        .filter(|_| keeps_scrollback)
-                        .and_then(|name| scrollback::take(state, &name).ok().flatten())?;
-                    let name = scrollback::name(at);
-                    archives.push((name.clone(), rows.rows));
-                    Some(name)
-                });
-                pending.push((session.id(), window));
+                pending.push((session.id(), window.clone()));
             }
         }
-        if !pending.is_empty() {
-            kept.append(&self.workspace, pending);
+        if pending.is_empty() {
+            return;
         }
+        kept.append(&self.workspace, pending, |window| {
+            window.rename_scrollbacks(|name| {
+                let at = index;
+                index += 1;
+                let rows = name
+                    .filter(|_| keeps_scrollback)
+                    .and_then(|name| scrollback::take(state, &name).ok().flatten())?;
+                let name = scrollback::name(at);
+                archives.push((name.clone(), rows.rows));
+                Some(name)
+            });
+        });
     }
 
     /// Opens the windows kept as the app last quit, as the config says,
@@ -201,6 +210,21 @@ impl<B: Backend> App<B> {
                 return false;
             }
         };
+        // The windows that the last run could not keep, past the most that
+        // open.
+        if !kept.left.is_none() {
+            let text = format!(
+                "{} windows of the last run, of {} panes, do not open again, past the {} windows and {} panes that open",
+                kept.left.windows,
+                kept.left.panes,
+                windows::MOST_WINDOWS,
+                windows::MOST_PANES
+            );
+            self.report(
+                platform,
+                Diagnostic::new(Code::Failed, text, About::KeptWindows),
+            );
+        }
         // The sessions, the first the one that the app starts in, the
         // others after it in the order of their use.
         let first = self.workspace.active_session();
@@ -228,6 +252,8 @@ impl<B: Backend> App<B> {
                     .entry(session)
                     .or_default()
                     .push(window.clone());
+                // Kept of no window open until it shows.
+                self.workspace.set_session_waiting(session, true);
                 continue;
             }
             let opened = self.restore_window(platform, window);
@@ -296,10 +322,13 @@ impl<B: Backend> App<B> {
             .as_deref()
             .filter(|_| config.app.restore_scrollback);
         let offset = crate::clock::local_time().offset;
+        // The commands of a layout's panes whose folders are not there,
+        // which run nowhere else.
+        let mut unrun: Vec<(String, std::path::PathBuf)> = Vec::new();
         let shown = kept.open(&mut self.workspace, |pane| {
             let restored = state
                 .zip(pane.scrollback)
-                .and_then(|(state, name)| restored(state, name, grid.columns, texts, offset));
+                .and_then(|(state, name)| restored(state, name, texts, offset));
             let directory = pane.directory.filter(|directory| {
                 let there = directory.is_dir();
                 if !there {
@@ -327,12 +356,28 @@ impl<B: Backend> App<B> {
             }
             .pane(PaneId::new(), grid);
             // A layout's pane's command, as though typed, its shell staying
-            // once it ends.
-            if let Some(command) = pane.command {
-                new.send_text(&format!("{command}\r"));
+            // once it ends; in its folder alone, as a command of a folder
+            // runs nowhere else.
+            match (pane.command, pane.directory) {
+                (Some(command), Some(folder)) if directory.is_none() => {
+                    unrun.push((command.to_owned(), folder.to_owned()));
+                }
+                (Some(command), _) => new.send_text(&format!("{command}\r")),
+                (None, _) => {}
             }
             new
         });
+        if !unrun.is_empty() {
+            let told: Vec<String> = unrun
+                .iter()
+                .map(|(command, folder)| format!("`{command}` in {}", folder.display()))
+                .collect();
+            let text = format!(
+                "a layout's commands do not run, as their folders are not there: {}",
+                told.join(", ")
+            );
+            self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
+        }
         let Some(shown) = shown else {
             platform.close_window(window);
             return None;
@@ -346,16 +391,10 @@ impl<B: Backend> App<B> {
 /// What the pane of the scrollback's file `name` in `state` shows again, as
 /// it opens: its rows, which the pane's own thread reads, as reading a
 /// file of a full pane's takes milliseconds that the first frame need not
-/// wait for, and the line under them of when they were kept, across
-/// `columns`, of the local time zone of `offset`; none of no such file. A
-/// file left aside shows nothing, as the log tells.
-fn restored(
-    state: &Path,
-    name: &str,
-    columns: u16,
-    texts: &Texts,
-    offset: i32,
-) -> Option<Restored> {
+/// wait for, and the line under them of when they were kept, of the
+/// local time zone of `offset`; none of no such file. A file left aside
+/// shows nothing, as the log tells.
+fn restored(state: &Path, name: &str, texts: &Texts, offset: i32) -> Option<Restored> {
     let time = scrollback::time(state, name)?;
     let (state, name) = (state.to_path_buf(), name.to_owned());
     Some(Restored {
@@ -368,14 +407,16 @@ fn restored(
                 None
             }
         }),
-        line: restored_line(texts, time, offset, columns),
+        line: restored_line(texts, time, offset),
     })
 }
 
 /// The line under a pane's restored scrollback: `── Restored from <date and
-/// time>`, of `time` in the local time zone of `offset`, as 2026-11-22
-/// 09:31, then a rule to `columns`.
-fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> String {
+/// time> ──`, of `time` in the local time zone of `offset`, as 2026-11-22
+/// 09:31: of its own length, as a pane of a split takes its width once its
+/// window lays it out, which may be after the line, so that a rule across
+/// the window's width would wrap.
+fn restored_line(texts: &Texts, time: SystemTime, offset: i32) -> String {
     let millis = time.duration_since(UNIX_EPOCH).map_or(0, |since| {
         u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
     });
@@ -388,16 +429,10 @@ fn restored_line(texts: &Texts, time: SystemTime, offset: i32, columns: u16) -> 
         "{:04}-{:02}-{:02} {:02}:{:02}",
         at.year, at.month, at.day, at.hour, at.minute
     );
-    let mut line = format!(
-        "── {} ",
+    format!(
+        "── {} ──",
         texts.text_with("scrollback-restored", &[("when", Arg::Text(&when))])
-    );
-    let shown = line.chars().count();
-    line.extend(std::iter::repeat_n(
-        '─',
-        usize::from(columns).saturating_sub(shown),
-    ));
-    line
+    )
 }
 
 /// The frame of `kept` on the screens, if it is one that a window can

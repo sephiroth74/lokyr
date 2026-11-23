@@ -4,6 +4,9 @@
 //! session's name beside the window's number; a session closed with its
 //! windows; and the windows of no session.
 
+use lokyr_kernel::commands::{Capability, Category, Command, Uses, Value};
+use lokyr_kernel::plugins::{Cx, Plugin};
+
 use super::*;
 
 /// Whether the app hid `window`, as a session that is not active hides it.
@@ -44,6 +47,21 @@ fn a_switch_hides_the_windows_of_the_session_left_and_shows_the_other_s() {
         .window(app.windows[&third].window)
         .and_then(lokyr_kernel::workspace::Window::number);
     assert_eq!(number, Some(1));
+    // Hidden, a window takes no keys, as it keeps the keyboard while it
+    // animates out of full screen.
+    fake.send(
+        &mut app,
+        first,
+        key_event(KeyCode::KeyQ, "q", Modifiers::NONE, true),
+    );
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    let typed = {
+        let shown = app.windows[&first].window;
+        let terminal = app.workspace.focused(shown).unwrap().terminal().unwrap();
+        (0..terminal.rows()).any(|y| terminal.row_text(y).contains('q'))
+    };
+    assert!(!typed);
     // Hidden, a window draws nothing: the frame that it asks for waits.
     command(&mut fake, &mut app, CURSOR_GUIDE);
     let state = fake.window(first).unwrap();
@@ -201,6 +219,23 @@ fn the_quick_terminal_and_a_man_page_s_window_show_in_every_session() {
             None
         );
     }
+    // The man page's window numbers beside every session's windows, as it
+    // shows in each: the new session's first window takes the number after
+    // it, and a man page's opened then the one after them all.
+    let number = |app: &App, window: WindowId| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .and_then(workspace::Window::number)
+    };
+    let second = opened(&fake, &[first, quick, page])[0];
+    assert_eq!(number(&app, first), Some(1));
+    assert_eq!(number(&app, page), Some(2));
+    assert_eq!(number(&app, second), Some(1));
+    assert_eq!(number(&app, quick), None);
+    let later = app
+        .open_window_running(&mut fake, &program, Some("man ls".to_owned()), None)
+        .unwrap();
+    assert_eq!(number(&app, later), Some(3));
 }
 
 #[test]
@@ -309,11 +344,173 @@ fn a_session_saved_as_a_layout_opens_again_as_a_new_session() {
         let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
         (0..terminal.rows()).any(|y| terminal.row_text(y).contains("printf 'from the layout'"))
     });
+    // A command of a folder that is not there runs nowhere else, as a
+    // notice tells.
+    std::fs::write(
+        folder.join("gone.toml"),
+        "[[window]]\n[[window.tab]]\n[window.tab.pane]\nfolder = \"/no/such/folder\"\ncommand = \"echo not here\"\n",
+    )
+    .unwrap();
+    app.run(&mut fake, OPEN_LAYOUT, named("gone"));
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert!(
+        shown.text.contains("`echo not here` in /no/such/folder"),
+        "{shown:?}"
+    );
+    let gone = app.workspace.active_session();
+    let [window] = app.workspace.session_windows(gone)[..] else {
+        panic!("one window");
+    };
+    let pane = app.workspace.focused(window).unwrap().id();
+    let pause = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
+    assert!((0..terminal.rows()).all(|y| !terminal.row_text(y).contains("not here")));
+    drop(terminal);
     // A layout that does not read is told, of its file and line.
     std::fs::write(folder.join("broken.toml"), "[[window]]\nshape = 1\n").unwrap();
     app.run(&mut fake, OPEN_LAYOUT, named("broken"));
     let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert!(shown.text.contains("broken.toml: line 2"), "{shown:?}");
-    assert_eq!(app.workspace.active_session(), opened);
+    assert_eq!(app.workspace.active_session(), gone);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn a_plugin_runs_the_sessions_commands_of_their_requests_capabilities() {
+    let (_fake, app) = started();
+    let uses = Uses::new(["window.*"]);
+    let check = |name: &str, args: Args, granted: &[Capability]| {
+        app.commands
+            .check_for_plugin(name, args, &[], &uses, granted)
+            .map(|_| ())
+            .map_err(|error| error.code)
+    };
+    let named = |name: &str| {
+        let mut args = Args::new();
+        args.insert("name".to_owned(), Value::String(name.to_owned()));
+        args
+    };
+    let write = [Capability::WorkspaceWrite];
+    for name in [
+        NEW_SESSION,
+        LAST_SESSION,
+        RENAME_SESSION,
+        CLOSE_SESSION,
+        SAVE_LAYOUT,
+    ] {
+        assert_eq!(
+            check(name, Args::new(), &[]),
+            Err(Code::MissingCapability),
+            "{name}"
+        );
+        assert_eq!(check(name, Args::new(), &write), Ok(()), "{name}");
+    }
+    assert_eq!(
+        check(SWITCH_SESSION, named("work"), &[]),
+        Err(Code::MissingCapability)
+    );
+    assert_eq!(check(SWITCH_SESSION, named("work"), &write), Ok(()));
+    // A layout's commands, typed into its shells, take `pty-write` too.
+    assert_eq!(
+        check(OPEN_LAYOUT, named("api"), &write),
+        Err(Code::MissingCapability)
+    );
+    assert_eq!(
+        check(
+            OPEN_LAYOUT,
+            named("api"),
+            &[Capability::WorkspaceWrite, Capability::PtyWrite]
+        ),
+        Ok(())
+    );
+}
+
+/// A plugin whose `maker.two` makes two sessions in one call, and whose
+/// `maker.back` makes one and switches back to the first session.
+struct Maker;
+
+const MAKER: &str = concat!(
+    "[plugin]\nname = \"lokyr/maker\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[capabilities]\nworkspace-write = true\n",
+);
+
+impl Plugin for Maker {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["maker.two", "maker.back"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "maker.two" {
+            cx.new_session("one", None)?;
+            cx.new_session("two", None)?;
+            return Ok(());
+        }
+        let first = cx.sessions()?.last().map(|session| session.id);
+        cx.new_session("three", None)?;
+        if let Some(first) = first {
+            cx.switch_session(first)?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_new_session_opens_its_first_window_in_it_alone() {
+    let mut fake = Fake::default();
+    let mut app = App::new(None, unpadded(), None)
+        .with_program(quiet())
+        .with_builtin(MAKER, Box::new(Maker));
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    // Two sessions in one call: the first, of no window, goes as the second
+    // takes its place, which opens its window.
+    command(&mut fake, &mut app, "maker.two");
+    assert_eq!(names(&app), ["two", ""]);
+    let opened = opened(&fake, &[first]);
+    assert_eq!(opened.len(), 1);
+    let two = app.workspace.active_session();
+    assert_eq!(
+        app.workspace
+            .window(app.windows[&opened[0]].window)
+            .unwrap()
+            .session(),
+        Some(two)
+    );
+    assert!(hidden(&fake, first));
+    // A session made and left in one call opens no window: it went.
+    let before: Vec<WindowId> = fake.windows().collect();
+    command(&mut fake, &mut app, "maker.back");
+    assert_eq!(fake.windows().count(), before.len());
+    assert_eq!(names(&app), ["", "two"]);
+    assert!(!hidden(&fake, first));
+}
+
+#[test]
+fn a_new_session_from_no_window_leaves_one() {
+    let (mut fake, mut app, first) = started_running(idle());
+    fake.send(&mut app, first, WindowEvent::CloseRequested);
+    assert_eq!(fake.windows().count(), 0);
+    command(&mut fake, &mut app, NEW_SESSION);
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(app.workspace.sessions().len(), 1);
+}
+
+/// The names of the sessions, in the order of their use.
+fn names(app: &App) -> Vec<String> {
+    app.workspace
+        .sessions()
+        .iter()
+        .map(|session| session.name().to_owned())
+        .collect()
 }

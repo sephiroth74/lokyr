@@ -194,10 +194,6 @@ struct Open {
     commands: Vec<Entry>,
     /// The agents of the agents' list, each of its entry's place.
     agents: Vec<AgentInfo>,
-    /// Of the sessions' switcher, the numbers of entries of its groups, in
-    /// their order, each ranked after the one before: its sessions, its
-    /// layouts, then its folders.
-    groups: Vec<usize>,
     query: String,
     ranked: Vec<usize>,
     selected: usize,
@@ -211,7 +207,6 @@ impl Open {
             mode,
             commands,
             agents: Vec::new(),
-            groups: Vec::new(),
             query: String::new(),
             ranked: Vec::new(),
             selected: 0,
@@ -221,24 +216,15 @@ impl Open {
     }
 
     /// Ranks the entries for the field's text, of the recent commands'
-    /// names `recent`: of the sessions' switcher, its sessions first, then
-    /// its layouts, then its folders, each group ranked of its own.
+    /// names `recent`: of the sessions' switcher, its sessions, layouts and
+    /// folders together, by how well each matches, a tie of the groups in
+    /// that order.
     fn rank(&mut self, recent: &[String]) {
-        if self.mode != Mode::Sessions {
-            self.ranked = rank::rank(&self.commands, &self.query, recent);
-            return;
-        }
-        self.ranked.clear();
-        let mut start = 0;
-        for &count in &self.groups {
-            let end = (start + count).min(self.commands.len());
-            self.ranked.extend(
-                rank::rank(&self.commands[start..end], &self.query, &[])
-                    .into_iter()
-                    .map(|at| at + start),
-            );
-            start = end;
-        }
+        self.ranked = if self.mode == Mode::Sessions {
+            rank::rank_switcher(&self.commands, &self.query)
+        } else {
+            rank::rank(&self.commands, &self.query, recent)
+        };
     }
 
     /// The selected command, if one is.
@@ -543,12 +529,23 @@ impl Palette {
         let current = message(cx, "palette-current");
         let recent_mark = message(cx, "palette-folder-recent");
         let home = folders.home.clone();
+        // The sessions of no name, numbered in the order they were made, as
+        // their ids follow it: the first of none, then 2 and on.
+        let mut unnamed: Vec<u64> = sessions
+            .iter()
+            .filter(|session| session.name.is_empty())
+            .map(|session| session.id.0)
+            .collect();
+        unnamed.sort_unstable();
         let mut entries: Vec<Entry> = sessions
             .iter()
             .map(|session| Entry {
                 name: format!("{SESSION}{}", session.id.0),
                 title: if session.name.is_empty() {
-                    untitled.clone()
+                    match unnamed.iter().position(|&id| id == session.id.0) {
+                        Some(0) | None => untitled.clone(),
+                        Some(at) => format!("{untitled} {}", at + 1),
+                    }
                 } else {
                     session.name.clone()
                 },
@@ -556,7 +553,6 @@ impl Palette {
                 plugin: session.folder.clone(),
             })
             .collect();
-        let count = entries.len();
         let layout_mark = message(cx, "palette-layout");
         entries.extend(folders.layouts.iter().map(|name| Entry {
             name: format!("{LAYOUT}{name}"),
@@ -564,7 +560,6 @@ impl Palette {
             keys: Some(layout_mark.clone()),
             plugin: None,
         }));
-        let layouts = folders.layouts.len();
         let taken: Vec<&str> = sessions
             .iter()
             .filter_map(|session| session.folder.as_deref())
@@ -581,24 +576,20 @@ impl Palette {
             }
             seen.push(folder.clone());
             let (parent, name) = parts(folder, home.as_deref());
+            let keys = match (recent, parent.is_empty()) {
+                (true, true) => Some(recent_mark.clone()),
+                (true, false) => Some(format!("{recent_mark} · {parent}")),
+                (false, true) => None,
+                (false, false) => Some(parent),
+            };
             entries.push(Entry {
                 name: format!("{FOLDER}{folder}"),
                 title: name,
-                keys: Some(if recent {
-                    format!("{recent_mark} · {parent}")
-                } else {
-                    parent
-                }),
+                keys,
                 plugin: Some(folder.clone()),
             });
         }
-        let listed = entries.len() - count - layouts;
-        self.show(cx, Mode::Sessions, entries)?;
-        if let Some(open) = &mut self.open {
-            open.groups = vec![count, layouts, listed];
-            open.rank(&[]);
-        }
-        Ok(())
+        self.show(cx, Mode::Sessions, entries)
     }
 
     /// Opens the palette's panel in the focused window, of `mode` and
@@ -772,9 +763,17 @@ fn switch_to(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
 }
 
 /// The folder that holds `folder`, an absolute path, of `~` for `home`,
-/// and its own name: `~/src` and `api` of `/Users/me/src/api`.
+/// and its own name: `~/src` and `api` of `/Users/me/src/api`; none and
+/// `~` of the home folder itself, and none and `/` of the root.
 fn parts(folder: &str, home: Option<&str>) -> (String, String) {
     let trimmed = folder.trim_end_matches('/');
+    // A home of a last `/`, as `HOME` may be written, the same.
+    let home = home
+        .map(|home| home.trim_end_matches('/'))
+        .filter(|home| !home.is_empty());
+    if home == Some(trimmed) {
+        return (String::new(), "~".to_owned());
+    }
     let (parent, name) = match trimmed.rsplit_once('/') {
         Some(("", name)) => ("/".to_owned(), name.to_owned()),
         Some((parent, name)) => (parent.to_owned(), name.to_owned()),

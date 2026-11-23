@@ -1273,7 +1273,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.close-session",
     "params": [],
@@ -1306,7 +1308,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.new-session",
     "params": [],
@@ -1333,7 +1337,10 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
     "category": "windows",
     "name": "window.open-layout",
     "params": [
@@ -1357,7 +1364,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.rename-session",
     "params": [],
@@ -1366,7 +1375,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.save-layout",
     "params": [],
@@ -1384,7 +1395,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.switch-session",
     "params": [
@@ -1399,7 +1412,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.switch-to-last-session",
     "params": [],

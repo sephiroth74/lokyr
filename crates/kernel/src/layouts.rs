@@ -412,9 +412,16 @@ impl TryFrom<String> for CommandLine {
     type Error = String;
 
     fn try_from(command: String) -> Result<Self, String> {
-        if command.chars().count() > MOST_COMMAND || command.chars().any(char::is_control) {
+        // What shows of the file is what the shell runs: no control
+        // character, nor one that shows nothing or changes the direction.
+        let hidden = |c: char| {
+            c.is_control()
+                || lokyr_plugin_sdk::text::is_hidden(c)
+                || matches!(c, '\u{200E}' | '\u{200F}' | '\u{061C}')
+        };
+        if command.chars().count() > MOST_COMMAND || command.chars().any(hidden) {
             return Err(format!(
-                "a pane's `command` is one line of {MOST_COMMAND} characters at most, of no control character"
+                "a pane's `command` is one line of {MOST_COMMAND} characters at most, of no control character, nor one that shows nothing or changes the direction"
             ));
         }
         Ok(Self(command))
@@ -654,8 +661,12 @@ impl Part {
     /// The part as the app opens it.
     fn kept(&self) -> windows::Layout {
         match self {
+            // A folder of `~`, of the home directory, as the app enters it.
             Self::Pane(pane) => windows::Layout::Pane {
-                directory: pane.folder.clone().map(|folder| folder.0),
+                directory: pane
+                    .folder
+                    .as_ref()
+                    .map(|folder| lokyr_plugin_sdk::host::home_expanded(&folder.0)),
                 scrollback: None,
                 command: pane.command.clone().map(|command| command.0),
             },

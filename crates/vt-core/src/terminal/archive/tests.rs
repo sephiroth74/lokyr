@@ -106,7 +106,7 @@ fn the_archive_read_back_at_the_same_width_holds_the_same_rows() {
     let terminal = fed(20, 6, &session());
     let restored = restored(&terminal, 20);
     // The rows up to the prompt where the user types, which is left out.
-    let prompt = terminal.live_prompt_index().unwrap();
+    let prompt = terminal.live_prompt().unwrap().0;
     assert_eq!(cells(&restored, prompt), cells(&terminal, prompt));
     assert_eq!(lines(&restored).last().map(String::as_str), Some("hi"));
     assert_eq!(
@@ -197,7 +197,7 @@ fn the_blank_rows_before_the_prompts_come_back_once() {
     restored.set_block_spacing(true);
     let archive = terminal.archive(usize::MAX);
     Parser::new().advance(&mut restored, &archive);
-    let prompt = terminal.live_prompt_index().unwrap();
+    let prompt = terminal.live_prompt().unwrap().0;
     assert_eq!(cells(&restored, prompt), cells(&terminal, prompt));
     // The prompt's blank row kept, as its mark tells it.
     assert!(String::from_utf8_lossy(&archive).contains("lokyr_spaced"));
@@ -250,4 +250,66 @@ fn archive_of_a_full_pane() {
         archive.len() as f64 / f64::from(1 << 20),
         restored.primary.rows.total_rows()
     );
+}
+
+#[test]
+fn output_of_no_last_line_break_before_the_prompt_comes_back() {
+    // Bash's prompt follows the output where it ends, as `printf` leaves
+    // it: the output, its command's marks and its end come back, the
+    // prompt alone left out.
+    let terminal = fed(
+        30,
+        6,
+        concat!(
+            "\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\printf\x1b]133;C;cmdline_url=printf\x1b\\\r\n",
+            "{\"ok\":true}\x1b]133;D;0\x1b\\\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\",
+        )
+        .as_bytes(),
+    );
+    let archive = terminal.archive(usize::MAX);
+    let restored = fed(30, 6, &archive);
+    assert_eq!(lines(&restored), ["$ printf", "{\"ok\":true}"]);
+    let kept = commands(&restored);
+    assert_eq!(kept.len(), 1, "{}", String::from_utf8_lossy(&archive));
+    assert!(kept[0].0[2].is_some(), "its output's mark");
+    assert_eq!(kept[0].1, Some(0));
+    assert_eq!(kept[0].2.as_deref(), Some("printf"));
+    // Read back again, the same bytes.
+    assert_eq!(
+        String::from_utf8_lossy(&restored.archive(usize::MAX)),
+        String::from_utf8_lossy(&archive)
+    );
+}
+
+#[test]
+fn a_line_that_wraps_into_the_prompt_s_row_comes_back_whole() {
+    let text = format!(
+        "\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\x\x1b]133;C\x1b\\\r\n{}\x1b]133;D;0\x1b\\\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\",
+        "x".repeat(25)
+    );
+    let terminal = fed(20, 6, text.as_bytes());
+    let restored = restored(&terminal, 20);
+    assert_eq!(lines(&restored), ["$ x", &"x".repeat(25)]);
+    // At another width, the same line.
+    let wider = fed(40, 6, &terminal.archive(usize::MAX));
+    assert_eq!(lines(&wider), ["$ x", &"x".repeat(25)]);
+}
+
+#[test]
+fn a_command_that_runs_as_the_app_quits_comes_back_ended() {
+    // `tail -f`, of output and no end, as the app quits.
+    let terminal = fed(
+        30,
+        6,
+        b"\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\tail -f log\x1b]133;C;cmdline_url=tail%20-f%20log\x1b\\\r\nline one\r\n",
+    );
+    assert!(terminal.commands()[0].end.is_none());
+    let restored = restored(&terminal, 30);
+    let commands = restored.commands();
+    assert_eq!(commands.len(), 1);
+    // Ended, of no status, at the quit's time.
+    assert!(commands[0].end.is_some());
+    assert_eq!(commands[0].status, None);
+    assert!(commands[0].ended.is_some());
+    assert_eq!(lines(&restored), ["$ tail -f log", "line one"]);
 }

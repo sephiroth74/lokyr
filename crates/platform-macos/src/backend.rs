@@ -25,6 +25,7 @@ use raw_window_handle::{AppKitWindowHandle, RawWindowHandle};
 
 use crate::awake::KeptAwake;
 use crate::drag_image::DragImage;
+use crate::full_screen::{Deferral, Waiting};
 use crate::global_keys::GlobalKeys;
 use crate::menu::MenuTarget;
 use crate::notify::Notifier;
@@ -109,11 +110,12 @@ pub(crate) struct Backend {
     /// The target of the color panel's choices, once it shows.
     color_target: Option<Retained<crate::color_panel::ColorTarget>>,
     /// The windows that leave full screen to hide, as their session hides,
-    /// and what waits for them: the windows to show, and the one to bring
-    /// forward, of the session that shows, which the system would show in
-    /// full screen too while one of the app's is.
-    leaving_full_screen: usize,
-    after_full_screen: Vec<(WindowId, bool)>,
+    /// and what waits for them: the windows to show, to bring forward and
+    /// to open, of the session that shows, which the system would show in
+    /// full screen too while one of the app's is; and the watchdog of the
+    /// exits that never end.
+    full_screen: Deferral,
+    full_screen_watchdog: Option<Retained<NSTimer>>,
 }
 
 impl Backend {
@@ -142,25 +144,55 @@ impl Backend {
             updates: Updates::default(),
             drag_image: None,
             color_target: None,
-            leaving_full_screen: 0,
-            after_full_screen: Vec::new(),
+            full_screen: Deferral::default(),
+            full_screen_watchdog: None,
         }
     }
 
-    /// A window that left full screen to hide hid: once none is left, the
-    /// windows that waited for them show, and the one to bring forward
-    /// comes.
-    pub(crate) fn left_full_screen(&mut self) {
-        self.leaving_full_screen = self.leaving_full_screen.saturating_sub(1);
-        if self.leaving_full_screen > 0 {
-            return;
-        }
-        for (window, focus) in std::mem::take(&mut self.after_full_screen) {
-            if focus {
-                self.focus_window(window);
-            } else {
-                self.set_window_hidden(window, false);
+    /// `window`, which left full screen to hide, hid: once none is left,
+    /// what waited for them runs, in its order.
+    pub(crate) fn left_full_screen(&mut self, window: WindowId) {
+        let waiting = self.full_screen.left(window);
+        self.run_after_full_screen(waiting);
+    }
+
+    /// Hides the windows whose exits from full screen never ended, as
+    /// AppKit ignores a toggle during a transition, of their own, and runs
+    /// what waited for them.
+    pub(crate) fn full_screen_overdue(&mut self) {
+        self.full_screen_watchdog = None;
+        for window in self.full_screen.overdue(Instant::now()) {
+            if let Some(open) = self.windows.get(&window) {
+                open.force_hidden();
             }
+            let waiting = self.full_screen.left(window);
+            self.run_after_full_screen(waiting);
+        }
+        self.watch_full_screen();
+    }
+
+    /// Runs `waiting`, what waited for the windows that left full screen.
+    fn run_after_full_screen(&mut self, waiting: Vec<(WindowId, Waiting)>) {
+        for (window, what) in waiting {
+            match what {
+                Waiting::Show => self.set_window_hidden(window, false),
+                Waiting::Focus => self.focus_window(window),
+            }
+        }
+        self.watch_full_screen();
+    }
+
+    /// Starts the watchdog of the first exit to be overdue, or stops it of
+    /// none left.
+    fn watch_full_screen(&mut self) {
+        if let Some(watchdog) = self.full_screen_watchdog.take() {
+            watchdog.invalidate();
+        }
+        if let Some(due) = self.full_screen.next_due() {
+            self.full_screen_watchdog =
+                Some(timer::start_posting(self.shared.clone(), due, || {
+                    Pending::FullScreenOverdue
+                }));
         }
     }
 
@@ -569,8 +601,8 @@ impl Platform for Backend {
         // follows this call; after the windows that leave full screen to
         // hide, as the system would open it in full screen too.
         self.windows.insert(id, window);
-        if self.leaving_full_screen > 0 {
-            self.after_full_screen.push((id, true));
+        if self.full_screen.holds() {
+            self.full_screen.wait(id, Waiting::Focus);
         } else {
             self.windows[&id].show();
         }
@@ -608,12 +640,10 @@ impl Platform for Backend {
         let Some(closing) = self.windows.remove(&window) else {
             return;
         };
-        // One that left full screen to hide waits for nothing more.
-        if closing.leaves_full_screen() {
-            self.left_full_screen();
-        }
-        self.after_full_screen
-            .retain(|(waiting, _)| *waiting != window);
+        // One that left full screen to hide waits for nothing more, nor
+        // does anything wait for it.
+        let waiting = self.full_screen.closed(window);
+        self.run_after_full_screen(waiting);
         // An alert on the window closes with it, unanswered, and so does
         // its context menu.
         self.alerts.retain(|_, open| open.window != Some(window));
@@ -699,8 +729,8 @@ impl Platform for Backend {
 
     fn focus_window(&mut self, window: WindowId) {
         // It waits for the windows that leave full screen to hide.
-        if self.leaving_full_screen > 0 {
-            self.after_full_screen.push((window, true));
+        if self.full_screen.holds() {
+            self.full_screen.wait(window, Waiting::Focus);
             return;
         }
         // A hidden quick window would take the keys off the screen.
@@ -733,16 +763,20 @@ impl Platform for Backend {
     }
 
     fn set_window_hidden(&mut self, window: WindowId, hidden: bool) {
-        // Shown, it waits for the windows that leave full screen to hide.
-        if !hidden && self.leaving_full_screen > 0 {
-            self.after_full_screen.push((window, false));
+        // Shown, it waits for the windows that leave full screen to hide;
+        // hidden, nothing waits for it any more, its latest wish.
+        if hidden {
+            self.full_screen.hidden(window);
+        } else if self.full_screen.holds() {
+            self.full_screen.wait(window, Waiting::Show);
             return;
         }
         // A quick window hides of its own place.
         if let Some(open) = self.windows.get(&window).filter(|open| !open.is_quick())
             && open.set_hidden(hidden)
+            && self.full_screen.starts_leaving(window, Instant::now())
         {
-            self.leaving_full_screen += 1;
+            self.watch_full_screen();
         }
     }
 

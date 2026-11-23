@@ -2639,14 +2639,18 @@ impl<B: Backend> App<B> {
         self.draw(platform, window, size);
     }
 
-    /// The lowest number, from 1, that no open window of `session` has, or
-    /// of none.
+    /// The lowest number, from 1, that no open window that shows beside a
+    /// window of `session` has: of `session`, or of none, as a man page's
+    /// window shows in every session; of any session, for a window of
+    /// none.
     fn free_number(&self, session: Option<workspace::SessionId>) -> u32 {
         let taken: BTreeSet<u32> = self
             .windows
             .values()
             .filter_map(|state| self.workspace.window(state.window))
-            .filter(|shown| shown.session() == session)
+            .filter(|shown| {
+                session.is_none() || shown.session().is_none() || shown.session() == session
+            })
             .filter_map(workspace::Window::number)
             .collect();
         (1..).find(|number| !taken.contains(number)).unwrap_or(1)
@@ -3902,6 +3906,16 @@ impl<B: Backend> App<B> {
                     if let Some(shown) = shown {
                         let place = place.as_ref().map(quick::host_place);
                         self.show_quick(platform, shown, place);
+                    }
+                }
+                // A plugin's new session's first window, in that session,
+                // which shows; none of one that a later write of its call
+                // took away, as a switch from it of no window does.
+                Request::OpenSessionWindow { session, directory } => {
+                    if self.workspace.switch_session(session) {
+                        let program = self.program.clone();
+                        let folder = directory.as_deref().and_then(spawn::folder_of);
+                        self.open_window_running(platform, &program, None, folder);
                     }
                 }
                 // A window in the folder that the plugin asked for, or a
@@ -5610,6 +5624,25 @@ impl<B: Backend> App<B> {
         window: WindowId,
         event: WindowEvent,
     ) {
+        // A window of a session that hides, which keeps the keyboard as it
+        // animates out of full screen, takes no keys, text, clicks nor
+        // scrolls: they would reach the session left.
+        let input = matches!(
+            event,
+            WindowEvent::Key(_)
+                | WindowEvent::Ime(_)
+                | WindowEvent::MouseButton { .. }
+                | WindowEvent::Scroll { .. }
+                | WindowEvent::Dropped(_)
+        );
+        if input
+            && self
+                .windows
+                .get(&window)
+                .is_some_and(|state| state.session_hidden)
+        {
+            return;
+        }
         match event {
             // A step of a live resize draws at once, so that the content
             // follows the edge, but not within half a refresh of the last
@@ -6032,11 +6065,25 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         } else {
             Vec::new()
         };
+        // The sessions' commands take what their requests take, so that a
+        // plugin that declares them runs them of the same capabilities:
+        // the workspace's writes, and a layout's commands typed into its
+        // shells.
+        let capabilities = if name == OPEN_LAYOUT {
+            vec![
+                lokyr_kernel::commands::Capability::WorkspaceWrite,
+                lokyr_kernel::commands::Capability::PtyWrite,
+            ]
+        } else if SESSIONS.contains(&name) || name == SWITCH_SESSION {
+            vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
+        } else {
+            Vec::new()
+        };
         let command = Command {
             name: name.to_owned(),
             title: texts.text(&format!("command-{title}")),
             category,
-            capabilities: Vec::new(),
+            capabilities,
             params,
             when: CONTEXT_ONLY.contains(&name).then(|| "selection".to_owned()),
         };

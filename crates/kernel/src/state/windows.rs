@@ -54,6 +54,10 @@ pub struct Kept {
     /// opening every window in one session.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<Session>,
+    /// The windows and the panes left out, past [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`], which the next start tells.
+    #[serde(default, skip_serializing_if = "Left::is_none")]
+    pub left: Left,
     /// The session of each window, as the workspace has it, which the
     /// windows appended after take theirs beside.
     #[serde(skip)]
@@ -67,6 +71,24 @@ impl PartialEq for Kept {
             && self.windows == other.windows
             && self.front == other.front
             && self.sessions == other.sessions
+            && self.left == other.left
+    }
+}
+
+/// The windows and the panes that were not kept, past the most that a file
+/// opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Left {
+    /// The windows left out.
+    pub windows: usize,
+    /// The panes of the windows left out.
+    pub panes: usize,
+}
+
+impl Left {
+    /// Whether nothing was left out.
+    pub fn is_none(&self) -> bool {
+        self.windows == 0
     }
 }
 
@@ -176,8 +198,9 @@ pub enum Layout {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scrollback: Option<String>,
         /// The command line that its shell runs as it starts, of a layout's
-        /// pane; none of a window kept as the app quit.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// pane, which the file of the windows neither writes nor reads, so
+        /// that no command comes of it.
+        #[serde(skip)]
         command: Option<String>,
     },
     /// Two parts that share the room.
@@ -278,6 +301,13 @@ pub fn read(state: &Path) -> Result<Option<Kept>, Unread> {
             "it holds {panes} panes, past the {MOST_PANES} that it may open"
         )));
     }
+    // Each session of a window at least.
+    if kept.sessions.len() > MOST_WINDOWS {
+        return Err(Unread::Invalid(format!(
+            "it holds {} sessions, past the {MOST_WINDOWS} windows that it may open",
+            kept.sessions.len()
+        )));
+    }
     Ok(Some(kept))
 }
 
@@ -296,13 +326,64 @@ pub fn forget(state: &Path) -> io::Result<()> {
     }
 }
 
+/// Of `shown`, the windows that a file keeps within [`MOST_WINDOWS`] and
+/// [`MOST_PANES`], in their order, and what is left out: the active
+/// session's first, then the others' in the order of their use, each
+/// session's in their order, a window whose panes are past the room left
+/// giving way to the next ones that fit. Each window counts the panes of
+/// its tabs that are kept, the settings tab of none.
+fn within_bounds(
+    workspace: &Workspace,
+    shown: &[(workspace::WindowId, Option<Frame>)],
+) -> (Vec<(workspace::WindowId, Option<Frame>)>, Left) {
+    let order: Vec<workspace::SessionId> = workspace
+        .sessions()
+        .iter()
+        .map(|session| session.id())
+        .collect();
+    let mut ranked: Vec<(usize, usize, usize)> = shown
+        .iter()
+        .enumerate()
+        .filter_map(|(at, &(id, _))| {
+            let window = workspace.window(id)?;
+            let rank = window
+                .session()
+                .and_then(|session| order.iter().position(|&of| of == session))
+                .unwrap_or(usize::MAX);
+            let panes = window
+                .tabs()
+                .iter()
+                .filter_map(|&tab| workspace.tab(tab))
+                .map(|tab| tab.layout().panes().len())
+                .sum();
+            Some((rank, at, panes))
+        })
+        .collect();
+    ranked.sort_unstable();
+    let (mut chosen, mut panes, mut left) = (Vec::new(), 0, Left::default());
+    for (_, at, more) in ranked {
+        if chosen.len() >= MOST_WINDOWS || panes + more > MOST_PANES {
+            left.windows += 1;
+            left.panes += more;
+            continue;
+        }
+        panes += more;
+        chosen.push(at);
+    }
+    chosen.sort_unstable();
+    (chosen.into_iter().map(|at| shown[at]).collect(), left)
+}
+
 impl Kept {
     /// The windows `shown` of `workspace`, in their order, each of its
     /// frame, of `front` the one in front, and of each pane's directory,
     /// as `directory` finds it, and the name of its scrollback's file, as
     /// `scrollback` keeps it, of the pane and its index among the panes
     /// kept, in their order. A window that the workspace does not hold is
-    /// left out.
+    /// left out, and so are the windows past [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`], which the next start would not open: the active
+    /// session's kept first, then the others' in the order of their use,
+    /// each session's in their order.
     pub fn of(
         workspace: &Workspace,
         shown: &[(workspace::WindowId, Option<Frame>)],
@@ -318,7 +399,8 @@ impl Kept {
         let mut windows = Vec::new();
         let mut of_sessions: Vec<Option<workspace::SessionId>> = Vec::new();
         let mut front_index = None;
-        for &(id, frame) in shown {
+        let (shown, left) = within_bounds(workspace, shown);
+        for (id, frame) in shown {
             let Some(window) = workspace.window(id) else {
                 continue;
             };
@@ -376,6 +458,7 @@ impl Kept {
             windows,
             front: front_index,
             sessions: Vec::new(),
+            left,
             of_sessions,
         };
         kept.keep_sessions(workspace);
@@ -390,15 +473,37 @@ impl Kept {
             windows,
             front,
             sessions: Vec::new(),
+            left: Left::default(),
             of_sessions: Vec::new(),
         }
     }
 
     /// Appends `windows`, each of its session, which the workspace holds of
     /// no window yet, as a session that never showed since the app
-    /// started keeps its windows as they were kept, after the others.
-    pub fn append(&mut self, workspace: &Workspace, windows: Vec<(workspace::SessionId, Window)>) {
-        for (session, window) in windows {
+    /// started keeps its windows as they were kept, after the others, in
+    /// their order, while they fit within [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`]; each appended as `kept` takes it first, as the names
+    /// of its panes' files are its new place's.
+    pub fn append(
+        &mut self,
+        workspace: &Workspace,
+        windows: Vec<(workspace::SessionId, Window)>,
+        mut kept: impl FnMut(&mut Window),
+    ) {
+        let mut panes = self.panes();
+        for (session, mut window) in windows {
+            let more = window
+                .tabs
+                .iter()
+                .map(|tab| tab.layout.panes())
+                .sum::<usize>();
+            if self.windows.len() >= MOST_WINDOWS || panes + more > MOST_PANES {
+                self.left.windows += 1;
+                self.left.panes += more;
+                continue;
+            }
+            panes += more;
+            kept(&mut window);
             self.windows.push(window);
             self.of_sessions.push(Some(session));
         }

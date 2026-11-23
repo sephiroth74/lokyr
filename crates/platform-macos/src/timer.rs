@@ -21,10 +21,20 @@ const MAX_TOLERANCE: f64 = 0.05;
 /// Starts a timer that tells `shared` that `timer` fired, once, at `at` or
 /// a little after.
 pub(crate) fn start(shared: Weak<Shared>, timer: TimerId, at: Instant) -> Retained<NSTimer> {
+    start_posting(shared, at, move || Pending::Timer(timer))
+}
+
+/// Starts a timer of the backend's own that posts what `pending` gives to
+/// `shared`, once, at `at` or a little after.
+pub(crate) fn start_posting(
+    shared: Weak<Shared>,
+    at: Instant,
+    pending: impl Fn() -> Pending + 'static,
+) -> Retained<NSTimer> {
     let delay = at.saturating_duration_since(Instant::now()).as_secs_f64();
     let block = RcBlock::new(move |_: NonNull<NSTimer>| {
         if let Some(shared) = shared.upgrade() {
-            shared.post(Pending::Timer(timer));
+            shared.post(pending());
         }
     });
     // SAFETY: the block runs on the run loop that the timer is added to,

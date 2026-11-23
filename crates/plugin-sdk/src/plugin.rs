@@ -1463,7 +1463,7 @@ impl<'a> Cx<'a> {
     }
 
     /// Gives back the tab closed last that the host keeps, at its place, or
-    /// in `window` once its own closed.
+    /// in `window` once its own closed or hides with its session.
     pub fn reopen_tab(&mut self, window: WindowId) -> Result<(), Error> {
         self.done(Request::ReopenTab(window))
     }

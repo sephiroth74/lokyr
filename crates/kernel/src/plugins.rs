@@ -99,6 +99,15 @@ pub enum Request {
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
     OpenWindow(Option<String>),
+    /// Open the first window of the session `session`, which a plugin made,
+    /// as [`Request::OpenWindow`] opens one, in that session, which shows:
+    /// none of a session that a later write of the call took away.
+    OpenSessionWindow {
+        /// The session.
+        session: crate::workspace::SessionId,
+        /// The folder of its pane.
+        directory: Option<String>,
+    },
     /// Open a quick window of the id `window`, which the plugin's request
     /// gave, shown at `place`, its pane in `directory`, if given.
     OpenQuickWindow {
@@ -4872,7 +4881,10 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 if context.workspace.new_session_as(id, &name).is_some() {
                     let folder = directory.as_deref().map(host::home_expanded);
                     context.workspace.set_session_folder(id, folder);
-                    requests.push(Request::OpenWindow(directory));
+                    requests.push(Request::OpenSessionWindow {
+                        session: id,
+                        directory,
+                    });
                 }
                 continue;
             }
@@ -6325,7 +6337,10 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
             Asked::Sessions => {
+                let reads = self.state.reads_processes();
                 let workspace = &*self.context.workspace;
                 let active = workspace.active_session();
                 Response::Sessions(
@@ -6336,7 +6351,7 @@ impl Host<'_, '_> {
                             id: session.id().into(),
                             name: session.name().to_owned(),
                             active: session.id() == active,
-                            folder: session.folder().map(str::to_owned),
+                            folder: session.folder().filter(|_| reads).map(str::to_owned),
                             windows: workspace
                                 .session_windows(session.id())
                                 .into_iter()
@@ -6834,7 +6849,7 @@ impl Host<'_, '_> {
                 host::check_session_name(name)
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 if let Some(directory) = directory {
-                    host::check_directory(directory)
+                    host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
                 let id = SessionId::new();

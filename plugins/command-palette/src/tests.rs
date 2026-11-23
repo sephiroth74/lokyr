@@ -658,12 +658,78 @@ fn the_switcher_lists_the_sessions_then_the_folders_of_no_session() {
     );
 }
 
+/// A plugin of the test's own, whose command makes a session of no name,
+/// as another plugin may.
+struct Maker;
+
+impl Plugin for Maker {
+    fn activate(&mut self, _: &mut Cx<'_>) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        cx.new_session("", None).map(|_| ())
+    }
+}
+
+#[test]
+fn the_switcher_ranks_across_its_groups_and_numbers_the_sessions_of_no_name() {
+    let (mut host, mut plugin) = host();
+    host.set_session_folders(lokyr_plugin_sdk::host::SessionFolders {
+        configured: vec!["/Users/me/src/ui".to_owned()],
+        recent: vec!["/tmp/scratch".to_owned(), "/Users/me".to_owned()],
+        home: Some("/Users/me/".to_owned()),
+        layouts: Vec::new(),
+    });
+    // A second session of no name, which the first's window keeps beside.
+    host.command(&mut Maker, "maker.go", Args::new()).unwrap();
+    run(&mut host, &mut plugin, SESSIONS, Args::new());
+    assert_eq!(
+        shown(&mut host, &mut plugin),
+        [
+            "Untitled Session 2",
+            "Untitled Session",
+            "ui",
+            "scratch",
+            "~"
+        ]
+    );
+    // The home folder of no parent, of a home of a last `/`.
+    let keys: Vec<Option<String>> = {
+        let open = plugin.open.as_ref().unwrap();
+        open.ranked
+            .iter()
+            .map(|&at| open.commands[at].keys.clone())
+            .collect()
+    };
+    assert_eq!(keys[2], Some("~/src".to_owned()));
+    assert_eq!(keys[4], Some("Recent".to_owned()));
+    // An exact folder before a session that the letters match loosely.
+    typed(&mut host, &mut plugin, "ui");
+    assert_eq!(shown(&mut host, &mut plugin)[0], "ui");
+    // The entries' own names, the switcher's, match nothing.
+    typed(&mut host, &mut plugin, "fold");
+    assert!(shown(&mut host, &mut plugin).is_empty());
+}
+
 #[test]
 fn a_folder_s_parent_shows_of_the_home_directory() {
     assert_eq!(
         parts("/Users/me/src/api", Some("/Users/me")),
         ("~/src".to_owned(), "api".to_owned())
     );
+    // The home folder itself, of a home of a last `/` too, and the root.
+    for home in ["/Users/me", "/Users/me/"] {
+        assert_eq!(
+            parts("/Users/me", Some(home)),
+            (String::new(), "~".to_owned())
+        );
+        assert_eq!(
+            parts("/Users/me/src", Some(home)),
+            ("~".to_owned(), "src".to_owned())
+        );
+    }
+    assert_eq!(parts("/", Some("/")), (String::new(), "/".to_owned()));
     assert_eq!(
         parts("/Users/me/src", Some("/Users/me")),
         ("~".to_owned(), "src".to_owned())
@@ -701,7 +767,7 @@ fn the_switcher_lists_the_layouts_after_the_sessions_and_opens_one() {
         shown(&mut host, &mut plugin),
         ["Untitled Session", "review", "server", "api"]
     );
-    // A query ranks within each group, the groups in their order.
+    // A query ranks across the groups, a tie of the groups in their order.
     typed(&mut host, &mut plugin, "s");
     let titles = shown(&mut host, &mut plugin);
     let server = titles.iter().position(|title| title == "server").unwrap();

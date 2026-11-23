@@ -812,8 +812,9 @@ pub enum Request {
         keep: u32,
     },
     /// Gives back the tab closed last that the host keeps, at its place in
-    /// its window, or in `window` once its own closed, which shows it, as a
-    /// tab opened anew, of its panes, tells; nothing of none kept.
+    /// its window, or in `window` once its own closed or hides with its
+    /// session, which shows it, as a tab opened anew, of its panes, tells;
+    /// nothing of none kept.
     ReopenTab(WindowId),
     /// Closes a pane, whose program is hung up: its room goes to its
     /// sibling, and its tab closes with its last pane. With `ask`, the
@@ -911,7 +912,9 @@ pub enum Request {
     /// session left hidden, their programs running, then opens its first
     /// window, its pane in `directory`, a path absolute or from `~`, if
     /// given: the session's id, given at once, which the call's later
-    /// writes take.
+    /// writes take. A session that a switch leaves of no window goes, as
+    /// a second one made in the same call leaves the first, whose window
+    /// opens not.
     NewSession {
         /// Its name, empty for none,
         /// [`MOST_SESSION_NAME`](crate::host::MOST_SESSION_NAME) characters

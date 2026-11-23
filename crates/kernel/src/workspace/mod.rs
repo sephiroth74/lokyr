@@ -1672,12 +1672,17 @@ impl Workspace {
     }
 
     /// Gives back the tab closed last that it keeps, at its place in its
-    /// window, or of `fallback` once its window closed, which shows it, as
-    /// a tab opened anew, of its panes, tells; none of none kept.
+    /// window, or of `fallback` once its window closed or is of a hidden
+    /// session, which shows it, as a tab opened anew, of its panes, tells;
+    /// none of none kept.
     pub fn reopen_tab(&mut self, fallback: WindowId) -> Option<TabId> {
         let closed = self.closed.pop()?;
+        // A window that shows: not of a hidden session, which nothing would
+        // show it in.
         let open = |window: &WindowId| {
-            self.windows.contains_key(window) && self.settings_window() != Some(*window)
+            self.windows.contains_key(window)
+                && self.settings_window() != Some(*window)
+                && self.in_active_session(*window)
         };
         let window = if open(&closed.window) {
             closed.window
@@ -2514,10 +2519,7 @@ impl Workspace {
         if self.tabs.get(&tab)?.layout.panes().len() == 1 {
             return self.tab_to_new_window(tab);
         }
-        let session = self
-            .window_of_tab(tab)
-            .and_then(|from| self.windows.get(&from));
-        let session = session.and_then(|from| from.session);
+        let session = self.session_for(self.window_of_tab(tab));
         self.detach_pane(pane);
         let created = self.new_tab(pane);
         let window = self.window_for(created);

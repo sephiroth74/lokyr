@@ -484,9 +484,19 @@ impl Window {
         false
     }
 
-    /// Whether it leaves full screen to hide, as its session hides.
-    pub(crate) fn leaves_full_screen(&self) -> bool {
-        self.delegate.ivars().hides_out_of_full_screen.get()
+    /// Hides it at once, of no exit from full screen that never ended: out
+    /// of the screen, drawing nothing; out of full screen as it shows
+    /// again, rather than back into it, which it may never have left.
+    pub(crate) fn force_hidden(&self) {
+        let ivars = self.delegate.ivars();
+        ivars.hides_out_of_full_screen.set(false);
+        ivars.back_into_full_screen.set(false);
+        self.ns_window.orderOut(None);
+        if !self.occluded.replace(true)
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(self.id, WindowEvent::Occluded(true)));
+        }
     }
 
     /// Asks for a frame. Returns whether it is due at once, rather than at
@@ -1836,11 +1846,24 @@ define_class!(
         }
 
         // A window that could not leave full screen hides all the same, as
-        // its session does.
+        // its session does, in full screen still, which it does not go back
+        // into as it shows.
         #[unsafe(method(windowDidFailToExitFullScreen:))]
         fn window_did_fail_to_exit_full_screen(&self, window: &NSWindow) {
             if self.ivars().hides_out_of_full_screen.replace(false) {
+                self.ivars().back_into_full_screen.set(false);
                 self.hide(window);
+            }
+        }
+
+        // A window asked to leave full screen as it entered it, which AppKit
+        // ignores during the transition, leaves it now.
+        #[unsafe(method(windowDidEnterFullScreen:))]
+        fn window_did_enter_full_screen(&self, notification: &NSNotification) {
+            if self.ivars().hides_out_of_full_screen.get()
+                && let Some(window) = window_of(notification)
+            {
+                window.toggleFullScreen(None);
             }
         }
 
@@ -1964,7 +1987,7 @@ impl WindowDelegate {
             self.post(WindowEvent::Occluded(true));
         }
         if let Some(shared) = ivars.shared.upgrade() {
-            shared.post(Pending::LeftFullScreen);
+            shared.post(Pending::LeftFullScreen(ivars.id));
         }
     }
 }
