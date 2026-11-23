@@ -20,8 +20,8 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
 - **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
 - **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · not released yet
-- **Floating panes** over a tab's splits, such as a scratch shell you show and hide with a key. · not released yet
-- **Popups**: a key of your own runs a command, such as `lazygit` or `fzf`, in a floating pane that closes as the command ends. · not released yet
+- **[Floating panes](floating-panes.md)** over a tab's splits, such as a scratch shell you show and hide with a key. · not released yet
+- **[Popups](floating-panes.md#run-a-command-in-a-popup)**: a key of your own runs a command, such as `lazygit` or `fzf`, in a floating pane that closes as the command ends. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -217,34 +217,9 @@ style = "seamless"
 
 ## Float panes over a tab
 
-Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that floats over the tab's panes, in a box with its title at the top. Its shell starts in the folder of the pane you were in. A tab can hold several, each one more down and right of the one before. · not released yet
-
-- **Show or hide them**: Shell › Show or Hide Floating Panes, ⌥⌘F, hides the tab's floating panes together, their programs running, and shows them again. On a tab with none, it opens one.
-- **Move one**: drag its title bar.
-- **Resize one**: drag its edges or its corners.
-- **Bring one forward**: click it. The pane you click takes the keyboard, whether it floats or not.
-- **Close one**: click the × at the right of its title, press ⌘W, choose Shell › Pane › Close Pane, or exit its shell. Lokyr asks first while a program other than a shell runs there.
-- **Float a pane of the splits**: right-click it and choose Float Pane. A floating pane goes back into the splits, beside the pane you used last, with Move Pane into Splits.
-- **Keep them**: they come back with their tab when Lokyr opens your windows again, each where it was, with what it showed when [`restore-scrollback`](CONFIGURATION.md#restore-scrollback) is on.
+Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that floats over the tab's splits, in a box with its title at the top; drag its title to move it and its edges to resize it. Shell › Show or Hide Floating Panes, ⌥⌘F, hides the tab's floating panes together and shows them again. A popup is a floating pane in the middle of the tab that runs a command of your keys, such as `lazygit`, and closes when it ends. [Floating panes and popups](floating-panes.md) covers them. · not released yet
 
 **Try it**: press ⇧⌥⌘F and run `top`. Press ⌥⌘F to hide it and ⌥⌘F again to see it still running.
-
-### Run a command in a popup
-
-A popup is a floating pane in the middle of the tab that runs one command and closes when the command ends, such as a Git client or a fuzzy finder. Bind `pane.popup` to a key in the config's `[keys]`, with the command to run: · not released yet
-
-```toml
-[keys]
-"ctrl+cmd+g" = { command = "pane.popup", args = { command = "lazygit" } }
-"ctrl+cmd+o" = { command = "pane.popup", args = { command = "fzf | xargs open", width = 0.6, height = 0.5 } }
-```
-
-- **Where it runs**: your login shell runs the command, so it finds the programs of your `PATH`, in the folder of the pane you were in. `folder` names another, such as `"~/src"`.
-- **Its size**: `width` and `height` are shares of the tab, from `0.05` to `1`: `0.8` and `0.7` when you leave them out.
-- **When it closes**: when the command exits with the status 0, or when you interrupt it, such as with Control-C, or Escape in `fzf`. When it fails, the popup stays open with a line that tells how it ended, so that you can read its error, until you press a key. This holds whatever [`close-on-exit`](CONFIGURATION.md#close-on-exit) says.
-- **Your keys**: the command gets them all, Escape too.
-
-A popup shows on its own: the tab's floating panes that you hid stay hidden, and Show or Hide Floating Panes, ⌥⌘F, shows or hides them under it. Lokyr does not open a popup again when it opens your windows.
 
 ## Type into several panes at once
 
