@@ -161,6 +161,7 @@ impl<B: Backend> App<B> {
     fn close_session(&mut self, platform: &mut dyn Platform, session: SessionId) {
         // Of windows kept that never showed, nothing is left.
         self.pending_windows.remove(&session);
+        self.workspace.set_session_waiting(session, false);
         let windows = self.windows_of_session(session);
         for window in windows {
             self.close(platform, window);
@@ -512,6 +513,7 @@ impl<B: Backend> App<B> {
         // windows, as they were kept, their shells starting now: after the
         // others hide, as they open shown.
         if let Some(pending) = self.pending_windows.remove(&active) {
+            self.workspace.set_session_waiting(active, false);
             for window in &pending {
                 self.restore_window(platform, window);
             }

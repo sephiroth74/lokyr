@@ -936,7 +936,7 @@ type Cx = {
     -- as the host asks for a window. Of `keep` seconds, a day at most, the host keeps the tab for them, its
     -- programs running, 16 tabs at most, the oldest closing for good past them; but a window's last tab and a tab
     -- whose close was confirmed. `reopen_tab` gives back the tab closed last that the host keeps, at its place in
-    -- its window, or in `window` once its own closed, which shows it; nothing of none kept.
+    -- its window, or in `window` once its own closed or hides with its session, which shows it; nothing of none kept.
     close_tab: (tab: TabId, ask: boolean?, keep: number?) -> (boolean, Error?),
     reopen_tab: (window: WindowId) -> (boolean, Error?),
     close_pane: (pane: PaneId, ask: boolean?) -> (boolean, Error?),
@@ -960,8 +960,9 @@ type Cx = {
     ungroup: (group: GroupId) -> (boolean, Error?),
     -- A session of a name, which it switches to, the windows of the active one hidden, their programs running, then
     -- its first window, its pane in `directory`, a path absolute or from `~` of 1024 bytes at most, if given: its id, given
-    -- at once. A session goes as its last window closes, unless it is the only one; the active one that goes leaves the
-    -- one used before it active · not released yet.
+    -- at once. A session goes as its last window closes, unless it is the only one, and as a switch leaves it of no
+    -- window, as a second one made in the same call leaves the first, whose window opens not; the active one that goes
+    -- leaves the one used before it active · not released yet.
     new_session: (name: string?, directory: string?) -> (SessionId?, Error?),
     switch_session: (session: SessionId) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),

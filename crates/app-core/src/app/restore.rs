@@ -252,6 +252,8 @@ impl<B: Backend> App<B> {
                     .entry(session)
                     .or_default()
                     .push(window.clone());
+                // Kept of no window open until it shows.
+                self.workspace.set_session_waiting(session, true);
                 continue;
             }
             let opened = self.restore_window(platform, window);

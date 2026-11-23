@@ -56,7 +56,7 @@ A session is a group of windows, such as one for each project. One session shows
 - **Window › Sessions › Save Session as Layout…** saves the session to a file that the switcher lists, which opens as a new session with new shells: [Layouts](layouts.md) tells how to add the commands that its panes run.
 - **Window › Sessions › Close Session** closes the session's windows. Lokyr asks first while a program other than a shell runs in one of them.
 
-Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in. A man page's window takes a number that none of the sessions' windows has, and a tab or a pane that you drag out of one of these windows joins the session that shows.
+Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. A session with no window goes when you switch away from it. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in. A man page's window takes a number that none of the sessions' windows has, and a tab or a pane that you drag out of one of these windows joins the session that shows.
 
 Bind a key to a session of your own with `window.switch-session`, which switches to the session of its `name`:
 
@@ -185,7 +185,7 @@ Right-click a tab and choose Pin Tab, or choose Shell › Pin Tab, to keep it at
 
 <sub>Platforms: macOS · Since 1.3</sub>
 
-Press ⇧⌘T, or choose Shell › Reopen Closed Tab, to bring back the tab you closed last, at its place and as you left it. Press it again for the one before.
+Press ⇧⌘T, or choose Shell › Reopen Closed Tab, to bring back the tab you closed last, at its place and as you left it. Press it again for the one before. When its window closed, or belongs to a session that's hidden, the tab comes back in the window in front.
 
 For 10 seconds after you close a tab, its programs keep running and what they print is kept; then the tab closes for good. A closed tab keeps its memory while it waits. [`reopen-seconds`](CONFIGURATION.md#reopen-seconds) sets how long it waits, and `0` closes tabs at once.
 

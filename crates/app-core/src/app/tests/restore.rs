@@ -774,6 +774,12 @@ fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
     assert_eq!(fake.windows().count(), 1);
     let api = session_of(&app, "api");
     assert!(app.workspace.session_windows(api).is_empty());
+    // A switch that passes through it before it shows keeps it, of the
+    // windows that wait for it.
+    let web = session_of(&app, "web");
+    assert!(app.workspace.switch_session(api));
+    assert!(app.workspace.switch_session(web));
+    assert_eq!(session_names(&app), ["web", "api", "home"]);
     let named = |name: &str| {
         lokyr_kernel::commands::Args::from([(
             "name".to_owned(),

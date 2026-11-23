@@ -2820,6 +2820,8 @@ impl FakeHost {
         }
         self.changed(WorkspaceEvent::SessionChanged { session: before });
         self.changed(WorkspaceEvent::SessionChanged { session: id });
+        // The session left goes of no window, as the app's.
+        self.session_lost_window(Some(before));
     }
 
     /// Takes `session`, which lost a window, away, if it has none left and
@@ -2838,8 +2840,11 @@ impl FakeHost {
                 self.switch_session(last);
             }
         }
-        self.sessions.retain(|session| session.id != id);
-        self.changed(WorkspaceEvent::SessionChanged { session: id });
+        // Once, as the switch from it may have taken it.
+        if self.holds_session(id) {
+            self.sessions.retain(|session| session.id != id);
+            self.changed(WorkspaceEvent::SessionChanged { session: id });
+        }
     }
 
     /// Whether `session` is held.

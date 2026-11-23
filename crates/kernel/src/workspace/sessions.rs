@@ -5,7 +5,9 @@
 //! a window opens in the active session, or in the session of the window
 //! that its tab comes from. A session goes as its last window closes,
 //! unless it is the only one; the active one that goes leaves the one used
-//! before it active.
+//! before it active. A session of no window that a switch leaves goes too,
+//! but one whose windows wait to open, as those kept of a session that has
+//! not shown since the app started.
 
 use std::collections::BTreeMap;
 
@@ -23,6 +25,9 @@ pub struct Session {
     folder: Option<String>,
     /// The count of the sessions' uses as it last became active.
     used: u64,
+    /// Whether windows wait to open in it, as the app holds them, which
+    /// keeps it of none.
+    waiting: bool,
 }
 
 impl Session {
@@ -60,6 +65,7 @@ impl Default for Sessions {
             name: String::new(),
             folder: None,
             used: 0,
+            waiting: false,
         };
         Self {
             list: BTreeMap::from([(id, session)]),
@@ -131,6 +137,7 @@ impl Workspace {
                 name: name.to_owned(),
                 folder: None,
                 used: 0,
+                waiting: false,
             },
         );
         self.switch_session(id);
@@ -149,6 +156,7 @@ impl Workspace {
                 name: name.to_owned(),
                 folder: None,
                 used: 0,
+                waiting: false,
             },
         );
         self.session_changed(id);
@@ -172,6 +180,26 @@ impl Workspace {
         }
         self.session_changed(before);
         self.session_changed(id);
+        // The session left goes of no window, as a new one made from none,
+        // or one that a plugin made before another in the same call.
+        if self
+            .sessions
+            .list
+            .get(&before)
+            .is_some_and(|left| !left.waiting)
+        {
+            self.session_lost_window(Some(before));
+        }
+        true
+    }
+
+    /// Marks the session `id` of windows that wait to open, as the app
+    /// holds them until it first shows, or of none; whether it is there.
+    pub fn set_session_waiting(&mut self, id: SessionId, waiting: bool) -> bool {
+        let Some(session) = self.sessions.list.get_mut(&id) else {
+            return false;
+        };
+        session.waiting = waiting;
         true
     }
 

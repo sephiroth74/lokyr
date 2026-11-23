@@ -1430,61 +1430,27 @@ fn sessions(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![changed(0), changed(1)],
             },
-            // The session made first, of no window yet; back to the first.
-            Step {
-                wait: 0,
-                asks: vec![
-                    (
-                        Request::Sessions,
-                        Response::Sessions(vec![
-                            SessionInfo {
-                                folder: Some(src.clone()),
-                                ..info(1, "work", true, Vec::new())
-                            },
-                            info(0, "", false, vec![w]),
-                        ]),
-                    ),
-                    (Request::SwitchSession(session(0)), Response::Done),
-                ],
-                posts: Vec::new(),
-                heard: vec![changed(1), changed(0)],
-            },
+            // The session made first, of no window yet, and a quick window,
+            // of no session, opened in it.
             ask(vec![
                 (
                     Request::Sessions,
                     Response::Sessions(vec![
-                        info(0, "", true, vec![w]),
                         SessionInfo {
                             folder: Some(src.clone()),
-                            ..info(1, "work", false, Vec::new())
+                            ..info(1, "work", true, Vec::new())
                         },
+                        info(0, "", false, vec![w]),
                     ]),
                 ),
-                // Of the config's folders, none, and no shell told one.
                 (
-                    Request::SessionFolders,
-                    Response::SessionFolders(SessionFolders {
-                        home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
-                        ..SessionFolders::default()
-                    }),
+                    Request::OpenQuickWindow {
+                        place: QuickPlace::default(),
+                        directory: None,
+                    },
+                    Response::Window(Some(window(0))),
                 ),
             ]),
-            // A quick window, of no session, opened in the second session.
-            Step {
-                wait: 0,
-                asks: vec![
-                    (Request::SwitchSession(session(1)), Response::Done),
-                    (
-                        Request::OpenQuickWindow {
-                            place: QuickPlace::default(),
-                            directory: None,
-                        },
-                        Response::Window(Some(window(0))),
-                    ),
-                ],
-                posts: Vec::new(),
-                heard: vec![changed(0), changed(1)],
-            },
             // A tab of it split, then a pane and a tab out of it, each in a
             // window of the session that shows.
             ask(vec![
@@ -1535,6 +1501,26 @@ fn sessions(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![changed(1), changed(0)],
             },
+            ask(vec![
+                (
+                    Request::Sessions,
+                    Response::Sessions(vec![
+                        info(0, "", true, vec![w]),
+                        SessionInfo {
+                            folder: Some(src.clone()),
+                            ..info(1, "work", false, vec![window(1), window(2)])
+                        },
+                    ]),
+                ),
+                // Of the config's folders, none, and no shell told one.
+                (
+                    Request::SessionFolders,
+                    Response::SessionFolders(SessionFolders {
+                        home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
+                        ..SessionFolders::default()
+                    }),
+                ),
+            ]),
             // The hidden session's last window closed: it goes, the one that
             // shows staying.
             Step {
@@ -1603,6 +1589,33 @@ fn sessions(world: &World) -> Scenario {
                 )],
                 posts: Vec::new(),
                 heard: vec![changed(2), changed(0), changed(2)],
+            },
+            // Two sessions made in one call: the first, of no window, goes
+            // as the second takes its place, which goes in turn as the
+            // switch back leaves it of none.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (new("one", None), Response::Session(session(3))),
+                    (new("two", None), Response::Session(session(4))),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(3), changed(3), changed(4), changed(3)],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![
+                            info(4, "two", true, Vec::new()),
+                            info(0, "", false, vec![w]),
+                        ]),
+                    ),
+                    (Request::SwitchSession(session(0)), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(4), changed(0), changed(4)],
             },
             ask(vec![(
                 Request::Sessions,

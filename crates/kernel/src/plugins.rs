@@ -99,6 +99,15 @@ pub enum Request {
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
     OpenWindow(Option<String>),
+    /// Open the first window of the session `session`, which a plugin made,
+    /// as [`Request::OpenWindow`] opens one, in that session, which shows:
+    /// none of a session that a later write of the call took away.
+    OpenSessionWindow {
+        /// The session.
+        session: crate::workspace::SessionId,
+        /// The folder of its pane.
+        directory: Option<String>,
+    },
     /// Open a quick window of the id `window`, which the plugin's request
     /// gave, shown at `place`, its pane in `directory`, if given.
     OpenQuickWindow {
@@ -4872,7 +4881,10 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 if context.workspace.new_session_as(id, &name).is_some() {
                     let folder = directory.as_deref().map(host::home_expanded);
                     context.workspace.set_session_folder(id, folder);
-                    requests.push(Request::OpenWindow(directory));
+                    requests.push(Request::OpenSessionWindow {
+                        session: id,
+                        directory,
+                    });
                 }
                 continue;
             }

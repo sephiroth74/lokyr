@@ -3908,6 +3908,16 @@ impl<B: Backend> App<B> {
                         self.show_quick(platform, shown, place);
                     }
                 }
+                // A plugin's new session's first window, in that session,
+                // which shows; none of one that a later write of its call
+                // took away, as a switch from it of no window does.
+                Request::OpenSessionWindow { session, directory } => {
+                    if self.workspace.switch_session(session) {
+                        let program = self.program.clone();
+                        let folder = directory.as_deref().and_then(spawn::folder_of);
+                        self.open_window_running(platform, &program, None, folder);
+                    }
+                }
                 // A window in the folder that the plugin asked for, or a
                 // new window's of a path that is not there.
                 Request::OpenWindow(Some(directory)) => {

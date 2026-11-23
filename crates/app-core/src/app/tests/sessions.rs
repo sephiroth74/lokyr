@@ -4,7 +4,8 @@
 //! session's name beside the window's number; a session closed with its
 //! windows; and the windows of no session.
 
-use lokyr_kernel::commands::{Capability, Uses, Value};
+use lokyr_kernel::commands::{Capability, Category, Command, Uses, Value};
+use lokyr_kernel::plugins::{Cx, Plugin};
 
 use super::*;
 
@@ -423,4 +424,93 @@ fn a_plugin_runs_the_sessions_commands_of_their_requests_capabilities() {
         ),
         Ok(())
     );
+}
+
+/// A plugin whose `maker.two` makes two sessions in one call, and whose
+/// `maker.back` makes one and switches back to the first session.
+struct Maker;
+
+const MAKER: &str = concat!(
+    "[plugin]\nname = \"lokyr/maker\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+    "[capabilities]\nworkspace-write = true\n",
+);
+
+impl Plugin for Maker {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        for name in ["maker.two", "maker.back"] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: name.to_owned(),
+                category: Category::View,
+                capabilities: Vec::new(),
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
+        Ok(())
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+        if name == "maker.two" {
+            cx.new_session("one", None)?;
+            cx.new_session("two", None)?;
+            return Ok(());
+        }
+        let first = cx.sessions()?.last().map(|session| session.id);
+        cx.new_session("three", None)?;
+        if let Some(first) = first {
+            cx.switch_session(first)?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_new_session_opens_its_first_window_in_it_alone() {
+    let mut fake = Fake::default();
+    let mut app = App::new(None, unpadded(), None)
+        .with_program(quiet())
+        .with_builtin(MAKER, Box::new(Maker));
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    // Two sessions in one call: the first, of no window, goes as the second
+    // takes its place, which opens its window.
+    command(&mut fake, &mut app, "maker.two");
+    assert_eq!(names(&app), ["two", ""]);
+    let opened = opened(&fake, &[first]);
+    assert_eq!(opened.len(), 1);
+    let two = app.workspace.active_session();
+    assert_eq!(
+        app.workspace
+            .window(app.windows[&opened[0]].window)
+            .unwrap()
+            .session(),
+        Some(two)
+    );
+    assert!(hidden(&fake, first));
+    // A session made and left in one call opens no window: it went.
+    let before: Vec<WindowId> = fake.windows().collect();
+    command(&mut fake, &mut app, "maker.back");
+    assert_eq!(fake.windows().count(), before.len());
+    assert_eq!(names(&app), ["", "two"]);
+    assert!(!hidden(&fake, first));
+}
+
+#[test]
+fn a_new_session_from_no_window_leaves_one() {
+    let (mut fake, mut app, first) = started_running(idle());
+    fake.send(&mut app, first, WindowEvent::CloseRequested);
+    assert_eq!(fake.windows().count(), 0);
+    command(&mut fake, &mut app, NEW_SESSION);
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(app.workspace.sessions().len(), 1);
+}
+
+/// The names of the sessions, in the order of their use.
+fn names(app: &App) -> Vec<String> {
+    app.workspace
+        .sessions()
+        .iter()
+        .map(|session| session.name().to_owned())
+        .collect()
 }
