@@ -26,7 +26,7 @@ fn started_bars(config: Config) -> (Fake, App, WindowId) {
 
 /// The app of `config`, which draws its frames, its window running
 /// `program`.
-fn drawn(config: Config, program: Program) -> (Fake, App, WindowId) {
+pub(super) fn drawn(config: Config, program: Program) -> (Fake, App, WindowId) {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     let mut app = App::new(Some(drawing), config, None).with_program(program);

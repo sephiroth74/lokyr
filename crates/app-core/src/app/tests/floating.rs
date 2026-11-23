@@ -475,3 +475,48 @@ fn command_w_of_hidden_floating_panes_closes_the_split_pane_not_the_tab() {
     assert!(app.workspace.pane(floating).is_some());
     assert_eq!(app.focused(window), Some(floating));
 }
+
+#[test]
+fn a_floating_pane_s_gutter_marks_draw_over_its_box() {
+    // A command that ended, of a gutter's mark, then a prompt.
+    let program = shell(
+        "printf '\\033]133;A\\007$ \\033]133;B\\007true\\033]133;C\\007\\r\\n\\033]133;D;0\\007\\033]133;A\\007ready $ '; sleep 30",
+    );
+    let (mut fake, mut app, window) = super::scrollbars::drawn(Config::default(), program);
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.pane(floating).is_some_and(|pane| {
+            pane.line_text(1, 0)
+                .is_some_and(|(text, _)| text.contains("ready"))
+        })
+    });
+    for _ in 0..4 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    let state = &app.windows[&window];
+    let (_, room) = state.floating_rooms[0];
+    let items = &state.shown.as_ref().expect("a frame").items;
+    let shapes = |item: &Item| match item {
+        Item::Shapes(shapes) => shapes.clone(),
+        _ => Vec::new(),
+    };
+    let boxed = items
+        .iter()
+        .position(|item| shapes(item).iter().any(|shape| shape.rect == room.outer))
+        .expect("the floating pane's box");
+    // Its mark, in the box's inset left of its grid, after the box.
+    let marked = items.iter().rposition(|item| {
+        shapes(item).iter().any(|shape| {
+            shape.rect.x >= room.outer.x
+                && shape.rect.x < room.grid.x
+                && shape.rect.y >= room.grid.y
+                && shape.rect != room.outer
+        })
+    });
+    assert!(
+        marked.is_some_and(|at| at > boxed),
+        "the mark at {marked:?}, the box at {boxed}"
+    );
+}

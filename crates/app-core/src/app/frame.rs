@@ -1217,6 +1217,9 @@ impl<B: Backend> App<B> {
                 }),
             )
         };
+        // A floating pane's go over its box, drawn with its cells.
+        let mut floating_extras: std::collections::BTreeMap<PaneId, Vec<Item>> =
+            std::collections::BTreeMap::new();
         for (pane, snapshot, at, width, dim) in shown() {
             let selected = self
                 .plugins
@@ -1224,6 +1227,11 @@ impl<B: Backend> App<B> {
             if !(looks.dividers || looks.failed_tint || selected.is_some()) {
                 continue;
             }
+            let items = if floating_ids.contains(&pane) {
+                floating_extras.entry(pane).or_default()
+            } else {
+                &mut items
+            };
             // Within the pane and its paddings, as a selected block's
             // outline goes past the edges of the view that cut it, and of
             // its rows, a share of a row up as they draw.
@@ -1266,7 +1274,15 @@ impl<B: Backend> App<B> {
                     looks.bars,
                 )
                 .map(faded(dim));
-                if rows.clip.is_none() {
+                if floating_ids.contains(&pane) {
+                    let marks: Vec<Shape> = marks.collect();
+                    if !marks.is_empty() {
+                        floating_extras
+                            .entry(pane)
+                            .or_default()
+                            .extend(rows.clipped(vec![Item::Shapes(marks)]));
+                    }
+                } else if rows.clip.is_none() {
                     shapes.extend(marks);
                 } else {
                     let marks: Vec<Shape> = marks.collect();
@@ -1343,7 +1359,14 @@ impl<B: Backend> App<B> {
                 over.push(faded(dim)(band(below, thickness, line, false)));
             }
             pinned.push(Item::Shapes(over));
-            items.extend(rows.clipped(pinned));
+            if floating_ids.contains(&pane) {
+                floating_extras
+                    .entry(pane)
+                    .or_default()
+                    .extend(rows.clipped(pinned));
+            } else {
+                items.extend(rows.clipped(pinned));
+            }
         }
         // The dividers between the panes, under the slots' views.
         if let Some(line) = tokens.get("pane.divider") {
@@ -1388,6 +1411,7 @@ impl<B: Backend> App<B> {
                 continue;
             };
             let (_, drawn, over) = floating_drawn.swap_remove(at);
+            let extras = floating_extras.remove(&floating).unwrap_or_default();
             let Some(shown) = self.workspace.pane(floating) else {
                 continue;
             };
@@ -1414,6 +1438,7 @@ impl<B: Backend> App<B> {
                 &room, &title, look, &cell, size.scale, hovers, glyph,
             ));
             items.extend(drawn);
+            items.extend(extras);
             items.extend(over);
             let own = [(floating, room.grid)];
             if broadcasting.iter().any(|&(pane, _)| pane == floating) {
