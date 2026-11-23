@@ -5610,6 +5610,25 @@ impl<B: Backend> App<B> {
         window: WindowId,
         event: WindowEvent,
     ) {
+        // A window of a session that hides, which keeps the keyboard as it
+        // animates out of full screen, takes no keys, text, clicks nor
+        // scrolls: they would reach the session left.
+        let input = matches!(
+            event,
+            WindowEvent::Key(_)
+                | WindowEvent::Ime(_)
+                | WindowEvent::MouseButton { .. }
+                | WindowEvent::Scroll { .. }
+                | WindowEvent::Dropped(_)
+        );
+        if input
+            && self
+                .windows
+                .get(&window)
+                .is_some_and(|state| state.session_hidden)
+        {
+            return;
+        }
         match event {
             // A step of a live resize draws at once, so that the content
             // follows the edge, but not within half a refresh of the last

@@ -44,6 +44,21 @@ fn a_switch_hides_the_windows_of_the_session_left_and_shows_the_other_s() {
         .window(app.windows[&third].window)
         .and_then(lokyr_kernel::workspace::Window::number);
     assert_eq!(number, Some(1));
+    // Hidden, a window takes no keys, as it keeps the keyboard while it
+    // animates out of full screen.
+    fake.send(
+        &mut app,
+        first,
+        key_event(KeyCode::KeyQ, "q", Modifiers::NONE, true),
+    );
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    let typed = {
+        let shown = app.windows[&first].window;
+        let terminal = app.workspace.focused(shown).unwrap().terminal().unwrap();
+        (0..terminal.rows()).any(|y| terminal.row_text(y).contains('q'))
+    };
+    assert!(!typed);
     // Hidden, a window draws nothing: the frame that it asks for waits.
     command(&mut fake, &mut app, CURSOR_GUIDE);
     let state = fake.window(first).unwrap();
