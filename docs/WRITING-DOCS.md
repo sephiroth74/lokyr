@@ -208,4 +208,4 @@ Some pages, or parts of them, are made from their sources, so that they can't dr
 ## Check your page
 
 - `just check-links` checks that every internal link and anchor resolves.
-- `just site-serve` builds the site and serves it on `http://127.0.0.1:8124`, so that you can read your page as lokyr.dev will show it, with its sidebar and its callouts. The build fails when a link breaks or a page is missing from the summary.
+- `just site-serve` builds the site and serves it on `http://127.0.0.1:8124`, so that you can read your page as lokyr.dev will show it, with its sidebar and its callouts. The build fails when a link breaks, a page is missing from the summary, a page has no title (a `# ` heading first), or an image has no alt text that says what it shows.

@@ -14,8 +14,13 @@
 //! For the search engines, each page names its canonical address, a
 //! folder's `index.html` as its folder, and its description, a document's
 //! of its first paragraph; `sitemap.xml` lists the home and the documents'
-//! pages of their last commits' dates, and `404.html` is the page that
-//! GitHub Pages serves of an address that the site does not hold.
+//! pages of their last commits' dates, but the reports' appendices, which
+//! their engines do not list either; and `404.html` is the page that
+//! GitHub Pages serves of an address that the site does not hold. Every
+//! page has one heading of its title, the release notes' of their version:
+//! the build fails of another document of no title, and of an image that
+//! tells nothing to whom cannot see it. An image of an SVG of the docs
+//! takes the SVG's size, so that the page does not move as it loads.
 //! Into `target/site` by default.
 
 use std::collections::HashMap;
@@ -132,6 +137,16 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         }
         bail!("{} links of the site do not resolve", broken.len());
     }
+    let unlabelled = unlabelled_images(&out)?;
+    if !unlabelled.is_empty() {
+        for image in &unlabelled {
+            eprintln!("site: {image}");
+        }
+        bail!(
+            "{} images of the site tell nothing to whom cannot see them",
+            unlabelled.len()
+        );
+    }
     match pagefind(&root) {
         Some(pagefind) => {
             let indexed = Command::new(&pagefind)
@@ -228,6 +243,79 @@ pub(crate) fn broken_links(out: &Path) -> Result<Vec<String>> {
     Ok(broken)
 }
 
+/// The images of the pages of the site in `out` that tell nothing to whom
+/// cannot see them: an `<img>` of no `alt`, or of an empty one, but in a
+/// link of its own words, as the brand's icon beside the name, or marked as
+/// a decoration; an `<svg>` of `role="img"`, as a chart, of no label.
+pub(crate) fn unlabelled_images(out: &Path) -> Result<Vec<String>> {
+    let image = regex::Regex::new(r"<(img|svg)\s[^>]*>")?;
+    let tag = regex::Regex::new(r"<[^>]*>")?;
+    let mut pages = Vec::new();
+    collect_pages(out, &mut pages)?;
+    let mut unlabelled = Vec::new();
+    for page in &pages {
+        let text =
+            fs::read_to_string(page).with_context(|| format!("reading {}", page.display()))?;
+        let name = page.strip_prefix(out).unwrap_or(page).display().to_string();
+        for found in image.captures_iter(&text) {
+            let whole = found.get(0).map_or("", |whole| whole.as_str());
+            let at = found.get(0).map_or(0, |whole| whole.start());
+            let own = attributes(&whole[4..]);
+            let value = |wanted: &str| {
+                own.iter()
+                    .find(|(name, _)| *name == wanted)
+                    .map(|(_, value)| value.trim())
+            };
+            let decorative = value("aria-hidden") == Some("true")
+                || matches!(value("role"), Some("presentation" | "none"));
+            if &found[1] == "svg" {
+                if value("role") == Some("img")
+                    && value("aria-label").is_none_or(str::is_empty)
+                    && value("aria-labelledby").is_none_or(str::is_empty)
+                {
+                    unlabelled.push(format!("{name}: an <svg> of role=\"img\" of no label"));
+                }
+                continue;
+            }
+            match value("alt") {
+                None => unlabelled.push(format!("{name}: an <img> of no alt: {whole}")),
+                Some("") if !decorative && !in_worded_link(&text, at, &tag) => {
+                    unlabelled.push(format!(
+                        "{name}: an <img> of an empty alt outside a link of its own words: {whole}"
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+    }
+    Ok(unlabelled)
+}
+
+/// Whether the element at `at` in `text` is in a link of words of its own,
+/// beside it, `tag` matching a tag, which the link's words leave out.
+fn in_worded_link(text: &str, at: usize, tag: &regex::Regex) -> bool {
+    let before = &text[..at];
+    let Some(opened) = ["<a ", "<a>"]
+        .iter()
+        .filter_map(|start| before.rfind(start))
+        .max()
+    else {
+        return false;
+    };
+    if before.rfind("</a>").is_some_and(|closed| closed > opened) {
+        return false;
+    }
+    let Some(words_start) = before[opened..].find('>').map(|end| opened + end + 1) else {
+        return false;
+    };
+    let Some(words_end) = text[at..].find("</a>").map(|end| at + end) else {
+        return false;
+    };
+    !tag.replace_all(&text[words_start..words_end], "")
+        .trim()
+        .is_empty()
+}
+
 /// The HTML pages under `folder`.
 fn collect_pages(folder: &Path, pages: &mut Vec<PathBuf>) -> Result<()> {
     for entry in fs::read_dir(folder).with_context(|| format!("reading {}", folder.display()))? {
@@ -270,7 +358,7 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         canonical(Path::new("index.html")),
         dates.get(Path::new("site/public/index.html")).cloned(),
     )];
-    for document in &documents {
+    for document in documents.iter().filter(|document| !appendix(document)) {
         listed.push((
             canonical(&page_path(document)),
             dates.get(document).cloned(),
@@ -284,12 +372,22 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         texts.push(text);
     }
     // Each document's title, which the breadcrumbs of the pages below a
-    // folder's index name it by.
-    let titles: HashMap<PathBuf, String> = documents
-        .iter()
-        .zip(&texts)
-        .map(|(document, text)| (document.clone(), html(document, text).title))
-        .collect();
+    // folder's index name it by; every document of a title of its own, its
+    // page's heading, but a release's notes, whose page makes one.
+    let mut titles = HashMap::with_capacity(documents.len());
+    let mut untitled = Vec::new();
+    for (document, text) in documents.iter().zip(&texts) {
+        let Rendered { title, titled, .. } = html(document, text);
+        if !titled && !release_notes(document) {
+            untitled.push(document.display().to_string());
+        }
+        titles.insert(document.clone(), title);
+    }
+    ensure!(
+        untitled.is_empty(),
+        "documents of no title, a `# ` heading first: {}",
+        untitled.join(", ")
+    );
     let changelog =
         fs::read_to_string(root.join("CHANGELOG.md")).context("reading the changelog")?;
     fs::write(
@@ -298,10 +396,14 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     )
     .context("writing the releases' feed")?;
     for (document, text) in documents.iter().zip(&texts) {
-        let page = with_charts(
+        let page = with_sizes(
             root,
             document,
-            &page(document, text, &settings, &titles, &summary),
+            &with_charts(
+                root,
+                document,
+                &page(document, text, &settings, &titles, &summary),
+            ),
         );
         let target = out.join(page_path(document));
         if let Some(folder) = target.parent() {
@@ -707,7 +809,8 @@ fn changed_pages(root: &Path, since: &str) -> Result<Vec<String>> {
 /// The canonical addresses of the pages of the `changed` files among the
 /// site's `documents` and its home, or of every page, `everything` or of
 /// the summary changed, which every page's sidebar shows, and which is no
-/// page itself.
+/// page itself; the reports' appendices, which the engines do not list,
+/// none.
 fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec<String> {
     let everything = everything || changed.iter().any(|file| file == Path::new(SUMMARY));
     let home = Path::new("site/public/index.html");
@@ -720,7 +823,7 @@ fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec
             && file != Path::new(SUMMARY)
             && (file.starts_with("docs")
                 || ROOT_DOCUMENTS.iter().any(|root| file == Path::new(root)));
-        if !everything && is_document {
+        if !everything && is_document && !appendix(file) {
             pages.push(canonical(&page_path(file)));
         }
     }
@@ -728,6 +831,7 @@ fn pages_of(changed: &[PathBuf], documents: &[PathBuf], everything: bool) -> Vec
         pages.extend(
             documents
                 .iter()
+                .filter(|document| !appendix(document))
                 .map(|document| canonical(&page_path(document))),
         );
     }
@@ -875,9 +979,21 @@ fn page(
     let Rendered {
         body,
         title,
+        titled,
         description,
         headings,
     } = html(document, text);
+    // A release's notes, of no title of their own, take the one made of
+    // their version as their heading, as the other pages take their first.
+    let body = if titled {
+        body
+    } else {
+        format!(
+            "<h1 id=\"{}\" data-pagefind-weight=\"10\">{}</h1>\n{body}",
+            escaped(&slug(&title)),
+            escaped(&title)
+        )
+    };
     let depth = document.components().count().saturating_sub(1);
     let up = "../".repeat(depth);
     // A page made of a source links the source, which a change goes to.
@@ -903,7 +1019,7 @@ fn page(
             title: &title,
             description: Some(&shortened(&description)),
             canonical: Some(&canonical(&page_path(document))),
-            indexed: true,
+            indexed: !appendix(document),
             section: Section::of(document),
             structured: Some(&breadcrumbs(&crumbs(document, &title, titles))),
         },
@@ -990,6 +1106,95 @@ fn chart_of(root: &Path, document: &Path, paragraph: &str) -> Option<String> {
         "<figure class=\"chart-figure\" data-pagefind-ignore><svg{root_tag}{}</figure>\n",
         &svg[open..]
     ))
+}
+
+/// `page`, of `document`, of the size of each of its images of an SVG of
+/// the docs that tells none: the SVG's own, so that the browser keeps the
+/// image's room before it loads and the page does not move as it does. The
+/// site's style keeps an image within its column, of its proportions.
+fn with_sizes(root: &Path, document: &Path, page: &str) -> String {
+    const START: &str = "<img ";
+    let mut shown = String::with_capacity(page.len());
+    let mut rest = page;
+    while let Some(at) = rest.find(START) {
+        let tail = &rest[at..];
+        let Some(end) = tail.find('>') else {
+            break;
+        };
+        let tag = &tail[..=end];
+        shown.push_str(&rest[..at]);
+        match svg_size(root, document, tag) {
+            Some((width, height)) => {
+                let close = [" />", "/>", ">"]
+                    .into_iter()
+                    .find(|close| tag.ends_with(close))
+                    .unwrap_or(">");
+                let open = &tag[..tag.len() - close.len()];
+                let _ = write!(shown, "{open} width=\"{width}\" height=\"{height}\"{close}");
+            }
+            None => shown.push_str(tag),
+        }
+        rest = &tail[end + 1..];
+    }
+    shown.push_str(rest);
+    shown
+}
+
+/// The size of the image of `tag`, an `<img>` of `document`'s of no size of
+/// its own, of an SVG of the docs: its root's `width` and `height`, in
+/// pixels, or else its `viewBox`'s; none of another image.
+fn svg_size(root: &Path, document: &Path, tag: &str) -> Option<(String, String)> {
+    let found = attributes(tag.strip_prefix("<img")?);
+    if found
+        .iter()
+        .any(|(name, _)| *name == "width" || *name == "height")
+    {
+        return None;
+    }
+    let source = found.iter().find(|(name, _)| *name == "src")?.1;
+    if source.contains(':') || source.starts_with('/') {
+        return None;
+    }
+    let file = normalized(&document.parent().unwrap_or(Path::new("")).join(source))?;
+    if file.extension().is_none_or(|extension| extension != "svg") || !file.starts_with("docs") {
+        return None;
+    }
+    let svg = fs::read_to_string(root.join(&file)).ok()?;
+    let start = svg.find("<svg")?;
+    let open = start + svg[start..].find('>')?;
+    let own = attributes(&svg[start + 4..open]);
+    let value = |wanted: &str| {
+        own.iter()
+            .find(|(name, _)| *name == wanted)
+            .map(|(_, value)| *value)
+    };
+    let pixels = |value: &str| {
+        value
+            .strip_suffix("px")
+            .unwrap_or(value)
+            .parse::<f64>()
+            .ok()
+            .filter(|pixels| *pixels > 0.0)
+    };
+    let (width, height) = match (
+        value("width").and_then(pixels),
+        value("height").and_then(pixels),
+    ) {
+        (Some(width), Some(height)) => (width, height),
+        _ => {
+            let view: Vec<f64> = value("viewBox")?
+                .split([' ', ','])
+                .filter(|part| !part.is_empty())
+                .map(str::parse)
+                .collect::<Result<_, _>>()
+                .ok()?;
+            match view[..] {
+                [_, _, width, height] if width > 0.0 && height > 0.0 => (width, height),
+                _ => return None,
+            }
+        }
+    };
+    Some((format!("{width:.0}"), format!("{height:.0}")))
 }
 
 /// The attributes of an element's opening tag, past its name: each name
@@ -1437,6 +1642,9 @@ struct Rendered {
     body: String,
     /// Its first heading's text.
     title: String,
+    /// Whether its title is its own, of a first-level heading, rather than
+    /// made of its file's name.
+    titled: bool,
     /// Its first paragraph outside a list, a quote or a table of
     /// `DESCRIPTION_LEAST` characters or more, as plain text.
     description: Option<String>,
@@ -1647,7 +1855,7 @@ fn html(document: &Path, text: &str) -> Rendered {
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let fallback = if document.parent() == Some(Path::new("docs/releases")) {
+    let fallback = if release_notes(document) {
         format!("Lokyr {stem} release notes")
     } else {
         stem
@@ -1655,10 +1863,30 @@ fn html(document: &Path, text: &str) -> Rendered {
     let description = description.or(first_item.filter(|words| !words.is_empty()));
     Rendered {
         body,
+        titled: title.is_some(),
         title: title.unwrap_or(fallback),
         description,
         headings,
     }
+}
+
+/// Whether `document` is a release's notes, which have no title of their
+/// own, as GitHub's release shows them under its version: their page takes
+/// one of their version. The folder's index is not.
+fn release_notes(document: &Path) -> bool {
+    document.parent() == Some(Path::new("docs/releases"))
+        && document.file_name().is_some_and(|name| name != "README.md")
+}
+
+/// Whether `document` is a report's appendix: a file of the report's own
+/// folder in a collection, as its tables or its machine's setup, which the
+/// report links. It stays out of the search engines' results and of the
+/// sitemap, as the report stands for it.
+fn appendix(document: &Path) -> bool {
+    COLLECTIONS.iter().any(|collection| {
+        let collection = Path::new(collection);
+        document.starts_with(collection) && document.parent() != Some(collection)
+    })
 }
 
 /// The weight in the search of a heading of `level` and of the words of
@@ -1943,6 +2171,10 @@ mod tests {
             ]
         );
         assert!(pages_of(&[PathBuf::from("Cargo.toml")], &documents, false).is_empty());
+        // A report's appendix, which the engines do not list, told of none.
+        let appendix = PathBuf::from("docs/bench/ab-F3-49/motion/tables.md");
+        assert!(pages_of(std::slice::from_ref(&appendix), &documents, false).is_empty());
+        assert_eq!(pages_of(&[], &[appendix], true), ["https://lokyr.dev/"]);
         // The summary, which every page's sidebar shows, and no page.
         let pages = pages_of(&[PathBuf::from(SUMMARY)], &documents, false);
         assert_eq!(
@@ -2439,6 +2671,123 @@ mod tests {
     }
 
     #[test]
+    fn a_release_s_notes_are_headed_of_their_version_and_an_appendix_is_not_listed() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let settings = Settings::default();
+        let titles = HashMap::new();
+        let notes = page(
+            Path::new("docs/releases/9.9.9.md"),
+            "Blocks, and scrolling that follows your fingers.\n\n## What's new\n\n- One.\n\n## Changed\n\n- Two.\n\n## Fixed\n\n- Three.\n\n## Before you update\n\n- Four.\n",
+            &settings,
+            &titles,
+            &summary,
+        );
+        // The heading of their version, first, its table of contents under it.
+        assert!(
+            notes.contains("data-pagefind-body>\n<h1 id=\"lokyr-999-release-notes\" data-pagefind-weight=\"10\">Lokyr 9.9.9 release notes</h1>\n<details class=\"toc-inline\">"),
+            "{notes}"
+        );
+        assert!(notes.contains("<title>Lokyr 9.9.9 release notes</title>"));
+        assert_eq!(notes.matches("<h1").count(), 1);
+        // A document of a title of its own keeps its heading alone.
+        let titled = page(
+            Path::new("docs/keyboard.md"),
+            "# Keyboard\n\nThe keys that Lokyr takes, and how to change them in the config.\n",
+            &settings,
+            &titles,
+            &summary,
+        );
+        assert_eq!(titled.matches("<h1").count(), 1, "{titled}");
+        assert!(release_notes(Path::new("docs/releases/1.4.0.md")));
+        assert!(!release_notes(Path::new("docs/releases/README.md")));
+        assert!(!html(Path::new("docs/bench/x/tables.md"), "| a |\n|---|\n| 1 |\n").titled);
+        // A report's appendix, in its folder, out of the engines' results;
+        // the report and the other pages in them.
+        assert!(appendix(Path::new("docs/bench/ab-F3-49/motion/tables.md")));
+        assert!(appendix(Path::new(
+            "docs/bench/glyphs-F2-146/throughput-new.md"
+        )));
+        assert!(!appendix(Path::new("docs/bench/ab-F3-49.md")));
+        assert!(!appendix(Path::new("docs/releases/1.4.0.md")));
+        assert!(!appendix(Path::new("docs/plugins/tabs.md")));
+        let tables = page(
+            Path::new("docs/bench/ab-F3-49/motion/tables.md"),
+            "# The motion's means\n\n| a |\n|---|\n| 1 |\n",
+            &settings,
+            &titles,
+            &summary,
+        );
+        assert!(tables.contains(r#"<meta name="robots" content="noindex, follow">"#));
+        assert!(tables.contains(
+            r#"<link rel="canonical" href="https://lokyr.dev/docs/bench/ab-F3-49/motion/tables.html">"#
+        ));
+        assert!(!notes.contains("noindex"));
+    }
+
+    #[test]
+    fn an_svg_image_of_no_size_takes_its_own() {
+        let root = std::env::temp_dir().join(format!("lokyr-site-sizes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("docs/bench/charts")).unwrap();
+        fs::write(
+            root.join("docs/bench/charts/sized.svg"),
+            "<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"680\" height=\"284\" viewBox=\"0 0 680 284\"></svg>\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("docs/bench/charts/viewed.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"\n  width=\"100%\" viewBox=\"0,0,640.4,360\"></svg>\n",
+        )
+        .unwrap();
+        let document = Path::new("docs/bench/report.md");
+        let page = "<p><img src=\"charts/sized.svg\" alt=\"Startup\" /></p>\n\
+                    Text <img src=\"charts/viewed.svg\" alt=\"Memory\"> beside.\n\
+                    <img src=\"charts/sized.svg\" alt=\"Kept\" width=\"10\" height=\"5\">\n\
+                    <img src=\"../images/shot.webp\" alt=\"A shot\">\n\
+                    <img src=\"https://x.dev/a.svg\" alt=\"Far\" />\n\
+                    <img src=\"charts/none.svg\" alt=\"None\" />";
+        assert_eq!(
+            with_sizes(&root, document, page),
+            "<p><img src=\"charts/sized.svg\" alt=\"Startup\" width=\"680\" height=\"284\" /></p>\n\
+             Text <img src=\"charts/viewed.svg\" alt=\"Memory\" width=\"640\" height=\"360\"> beside.\n\
+             <img src=\"charts/sized.svg\" alt=\"Kept\" width=\"10\" height=\"5\">\n\
+             <img src=\"../images/shot.webp\" alt=\"A shot\">\n\
+             <img src=\"https://x.dev/a.svg\" alt=\"Far\" />\n\
+             <img src=\"charts/none.svg\" alt=\"None\" />"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_image_that_tells_nothing_is_told_but_an_icon_beside_its_link_s_words() {
+        let out = std::env::temp_dir().join(format!("lokyr-site-alts-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&out);
+        fs::create_dir_all(out.join("docs")).unwrap();
+        fs::write(
+            out.join("index.html"),
+            r#"<a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28">Lokyr</a> <img src="shot.webp" alt="A window of two panes"> <svg class="mark" aria-hidden="true"></svg> <svg role="img" aria-label="Startup"></svg>"#,
+        )
+        .unwrap();
+        fs::write(
+            out.join("docs/a.html"),
+            r#"<img src="a.svg"> <a href="b.html"><img src="b.svg" alt=""></a> <p><img src="c.svg" alt=""></p> <img src="d.svg" alt="" role="presentation"> <svg role="img" aria-label=""></svg>"#,
+        )
+        .unwrap();
+        let mut unlabelled = unlabelled_images(&out).unwrap();
+        unlabelled.sort();
+        assert_eq!(
+            unlabelled,
+            [
+                r#"docs/a.html: an <img> of an empty alt outside a link of its own words: <img src="b.svg" alt="">"#,
+                r#"docs/a.html: an <img> of an empty alt outside a link of its own words: <img src="c.svg" alt="">"#,
+                r#"docs/a.html: an <img> of no alt: <img src="a.svg">"#,
+                r#"docs/a.html: an <svg> of role="img" of no label"#,
+            ]
+        );
+        let _ = fs::remove_dir_all(out);
+    }
+
+    #[test]
     fn a_page_made_of_a_source_links_its_source_and_no_editor() {
         let summary = Summary::parse(SUMMARY_TEXT).unwrap();
         let settings = Settings::default();
@@ -2559,14 +2908,17 @@ mod tests {
         ] {
             assert!(out.join(file).is_file(), "{file}");
         }
-        // The sitemap lists the home and every document's page, each of its
-        // last commit's date; the robots name it.
+        // The sitemap lists the home and every document's page but the
+        // reports' appendices, each of its last commit's date; the robots
+        // name it.
         let sitemap = fs::read_to_string(out.join("sitemap.xml")).unwrap();
+        let listed = documents.iter().filter(|document| !appendix(document));
         assert_eq!(
             sitemap.matches("<url>").count(),
-            documents.len() + 1,
+            listed.count() + 1,
             "{sitemap}"
         );
+        assert!(!sitemap.contains("/tables.html"));
         assert!(sitemap.contains("<loc>https://lokyr.dev/</loc><lastmod>"));
         assert!(sitemap.contains("<loc>https://lokyr.dev/docs/</loc><lastmod>"));
         assert!(!sitemap.contains("lokyr.dev/search.html") && !sitemap.contains("index.html"));
@@ -2603,6 +2955,24 @@ mod tests {
         // Every link of the pages resolves, the home's too.
         let broken = broken_links(&out).unwrap();
         assert!(broken.is_empty(), "{broken:?}");
+        // Every image tells what it shows, or is a decoration; every image of
+        // an SVG takes its size; every page has one heading of its title, a
+        // release's notes too.
+        let unlabelled = unlabelled_images(&out).unwrap();
+        assert!(unlabelled.is_empty(), "{unlabelled:?}");
+        let svg_image = regex::Regex::new(r#"<img src="[^"]*\.svg"[^>]*>"#).unwrap();
+        for document in &documents {
+            let shown = fs::read_to_string(out.join(page_path(document))).unwrap();
+            for image in svg_image.find_iter(&shown) {
+                assert!(
+                    image.as_str().contains(" width=\""),
+                    "{}: {}",
+                    document.display(),
+                    image.as_str()
+                );
+            }
+            assert_eq!(shown.matches("<h1").count(), 1, "{}", document.display());
+        }
         // The search, where Pagefind is there: the configuration's page among
         // those that hold a key of the config.
         if let Some(pagefind) = pagefind(&root) {

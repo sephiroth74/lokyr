@@ -28,17 +28,17 @@ An accessibility client asked for the window's tree as it opened, as the apps of
 
 The same session in the regime of 0.4.0's A/B, a p50 near 19 ms: started once a short run of 0.3.0 gives a p50 under 21 ms, with nothing else drawing on the display; and, if 0.4.0's tail is longer there, bundles of 0.4.0 that differ by its other parts on the way of a key to its frame, beside the trees, as the windows' surfaces and layers.
 
-# The second session, in the faster regime
+## The second session, in the faster regime
 
 Measured on 2026-11-04, between 21:13 and 21:17, of the script and the analysis in [latency-F3-135/second](latency-F3-135/second/), `run.sh` and `analyze.py`, with their reports: whether 0.4.0's longer tail shows in the regime of the rounds of [0.4.0's A/B](ab-F3-29.md), a p50 near 19 ms, where the first session ran a refresh slower.
 
-## Method
+### Method
 
 - **Three bundles**: `o`, the app of 0.3.0's DMG; `a`, 0.4.0, the first session's; `h`, the head of the work since 0.4.0, 3bbfefa, built as a release of the plain features, `0.4.0-20261104`, the slots and their input, the live resize's pace, and a review's fixes in it.
 - **The regime first**: a short run of `o`, 50 keys, until its p50 is under 21 ms, ten tries at most; it was at the first, 19.1 ms.
 - **Six rounds** of the A/B's config, 200 keys a run, whose orders put each bundle first, second and third twice.
 
-## Results
+### Results
 
 | Bundle | p50, mean of 6 | p99, mean of 6 | Its range | Samples in the third refresh or later | In the fourth or later |
 |---|---|---|---|---|---|
@@ -52,17 +52,17 @@ The p99's difference from 0.3.0's, round by round: `a` −3.7, +4.8, −1.7, −
 - **0.4.0's tail is 0.3.0's within the rounds' spread**, its orders balanced: its p99 higher in two rounds of six, lower in four, its mean 1.1 ms higher, of twelve samples more in the third refresh of 1194. The A/B's difference, 0.4.0's p99 higher in seven rounds of eight, came of its orders, 0.4.0 second in five of them, as the second of a pair was the slower there.
 - **The head's tail is longer**: its p99 higher than 0.3.0's in every round, though by 0.2 ms or less in two, its mean 4.6 ms higher, of nine samples more in the third refresh or later and four more in the fourth; its medians 0.3.0's. Within the budget still, it is the work since 0.4.0, on a key's way to its frame, that lengthens it, which bundles that differ by one part of it tell next.
 
-# The third session, of the parts of the work since 0.4.0
+## The third session, of the parts of the work since 0.4.0
 
 Measured on 2026-11-04, between 21:51 and 21:59, of the scripts and the analysis in [latency-F3-135/third](latency-F3-135/third/), `build.sh`, `run.sh` and `analyze.py`, with their reports: which part of the work since 0.4.0 lengthens the head's tail that the second session found.
 
-## Method
+### Method
 
 - **A probe first**, of the head, `second/probe.patch`, 200 keys: each turn of the main thread, of its kind and its time, the slots' layout in each frame, and the timers by their names. A key's turn took 17 µs at the median, a frame's 384 µs, as two frames a key; the slots' layout 5 µs a frame; the plugins' turn of their events never started; the accessibility trees 47, of 0.6 ms each, as 0.4.0's; the titles' look 48, of 29 µs. Nothing on the main thread costs more than before.
 - **Six bundles**: `o`, 0.3.0; `a`, 0.4.0; `m2`, 541bc9b, the slots in the windows; `m3`, 3256cca, the live resize's pace and the view's contents placement at its top left corner; `h`, the head, the second session's; `t`, the head but for that placement, as a frame's drawn at another size than the view's would have stretched; each a release of its commit, built in a worktree.
 - **The faster regime first**, at the first try, 20.4 ms; then six rounds of a Williams design, each bundle once in each place of a round and after each other once.
 
-## Results
+### Results
 
 | Bundle | p50, mean of 6 | p99, mean of 6 | Its range | Samples in the third refresh or later | In the fourth or later |
 |---|---|---|---|---|---|

@@ -1,3 +1,5 @@
+# The window's motion, the build of 6 November and 0.5.0: the means
+
 ## drag: means of the two rounds
 | Configuration | Frames a second | Missed | Delay p50 | p95 | WindowServer CPU | App CPU | Farthest |
 |---|---|---|---|---|---|---|---|
