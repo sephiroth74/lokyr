@@ -48,6 +48,7 @@ fn workspace() -> Vec<WorkspaceEvent> {
         WorkspaceEvent::SessionChanged {
             session: SessionId(7),
         },
+        WorkspaceEvent::BroadcastChanged { window },
     ]
 }
 
@@ -216,11 +217,12 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         local grouped = events[14]
         assert(grouped.kind == "group-changed" and grouped.group == 6 and grouped.window == 1)
         assert(events[15].kind == "session-changed" and events[15].session == 7)
+        assert(events[16].kind == "broadcast-changed" and events[16].window == 1)
         assert(created.kind == "tab-created" and created.tab == 2 and created.window == 1 and created.index == 0)
-        local pointer = events[16]
+        local pointer = events[17]
         assert(pointer.kind == "pointer" and pointer.at[1] == 4 and pointer.at[2] == -2 and pointer.mods.command)
-        assert(events[17].at == nil)
-        assert(events[20].kind == "panel-closed" and events[20].id == "find")
+        assert(events[18].at == nil)
+        assert(events[21].kind == "panel-closed" and events[21].id == "find")
         local clicked = events[#events - 4]
         assert(clicked.kind == "click" and clicked.at[1] == 4 and clicked.at[2] == -2 and clicked.pane == 3)
         local menu = events[#events - 3]
@@ -230,20 +232,20 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         local shown, hidden = events[#events - 1], events[#events]
         assert(shown.kind == "page-shown" and shown.page == "plugins")
         assert(hidden.kind == "page-hidden" and hidden.page == "plugins")
-        local keys = events[21]
+        local keys = events[22]
         assert(keys.kind == "keys-changed" and next(keys, next(keys)) == nil)
-        assert(events[23].viewport.alternate == true)
-        assert(events[26].kind == "command-ended" and events[26].status == nil)
-        assert(events[31].kind == "timer" and events[31].id == 12)
-        local custom = events[32]
+        assert(events[24].viewport.alternate == true)
+        assert(events[27].kind == "command-ended" and events[27].status == nil)
+        assert(events[32].kind == "timer" and events[32].id == 12)
+        local custom = events[33]
         assert(custom.kind == "custom" and custom.name == "acme.done" and custom.value[1] == 1)
-        local saved, failed = events[33], events[34]
+        local saved, failed = events[34], events[35]
         assert(saved.kind == "saved" and saved.path == "/Users/me/Lokyr.png" and saved.error == nil)
         assert(failed.path == nil and failed.error == "it cannot be written")
-        local picked, closed = events[35], events[36]
+        local picked, closed = events[36], events[37]
         assert(picked.kind == "color-picked" and string.sub(picked.color, 2) == "4c9bff80")
         assert(closed.kind == "color-panel-closed" and next(closed, next(closed)) == nil)
-        local chosen = events[37]
+        local chosen = events[38]
         assert(chosen.kind == "chosen" and chosen.id == 13 and chosen.button == 1)
         "#,
     )

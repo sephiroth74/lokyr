@@ -19,6 +19,7 @@
 //! embedder takes them.
 
 pub mod agent;
+mod broadcast;
 mod groups;
 mod layout;
 mod pane;
@@ -32,6 +33,7 @@ use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host as sdk;
+use lokyr_plugin_sdk::host::BroadcastTo;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
@@ -183,6 +185,8 @@ pub struct Window {
     /// Its session; none of a quick window or the settings', which show
     /// whichever session is active.
     session: Option<SessionId>,
+    /// Where its typed input goes beside the pane that has its keyboard.
+    broadcast: BroadcastTo,
 }
 
 impl Window {
@@ -1437,6 +1441,7 @@ impl Workspace {
                 quick: false,
                 hidden: false,
                 session,
+                broadcast: BroadcastTo::Off,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {

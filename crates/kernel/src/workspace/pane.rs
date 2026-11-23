@@ -255,6 +255,9 @@ pub struct Pane {
     pub(super) agent: Option<Agent>,
     /// The status that its program told of its session, OSC 21337's.
     pub(super) session_status: Option<terminal::SessionStatus>,
+    /// Whether it is left out of its window's broadcast of the typed input,
+    /// taking its own alone.
+    pub(super) broadcast_left: bool,
 }
 
 impl std::fmt::Debug for Pane {
@@ -415,6 +418,7 @@ impl Pane {
             commands_told: false,
             agent: None,
             session_status: None,
+            broadcast_left: false,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -1570,6 +1574,11 @@ impl Pane {
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept
+    }
+
+    /// Whether it is left out of its window's broadcast of the typed input.
+    pub fn broadcast_left(&self) -> bool {
+        self.broadcast_left
     }
 
     /// The status that its program tells of its session, OSC 21337's, if

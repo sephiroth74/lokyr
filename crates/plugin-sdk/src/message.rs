@@ -928,6 +928,36 @@ pub enum Request {
     /// Switches to a session: the active one's windows hidden, their
     /// programs running, and this one's shown.
     SwitchSession(SessionId),
+    /// A window's broadcast of the typed input: where the keys, the input
+    /// method's text and the user's pastes go beside the pane that has its
+    /// keyboard, and its panes left out.
+    Broadcast(WindowId),
+    /// Sends a window's typed input to `to`, beside the pane that has its
+    /// keyboard, or to that pane alone, of [`BroadcastTo::Off`]: each key
+    /// encoded of each pane's own terminal's modes.
+    SetBroadcast {
+        /// The window.
+        window: WindowId,
+        /// Where its input goes.
+        to: crate::host::BroadcastTo,
+    },
+    /// Leaves a pane out of its window's broadcast, of `left_out`, which
+    /// takes its own input alone then, or takes it back in.
+    SetPaneBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// Whether it is left out.
+        left_out: bool,
+    },
+    /// Pastes text as the user pastes into a pane: into it, and into the
+    /// other panes that its window broadcasts the input to, each bracketed
+    /// as its program asks, of one question for all where one is asked.
+    PasteBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// The text.
+        text: String,
+    },
     /// Puts the plugin's view of the status bar on `side`, in place of its
     /// manifest's side, or of the one asked before, until the plugin stops;
     /// no capability, as it moves the plugin's own view within the bar.
@@ -1290,6 +1320,11 @@ impl Request {
                 }
                 needed
             }
+            // The workspace's state, of where the typed input goes, to the
+            // programs of other panes.
+            Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } => {
+                vec![Capability::WorkspaceWrite, Capability::PtyWrite]
+            }
             _ => self.capability().into_iter().collect(),
         }
     }
@@ -1370,9 +1405,10 @@ impl Request {
                 Some(Capability::GlobalHotkey)
             }
             Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
-            Self::Paste { .. } | Self::SendText { .. } | Self::RunLine { .. } => {
-                Some(Capability::PtyWrite)
-            }
+            Self::Paste { .. }
+            | Self::PasteBroadcast { .. }
+            | Self::SendText { .. }
+            | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
             | Self::CloseWindow(_)
@@ -1403,7 +1439,9 @@ impl Request {
             | Self::Ungroup(_)
             | Self::NewSession { .. }
             | Self::SwitchSession(_)
-            | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
+            | Self::ReopenTab(_)
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. } => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1483,7 +1521,8 @@ impl Request {
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
-            | Self::ShowPage(_) => None,
+            | Self::ShowPage(_)
+            | Self::Broadcast(_) => None,
             Self::WatchDoubleTap(_) => Some(Capability::GlobalHotkey),
         }
     }
@@ -1520,6 +1559,7 @@ impl Request {
             | Self::RecentTabs(_)
             | Self::Groups(_)
             | Self::Sessions
+            | Self::Broadcast(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1583,6 +1623,9 @@ impl Request {
             | Self::Ungroup(_)
             | Self::NewSession { .. }
             | Self::SwitchSession(_)
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. }
+            | Self::PasteBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
@@ -1754,6 +1797,8 @@ pub enum Response {
     Session(SessionId),
     /// The sessions.
     Sessions(Vec<SessionInfo>),
+    /// A window's broadcast of the typed input.
+    Broadcast(crate::host::Broadcast),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -2256,6 +2301,9 @@ impl Request {
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
             | Self::SwitchSession { .. }
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. }
+            | Self::PasteBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
@@ -2333,6 +2381,7 @@ impl Request {
             Self::Groups { .. } => "groups",
             Self::NewGroup { .. } => "group",
             Self::Sessions => "sessions",
+            Self::Broadcast(_) => "broadcast",
             Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",

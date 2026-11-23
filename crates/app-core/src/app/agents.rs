@@ -71,7 +71,9 @@ impl<B: Backend> App<B> {
             .get(&window)
             .and_then(|state| self.workspace.focused(state.window))
             .map(workspace::Pane::id);
-        if let Some(pane) = pane {
+        // The panes that the window broadcasts the input to took it too.
+        let panes = pane.map_or_else(Vec::new, |pane| self.workspace.broadcast_panes(pane));
+        for pane in panes {
             self.workspace.typed(pane);
             // A block that a plugin selected goes as the program takes keys.
             self.plugins

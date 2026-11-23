@@ -1168,6 +1168,16 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Pastes `text` as the user pastes into `pane`: into it, and into the
+    /// other panes that its window broadcasts the input to, as
+    /// [`Request::PasteBroadcast`] says.
+    pub fn paste_broadcast(&mut self, pane: PaneId, text: &str) -> Result<(), Error> {
+        self.done(Request::PasteBroadcast {
+            pane,
+            text: text.to_owned(),
+        })
+    }
+
     /// Sends `text` to `pane`'s program as it is, as this call returns, its
     /// control characters too, as typed keys would, which can run
     /// commands; the view comes back to the screen.
@@ -1383,6 +1393,31 @@ impl<'a> Cx<'a> {
     /// Switches to `session`, as [`Request::SwitchSession`] says.
     pub fn switch_session(&mut self, session: SessionId) -> Result<(), Error> {
         self.done(Request::SwitchSession(session))
+    }
+
+    /// `window`'s broadcast of the typed input, as
+    /// [`Request::Broadcast`] says.
+    pub fn broadcast(&mut self, window: WindowId) -> Result<crate::host::Broadcast, Error> {
+        match self.request(Request::Broadcast(window)) {
+            Response::Broadcast(broadcast) => Ok(broadcast),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Sends `window`'s typed input to `to`, as [`Request::SetBroadcast`]
+    /// says.
+    pub fn set_broadcast(
+        &mut self,
+        window: WindowId,
+        to: crate::host::BroadcastTo,
+    ) -> Result<(), Error> {
+        self.done(Request::SetBroadcast { window, to })
+    }
+
+    /// Leaves `pane` out of its window's broadcast, or takes it back in, as
+    /// [`Request::SetPaneBroadcast`] says.
+    pub fn set_pane_broadcast(&mut self, pane: PaneId, left_out: bool) -> Result<(), Error> {
+        self.done(Request::SetPaneBroadcast { pane, left_out })
     }
 
     /// The layout of `tab`.

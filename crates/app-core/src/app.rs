@@ -825,7 +825,7 @@ pub struct App<B: Backend> {
     /// by their alerts.
     clipboard_asks: BTreeMap<AlertId, (PaneId, ClipboardRequest)>,
     /// The pastes that the user is asked to confirm, by their alerts.
-    paste_asks: BTreeMap<AlertId, (PaneId, String)>,
+    paste_asks: BTreeMap<AlertId, (Vec<PaneId>, String)>,
     /// Whether the user asked that pastes be not confirmed, where the
     /// config could not keep it: until the app quits.
     pastes_unconfirmed: bool,
@@ -3292,7 +3292,10 @@ impl<B: Backend> App<B> {
     fn forget_input(&mut self, panes: &[PaneId]) {
         self.clipboard_asks
             .retain(|_, (pane, _)| !panes.contains(pane));
-        self.paste_asks.retain(|_, (pane, _)| !panes.contains(pane));
+        for (asked, _) in self.paste_asks.values_mut() {
+            asked.retain(|pane| !panes.contains(pane));
+        }
+        self.paste_asks.retain(|_, (asked, _)| !asked.is_empty());
         for &pane in panes {
             for state in self.windows.values_mut() {
                 state.mouse.forget(pane);
@@ -3953,7 +3956,7 @@ impl<B: Backend> App<B> {
                     self.preview_font_style(platform, face, style);
                 }
                 Request::SetFont(family) => self.set_font(platform, &family),
-                Request::ConfirmPaste { pane, text } => self.ask_paste(platform, pane, text),
+                Request::ConfirmPaste { panes, text } => self.ask_paste(platform, panes, text),
                 Request::Open(target) => self.open_target(platform, target),
                 Request::OpenAt {
                     target,
@@ -4652,6 +4655,10 @@ impl<B: Backend> App<B> {
             | WorkspaceEvent::PaneChanged { .. }
             | WorkspaceEvent::GroupChanged { .. }
             | WorkspaceEvent::SessionChanged { .. } => return,
+            // The panes that take the window's input, which it marks.
+            WorkspaceEvent::BroadcastChanged { window } => {
+                vec![showing(self, workspace::WindowId::of(window.0))]
+            }
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 self.close_strayed_panels(platform);
                 vec![of_tab(self, from), of_tab(self, tab)]

@@ -31,7 +31,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends of their exit statuses | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories, a folder's git branch, the programs that run and the agents' states, and the folders where the shells worked last; hearing as a command starts and ends, of no exit status · Since 1.4 | Medium: command lines can hold passwords |
-| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs, groups of tabs, sessions made and switched, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
+| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs, groups of tabs, sessions made and switched, the typed input broadcast to a tab or a window, with `pty-write`, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text |
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
@@ -70,6 +70,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `tab-changed` | A tab's title, color, place or marks change | Its programs', progress' and agents' fields of `process-read` |
 | `group-changed` | A group of tabs is made, renamed, colored, folded or unfolded, takes or loses a tab, or goes; a read of the window's groups reports it · Since 1.3 | — |
 | `session-changed` | A session is made, renamed, switched to or from, or goes; a read of the sessions reports it · not released yet | — |
+| `broadcast-changed` | A window's typed input goes to another set of panes, or a pane of it is left out or taken back in; a read of the window's broadcast reports it · not released yet | — |
 | `tab-bar-resized` | The tab bar's column is dragged to another width | — |
 | `pane-created`, `pane-closed`, `pane-focused`, `pane-moved` | A pane opens, closes, takes the keyboard or moves. A tab closed and kept for Reopen Closed Tab tells `pane-closed` of each pane, whose decorations, gutter marks, cursor shown and searches Lokyr takes away; given back, it tells `tab-created` and `pane-created` as a tab opened anew | — |
 | `pane-changed` | A pane's title or header changes | `process-read` |

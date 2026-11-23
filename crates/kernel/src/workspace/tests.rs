@@ -1189,7 +1189,8 @@ mod told {
                 Change::TabChanged { .. }
                 | Change::PaneChanged { .. }
                 | Change::GroupChanged { .. }
-                | Change::SessionChanged { .. } => {}
+                | Change::SessionChanged { .. }
+                | Change::BroadcastChanged { .. } => {}
                 Change::WindowOpened { window } => {
                     assert!(self.windows.insert(window, Window::default()).is_none());
                 }
@@ -3169,4 +3170,45 @@ fn the_folders_that_the_shells_tell_are_the_recent_ones_the_latest_first() {
     let recent = workspace.recent_folders();
     assert_eq!(recent.len(), MOST_RECENT_FOLDERS);
     assert_eq!(recent[..3], ["/tmp/one", "/tmp/two", "/kept/0"]);
+}
+
+#[test]
+fn a_broadcast_takes_the_tab_s_or_the_window_s_panes_but_those_left_out() {
+    use lokyr_plugin_sdk::host::BroadcastTo;
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let first = workspace.window(window).unwrap().active_tab();
+    let a = workspace.tab(first).unwrap().active_pane();
+    let b = workspace
+        .split(a, Direction::Horizontal, pane("sleep 30"), Side::Second)
+        .unwrap();
+    let other = workspace.open_tab(window, pane("sleep 30"), 1).unwrap();
+    let c = workspace.tab(other).unwrap().active_pane();
+    workspace.take_events();
+    // Off: the pane alone.
+    assert_eq!(workspace.broadcast(window), BroadcastTo::Off);
+    assert_eq!(workspace.broadcast_panes(a), [a]);
+    // The tab's, then the window's, the pane typed into first.
+    assert!(workspace.set_broadcast(window, BroadcastTo::Tab));
+    assert_eq!(workspace.broadcast_panes(b), [b, a]);
+    assert!(workspace.set_broadcast(window, BroadcastTo::Window));
+    assert_eq!(workspace.broadcast_panes(a), [a, b, c]);
+    // A pane left out takes its own input alone, and no other's.
+    assert!(workspace.set_pane_broadcast(b, true));
+    assert_eq!(workspace.broadcast_panes(a), [a, c]);
+    assert_eq!(workspace.broadcast_panes(b), [b]);
+    assert_eq!(workspace.broadcast_left_out(window), [b]);
+    // Each change told once, of the window; the same again tells nothing.
+    assert!(workspace.set_pane_broadcast(b, true));
+    let told: Vec<sdk::WindowId> = workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Changed(Change::BroadcastChanged { window }) => Some(window),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(told, [window.into(); 3]);
+    // Of no window there, nothing.
+    assert!(!workspace.set_broadcast(WindowId::new(), BroadcastTo::Tab));
 }

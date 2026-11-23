@@ -136,6 +136,10 @@ export type Cx = {
     sessions: () -> ({ SessionInfo }?, string?, number?),
     new_session: (name: string?, directory: string?) -> (SessionId?, string?, number?),
     switch_session: (session: SessionId) -> (true?, string?, number?),
+    broadcast: (window: WindowId) -> (Broadcast?, string?, number?),
+    set_broadcast: (window: WindowId, to: BroadcastTo) -> (true?, string?, number?),
+    set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (true?, string?, number?),
+    paste_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
     set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
@@ -194,6 +198,7 @@ export type Event =
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
     | { kind: "session-changed", session: SessionId }
+    | { kind: "broadcast-changed", window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
     | { kind: "click", pane: PaneId, at: { number } }
     | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
@@ -480,6 +485,16 @@ export type Border = {
     color: Token,
     width: number,
 }
+
+export type Broadcast = {
+    to: BroadcastTo,
+    left_out: { PaneId }?,
+}
+
+export type BroadcastTo =
+    | "off"
+    | "tab"
+    | "window"
 
 export type ButtonVariant =
     | "plain"

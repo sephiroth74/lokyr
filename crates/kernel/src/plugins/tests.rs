@@ -1122,15 +1122,15 @@ fn the_host_reaches_the_focused_pane_and_the_clipboard() {
     // line ends.
     let requests = plugins.take_requests();
     let [
-        Request::ConfirmPaste { pane: asked, text },
+        Request::ConfirmPaste { panes: asked, text },
         Request::ConfirmPaste { text: other, .. },
     ] = &requests[..]
     else {
         panic!("two pastes to confirm: {requests:?}");
     };
     assert_eq!(
-        (*asked, text.as_str(), other.as_str()),
-        (pane, "two\nthree", "x\ry")
+        (asked.clone(), text.as_str(), other.as_str()),
+        (vec![pane], "two\nthree", "x\ry")
     );
     assert!(!text_once(&app, pane, "hello").contains("got:"));
     app.workspace.pane(pane).unwrap().paste(text);
@@ -5793,4 +5793,62 @@ fn a_session_s_folder_is_read_of_process_read_alone_and_checked_as_it_is_made() 
             ],
         ]
     );
+}
+
+#[test]
+fn a_paste_as_the_user_s_reaches_the_panes_that_the_window_broadcasts_to_of_one_question() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let a = app.workspace.focused(window).unwrap().id();
+    let pane = Pane::spawn(
+        &Program::command("/bin/sh", ["-c", "sleep 30"]),
+        &Environment::default(),
+        &Settings::default(),
+        GRID,
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    );
+    let b = app
+        .workspace
+        .split(
+            a,
+            crate::workspace::Direction::Horizontal,
+            pane,
+            crate::workspace::Side::Second,
+        )
+        .unwrap();
+    assert!(
+        app.workspace
+            .set_broadcast(window, lokyr_plugin_sdk::host::BroadcastTo::Tab)
+    );
+    let text = Rc::new(RefCell::new(String::new()));
+    let pasted = Rc::clone(&text);
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "paster",
+            scripted(
+                |cx| cx.register_command(command("paster.paste")),
+                move |cx, _, _| cx.paste_broadcast(host::PaneId(a.get()), &pasted.borrow()),
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    // Lines, which neither program takes bracketed: one question for both.
+    *text.borrow_mut() = "two\nthree".to_owned();
+    plugins
+        .run("paster.paste", Args::new(), &mut app.context())
+        .unwrap();
+    let requests = plugins.take_requests();
+    let [Request::ConfirmPaste { panes, text: asked }] = &requests[..] else {
+        panic!("one paste to confirm: {requests:?}");
+    };
+    assert_eq!((panes.clone(), asked.as_str()), (vec![a, b], "two\nthree"));
+    // A line pastes into both at once.
+    *text.borrow_mut() = "ls".to_owned();
+    plugins
+        .run("paster.paste", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(plugins.take_requests().is_empty());
 }

@@ -422,6 +422,9 @@ impl Symbols {
                 W::SessionChanged { session } => W::SessionChanged {
                     session: self.session(session),
                 },
+                W::BroadcastChanged { window } => W::BroadcastChanged {
+                    window: self.window(window),
+                },
             }),
             other => other,
         }
@@ -1232,11 +1235,15 @@ fn kind(request: &Request) -> usize {
         Request::NewSession { .. } => 153,
         Request::SwitchSession(_) => 154,
         Request::SessionFolders => 155,
+        Request::Broadcast(_) => 156,
+        Request::SetBroadcast { .. } => 157,
+        Request::SetPaneBroadcast { .. } => 158,
+        Request::PasteBroadcast { .. } => 159,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 156;
+const KINDS: usize = 160;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

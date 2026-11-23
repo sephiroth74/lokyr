@@ -122,6 +122,31 @@ pub fn home_expanded(path: &str) -> String {
     }
 }
 
+/// Where a window's typed input goes beside the pane that has its
+/// keyboard: the keys, the input method's text and the user's pastes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BroadcastTo {
+    /// To that pane alone.
+    #[default]
+    Off,
+    /// To every pane of its tab.
+    Tab,
+    /// To every pane of the window, of all its tabs.
+    Window,
+}
+
+/// A window's broadcast of the typed input, as a read of it gives it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Broadcast {
+    /// Where the input goes.
+    pub to: BroadcastTo,
+    /// The window's panes left out of it, which take their own input alone,
+    /// in the order of their ids.
+    #[serde(default)]
+    pub left_out: Vec<PaneId>,
+}
+
 /// A session, as a read of the sessions gives it: a group of windows, of
 /// which the active session's show and the others' are hidden, their
 /// programs running.

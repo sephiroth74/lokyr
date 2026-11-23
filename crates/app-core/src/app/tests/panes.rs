@@ -2,6 +2,7 @@
 //! that the pane with it takes, and the ends that close a pane, then the
 //! window with its last.
 
+use lokyr_kernel::plugins::host::BroadcastTo;
 use lokyr_kernel::workspace::{Direction, Environment, Side};
 
 use super::*;
@@ -937,4 +938,96 @@ fn a_click_on_an_older_notification_brings_its_own_pane_forward() {
         fake.send_app(&mut app, AppEvent::NotificationClicked(window, id));
         assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(pane));
     }
+}
+
+/// A program that reads the keys raw and shows them as `cat -v` does, after
+/// `ready-` and its `name`, asking for bracketed paste where `bracketed`.
+fn raw_reader(name: &str, bracketed: bool) -> Program {
+    let modes = if bracketed { "\\033[?2004h" } else { "" };
+    shell(&format!(
+        "stty raw -echo; printf '{modes}'; echo ready-{name}; cat -v"
+    ))
+}
+
+/// The text of `pane`'s first rows, read from its terminal, as a pane of a
+/// tab that does not show copies no screen.
+fn read_of(app: &App, pane: PaneId) -> String {
+    let pane = app.workspace.pane(pane).unwrap();
+    (0..8)
+        .filter_map(|row| pane.line_text(row, 8).map(|(text, _)| text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_broadcast_s_keys_text_and_pastes_reach_each_pane_that_takes_them_of_its_own_modes() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes(raw_reader("a", true), &raw_reader("b", false));
+    // A third pane, of another tab of the window, which shows the first.
+    let shown = app.windows[&window].window;
+    let first = app.workspace.window(shown).unwrap().active_tab();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        &fake,
+        &raw_reader("c", false),
+        &Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let tab = app.workspace.open_tab(shown, pane, 1).unwrap();
+    let c = app.workspace.tab(tab).unwrap().active_pane();
+    app.workspace.activate_tab(first);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, c).contains("ready-c")
+    });
+    assert_eq!(app.focused(window), Some(a));
+    let settle = |fake: &mut Fake, app: &mut App| {
+        let pause = Instant::now() + Duration::from_millis(200);
+        run_until(fake, app, |_, _| Instant::now() > pause);
+    };
+    // To the tab's panes: a key, and the input method's text.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    fake.send(&mut app, window, typed(KeyCode::KeyK, "k", false));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("q".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("kq") && read_of(app, b).contains("kq")
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, c).contains('k'), "{}", read_of(&app, c));
+    // A paste, bracketed where its program asks alone.
+    fake.set_clipboard_text("p1");
+    fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("^[[200~p1^[[201~") && read_of(app, b).contains("kqp1")
+    });
+    assert!(fake.alerts().is_empty());
+    // To the window's panes, of every tab, but one left out.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Window));
+    assert!(app.workspace.set_pane_broadcast(b, true));
+    fake.send(&mut app, window, typed(KeyCode::KeyW, "w", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("~w") && read_of(app, c).contains('w')
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, b).contains('w'), "{}", read_of(&app, b));
+    // Lines into a program that takes them as Return ask once for all,
+    // then reach each pane of its own modes.
+    fake.set_clipboard_text("m1\nm2");
+    fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+    assert_eq!(fake.alerts().len(), 1);
+    let id = fake.alerts()[0].id;
+    fake.answer_alert(&mut app, id, 0);
+    // Bracketed, the line break as it is, which the program shows as one.
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("^[[200~m1")
+            && read_of(app, a).contains("m2^[[201~")
+            && read_of(app, c).contains("wm1^Mm2")
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, b).contains("m1"), "{}", read_of(&app, b));
 }

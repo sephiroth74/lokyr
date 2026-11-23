@@ -134,6 +134,19 @@ impl<B: Backend> App<B> {
                 let Some(pane) = self.workspace.focused(state.window) else {
                     return;
                 };
+                // The other panes that the window broadcasts the input to
+                // take the keys too, each encoded of its own terminal.
+                let others: Vec<PaneId> = self
+                    .workspace
+                    .broadcast_panes(pane.id())
+                    .into_iter()
+                    .skip(1)
+                    .collect();
+                for other in &others {
+                    if let Some(other) = self.workspace.pane(*other) {
+                        give(other, &keys, options);
+                    }
+                }
                 // A key that deletes or types over a selection of the
                 // command line takes its place, as the shell in front
                 // announced; of no selection that the pointer made, a
@@ -314,8 +327,20 @@ impl<B: Backend> App<B> {
             Ime::Preedit { text, .. } => !text.is_empty(),
             Ime::Commit(_) => true,
         };
+        // The panes that the window broadcasts the input to, the one with
+        // its keyboard first: each takes the keys of a sequence that ends
+        // and the text typed, the composition showing in the first alone.
+        let panes: Vec<&Pane> = self
+            .workspace
+            .broadcast_panes(pane.id())
+            .into_iter()
+            .filter_map(|id| self.workspace.pane(id))
+            .collect();
         if composes && state.resolver.is_pending() {
-            give(pane, &state.end_sequence(), options);
+            let ended = state.end_sequence();
+            for pane in &panes {
+                give(pane, &ended, options);
+            }
         }
         match ime {
             Ime::Preedit { text, selection } => {
@@ -330,7 +355,9 @@ impl<B: Backend> App<B> {
             }
             Ime::Commit(text) => {
                 state.preedit = None;
-                pane.text(&text);
+                for pane in &panes {
+                    pane.text(&text);
+                }
                 state.blink.restart(Instant::now());
                 self.close_typing_panels(platform, window);
                 self.typed_into(window);
