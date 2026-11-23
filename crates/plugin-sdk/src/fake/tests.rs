@@ -2553,3 +2553,42 @@ fn the_fake_s_sessions_hold_their_windows_as_the_app_s() {
         .unwrap_err();
     assert_eq!(error.code, Code::NotFound);
 }
+
+#[test]
+fn the_fake_tells_a_session_s_folder_to_process_read_alone_and_checks_it() {
+    let mut folders = Vec::new();
+    for capabilities in [
+        vec![Capability::WorkspaceWrite],
+        vec![Capability::WorkspaceWrite, Capability::ProcessRead],
+    ] {
+        let mut host = FakeHost::new("acme/probe").with_capabilities(capabilities);
+        let refused = Rc::new(RefCell::new(Vec::new()));
+        let wrong = Rc::clone(&refused);
+        let mut new = Probe::new(move |cx, _| {
+            let long = format!("/{}", "a".repeat(host::MOST_SESSION_DIRECTORY));
+            for directory in [long.as_str(), "/tmp/a\u{1b}[2J"] {
+                let error = cx.new_session("bad", Some(directory)).unwrap_err();
+                wrong.borrow_mut().push(error.message);
+            }
+            cx.new_session("work", Some("/tmp"))?;
+            Ok(())
+        });
+        host.command(&mut new, "probe.go", Args::new()).unwrap();
+        assert_eq!(
+            *refused.borrow(),
+            [
+                "a session's folder is 1024 bytes at most, not 1025",
+                "a session's folder holds no control character",
+            ]
+        );
+        let read = Rc::new(RefCell::new(Vec::new()));
+        let seen = Rc::clone(&read);
+        let mut look = Probe::new(move |cx, _| {
+            *seen.borrow_mut() = cx.sessions()?;
+            Ok(())
+        });
+        host.command(&mut look, "probe.go", Args::new()).unwrap();
+        folders.push(read.borrow()[0].folder.clone());
+    }
+    assert_eq!(folders, [None, Some("/tmp".to_owned())]);
+}

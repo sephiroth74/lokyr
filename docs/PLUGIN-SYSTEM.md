@@ -299,7 +299,7 @@ type SessionInfo = {
     name: string, -- empty for none, 256 characters at most
     active: boolean, -- whether its windows show
     windows: { WindowId }, -- in the order they opened; none of a session whose first window has yet to open
-    folder: string?, -- the absolute path of the folder that it was opened in, as the sessions' switcher opens one
+    folder: string?, -- of `process-read`: the absolute path of the folder that it was opened in, as the sessions' switcher opens one
 }
 
 -- The folders that the sessions' switcher lists, each an absolute path, of `process-read` · not released yet.
@@ -959,9 +959,9 @@ type Cx = {
     fold_group: (group: GroupId, folded: boolean) -> (boolean, Error?),
     ungroup: (group: GroupId) -> (boolean, Error?),
     -- A session of a name, which it switches to, the windows of the active one hidden, their programs running, then
-    -- its first window, its pane in `directory`, a path absolute or from `~`, if given: its id, given at once. A
-    -- session goes as its last window closes, unless it is the only one; the active one that goes leaves the one
-    -- used before it active · not released yet.
+    -- its first window, its pane in `directory`, a path absolute or from `~` of 1024 bytes at most, if given: its id, given
+    -- at once. A session goes as its last window closes, unless it is the only one; the active one that goes leaves the
+    -- one used before it active · not released yet.
     new_session: (name: string?, directory: string?) -> (SessionId?, Error?),
     switch_session: (session: SessionId) -> (boolean, Error?),
     activate_tab: (tab: TabId) -> (boolean, Error?),
@@ -1373,7 +1373,7 @@ type Plugin = {
 
 A request takes every capability that it needs, as a subscription to `pointer` and to `command-started` takes `pointer-read` and `history-read` or `process-read`. The reads of the workspace, the plugin's own views, panels and questions, its declarations, its config and its state take none; neither does a file saved through the save panel, where the place is chosen in the panel and the host writes it, nor an image of the plugin's own cells.
 
-- **Commands**: each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands run by hand, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins.
+- **Commands**: each has a category, `app`, `windows`, `tabs`, `panes`, `input`, `clipboard`, `edit`, `find` or `view` to start with, and the capabilities that its action needs, as `pane.paste` needs `clipboard-read` and `pty-write`. A plugin declares in its manifest the commands that it runs, `[uses] commands`, by name or by namespace, as `tabs.*`: one that it did not declare fails with `denied`, 301, and one whose capabilities it lacks with `denied`, 302. The commands run by hand, through the keys, the menus or a plugin with `user-commands`, as the palette, and the plugin's own need no declaration. Without `user-commands`, a plugin reads the commands' names, titles, categories and parameters, not their plugins. The sessions' commands need `workspace-write`, and `window.open-layout`, which types its layout's commands into the shells, `pty-write` too · not released yet.
 - **Declaration and consent**:
   - Capabilities are declared in the manifest. Sleip shows them at install time, with the commands that the plugin runs, grouped by category, and the capabilities that those need.
   - The app asks at an installed plugin's first activation, one question, of the app's, of the capabilities that its manifest declares and that no decision grants or refuses yet, each told in the language shown with its risk, the default button refusing; its activation waits for the answer, and what its trigger brought meanwhile comes once it activates: its commands' runs, 16 at most, a run past them refused; its events, the one that woke it, if nothing else did before, and the last of each name and subject, as of each pane or command, 64 at most, of those that the capabilities granted let it subscribe to, as a tab's change that it cannot read is none; and its views. An answer leaves the capabilities decided in the file while the question showed, as the file says, and a refusal takes the others away. Refused, the plugin runs without them, its requests that need them `denied`. A new version asks for its new capabilities alone. `net:<host>` and `process-spawn` are withheld before 1.0.0, never asked for.

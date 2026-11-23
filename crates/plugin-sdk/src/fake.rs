@@ -4729,7 +4729,18 @@ impl Calling<'_> {
                 }
                 Response::Tabs(infos)
             }
-            Request::Sessions => Response::Sessions(host.session_infos()),
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
+            Request::Sessions => {
+                let reads = host.reads_processes();
+                let mut sessions = host.session_infos();
+                if !reads {
+                    for session in &mut sessions {
+                        session.folder = None;
+                    }
+                }
+                Response::Sessions(sessions)
+            }
             Request::Groups(window) => {
                 if !host.windows.contains_key(window) {
                     return Err(Error::new(
@@ -5569,7 +5580,7 @@ impl Calling<'_> {
                 crate::host::check_session_name(name)
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 if let Some(directory) = directory {
-                    crate::host::check_directory(directory)
+                    crate::host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
                 let id = SessionId(self.host.next_id());

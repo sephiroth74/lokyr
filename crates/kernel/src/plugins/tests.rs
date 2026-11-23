@@ -5707,3 +5707,90 @@ fn a_new_group_of_a_tab_given_again_and_again_takes_it_once() {
     let group = crate::workspace::GroupId::of(group.0);
     assert_eq!(app.workspace.group_tabs(group), [tab]);
 }
+
+#[test]
+fn a_session_s_folder_is_read_of_process_read_alone_and_checked_as_it_is_made() {
+    let mut app = App::default();
+    window(&mut app, "sleep 30");
+    let mut plugins = Plugins::new();
+    let folders = Rc::new(RefCell::new(Vec::new()));
+    let refused = Rc::new(RefCell::new(Vec::new()));
+    for (name, capabilities) in [
+        ("acme/blind", "workspace-write = true\n"),
+        (
+            "acme/seeing",
+            "workspace-write = true\nprocess-read = true\n",
+        ),
+    ] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let namespace = name.rsplit('/').next().unwrap().to_owned();
+        let (seen, wrong) = (Rc::clone(&folders), Rc::clone(&refused));
+        let (make, read) = (format!("{namespace}.make"), format!("{namespace}.read"));
+        let registered = (make.clone(), read.clone());
+        plugins
+            .add_declared(
+                manifest,
+                scripted(
+                    move |cx| {
+                        cx.register_command(command(&registered.0))?;
+                        cx.register_command(command(&registered.1))
+                    },
+                    move |cx, name, _| {
+                        if name == make {
+                            // A folder too long, or of a control character,
+                            // refused as the session is asked for.
+                            let long = format!("/{}", "a".repeat(host::MOST_SESSION_DIRECTORY));
+                            for directory in [long.as_str(), "/tmp/a\u{1b}[2J"] {
+                                let error = cx.new_session("bad", Some(directory)).unwrap_err();
+                                wrong.borrow_mut().push((error.code, error.message));
+                            }
+                            cx.new_session("work", Some("/tmp"))?;
+                            return Ok(());
+                        }
+                        let sessions = cx.sessions()?;
+                        seen.borrow_mut().push(
+                            sessions
+                                .into_iter()
+                                .map(|session| (session.name, session.folder))
+                                .collect::<Vec<_>>(),
+                        );
+                        Ok(())
+                    },
+                ),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    for command in ["blind.make", "blind.read", "seeing.read"] {
+        plugins
+            .run(command, Args::new(), &mut app.context())
+            .unwrap();
+    }
+    assert_eq!(
+        *refused.borrow(),
+        [
+            (
+                Code::Failed,
+                "a session's folder is 1024 bytes at most, not 1025".to_owned()
+            ),
+            (
+                Code::Failed,
+                "a session's folder holds no control character".to_owned()
+            ),
+        ]
+    );
+    // The folder that the shells start in, to `process-read` alone.
+    assert_eq!(
+        *folders.borrow(),
+        [
+            vec![("work".to_owned(), None), (String::new(), None)],
+            vec![
+                ("work".to_owned(), Some("/tmp".to_owned())),
+                (String::new(), None)
+            ],
+        ]
+    );
+}

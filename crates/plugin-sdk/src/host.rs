@@ -56,6 +56,26 @@ pub fn check_session_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The most bytes of a session's folder.
+pub const MOST_SESSION_DIRECTORY: usize = 1024;
+
+/// Whether `directory` is a session's folder: a path absolute or from `~`,
+/// of [`MOST_SESSION_DIRECTORY`] bytes at most and no control character;
+/// why not otherwise.
+pub fn check_session_directory(directory: &str) -> Result<(), String> {
+    check_directory(directory)?;
+    if directory.len() > MOST_SESSION_DIRECTORY {
+        return Err(format!(
+            "a session's folder is {MOST_SESSION_DIRECTORY} bytes at most, not {}",
+            directory.len()
+        ));
+    }
+    if directory.chars().any(char::is_control) {
+        return Err("a session's folder holds no control character".to_owned());
+    }
+    Ok(())
+}
+
 /// `path`, a path absolute or from `~`, of the home directory for `~`, as
 /// a session opened in a folder keeps it; as it is without a home
 /// directory.
@@ -86,7 +106,8 @@ pub struct SessionInfo {
     /// first window has yet to open.
     pub windows: Vec<WindowId>,
     /// The folder that it was opened in, an absolute path, as the
-    /// sessions' switcher opens one of a folder; none of another.
+    /// sessions' switcher opens one of a folder, to a plugin that reads the
+    /// processes (`process-read`); none of another.
     #[serde(default)]
     pub folder: Option<String>,
 }

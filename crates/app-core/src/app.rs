@@ -6051,11 +6051,25 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         } else {
             Vec::new()
         };
+        // The sessions' commands take what their requests take, so that a
+        // plugin that declares them runs them of the same capabilities:
+        // the workspace's writes, and a layout's commands typed into its
+        // shells.
+        let capabilities = if name == OPEN_LAYOUT {
+            vec![
+                lokyr_kernel::commands::Capability::WorkspaceWrite,
+                lokyr_kernel::commands::Capability::PtyWrite,
+            ]
+        } else if SESSIONS.contains(&name) || name == SWITCH_SESSION {
+            vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
+        } else {
+            Vec::new()
+        };
         let command = Command {
             name: name.to_owned(),
             title: texts.text(&format!("command-{title}")),
             category,
-            capabilities: Vec::new(),
+            capabilities,
             params,
             when: CONTEXT_ONLY.contains(&name).then(|| "selection".to_owned()),
         };

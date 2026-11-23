@@ -6325,7 +6325,10 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
             Asked::Sessions => {
+                let reads = self.state.reads_processes();
                 let workspace = &*self.context.workspace;
                 let active = workspace.active_session();
                 Response::Sessions(
@@ -6336,7 +6339,7 @@ impl Host<'_, '_> {
                             id: session.id().into(),
                             name: session.name().to_owned(),
                             active: session.id() == active,
-                            folder: session.folder().map(str::to_owned),
+                            folder: session.folder().filter(|_| reads).map(str::to_owned),
                             windows: workspace
                                 .session_windows(session.id())
                                 .into_iter()
@@ -6834,7 +6837,7 @@ impl Host<'_, '_> {
                 host::check_session_name(name)
                     .map_err(|message| Error::new(Code::Failed, message))?;
                 if let Some(directory) = directory {
-                    host::check_directory(directory)
+                    host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
                 let id = SessionId::new();

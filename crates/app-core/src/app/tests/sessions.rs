@@ -4,6 +4,8 @@
 //! session's name beside the window's number; a session closed with its
 //! windows; and the windows of no session.
 
+use lokyr_kernel::commands::{Capability, Uses, Value};
+
 use super::*;
 
 /// Whether the app hid `window`, as a session that is not active hides it.
@@ -354,4 +356,54 @@ fn a_session_saved_as_a_layout_opens_again_as_a_new_session() {
     assert!(shown.text.contains("broken.toml: line 2"), "{shown:?}");
     assert_eq!(app.workspace.active_session(), gone);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
+
+#[test]
+fn a_plugin_runs_the_sessions_commands_of_their_requests_capabilities() {
+    let (_fake, app) = started();
+    let uses = Uses::new(["window.*"]);
+    let check = |name: &str, args: Args, granted: &[Capability]| {
+        app.commands
+            .check_for_plugin(name, args, &[], &uses, granted)
+            .map(|_| ())
+            .map_err(|error| error.code)
+    };
+    let named = |name: &str| {
+        let mut args = Args::new();
+        args.insert("name".to_owned(), Value::String(name.to_owned()));
+        args
+    };
+    let write = [Capability::WorkspaceWrite];
+    for name in [
+        NEW_SESSION,
+        LAST_SESSION,
+        RENAME_SESSION,
+        CLOSE_SESSION,
+        SAVE_LAYOUT,
+    ] {
+        assert_eq!(
+            check(name, Args::new(), &[]),
+            Err(Code::MissingCapability),
+            "{name}"
+        );
+        assert_eq!(check(name, Args::new(), &write), Ok(()), "{name}");
+    }
+    assert_eq!(
+        check(SWITCH_SESSION, named("work"), &[]),
+        Err(Code::MissingCapability)
+    );
+    assert_eq!(check(SWITCH_SESSION, named("work"), &write), Ok(()));
+    // A layout's commands, typed into its shells, take `pty-write` too.
+    assert_eq!(
+        check(OPEN_LAYOUT, named("api"), &write),
+        Err(Code::MissingCapability)
+    );
+    assert_eq!(
+        check(
+            OPEN_LAYOUT,
+            named("api"),
+            &[Capability::WorkspaceWrite, Capability::PtyWrite]
+        ),
+        Ok(())
+    );
 }
