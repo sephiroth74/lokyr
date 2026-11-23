@@ -48,7 +48,12 @@ fn the_page_s_example_reads_and_opens_as_its_windows() {
     assert_eq!(*direction, windows::Direction::Horizontal);
     assert_eq!(*ratio, Some(0.6));
     assert_eq!(left.first_pane().command, Some("cargo run"));
-    assert_eq!(left.first_pane().directory, Some(Path::new("~/src/api")));
+    // Of `~`, of the home directory.
+    let home = std::env::home_dir().unwrap();
+    assert_eq!(
+        left.first_pane().directory,
+        Some(home.join("src/api").as_path())
+    );
     assert_eq!(
         first.tabs[1].layout.first_pane().command,
         Some("tail -f log/development.log")
@@ -119,9 +124,13 @@ fn what_does_not_read_is_told_of_its_line() {
             "[[window]]\n[[window.tab]]\n[window.tab.pane]\nfolder = \"src\"\n",
             Some(4),
         ),
-        // A command of two lines.
+        // A command of two lines, and one of a change of direction.
         (
             "[[window]]\n[[window.tab]]\n[window.tab.pane]\ncommand = \"a\\nb\"\n",
+            Some(4),
+        ),
+        (
+            "[[window]]\n[[window.tab]]\n[window.tab.pane]\ncommand = \"ls \u{202E}fdp.exe\"\n",
             Some(4),
         ),
         // Not TOML at all.

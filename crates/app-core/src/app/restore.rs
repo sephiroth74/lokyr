@@ -296,6 +296,9 @@ impl<B: Backend> App<B> {
             .as_deref()
             .filter(|_| config.app.restore_scrollback);
         let offset = crate::clock::local_time().offset;
+        // The commands of a layout's panes whose folders are not there,
+        // which run nowhere else.
+        let mut unrun: Vec<(String, std::path::PathBuf)> = Vec::new();
         let shown = kept.open(&mut self.workspace, |pane| {
             let restored = state
                 .zip(pane.scrollback)
@@ -327,12 +330,28 @@ impl<B: Backend> App<B> {
             }
             .pane(PaneId::new(), grid);
             // A layout's pane's command, as though typed, its shell staying
-            // once it ends.
-            if let Some(command) = pane.command {
-                new.send_text(&format!("{command}\r"));
+            // once it ends; in its folder alone, as a command of a folder
+            // runs nowhere else.
+            match (pane.command, pane.directory) {
+                (Some(command), Some(folder)) if directory.is_none() => {
+                    unrun.push((command.to_owned(), folder.to_owned()));
+                }
+                (Some(command), _) => new.send_text(&format!("{command}\r")),
+                (None, _) => {}
             }
             new
         });
+        if !unrun.is_empty() {
+            let told: Vec<String> = unrun
+                .iter()
+                .map(|(command, folder)| format!("`{command}` in {}", folder.display()))
+                .collect();
+            let text = format!(
+                "a layout's commands do not run, as their folders are not there: {}",
+                told.join(", ")
+            );
+            self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
+        }
         let Some(shown) = shown else {
             platform.close_window(window);
             return None;

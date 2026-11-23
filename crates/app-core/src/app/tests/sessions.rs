@@ -309,11 +309,34 @@ fn a_session_saved_as_a_layout_opens_again_as_a_new_session() {
         let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
         (0..terminal.rows()).any(|y| terminal.row_text(y).contains("printf 'from the layout'"))
     });
+    // A command of a folder that is not there runs nowhere else, as a
+    // notice tells.
+    std::fs::write(
+        folder.join("gone.toml"),
+        "[[window]]\n[[window.tab]]\n[window.tab.pane]\nfolder = \"/no/such/folder\"\ncommand = \"echo not here\"\n",
+    )
+    .unwrap();
+    app.run(&mut fake, OPEN_LAYOUT, named("gone"));
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert!(
+        shown.text.contains("`echo not here` in /no/such/folder"),
+        "{shown:?}"
+    );
+    let gone = app.workspace.active_session();
+    let [window] = app.workspace.session_windows(gone)[..] else {
+        panic!("one window");
+    };
+    let pane = app.workspace.focused(window).unwrap().id();
+    let pause = Instant::now() + Duration::from_millis(300);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
+    assert!((0..terminal.rows()).all(|y| !terminal.row_text(y).contains("not here")));
+    drop(terminal);
     // A layout that does not read is told, of its file and line.
     std::fs::write(folder.join("broken.toml"), "[[window]]\nshape = 1\n").unwrap();
     app.run(&mut fake, OPEN_LAYOUT, named("broken"));
     let shown = app.diagnostics.shown_diagnostic().expect("a notice");
     assert!(shown.text.contains("broken.toml: line 2"), "{shown:?}");
-    assert_eq!(app.workspace.active_session(), opened);
+    assert_eq!(app.workspace.active_session(), gone);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }

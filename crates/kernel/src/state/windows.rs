@@ -176,8 +176,9 @@ pub enum Layout {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scrollback: Option<String>,
         /// The command line that its shell runs as it starts, of a layout's
-        /// pane; none of a window kept as the app quit.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// pane, which the file of the windows neither writes nor reads, so
+        /// that no command comes of it.
+        #[serde(skip)]
         command: Option<String>,
     },
     /// Two parts that share the room.
