@@ -209,13 +209,38 @@ impl<B: Backend> App<B> {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        // The tab's floating panes over its layout, while they show, from
+        // the back to the front, each in its frame of shares of the room.
+        let floating: Vec<(PaneId, lokyr_ui_core::floating::Room)> = match tab {
+            Some(tab) if tab.floating_shown() => tab
+                .floating()
+                .iter()
+                .map(|floating| {
+                    let frame = floating.frame;
+                    let shares = lokyr_ui_core::floating::Shares {
+                        x: frame.x(),
+                        y: frame.y(),
+                        width: frame.width(),
+                        height: frame.height(),
+                    };
+                    let room =
+                        lokyr_ui_core::floating::room(shares, content, (width, height), size.scale);
+                    (floating.pane, room)
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
         state.dividers = lines;
         // Each pane's header at its room's top, and its grid below it.
         let mut rooms = rooms;
         self.lay_out_headers(window, &mut rooms);
         let pixels = |cell: u32| u16::try_from(cell).unwrap_or(u16::MAX);
+        // The floating panes' grids after the layout's, as they draw over
+        // them.
+        let floating_grids = floating.iter().map(|&(pane, room)| (pane, room.grid));
         let views: Vec<PaneView> = rooms
             .into_iter()
+            .chain(floating_grids)
             .map(|(pane, rect)| PaneView {
                 pane,
                 rect,
@@ -229,6 +254,7 @@ impl<B: Backend> App<B> {
             .collect();
         if let Some(state) = self.windows.get_mut(&window) {
             state.views.clone_from(&views);
+            state.floating_rooms = floating;
         }
         // The panels over them all, at their anchors.
         self.lay_out_panels(window, size);
@@ -593,7 +619,7 @@ impl<B: Backend> App<B> {
         // The half of a pane that a tab's drag lights up.
         let lit = self.lit_half(window);
         // The rooms of the panes whose agents wait, in a tab of several.
-        let waiting: Vec<Rect> = if views.len() > 1 {
+        let waiting: Vec<(PaneId, Rect)> = if views.len() > 1 {
             views
                 .iter()
                 .filter(|view| {
@@ -603,17 +629,17 @@ impl<B: Backend> App<B> {
                         .and_then(workspace::Agent::state)
                         == Some(lokyr_kernel::plugins::host::AgentState::Waiting)
                 })
-                .map(|view| view.rect)
+                .map(|view| (view.pane, view.rect))
                 .collect()
         } else {
             Vec::new()
         };
         // The rooms of the panes that take the window's broadcast of the
         // typed input, but those left out and those whose programs ended.
-        let broadcasting: Vec<Rect> = views
+        let broadcasting: Vec<(PaneId, Rect)> = views
             .iter()
             .filter(|view| self.takes_broadcast(view.pane))
-            .map(|view| view.rect)
+            .map(|view| (view.pane, view.rect))
             .collect();
         // A window of no pane, as of the settings tab, draws its chrome and
         // its views alone.
@@ -961,6 +987,25 @@ impl<B: Backend> App<B> {
             i32::try_from(left).unwrap_or(i32::MAX),
             i32::try_from(top).unwrap_or(i32::MAX),
         );
+        // The cursor of a pane of the layout under a floating pane's box
+        // shows not, as the box hides its cell.
+        let floating_ids: Vec<PaneId> =
+            state.floating_rooms.iter().map(|&(pane, _)| pane).collect();
+        let cursor = cursor.filter(|_| {
+            if floating_ids.contains(&active) {
+                return true;
+            }
+            let at = snapshot.cursor().position;
+            let cell_x = x + i32::from(at.x) * cell.width as i32;
+            let cell_y = y + i32::from(at.y) * cell.height as i32;
+            !state.floating_rooms.iter().any(|(_, room)| {
+                let outer = room.outer;
+                cell_x + cell.width as i32 > outer.x
+                    && cell_x < outer.x + outer.width as i32
+                    && cell_y + cell.height as i32 > outer.y
+                    && cell_y < outer.y + outer.height as i32
+            })
+        });
         let selected = snapshot.selection();
         let contains =
             |column: u16, row: u16| selected.is_some_and(|shown| shown.contains(column, row));
@@ -1089,6 +1134,7 @@ impl<B: Backend> App<B> {
         // those over it after every pane's, each within its pane, and
         // within its rows' band while they draw a share of a row up.
         let mut over_text = Vec::new();
+        let mut floating_drawn: Vec<(PaneId, Vec<Item>, Vec<Item>)> = Vec::new();
         {
             let renderer = &mut drawing.renderer;
             let cell_size = (cell.width, cell.height);
@@ -1101,7 +1147,8 @@ impl<B: Backend> App<B> {
                 }),
             );
             let batches = std::iter::once(batch).chain(other_batches);
-            for ((snapshot, corner, size, rows), batch) in shown.zip(batches) {
+            let ids = std::iter::once(active).chain(others.iter().map(|(pane, _)| pane.id()));
+            for (((snapshot, corner, size, rows), batch), id) in shown.zip(batches).zip(ids) {
                 let layers = self.inline_images.items(
                     renderer,
                     &*platform,
@@ -1122,6 +1169,11 @@ impl<B: Backend> App<B> {
                     drawn.push(Item::Cells(backgrounds));
                     drawn.extend(layers.under);
                     drawn.push(Item::Cells(text));
+                }
+                // A floating pane's, over the layout's, in its own layer.
+                if floating_ids.contains(&id) {
+                    floating_drawn.push((id, rows.clipped(drawn), rows.clipped(layers.over)));
+                    continue;
                 }
                 items.extend(rows.clipped(drawn));
                 over_text.extend(rows.clipped(layers.over));
@@ -1307,27 +1359,64 @@ impl<B: Backend> App<B> {
         if !bar_shapes.is_empty() {
             items.push(Item::Shapes(bar_shapes));
         }
-        // A ring round each pane that takes the window's broadcast, under
-        // the waiting agents'.
-        if let Some(color) = tokens.get("broadcast.ring") {
-            let width = (RING * size.scale).round().max(1.0) as u32;
-            items.extend(
-                broadcasting
-                    .iter()
-                    .flat_map(|&room| ring(room, width))
-                    .map(|rect| Item::Rect { rect, color }),
-            );
-        }
-        // A ring round each pane whose agent waits for the user, of its
-        // tab's mark's color.
-        if let Some(color) = tokens.get("progress.paused") {
-            let width = (RING * size.scale).round().max(1.0) as u32;
-            items.extend(
-                waiting
-                    .iter()
-                    .flat_map(|&room| ring(room, width))
-                    .map(|rect| Item::Rect { rect, color }),
-            );
+        let width = (RING * size.scale).round().max(1.0) as u32;
+        let rings = |rooms: &[(PaneId, Rect)], floating: bool, color: Option<Color>| -> Vec<Item> {
+            let Some(color) = color else {
+                return Vec::new();
+            };
+            rooms
+                .iter()
+                .filter(|(pane, _)| floating_ids.contains(pane) == floating)
+                .flat_map(|&(_, room)| ring(room, width))
+                .map(|rect| Item::Rect { rect, color })
+                .collect()
+        };
+        // A ring round each pane of the layout that takes the window's
+        // broadcast, and round each whose agent waits, over it.
+        items.extend(rings(&broadcasting, false, tokens.get("broadcast.ring")));
+        items.extend(rings(&waiting, false, tokens.get("progress.paused")));
+        // The floating panes over the layout's, from the back to the front:
+        // each its frame, of its header and title, its cells, the images
+        // over its text, and its rings.
+        for &(floating, room) in &state.floating_rooms {
+            let Some(at) = floating_drawn
+                .iter()
+                .position(|(pane, ..)| *pane == floating)
+            else {
+                continue;
+            };
+            let (_, drawn, over) = floating_drawn.swap_remove(at);
+            let Some(shown) = self.workspace.pane(floating) else {
+                continue;
+            };
+            let fill = shown.snapshot().colors().background;
+            let look = lokyr_ui_core::floating::Look {
+                fill: Color::from_rgb8(fill.r, fill.g, fill.b),
+                border: tokens.get("panel.border").unwrap_or(Color::CLEAR),
+                separator: tokens.get("separator").unwrap_or(Color::CLEAR),
+                shadow: tokens.get("shadow"),
+                title: tokens
+                    .get(if floating == active {
+                        "text"
+                    } else {
+                        "text.secondary"
+                    })
+                    .unwrap_or(Color::CLEAR),
+            };
+            let title = shown.header_title(true).unwrap_or_default();
+            let glyph = |text: &cells::CellText<'_>| weighed(font, text);
+            items.extend(lokyr_ui_core::floating::frame(
+                &room, &title, look, &cell, size.scale, glyph,
+            ));
+            items.extend(drawn);
+            items.extend(over);
+            let own = [(floating, room.grid)];
+            if broadcasting.iter().any(|&(pane, _)| pane == floating) {
+                items.extend(rings(&own, true, tokens.get("broadcast.ring")));
+            }
+            if waiting.iter().any(|&(pane, _)| pane == floating) {
+                items.extend(rings(&own, true, tokens.get("progress.paused")));
+            }
         }
         // The half of a pane that a tab dragged over it lights up.
         if let (Some(half), Some(color)) = (lit, tokens.get("pane.drop")) {

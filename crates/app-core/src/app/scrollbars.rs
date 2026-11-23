@@ -93,6 +93,7 @@ pub(super) fn settle<B: Backend>(
 ) -> Settled {
     let Window {
         views,
+        floating_rooms,
         bars,
         bars_kept,
         bar_hover,
@@ -103,7 +104,10 @@ pub(super) fn settle<B: Backend>(
     let mut settled = Settled::default();
     let mut laid = Vec::new();
     let scale = scale as f32;
-    for view in views.iter() {
+    // The layout's panes alone, as a floating pane's box draws over the
+    // bars, which would take its presses.
+    let floating = |pane| floating_rooms.iter().any(|&(of, _)| of == pane);
+    for view in views.iter().filter(|view| !floating(view.pane)) {
         let Some(viewport) = workspace
             .pane(view.pane)
             .and_then(lokyr_kernel::workspace::Pane::viewport)

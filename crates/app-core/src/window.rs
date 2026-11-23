@@ -159,6 +159,9 @@ pub(crate) struct Window<B: Backend> {
     /// Where its active tab's panes lie, as its last frame laid them out:
     /// the zoomed one alone while one is.
     pub(crate) views: Vec<PaneView>,
+    /// The rooms of the active tab's floating panes, as the last frame
+    /// laid them out, from the back to the front.
+    pub(crate) floating_rooms: Vec<(PaneId, lokyr_ui_core::floating::Room)>,
     /// The text that the input method composes, shown at the cursor.
     pub(crate) preedit: Option<Preedit>,
     /// Whether it has the keyboard's focus.
@@ -426,6 +429,7 @@ impl<B: Backend> Window<B> {
             cursor_layer: WindowLayer::new(surfaces.cursor),
             window,
             views: Vec::new(),
+            floating_rooms: Vec::new(),
             preedit: None,
             focused,
             blink: Blink::new(now),

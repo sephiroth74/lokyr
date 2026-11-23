@@ -3162,3 +3162,131 @@ fn an_image_past_the_most_is_drawn_smaller_and_the_kept_pictures_are_bounded_in_
     let error = painter.render("acme/snap", &huge).unwrap_err();
     assert!(error.contains("past the most"), "{error}");
 }
+
+/// Two panes side by side, a divider between them, and a floating pane over
+/// both, of its box, its shadow, its header of its title, and its text, in
+/// the dark theme or the light one.
+fn check_floating(dark: bool, scale: u32) {
+    use lokyr_ui_core::floating::{self, Shares};
+    let Some(mut drawing) = Drawing::new(scale as f32) else {
+        return;
+    };
+    let scene = |name, columns, text: &str| Scene {
+        name,
+        columns,
+        rows: 10,
+        text: text.to_owned(),
+        cursor: None,
+        selection: None,
+        shapes: false,
+        fade: None,
+        highlights: Some(Highlights {
+            matches: Vec::new(),
+            current: None,
+            light: !dark,
+        }),
+        blocks: None,
+    };
+    let lines = |prefix: &str| -> String {
+        (1..=10)
+            .map(|n| format!("{prefix} line {n} of the output"))
+            .collect::<Vec<_>>()
+            .join("\r\n")
+    };
+    let (left, right) = (
+        scene("left", 32, &lines("left")),
+        scene("right", 32, &lines("right")),
+    );
+    let tokens = Theme::builtin().variant(dark).tokens.clone();
+    let (left_batch, background) = drawing.batch(&left, (MARGIN as i32, MARGIN as i32));
+    let (cell_width, cell_height) = (left_batch.cell_width, left_batch.cell_height);
+    let pane_width = 32 * cell_width;
+    let divider = scale;
+    let (right_batch, _) = drawing.batch(
+        &right,
+        ((MARGIN + pane_width + divider) as i32, MARGIN as i32),
+    );
+    let content = Rect {
+        x: MARGIN as i32,
+        y: MARGIN as i32,
+        width: 2 * pane_width + divider,
+        height: 10 * cell_height,
+    };
+    let mut items = vec![
+        Item::Cells(left_batch),
+        Item::Cells(right_batch),
+        Item::Rect {
+            rect: Rect {
+                x: (MARGIN + pane_width) as i32,
+                y: MARGIN as i32,
+                width: divider,
+                height: content.height,
+            },
+            color: tokens.get("pane.divider").unwrap(),
+        },
+    ];
+    // The floating pane, in the middle, half of the room each way.
+    let room = floating::room(
+        Shares {
+            x: 0.25,
+            y: 0.2,
+            width: 0.5,
+            height: 0.6,
+        },
+        content,
+        (cell_width, cell_height),
+        f64::from(scale),
+    );
+    let columns = u16::try_from(room.grid.width / cell_width).unwrap();
+    let inner = Scene {
+        rows: u16::try_from(room.grid.height / cell_height).unwrap(),
+        ..scene("floating", columns, "$ lazygit\r\nfloating over the splits")
+    };
+    let (inner_batch, fill) = drawing.batch(&inner, (room.grid.x, room.grid.y));
+    let look = floating::Look {
+        fill,
+        border: tokens.get("panel.border").unwrap(),
+        separator: tokens.get("separator").unwrap(),
+        shadow: tokens.get("shadow"),
+        title: tokens.get("text").unwrap(),
+    };
+    let cell = *drawing.font.cell();
+    let font = &mut drawing.font;
+    items.extend(floating::frame(
+        &room,
+        "~/src — zsh",
+        look,
+        &cell,
+        f64::from(scale),
+        |shown| font.glyph(shown),
+    ));
+    items.push(Item::Cells(inner_batch));
+    let (width, height) = (content.width + 2 * MARGIN, content.height + 2 * MARGIN);
+    let list = DisplayList {
+        background,
+        items,
+        frame: drawing.font.atlas_frame(),
+    };
+    let updates = drawing.font.texture_updates();
+    drawing.renderer.update_textures(&updates).unwrap();
+    let pixels = drawing
+        .renderer
+        .draw_offscreen(&list, width, height)
+        .unwrap();
+    let most = (f64::from(width * height) * SHARE) as usize;
+    let variant = if dark { "dark" } else { "light" };
+    compare(
+        &format!("floating-{variant}-{scale}x"),
+        (width, height, &pixels),
+        most,
+    );
+}
+
+#[test]
+fn a_floating_pane_draws_over_the_splits_as_its_golden_images() {
+    for dark in [false, true] {
+        for scale in [1, 2] {
+            check_floating(dark, scale);
+        }
+    }
+}

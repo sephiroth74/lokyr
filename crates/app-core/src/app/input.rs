@@ -551,14 +551,31 @@ impl<B: Backend> App<B> {
         let scale = platform.window_size(window)?.scale;
         let (x, y) = (position.x * scale, position.y * scale);
         let state = self.windows.get(&window)?;
+        let within = |rect: &lokyr_render_core::Rect| {
+            let (left, top) = (f64::from(rect.x), f64::from(rect.y));
+            (left..left + f64::from(rect.width)).contains(&x)
+                && (top..top + f64::from(rect.height)).contains(&y)
+        };
+        // A floating pane's box, the one in front first, over the panes
+        // under it, its header and its frame too.
+        if let Some(&(pane, _)) = state
+            .floating_rooms
+            .iter()
+            .rev()
+            .find(|(_, room)| within(&room.outer))
+        {
+            return Some(pane);
+        }
         state
             .views
             .iter()
-            .find(|view| {
-                let (left, top) = (f64::from(view.rect.x), f64::from(view.rect.y));
-                (left..left + f64::from(view.rect.width)).contains(&x)
-                    && (top..top + f64::from(view.rect.height)).contains(&y)
+            .filter(|view| {
+                state
+                    .floating_rooms
+                    .iter()
+                    .all(|&(pane, _)| pane != view.pane)
             })
+            .find(|view| within(&view.rect))
             .map(|view| view.pane)
     }
 
