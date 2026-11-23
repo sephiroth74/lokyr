@@ -12,8 +12,9 @@
 //! Pagefind is there, on the `PATH` or as `just pagefind` fetches it into
 //! `target/tools`, it indexes the documents' pages for the search's page.
 //! For the search engines, each page names its canonical address, a
-//! folder's `index.html` as its folder, and its description, a document's
-//! of its first paragraph; `sitemap.xml` lists the home and the documents'
+//! folder's `index.html` as its folder, its description, a document's of
+//! its first paragraph, and its title, its heading's or the one of
+//! `TITLES` that says more; `sitemap.xml` lists the home and the documents'
 //! pages of their last commits' dates, but the reports' appendices, which
 //! their engines do not list either; and `404.html` is the page that
 //! GitHub Pages serves of an address that the site does not hold. Every
@@ -83,6 +84,71 @@ const GENERATED: [(&str, &str, &str); 2] = [
         "the app's commands and default keys",
     ),
 ];
+
+/// The pages' titles in the search engines' results and in a shared link's
+/// preview, where their heading alone says too little: the words that people
+/// search, of `TITLE_MOST` characters at most with the site's name. Their
+/// heading, the sidebar and the breadcrumbs keep the document's own.
+const TITLES: [(&str, &str); 15] = [
+    (
+        "CHANGELOG.md",
+        "Changelog: every change, release by release",
+    ),
+    (
+        "docs/CONFIGURATION.md",
+        "Configuration: every key of config.toml",
+    ),
+    (
+        "docs/README.md",
+        "Documentation of Lokyr, a terminal emulator for macOS",
+    ),
+    (
+        "docs/blocks.md",
+        "Command blocks: select, copy and rerun commands",
+    ),
+    ("docs/commands.md", "Commands and keyboard shortcuts"),
+    (
+        "docs/escape-codes.md",
+        "Escape codes: the control sequences that Lokyr supports",
+    ),
+    ("docs/links.md", "Clickable links and file paths (⌘-click)"),
+    (
+        "docs/plugins/README.md",
+        "Terminal plugins: bundled and from the registry",
+    ),
+    (
+        "docs/plugins/authoring.md",
+        "Writing a terminal plugin in Luau",
+    ),
+    (
+        "docs/plugins/quick-terminal.md",
+        "Quick terminal: a drop-down terminal on a hotkey",
+    ),
+    (
+        "docs/plugins/splits.md",
+        "Split panes, side by side and stacked",
+    ),
+    (
+        "docs/plugins/tabs.md",
+        "Tabs: a tab bar on any side, or vertical tabs",
+    ),
+    (
+        "docs/screenshots.md",
+        "Screenshots of Lokyr, a terminal for macOS",
+    ),
+    (
+        "docs/shell-integration.md",
+        "Shell integration for zsh, bash and fish",
+    ),
+    (
+        "docs/themes/authoring.md",
+        "Making a terminal color theme in TOML",
+    ),
+];
+
+/// The most characters of a page's title with the site's name, as the
+/// search engines show about as many.
+const TITLE_MOST: usize = 60;
 
 /// The files of the documents' folders that the site copies: their images.
 const IMAGES: [&str; 6] = ["svg", "png", "jpg", "jpeg", "gif", "webp"];
@@ -387,6 +453,26 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
         untitled.is_empty(),
         "documents of no title, a `# ` heading first: {}",
         untitled.join(", ")
+    );
+    let unknown: Vec<&str> = TITLES
+        .iter()
+        .map(|(page, _)| *page)
+        .filter(|page| !documents.iter().any(|document| document == Path::new(page)))
+        .collect();
+    ensure!(
+        unknown.is_empty(),
+        "titles of no public document, in `TITLES`: {}",
+        unknown.join(", ")
+    );
+    let long: Vec<String> = TITLES
+        .iter()
+        .map(|(_, title)| site_title(title))
+        .filter(|title| title.chars().count() > TITLE_MOST)
+        .collect();
+    ensure!(
+        long.is_empty(),
+        "titles of more than {TITLE_MOST} characters with the site's name, in `TITLES`: {}",
+        long.join(", ")
     );
     let changelog =
         fs::read_to_string(root.join("CHANGELOG.md")).context("reading the changelog")?;
@@ -1014,9 +1100,15 @@ fn page(
             "{title}, of the documentation of Lokyr, a fast, open-source terminal emulator for macOS."
         )
     });
+    // Its title in the results and the previews, which may say more than
+    // its heading.
+    let shown = TITLES
+        .iter()
+        .find(|(page, _)| document == Path::new(page))
+        .map_or(title.as_str(), |(_, shown)| shown);
     template(
         &Head {
-            title: &title,
+            title: shown,
             description: Some(&shortened(&description)),
             canonical: Some(&canonical(&page_path(document))),
             indexed: !appendix(document),
@@ -1497,6 +1589,16 @@ fn shortened(text: &str) -> String {
     format!("{}…", cut.trim_end_matches([',', ';', ':', '.', ' ']))
 }
 
+/// A page's `title` as its head tells it: the site's name after it, unless
+/// it holds the name.
+fn site_title(title: &str) -> String {
+    if title.contains("Lokyr") {
+        title.to_owned()
+    } else {
+        format!("{title} — Lokyr")
+    }
+}
+
 /// A page of the site, of its `head`, the way `up` to the site's root, its
 /// `main` and its footer's `extra` link, and `more` in its head.
 fn template(
@@ -1516,12 +1618,7 @@ fn template(
             let _ = write!(social, r#"<a href="{}">{name}</a>"#, escaped(address));
         }
     }
-    // The site's name after the page's title, unless the title holds it.
-    let title = if head.title.contains("Lokyr") {
-        head.title.to_owned()
-    } else {
-        format!("{} — Lokyr", head.title)
-    };
+    let title = site_title(head.title);
     let mut tags = String::new();
     if let Some(description) = head.description {
         let _ = writeln!(
@@ -2292,7 +2389,7 @@ mod tests {
     fn a_page_s_head_tells_its_title_description_and_address() {
         let settings = Settings::default();
         let shown = page(
-            Path::new("docs/plugins/README.md"),
+            Path::new("docs/plugins/reference.md"),
             "# The bundled plugins\n\nEvery feature that you see comes from a plugin, and these come with Lokyr.\n",
             &settings,
             &HashMap::new(),
@@ -2300,7 +2397,9 @@ mod tests {
         );
         assert!(shown.contains("<title>The bundled plugins — Lokyr</title>"));
         assert!(shown.contains(r#"<meta name="description" content="Every feature that you see comes from a plugin, and these come with Lokyr.">"#));
-        assert!(shown.contains(r#"<link rel="canonical" href="https://lokyr.dev/docs/plugins/">"#));
+        assert!(shown.contains(
+            r#"<link rel="canonical" href="https://lokyr.dev/docs/plugins/reference.html">"#
+        ));
         assert!(shown.contains(r#"<meta property="og:title" content="The bundled plugins">"#));
         assert!(!shown.contains("noindex"));
         assert!(shown.contains(r#"<a href="../../docs/">Docs</a>"#));
@@ -2315,7 +2414,7 @@ mod tests {
         // A title of the name keeps it once; a page of no paragraph is
         // described by its title.
         let named = page(
-            Path::new("docs/README.md"),
+            Path::new("docs/guide.md"),
             "# Lokyr — the documentation\n",
             &settings,
             &HashMap::new(),
@@ -2409,6 +2508,23 @@ mod tests {
         );
         assert!(root.join(format!("docs/releases/{version}.md")).is_file());
         assert_eq!(app["image"], SOCIAL_IMAGE);
+        // Its screenshots, the home's, each a file of the docs at the width
+        // that the home's image offers, of the image's text as its caption.
+        let screenshots = app["screenshot"].as_array().expect("its screenshots");
+        assert!(!screenshots.is_empty());
+        for shot in screenshots {
+            let address = shot["url"].as_str().unwrap();
+            let file = address.strip_prefix(&format!("{ORIGIN}/")).unwrap();
+            assert!(root.join(file).is_file(), "{file}");
+            assert!(
+                home.contains(&format!("{file} {}w", shot["width"])),
+                "the home shows no {file} of its width"
+            );
+            assert!(
+                home.contains(&format!("alt=\"{}\"", shot["caption"].as_str().unwrap())),
+                "{file}: its caption is not its image's text"
+            );
+        }
         assert!(home.contains(&format!(
             r#"<meta property="og:image:alt" content="{}">"#,
             escaped(SOCIAL_IMAGE_ALT)
@@ -2722,6 +2838,54 @@ mod tests {
             r#"<link rel="canonical" href="https://lokyr.dev/docs/bench/ab-F3-49/motion/tables.html">"#
         ));
         assert!(!notes.contains("noindex"));
+    }
+
+    #[test]
+    fn a_page_s_title_in_the_results_may_say_more_than_its_heading() {
+        let summary = Summary::parse(SUMMARY_TEXT).unwrap();
+        let titles = HashMap::from([(
+            PathBuf::from("docs/plugins/README.md"),
+            "Plugins".to_owned(),
+        )]);
+        let tabs = page(
+            Path::new("docs/plugins/tabs.md"),
+            "# `tabs`: the tab bar\n\nEach window's tabs, in a bar at the top, at the bottom, or in a column.\n",
+            &Settings::default(),
+            &titles,
+            &summary,
+        );
+        // The head of the title that says more, the preview's too.
+        assert!(
+            tabs.contains("<title>Tabs: a tab bar on any side, or vertical tabs — Lokyr</title>"),
+            "{tabs}"
+        );
+        assert!(tabs.contains(
+            r#"<meta property="og:title" content="Tabs: a tab bar on any side, or vertical tabs">"#
+        ));
+        // The heading and the breadcrumbs of the document's own.
+        assert!(tabs.contains(">tabs</code>: the tab bar</h1>"), "{tabs}");
+        assert!(tabs.contains(r#""name":"tabs: the tab bar""#), "{tabs}");
+        // A page of none keeps its heading's.
+        let keyboard = page(
+            Path::new("docs/keyboard.md"),
+            "# Keyboard\n\nThe keys that Lokyr takes, and how to change them in the config.\n",
+            &Settings::default(),
+            &titles,
+            &summary,
+        );
+        assert!(keyboard.contains("<title>Keyboard — Lokyr</title>"));
+        // Each of a length that the results show whole.
+        for (document, title) in TITLES {
+            let shown = site_title(title);
+            assert!(
+                shown.chars().count() <= TITLE_MOST,
+                "{document}: {shown} is longer than {TITLE_MOST} characters"
+            );
+        }
+        assert_eq!(
+            site_title("Screenshots of Lokyr, a terminal for macOS"),
+            "Screenshots of Lokyr, a terminal for macOS"
+        );
     }
 
     #[test]

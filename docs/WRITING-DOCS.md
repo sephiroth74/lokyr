@@ -18,6 +18,7 @@ Every page belongs to one of the summary's groups:
 A Help group, for troubleshooting and common questions, joins them between Reference and Internals with its first page.
 
 - **List a new page in [`docs/SUMMARY.md`](SUMMARY.md)**, in its group, where a reader would look for it. The site's build fails when a public page is missing from the summary. The measurements in `docs/bench/` and the release notes in `docs/releases/` are the exception: the page of their folder that the summary lists links each of them, which the build checks too.
+- **Give a page a title for the search results where its heading says too little**, such as "Tabs: a tab bar on any side, or vertical tabs" for `tabs`: the words that people search, in `TITLES` of `tools/xtask/src/site.rs`, 60 characters at most with " — Lokyr". The page keeps its heading.
 - **Name a new page in lowercase**, with hyphens, such as `shell-integration.md`. The older pages in uppercase keep their names, because links from elsewhere point to them.
 - **Update a feature's page in the same commit** as the change to the feature. When a feature has no page yet, say so in the pull request.
 
