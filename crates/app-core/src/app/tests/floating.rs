@@ -520,3 +520,34 @@ fn a_floating_pane_s_gutter_marks_draw_over_its_box() {
         "the mark at {marked:?}, the box at {boxed}"
     );
 }
+
+#[test]
+fn a_floating_pane_s_close_button_takes_its_top_from_the_edge_and_the_edge_the_rest() {
+    let (mut fake, mut app, window) = started_running(idle());
+    command(&mut fake, &mut app, NEW_FLOATING);
+    let floating = app.focused(window).unwrap();
+    fake.send(&mut app, window, WindowEvent::Frame);
+    let scale = fake.window(window).unwrap().size.scale;
+    let points = |pixels: i32| f64::from(pixels) / scale;
+    let (_, room) = app.windows[&window].floating_rooms[0];
+    // The top edge's band, beside the button: a resize, which closes
+    // nothing.
+    let band = Point {
+        x: points(room.outer.x) + f64::from(room.outer.width) / scale / 3.0,
+        y: points(room.outer.y) + 1.0,
+    };
+    fake.send(&mut app, window, click(true, band, Modifiers::NONE, 1));
+    assert!(app.windows[&window].floating_drag.is_some());
+    fake.send(&mut app, window, click(false, band, Modifiers::NONE, 1));
+    assert!(app.workspace.pane(floating).is_some());
+    // The button's top, within the band: it closes, of no resize.
+    let top = Point {
+        x: points(room.close.x) + f64::from(room.close.width) / scale / 2.0,
+        y: points(room.close.y) + 0.5,
+    };
+    assert!(top.y < points(room.outer.y) + 5.0, "within the edge's band");
+    fake.send(&mut app, window, click(true, top, Modifiers::NONE, 1));
+    assert!(app.windows[&window].floating_drag.is_none());
+    fake.send(&mut app, window, click(false, top, Modifiers::NONE, 1));
+    assert!(app.workspace.pane(floating).is_none());
+}
