@@ -6372,6 +6372,23 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            Asked::FloatingPanes(tab) => {
+                let shown = self.tab(tab)?;
+                Response::FloatingPanes(host::FloatingPanes {
+                    shown: shown.floating_shown(),
+                    panes: shown
+                        .floating()
+                        .iter()
+                        .map(|floating| host::FloatingPane {
+                            pane: floating.pane.into(),
+                            x: floating.frame.x(),
+                            y: floating.frame.y(),
+                            width: floating.frame.width(),
+                            height: floating.frame.height(),
+                        })
+                        .collect(),
+                })
+            }
             Asked::Broadcast(window) => {
                 let id = self.window(window)?.id();
                 let workspace = &*self.context.workspace;
@@ -8005,7 +8022,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         title: title.to_owned(),
         color: host_color(tab.color()),
         active,
-        panes: tab.layout().panes().into_iter().map(Into::into).collect(),
+        panes: tab.shown_panes().into_iter().map(Into::into).collect(),
         focused: tab.active_pane().into(),
         zoomed: tab.zoomed().map(Into::into),
         activity: marks.activity,

@@ -1404,6 +1404,14 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// `tab`'s floating panes, as [`Request::FloatingPanes`] says.
+    pub fn floating_panes(&mut self, tab: TabId) -> Result<crate::host::FloatingPanes, Error> {
+        match self.request(Request::FloatingPanes(tab)) {
+            Response::FloatingPanes(floating) => Ok(floating),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Sends `window`'s typed input to `to`, as [`Request::SetBroadcast`]
     /// says.
     pub fn set_broadcast(

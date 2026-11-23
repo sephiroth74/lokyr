@@ -137,6 +137,7 @@ export type Cx = {
     new_session: (name: string?, directory: string?) -> (SessionId?, string?, number?),
     switch_session: (session: SessionId) -> (true?, string?, number?),
     broadcast: (window: WindowId) -> (Broadcast?, string?, number?),
+    floating_panes: (tab: TabId) -> (FloatingPanes?, string?, number?),
     set_broadcast: (window: WindowId, to: BroadcastTo) -> (true?, string?, number?),
     set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (true?, string?, number?),
     paste_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
@@ -611,6 +612,19 @@ export type Edges = {
     right: number?,
     bottom: number?,
     left: number?,
+}
+
+export type FloatingPane = {
+    pane: PaneId,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+}
+
+export type FloatingPanes = {
+    shown: boolean,
+    panes: { FloatingPane }?,
 }
 
 export type FontFace =

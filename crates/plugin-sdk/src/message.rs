@@ -932,6 +932,9 @@ pub enum Request {
     /// method's text and the user's pastes go beside the pane that has its
     /// keyboard, and its panes left out.
     Broadcast(WindowId),
+    /// A tab's panes that float over its split panes, and whether they
+    /// show.
+    FloatingPanes(TabId),
     /// Sends a window's typed input to `to`, beside the pane that has its
     /// keyboard, or to that pane alone, of [`BroadcastTo::Off`]: each key
     /// encoded of each pane's own terminal's modes.
@@ -1522,7 +1525,8 @@ impl Request {
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
             | Self::ShowPage(_)
-            | Self::Broadcast(_) => None,
+            | Self::Broadcast(_)
+            | Self::FloatingPanes(_) => None,
             Self::WatchDoubleTap(_) => Some(Capability::GlobalHotkey),
         }
     }
@@ -1560,6 +1564,7 @@ impl Request {
             | Self::Groups(_)
             | Self::Sessions
             | Self::Broadcast(_)
+            | Self::FloatingPanes(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1799,6 +1804,8 @@ pub enum Response {
     Sessions(Vec<SessionInfo>),
     /// A window's broadcast of the typed input.
     Broadcast(crate::host::Broadcast),
+    /// A tab's floating panes.
+    FloatingPanes(crate::host::FloatingPanes),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -2382,6 +2389,7 @@ impl Request {
             Self::NewGroup { .. } => "group",
             Self::Sessions => "sessions",
             Self::Broadcast(_) => "broadcast",
+            Self::FloatingPanes(_) => "floating-panes",
             Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",

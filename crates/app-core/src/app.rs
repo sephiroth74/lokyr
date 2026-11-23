@@ -3254,7 +3254,7 @@ impl<B: Backend> App<B> {
             .get(&window)
             .and_then(|state| self.workspace.window(state.window))
             .and_then(|shown| self.workspace.tab(shown.active_tab()))
-            .map(|tab| tab.layout().panes())
+            .map(lokyr_kernel::workspace::Tab::panes)
             .unwrap_or_default()
             .into_iter()
             .filter(|&pane| Some(pane) != now)

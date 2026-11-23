@@ -24,12 +24,13 @@ use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
-    CommandInfo, Decision, DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY,
-    Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES,
-    MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo,
-    PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery,
-    SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
-    TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo, check_file_name,
+    CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
+    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE,
+    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages,
+    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side,
+    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
+    check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -1629,7 +1630,8 @@ fn sessions(world: &World) -> Scenario {
 
 /// A window's broadcast of the typed input: to its tab's panes, the world's
 /// pane left out, read back, then off again, each change told; a paste as
-/// the user's into a pane not there, and a window not there, refused.
+/// the user's into a pane not there, and a window not there, refused. And
+/// the world's tab's floating panes, none, which show.
 fn broadcast(world: &World) -> Scenario {
     let (w, p) = (world.window, world.pane);
     let changed = Event::Workspace(WorkspaceEvent::BroadcastChanged { window: w });
@@ -1705,10 +1707,23 @@ fn broadcast(world: &World) -> Scenario {
                 posts: Vec::new(),
                 heard: vec![changed.clone(), changed],
             },
-            ask(vec![(
-                Request::Broadcast(w),
-                Response::Broadcast(Broadcast::default()),
-            )]),
+            ask(vec![
+                (
+                    Request::Broadcast(w),
+                    Response::Broadcast(Broadcast::default()),
+                ),
+                (
+                    Request::FloatingPanes(world.tab),
+                    Response::FloatingPanes(FloatingPanes {
+                        shown: true,
+                        panes: Vec::new(),
+                    }),
+                ),
+                (
+                    Request::FloatingPanes(NO_TAB),
+                    failed(Code::NotFound, "there is no tab 999999"),
+                ),
+            ]),
         ],
     }
 }

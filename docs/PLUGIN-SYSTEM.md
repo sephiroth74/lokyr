@@ -314,6 +314,23 @@ type SessionFolders = {
 -- the pastes of ⌘V and of drops · not released yet.
 type BroadcastTo = "off" | "tab" | "window"
 
+-- A pane that floats over its tab's split panes: its frame's corner and size, each a share of the tab's room, from
+-- 0 to 1 · not released yet.
+type FloatingPane = {
+    pane: PaneId,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+}
+
+-- A tab's floating panes, which show or hide together, from the one at the back to the one in front · not released
+-- yet.
+type FloatingPanes = {
+    shown: boolean,
+    panes: { FloatingPane }?,
+}
+
 -- A window's broadcast of the typed input · not released yet.
 type Broadcast = {
     to: BroadcastTo,
@@ -939,6 +956,8 @@ type Cx = {
     session_folders: () -> (SessionFolders?, Error?),
     -- A window's broadcast of the typed input · not released yet.
     broadcast: (window: WindowId) -> (Broadcast?, Error?),
+    -- A tab's floating panes, which a tab's panes list after its layout's while they show · not released yet.
+    floating_panes: (tab: TabId) -> (FloatingPanes?, Error?),
     layout: (tab: TabId) -> (Layout?, Error?),
     -- A tab of a new pane, whose program starts as a new pane's beside the window's focused one, at `index` of
     -- its tabs or at their end: the tab's id and the pane's. The window shows the tab that it showed. Its pane

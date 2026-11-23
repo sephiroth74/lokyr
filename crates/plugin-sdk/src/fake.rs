@@ -584,6 +584,8 @@ pub struct FakeHost {
     window_sessions: BTreeMap<WindowId, SessionId>,
     /// Where each window's typed input goes, of those that broadcast it.
     broadcasts: BTreeMap<WindowId, crate::host::BroadcastTo>,
+    /// The floating panes of each tab that has some, as the test gave them.
+    floating: BTreeMap<TabId, crate::host::FloatingPanes>,
     /// The panes left out of their windows' broadcasts.
     broadcast_left: std::collections::BTreeSet<PaneId>,
     /// The folders that the sessions' switcher lists, as the test gave
@@ -776,6 +778,7 @@ impl FakeHost {
             session_uses: 0,
             window_sessions: BTreeMap::new(),
             broadcasts: BTreeMap::new(),
+            floating: BTreeMap::new(),
             broadcast_left: std::collections::BTreeSet::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
@@ -1285,6 +1288,17 @@ impl FakeHost {
     /// them tells.
     pub fn set_session_folders(&mut self, folders: SessionFolders) -> &mut Self {
         self.session_folders = folders;
+        self
+    }
+
+    /// Gives `tab` its floating panes, which a read of them tells, as the
+    /// app's floating panes would float over its split panes.
+    pub fn set_floating_panes(
+        &mut self,
+        tab: TabId,
+        floating: crate::host::FloatingPanes,
+    ) -> &mut Self {
+        self.floating.insert(tab, floating);
         self
     }
 
@@ -4799,6 +4813,20 @@ impl Calling<'_> {
                     }
                 }
                 Response::Tabs(infos)
+            }
+            Request::FloatingPanes(tab) => {
+                if !host.tabs.contains_key(tab) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no tab {}", tab.0),
+                    ));
+                }
+                Response::FloatingPanes(host.floating.get(tab).cloned().unwrap_or(
+                    crate::host::FloatingPanes {
+                        shown: true,
+                        panes: Vec::new(),
+                    },
+                ))
             }
             Request::Broadcast(window) => {
                 if !host.windows.contains_key(window) {

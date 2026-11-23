@@ -136,6 +136,35 @@ pub enum BroadcastTo {
     Window,
 }
 
+/// A pane that floats over its tab's split panes, as a read of the tab's
+/// floating panes gives it: its frame's top left corner and its size, each
+/// a share of the tab's room, from 0 to 1.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPane {
+    /// The pane.
+    pub pane: PaneId,
+    /// Its corner's share across the room.
+    pub x: f64,
+    /// Its corner's share down the room.
+    pub y: f64,
+    /// Its share across.
+    pub width: f64,
+    /// Its share down.
+    pub height: f64,
+}
+
+/// A tab's floating panes, as a read of them gives them: whether they
+/// show, which they do or not together, and each, from the one at the back
+/// to the one in front.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPanes {
+    /// Whether they show.
+    pub shown: bool,
+    /// The panes, from the back to the front.
+    #[serde(default)]
+    pub panes: Vec<FloatingPane>,
+}
+
 /// A window's broadcast of the typed input, as a read of it gives it.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Broadcast {

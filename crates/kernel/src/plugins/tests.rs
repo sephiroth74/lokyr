@@ -5854,3 +5854,76 @@ fn a_paste_as_the_user_s_reaches_the_panes_that_the_window_broadcasts_to_of_one_
         .unwrap();
     assert!(plugins.take_requests().is_empty());
 }
+
+#[test]
+fn a_tab_s_floating_panes_are_among_its_panes_while_they_show_and_read_of_their_frames() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let first = app.workspace.focused(window).unwrap().id();
+    let pane = Pane::spawn(
+        &Program::command("/bin/sh", ["-c", "sleep 30"]),
+        &Environment::default(),
+        &Settings::default(),
+        GRID,
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    );
+    let floating = app
+        .workspace
+        .float_pane(
+            tab,
+            pane,
+            crate::workspace::FloatingFrame::new(0.25, 0.25, 0.5, 0.5),
+        )
+        .unwrap();
+    let read = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&read);
+    let host_tab = host::TabId(tab.get());
+    let host_window = host::WindowId(window.get());
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let panes = cx.tabs(host_window)?[0].panes.clone();
+                    *seen.borrow_mut() = Some((panes, cx.floating_panes(host_tab)?));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let read_now = |plugins: &mut Plugins, app: &mut App| {
+        plugins
+            .run("reader.read", Args::new(), &mut app.context())
+            .unwrap();
+        read.borrow_mut().take().unwrap()
+    };
+    let (panes, floating_panes) = read_now(&mut plugins, &mut app);
+    let ids = |panes: &[crate::workspace::PaneId]| -> Vec<host::PaneId> {
+        panes.iter().map(|&pane| pane.into()).collect()
+    };
+    assert_eq!(panes, ids(&[first, floating]));
+    assert_eq!(
+        floating_panes,
+        host::FloatingPanes {
+            shown: true,
+            panes: vec![host::FloatingPane {
+                pane: floating.into(),
+                x: 0.25,
+                y: 0.25,
+                width: 0.5,
+                height: 0.5,
+            }],
+        }
+    );
+    // Hidden, they are not among the panes that show.
+    assert!(app.workspace.set_floating_shown(tab, false));
+    let (panes, floating_panes) = read_now(&mut plugins, &mut app);
+    assert_eq!(panes, ids(&[first]));
+    assert!(!floating_panes.shown);
+}

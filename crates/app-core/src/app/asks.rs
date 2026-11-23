@@ -797,7 +797,7 @@ impl<B: Backend> App<B> {
             Closing::Tab(tab) => self
                 .workspace
                 .tab(tab)
-                .map(|tab| tab.layout().panes())
+                .map(lokyr_kernel::workspace::Tab::panes)
                 .unwrap_or_default(),
             Closing::Pane(pane) => vec![pane],
         }
@@ -877,7 +877,7 @@ impl<B: Backend> App<B> {
                         let panes = self
                             .workspace
                             .tab(tab)
-                            .map(|tab| tab.layout().panes())
+                            .map(lokyr_kernel::workspace::Tab::panes)
                             .unwrap_or_default();
                         self.forget_panes(&panes);
                         self.workspace.close_tab(tab);

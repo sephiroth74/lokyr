@@ -1239,11 +1239,12 @@ fn kind(request: &Request) -> usize {
         Request::SetBroadcast { .. } => 157,
         Request::SetPaneBroadcast { .. } => 158,
         Request::PasteBroadcast { .. } => 159,
+        Request::FloatingPanes(_) => 160,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 160;
+const KINDS: usize = 161;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

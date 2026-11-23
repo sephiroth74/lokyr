@@ -94,8 +94,15 @@ impl Workspace {
             BroadcastTo::Tab => self
                 .tab_of(pane)
                 .and_then(|tab| self.tabs.get(&tab))
-                .map_or_else(Vec::new, |tab| tab.layout.panes()),
-            BroadcastTo::Window => self.panes_of(window),
+                .map_or_else(Vec::new, super::Tab::shown_panes),
+            BroadcastTo::Window => self.windows.get(&window).map_or_else(Vec::new, |shown| {
+                shown
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| self.tabs.get(tab))
+                    .flat_map(super::Tab::shown_panes)
+                    .collect()
+            }),
         };
         panes.extend(others.into_iter().filter(|&other| {
             other != pane

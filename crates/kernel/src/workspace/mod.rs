@@ -20,6 +20,7 @@
 
 pub mod agent;
 mod broadcast;
+mod floating;
 mod groups;
 mod layout;
 mod pane;
@@ -39,6 +40,7 @@ use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
 pub use agent::{Agent, AgentSettings, Hooked};
 use agent::{HOOKED, Told};
+pub use floating::{Floating, FloatingFrame};
 pub use groups::Group;
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
@@ -263,6 +265,14 @@ pub struct Tab {
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
+    /// Its panes that float over its layout's, from the one at the back to
+    /// the one in front.
+    floating: Vec<Floating>,
+    /// Whether its floating panes show, which show or hide together.
+    floating_shown: bool,
+    /// The pane of its layout that had the keyboard last, which takes it
+    /// back as the floating panes hide.
+    split_active: PaneId,
     /// What a tab bar marks it of.
     marks: Marks,
     /// When it last showed, of the workspace's count of uses, which orders
@@ -387,6 +397,45 @@ impl Tab {
     /// The pane that takes the tab's whole room, while one is zoomed.
     pub fn zoomed(&self) -> Option<PaneId> {
         self.zoomed
+    }
+
+    /// Its panes: its layout's, in their order, then those that float over
+    /// them, from the back to the front.
+    pub fn panes(&self) -> Vec<PaneId> {
+        let mut panes = self.layout.panes();
+        panes.extend(self.floating.iter().map(|floating| floating.pane));
+        panes
+    }
+
+    /// Its panes that show: its layout's, then its floating panes while
+    /// they show, from the back to the front.
+    pub fn shown_panes(&self) -> Vec<PaneId> {
+        if self.floating_shown {
+            self.panes()
+        } else {
+            self.layout.panes()
+        }
+    }
+
+    /// Its panes that float over its layout's, from the back to the front.
+    pub fn floating(&self) -> &[Floating] {
+        &self.floating
+    }
+
+    /// Whether its floating panes show.
+    pub fn floating_shown(&self) -> bool {
+        self.floating_shown
+    }
+
+    /// Whether `pane` floats over its layout.
+    pub fn is_floating(&self, pane: PaneId) -> bool {
+        self.floating.iter().any(|floating| floating.pane == pane)
+    }
+
+    /// Whether `pane` is the tab's one pane, of its layout and of no other
+    /// floating, as a pane that moves out alone takes its tab along.
+    fn alone(&self, pane: PaneId) -> bool {
+        self.layout == Layout::Leaf(pane) && self.floating.is_empty()
     }
 }
 
@@ -605,7 +654,7 @@ impl Workspace {
             return;
         };
         let group = dropped.group;
-        for pane in dropped.layout.panes() {
+        for pane in dropped.panes() {
             self.tab_of.remove(&pane);
             let gone = self.panes.remove(&pane);
             self.agent_gone(pane, gone);
@@ -889,7 +938,7 @@ impl Workspace {
                 .tabs
                 .iter()
                 .filter_map(|tab| self.tabs.get(tab))
-                .flat_map(|tab| tab.layout.panes())
+                .flat_map(Tab::panes)
                 .collect()
         })
     }
@@ -1376,6 +1425,9 @@ impl Workspace {
                 layout: Layout::Leaf(pane),
                 active: pane,
                 zoomed: None,
+                floating: Vec::new(),
+                floating_shown: true,
+                split_active: pane,
                 marks: Marks::default(),
                 used: 0,
                 group: None,
@@ -1632,7 +1684,7 @@ impl Workspace {
             return false;
         };
         let mut panes = Vec::new();
-        for pane in kept.layout.panes() {
+        for pane in kept.panes() {
             self.tab_of.remove(&pane);
             self.waiting.remove(&pane);
             if let Some(gone) = self.panes.remove(&pane) {
@@ -1846,7 +1898,7 @@ impl Workspace {
     fn tab_progress(&self, tab: TabId) -> Option<terminal::Progress> {
         let tab = self.tabs.get(&tab)?;
         let of = |pane: PaneId| self.panes.get(&pane).and_then(Pane::progress);
-        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+        of(tab.active).or_else(|| tab.panes().into_iter().find_map(of))
     }
 
     /// The status that `tab`'s panes tell of their sessions: its active
@@ -1854,7 +1906,7 @@ impl Workspace {
     fn tab_status(&self, tab: TabId) -> Option<terminal::SessionStatus> {
         let tab = self.tabs.get(&tab)?;
         let of = |pane: PaneId| self.panes.get(&pane)?.session_status().cloned();
-        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+        of(tab.active).or_else(|| tab.panes().into_iter().find_map(of))
     }
 
     /// Whether the program of `tab`'s active pane prints of its own, while
@@ -1911,11 +1963,7 @@ impl Workspace {
             self.used(tab);
         }
         self.unfold_group_of(tab);
-        let panes = self
-            .tabs
-            .get(&tab)
-            .map(|shown| shown.layout.panes())
-            .unwrap_or_default();
+        let panes = self.tabs.get(&tab).map(Tab::panes).unwrap_or_default();
         for pane in panes {
             self.change_agent(pane, false, Agent::seen);
         }
@@ -2280,7 +2328,27 @@ impl Workspace {
     fn detach_pane(&mut self, pane: PaneId) -> Option<(TabId, Option<Left>)> {
         let tab_id = self.tab_of.remove(&pane)?;
         let tab = self.tabs.get_mut(&tab_id)?;
-        let Some(nearest) = tab.layout.remove(pane) else {
+        let nearest = if let Some(at) = tab.floating.iter().position(|of| of.pane == pane) {
+            // A floating pane: the keyboard to the one in front of those
+            // left, or to the layout's pane that had it last.
+            tab.floating.remove(at);
+            tab.floating
+                .last()
+                .map(|front| front.pane)
+                .filter(|_| tab.floating_shown)
+                .unwrap_or(tab.split_active)
+        } else if let Some(nearest) = tab.layout.remove(pane) {
+            if tab.split_active == pane {
+                tab.split_active = nearest;
+            }
+            nearest
+        } else if let Some(front) = tab.floating.pop() {
+            // Its layout's one pane, whose place the floating pane in front
+            // takes, so that the tab stays.
+            tab.layout = Layout::Leaf(front.pane);
+            tab.split_active = front.pane;
+            front.pane
+        } else {
             // Its one pane.
             return Some((tab_id, Some(self.detach_tab(tab_id))));
         };
@@ -2344,7 +2412,27 @@ impl Workspace {
         let Some(tab) = self.tabs.get_mut(&tab_id) else {
             return false;
         };
-        let unzoomed = tab.zoomed.is_some_and(|zoomed| zoomed != pane);
+        // A floating pane comes in front of the others, which show, over a
+        // zoomed pane too; a pane of the layout is the one that takes the
+        // keyboard back as they hide.
+        let floating = tab.is_floating(pane);
+        let mut moved = false;
+        if floating {
+            if tab.floating.last().is_some_and(|front| front.pane != pane)
+                && let Some(at) = tab.floating.iter().position(|of| of.pane == pane)
+            {
+                let raised = tab.floating.remove(at);
+                tab.floating.push(raised);
+                moved = true;
+            }
+            if !tab.floating_shown {
+                tab.floating_shown = true;
+                moved = true;
+            }
+        } else {
+            tab.split_active = pane;
+        }
+        let unzoomed = !floating && tab.zoomed.is_some_and(|zoomed| zoomed != pane);
         if unzoomed {
             tab.zoomed = None;
         }
@@ -2356,7 +2444,7 @@ impl Workspace {
                 tab: tab_id.into(),
             });
         }
-        if unzoomed {
+        if unzoomed || moved {
             self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         }
         true
@@ -2456,13 +2544,18 @@ impl Workspace {
         let Some(moved) = self.tabs.remove(&tab) else {
             return false;
         };
-        let panes = moved.layout.panes();
+        let panes = moved.panes();
         let Some(target) = self.tabs.get_mut(&into) else {
             return false;
         };
         target.layout = grafted;
         target.zoomed = None;
         target.active = moved.active;
+        // Its floating panes float over the tab that takes it.
+        target.floating.extend(moved.floating);
+        if moved.layout.contains(moved.active) {
+            target.split_active = moved.active;
+        }
         for &moved_pane in &panes {
             self.tab_of.insert(moved_pane, into);
         }
@@ -2502,7 +2595,7 @@ impl Workspace {
         if !self.windows.contains_key(&window) || self.settings_window() == Some(window) {
             return None;
         }
-        if self.tabs.get(&tab)?.layout.panes().len() == 1 {
+        if self.tabs.get(&tab)?.alone(pane) {
             return self.move_tab(tab, window, index).then_some(tab);
         }
         self.detach_pane(pane);
@@ -2521,7 +2614,7 @@ impl Workspace {
     /// [`Workspace::tab_to_new_window`] moves a tab.
     pub fn pane_to_new_window(&mut self, pane: PaneId) -> Option<WindowId> {
         let tab = *self.tab_of.get(&pane)?;
-        if self.tabs.get(&tab)?.layout.panes().len() == 1 {
+        if self.tabs.get(&tab)?.alone(pane) {
             return self.tab_to_new_window(tab);
         }
         let session = self.session_for(self.window_of_tab(tab));
