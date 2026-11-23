@@ -95,6 +95,9 @@ impl Start<'_> {
 /// own.
 pub(super) struct Spawner<'a> {
     pub(super) program: &'a Program,
+    /// The shell that runs a popup's command, in place of the login shell,
+    /// as the tests give one.
+    pub(super) popup_shell: Option<&'a Path>,
     pub(super) environment: &'a Environment,
     pub(super) budget: &'a Arc<Budget>,
     pub(super) colors: &'a Colors,
@@ -102,6 +105,17 @@ pub(super) struct Spawner<'a> {
     pub(super) config: &'a Config,
     pub(super) waker: Waker,
     pub(super) wakes: &'a mut BTreeMap<PaneId, Arc<PaneWake>>,
+}
+
+/// The program of a popup of `command`: the login shell's, or `shell`'s of
+/// its `-c`, as the tests give one.
+pub(super) fn popup_program(shell: Option<&Path>, command: &str) -> Program {
+    match shell {
+        Some(shell) => Program::command(shell, ["-c", command]),
+        None => Program::LoginCommand {
+            command: command.into(),
+        },
+    }
 }
 
 /// The grid of a new pane beside no pane, which the window's layout then
@@ -128,6 +142,28 @@ pub(super) fn folder_of(directory: &str) -> Option<PathBuf> {
 }
 
 impl Panes for Spawner<'_> {
+    fn spawn_popup(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        command: &str,
+    ) -> Pane {
+        let program = popup_program(self.popup_shell, command);
+        Spawner {
+            program: &program,
+            popup_shell: self.popup_shell,
+            environment: self.environment,
+            budget: self.budget,
+            colors: self.colors,
+            texts: self.texts,
+            config: self.config,
+            waker: self.waker.clone(),
+            wakes: &mut *self.wakes,
+        }
+        .spawn(id, near, directory)
+    }
+
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, asked: Option<&str>) -> Pane {
         let new = match &self.config.window.new_directory {
             NewDirectory::Home => None,

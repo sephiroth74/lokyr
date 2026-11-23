@@ -651,6 +651,35 @@ fn functions(lua: &Lua, hosted: &Arc<Mutex<Hosted>>) -> mlua::Result<Table> {
     )?;
     let hosted = of();
     table.raw_set(
+        "popups",
+        lua.create_function(move |lua, ()| {
+            let popups = with(&hosted, |Hosted { host, .. }| host.popups());
+            let list = lua.create_table()?;
+            for popup in popups {
+                let shown = lua.create_table()?;
+                shown.raw_set("pane", popup.pane.0)?;
+                shown.raw_set("tab", popup.tab.0)?;
+                shown.raw_set("command", popup.command)?;
+                shown.raw_set("folder", popup.folder)?;
+                shown.raw_set("width", popup.width)?;
+                shown.raw_set("height", popup.height)?;
+                list.raw_push(shown)?;
+            }
+            Ok(list)
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
+        "close_popup",
+        lua.create_function(move |_, (pane, status): (u64, Option<i32>)| {
+            with(&hosted, |Hosted { host, plugin }| {
+                host.close_popup(PaneId(pane), status);
+                host.deliver(plugin).map_err(|error| failed(&error))
+            })
+        })?,
+    )?;
+    let hosted = of();
+    table.raw_set(
         "window",
         lua.create_function(move |_, ()| {
             Ok(with(&hosted, |Hosted { host, .. }| {

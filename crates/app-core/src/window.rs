@@ -90,6 +90,26 @@ pub(crate) struct DividerDrag {
     pub(crate) room: f64,
 }
 
+/// What a drag of a floating pane does: moves it, of its header, or
+/// resizes it from one of its edges or corners.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FloatingGrab {
+    Move,
+    Resize(lokyr_platform_core::FrameEdge),
+}
+
+/// A floating pane's drag under way: the pane, what the drag does, where
+/// the pointer pressed, in points, the pane's frame then, and the tab's
+/// room, in points, which the frame's shares are of.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FloatingDrag {
+    pub(crate) pane: PaneId,
+    pub(crate) grab: FloatingGrab,
+    pub(crate) from: lokyr_platform_core::Point,
+    pub(crate) frame: lokyr_kernel::workspace::FloatingFrame,
+    pub(crate) room: (f64, f64),
+}
+
 /// A layer of a window, over its grid, which the window server blinks.
 #[derive(Debug)]
 pub(crate) struct WindowLayer<B: Backend> {
@@ -159,6 +179,9 @@ pub(crate) struct Window<B: Backend> {
     /// Where its active tab's panes lie, as its last frame laid them out:
     /// the zoomed one alone while one is.
     pub(crate) views: Vec<PaneView>,
+    /// The rooms of the active tab's floating panes, as the last frame
+    /// laid them out, from the back to the front.
+    pub(crate) floating_rooms: Vec<(PaneId, lokyr_ui_core::floating::Room)>,
     /// The text that the input method composes, shown at the cursor.
     pub(crate) preedit: Option<Preedit>,
     /// Whether it has the keyboard's focus.
@@ -224,6 +247,10 @@ pub(crate) struct Window<B: Backend> {
     /// out, and the drag of one under way, if one is.
     pub(crate) dividers: Vec<crate::app::frame::Divider>,
     pub(crate) divider_drag: Option<DividerDrag>,
+    /// The floating pane that the pointer moves or resizes, while it does.
+    pub(crate) floating_drag: Option<FloatingDrag>,
+    /// The floating pane whose close button the pointer is over, if one.
+    pub(crate) floating_close_hover: Option<PaneId>,
     /// Its panes' scroll bars, as its last frame laid them out; what it
     /// keeps of each between its frames; the bar under the pointer, if
     /// one; the drag of a knob under way, if one is; and when the next
@@ -426,6 +453,7 @@ impl<B: Backend> Window<B> {
             cursor_layer: WindowLayer::new(surfaces.cursor),
             window,
             views: Vec::new(),
+            floating_rooms: Vec::new(),
             preedit: None,
             focused,
             blink: Blink::new(now),
@@ -453,6 +481,8 @@ impl<B: Backend> Window<B> {
             column_drag: None,
             dividers: Vec::new(),
             divider_drag: None,
+            floating_drag: None,
+            floating_close_hover: None,
             bars: Vec::new(),
             bars_kept: std::collections::BTreeMap::new(),
             bar_hover: None,

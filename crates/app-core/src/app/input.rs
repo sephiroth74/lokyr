@@ -551,14 +551,31 @@ impl<B: Backend> App<B> {
         let scale = platform.window_size(window)?.scale;
         let (x, y) = (position.x * scale, position.y * scale);
         let state = self.windows.get(&window)?;
+        let within = |rect: &lokyr_render_core::Rect| {
+            let (left, top) = (f64::from(rect.x), f64::from(rect.y));
+            (left..left + f64::from(rect.width)).contains(&x)
+                && (top..top + f64::from(rect.height)).contains(&y)
+        };
+        // A floating pane's box, the one in front first, over the panes
+        // under it, its header and its frame too.
+        if let Some(&(pane, _)) = state
+            .floating_rooms
+            .iter()
+            .rev()
+            .find(|(_, room)| within(&room.outer))
+        {
+            return Some(pane);
+        }
         state
             .views
             .iter()
-            .find(|view| {
-                let (left, top) = (f64::from(view.rect.x), f64::from(view.rect.y));
-                (left..left + f64::from(view.rect.width)).contains(&x)
-                    && (top..top + f64::from(view.rect.height)).contains(&y)
+            .filter(|view| {
+                state
+                    .floating_rooms
+                    .iter()
+                    .all(|&(pane, _)| pane != view.pane)
             })
+            .find(|view| within(&view.rect))
             .map(|view| view.pane)
     }
 
@@ -616,6 +633,10 @@ impl<B: Backend> App<B> {
         if !pressed && self.divider_button(platform, window, divider, position) {
             return;
         }
+        // A floating pane's move or resize takes its release.
+        if !pressed && self.floating_button(platform, window, (platform_button, false), position) {
+            return;
+        }
         // A knob's drag takes its release, wherever it is.
         let bar = (platform_button, pressed);
         if !pressed && self.bar_button(platform, window, bar, (position, mods)) {
@@ -637,6 +658,14 @@ impl<B: Backend> App<B> {
             .windows
             .get(&window)
             .is_some_and(|state| state.mouse.holder().is_some());
+        // A press over a floating pane's header moves it, and over its edges
+        // and corners resizes it, over the dividers under it too.
+        if pressed
+            && !holds
+            && self.floating_button(platform, window, (platform_button, true), position)
+        {
+            return;
+        }
         if pressed && !holds && self.divider_button(platform, window, divider, position) {
             return;
         }
@@ -1159,10 +1188,14 @@ impl<B: Backend> App<B> {
         position: Point,
         mods: Modifiers,
     ) {
-        // A divider that a drag holds moves its split.
-        if self.divider_moved(platform, window, position) {
+        // A divider that a drag holds moves its split, and a floating pane
+        // that one holds moves or resizes.
+        if self.divider_moved(platform, window, position)
+            || self.floating_moved(platform, window, position)
+        {
             return;
         }
+        self.floating_hovered(platform, window, Some(position));
         // A knob that a drag holds moves the view; a scroll bar under the
         // pointer shows.
         if self.bar_dragged(platform, window, position) {

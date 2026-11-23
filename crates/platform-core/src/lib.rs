@@ -42,7 +42,7 @@ pub use geometry::{
     ContentRect, PixelSize, Point, ScreenPoint, ScreenRect, Size, Titlebar, WindowSize,
 };
 pub use input::{
-    Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
+    FrameEdge, Ime, KeyCode, KeyEvent, KeyState, Modifiers, MouseButton, PointerArea, PointerShape,
     ScrollDelta, ScrollPhase,
 };
 pub use menu::{

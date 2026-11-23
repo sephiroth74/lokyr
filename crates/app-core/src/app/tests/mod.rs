@@ -26,6 +26,7 @@ mod chrome;
 mod configs;
 mod consent;
 mod copy;
+mod floating;
 mod folders;
 mod frame;
 mod images;
@@ -2782,7 +2783,7 @@ fn a_clean_exit_closes_the_window_and_another_keeps_it_until_a_key() {
     let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "printf 'oops'; exit 3");
     assert_eq!(fake.windows().count(), 1);
     run_until(&mut fake, &mut app, |_, app| {
-        row(app, window, 1) == "[the program exited with code 3; a key closes the window]"
+        row(app, window, 1) == "[the program exited with code 3; a key closes the pane]"
     });
     assert_eq!(row(&app, window, 0), "oops");
     fake.send(&mut app, window, key());
@@ -2808,7 +2809,7 @@ fn the_line_of_a_program_that_ended_reads_whatever_it_left_set() {
     let script = "printf '\\033(0\\033[4h\\033[?7l'; exit 3";
     let (mut fake, mut app, window) = ended(CloseOnExit::Clean, script);
     run_until(&mut fake, &mut app, |_, app| {
-        row(app, window, 1) == "[the program exited with code 3; a key closes the window]"
+        row(app, window, 1) == "[the program exited with code 3; a key closes the pane]"
     });
 }
 
@@ -2822,7 +2823,7 @@ fn always_closes_and_never_keeps() {
     // A program that a signal ends.
     let (mut fake, mut app, window) = ended(CloseOnExit::Clean, "kill -9 $$");
     run_until(&mut fake, &mut app, |_, app| {
-        row(app, window, 1) == "[the program ended by signal 9; a key closes the window]"
+        row(app, window, 1) == "[the program ended by signal 9; a key closes the pane]"
     });
 }
 

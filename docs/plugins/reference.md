@@ -31,7 +31,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `input-read` | Seeing the keys typed before they reach the program | Very high: a keylogger's power |
 | `history-read` | Reading the commands that the shell ran and their output, which shell integration marks, and hearing their starts and ends of their exit statuses | High: a password typed by mistake ends up there |
 | `process-read` | Seeing the panes' processes: their command lines and working directories, a folder's git branch, the programs that run and the agents' states, and the folders where the shells worked last; hearing as a command starts and ends, of no exit status · Since 1.4 | Medium: command lines can hold passwords |
-| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs, groups of tabs, sessions made and switched, the typed input broadcast to a tab or a window, with `pty-write`, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
+| `workspace-write` | Opening, closing and moving windows, tabs and panes, the keyboard's focus between them, a split's ratio, the zoom, pinned tabs, groups of tabs, sessions made and switched, the typed input broadcast to a tab or a window, and popups that run a command, both with `pty-write`, and the app's quit | High: it can end every program, start shells, or move the keys typed to another pane |
 | `pane-view` | The panes' scroll and selection, the screen and the scrollback cleared, the font's size, the tabs' titles and colors, the tab bar's place, the inactive panes' fade and the focus that follows the mouse | Medium: a cleared scrollback is lost text |
 | `decorate` | Drawing over a pane: decorations, the gutter's marks, a search's matches and a held cursor | Medium: a drawing over the text can show what the terminal does not hold |
 | `pointer-read` | The `pointer` event: the cell under the pointer over the panes, and the modifiers held | Low |
@@ -84,6 +84,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `searched` | A search, `search`, finds its matches | `terminal-read` |
 | `answered` | A question, `ask_text`, `copy_theme`, `new_theme` or `convert_theme`, is answered or cancelled | — |
 | `saved` | A file given to the save panel, `save_file`, is written, or not | — |
+| `popup-closed` | A popup that the plugin opened, `open_popup`, closes, of its command's status · not released yet | — |
 | `chosen` | A question of buttons, `ask_choice`, is answered, or its window closes | — |
 | `color-picked` | A color is chosen in the color panel that the plugin showed, `show_color_panel`, as it moves | — |
 | `color-panel-closed` | The color panel that the plugin showed closes | — |

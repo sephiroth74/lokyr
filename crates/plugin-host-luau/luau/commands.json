@@ -688,6 +688,17 @@
   },
   {
     "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.float",
+    "params": [],
+    "plugin": null,
+    "title": "Float Pane",
+    "when": null
+  },
+  {
+    "capabilities": [
       "workspace-write",
       "pty-write"
     ],
@@ -739,6 +750,28 @@
   },
   {
     "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.move-into-splits",
+    "params": [],
+    "plugin": null,
+    "title": "Move Pane into Splits",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.new-floating",
+    "params": [],
+    "plugin": null,
+    "title": "New Floating Pane",
+    "when": null
+  },
+  {
+    "capabilities": [
       "clipboard-read",
       "pty-write"
     ],
@@ -748,6 +781,45 @@
     "plugin": "lokyr/core-actions",
     "title": "Paste",
     "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.popup",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "command"
+      },
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "folder"
+      },
+      {
+        "default": {
+          "number": 0.8
+        },
+        "kind": "number",
+        "name": "width"
+      },
+      {
+        "default": {
+          "number": 0.7
+        },
+        "kind": "number",
+        "name": "height"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Popup",
+    "when": null
   },
   {
     "capabilities": [],
@@ -881,6 +953,17 @@
     "plugin": "lokyr/core-actions",
     "title": "Send Text",
     "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.toggle-floating",
+    "params": [],
+    "plugin": null,
+    "title": "Show or Hide Floating Panes",
+    "when": null
   },
   {
     "capabilities": [

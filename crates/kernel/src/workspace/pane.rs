@@ -192,6 +192,8 @@ pub struct Pane {
     changed: bool,
     /// When the program's output ended, while the pane waits for its status.
     ended: Option<Instant>,
+    /// The program's status, once it ended and the pane read it.
+    exit: Option<Exit>,
     /// Whether the pane keeps the screen of a program that ended, or that
     /// could not start.
     kept: bool,
@@ -396,6 +398,7 @@ impl Pane {
             answer: None,
             changed: false,
             ended: None,
+            exit: None,
             kept: false,
             through_login: through_login(program),
             bells: 0,
@@ -452,7 +455,7 @@ impl Pane {
                 let line = format!("\x1b[2m[{why}]\x1b[0m");
                 Parser::new().advance(&mut terminal, line.as_bytes());
                 terminal.snapshot(&mut pane.snapshot);
-                // A key closes the window, as after a program that ended.
+                // A key closes the pane, as after a program that ended.
                 pane.kept = true;
             }
         }
@@ -1475,6 +1478,37 @@ impl Pane {
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.
     /// The line that a kept screen shows is in `texts`.
     pub fn exited(&mut self, close: CloseOnExit, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| match close {
+                CloseOnExit::Always => true,
+                CloseOnExit::Never => false,
+                CloseOnExit::Clean => exit.is_some_and(Exit::success),
+            },
+            now,
+            texts,
+        )
+    }
+
+    /// What a popup does once its command has ended, as
+    /// [`Pane::exited`] tells it: it closes as the command exits with 0 or
+    /// an interrupt ends it, as Control-C, and keeps its screen otherwise,
+    /// with the line of how the command ended, until a key closes it.
+    pub fn popup_exited(&mut self, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| exit.is_some_and(|exit| exit.success() || exit.interrupted()),
+            now,
+            texts,
+        )
+    }
+
+    /// What the window does once the program has ended, `closes` of its
+    /// status telling whether it closes, as [`Pane::exited`] tells it.
+    fn ended_as(
+        &mut self,
+        closes: impl FnOnce(Option<Exit>) -> bool,
+        now: Instant,
+        texts: &Texts,
+    ) -> Option<Exited> {
         if self.kept {
             return None;
         }
@@ -1494,12 +1528,8 @@ impl Pane {
         };
         let told = session.lock().command_status();
         let exit = status(exit, told, self.through_login);
-        let closes = match close {
-            CloseOnExit::Always => true,
-            CloseOnExit::Never => false,
-            CloseOnExit::Clean => exit.is_some_and(Exit::success),
-        };
-        if closes {
+        self.exit = exit;
+        if closes(exit) {
             return Some(Exited::Close);
         }
         self.kept = true;
@@ -1519,6 +1549,12 @@ impl Pane {
         let line = format!("\x1b(B\x1b)B\x0f\x1b[4l\x1b[?7h\r\n\x1b[0;2m[{ended}]\x1b[0m");
         Parser::new().advance(&mut *session.lock(), line.as_bytes());
         Some(Exited::Keep)
+    }
+
+    /// The program's status, once it ended and [`Pane::exited`] read it:
+    /// none while it runs, or of a status that it cannot tell.
+    pub fn exit_status(&self) -> Option<Exit> {
+        self.exit
     }
 
     /// Whether the pane waits for the status of a program whose output

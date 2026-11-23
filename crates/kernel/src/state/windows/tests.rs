@@ -79,6 +79,8 @@ fn sample() -> Kept {
                         zoomed: None,
                         pinned: true,
                         group: None,
+                        floating: Vec::new(),
+                        floating_shown: true,
                     },
                     Tab {
                         title: Some("logs".to_owned()),
@@ -88,6 +90,8 @@ fn sample() -> Kept {
                         zoomed: None,
                         pinned: false,
                         group: Some(0),
+                        floating: Vec::new(),
+                        floating_shown: true,
                     },
                     Tab {
                         title: None,
@@ -97,6 +101,8 @@ fn sample() -> Kept {
                         zoomed: None,
                         pinned: false,
                         group: Some(0),
+                        floating: Vec::new(),
+                        floating_shown: true,
                     },
                     Tab {
                         title: None,
@@ -106,6 +112,8 @@ fn sample() -> Kept {
                         zoomed: None,
                         pinned: false,
                         group: Some(1),
+                        floating: Vec::new(),
+                        floating_shown: true,
                     },
                 ],
                 active: 1,
@@ -142,6 +150,8 @@ fn sample() -> Kept {
                     zoomed: Some(0),
                     pinned: false,
                     group: None,
+                    floating: Vec::new(),
+                    floating_shown: true,
                 }],
                 active: 0,
                 groups: Vec::new(),
@@ -226,6 +236,8 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             zoomed: None,
             pinned: false,
             group: None,
+            floating: Vec::new(),
+            floating_shown: true,
         })
         .collect();
     write(&state, &kept).unwrap();
@@ -531,6 +543,8 @@ fn a_session_that_never_showed_keeps_its_windows_and_their_files_new_names() {
             zoomed: None,
             pinned: false,
             group: None,
+            floating: Vec::new(),
+            floating_shown: true,
         }],
         active: 0,
         groups: Vec::new(),
@@ -657,6 +671,8 @@ fn sessions_past_the_bounds_keep_within_them_the_active_one_whole() {
                 zoomed: None,
                 pinned: false,
                 group: None,
+                floating: Vec::new(),
+                floating_shown: true,
             })
             .collect(),
         active: 0,
@@ -700,4 +716,109 @@ fn sessions_past_the_bounds_keep_within_them_the_active_one_whole() {
     );
     assert_eq!(kept.sessions.len(), 1);
     let _ = (api, web);
+}
+
+#[test]
+fn a_tab_keeps_no_popup_and_the_keyboard_of_one_goes_to_its_layout() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane());
+    let tab = workspace.window(window).unwrap().active_tab();
+    let first = workspace.tab(tab).unwrap().active_pane();
+    workspace
+        .float_pane(
+            tab,
+            pane(),
+            workspace::FloatingFrame::new(0.1, 0.2, 0.5, 0.4),
+        )
+        .unwrap();
+    let popup = workspace
+        .open_popup(tab, pane(), workspace::FloatingFrame::centered(0.8, 0.7))
+        .unwrap();
+    assert!(workspace.is_popup(popup));
+    assert_eq!(workspace.tab(tab).unwrap().active_pane(), popup);
+    let mut names = Vec::new();
+    let kept = Kept::of(
+        &workspace,
+        &[(window, None)],
+        Some(window),
+        |_| None,
+        |_, index| {
+            names.push(index);
+            None
+        },
+    );
+    // The layout's pane and the floating one, the popup none; the keyboard
+    // the layout's pane's, which had it last.
+    assert_eq!(names, [0, 1]);
+    let held = &kept.windows[0].tabs[0];
+    assert_eq!(held.floating.len(), 1);
+    assert_eq!(held.active, 0);
+    assert_eq!(workspace.tab(tab).unwrap().split_active(), first);
+}
+
+#[test]
+fn a_tab_keeps_its_floating_panes_their_frames_and_whether_they_show() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane());
+    let tab = workspace.window(window).unwrap().active_tab();
+    let floating = workspace
+        .float_pane(
+            tab,
+            pane(),
+            workspace::FloatingFrame::new(0.1, 0.2, 0.5, 0.4),
+        )
+        .unwrap();
+    let mut names = Vec::new();
+    let kept = Kept::of(
+        &workspace,
+        &[(window, None)],
+        Some(window),
+        |_| None,
+        |_, index| {
+            names.push(index);
+            Some(super::super::scrollback::name(index))
+        },
+    );
+    // Its layout's pane, then the floating one, as the files are named and
+    // the keyboard's index counts.
+    assert_eq!(names, [0, 1]);
+    let held = &kept.windows[0].tabs[0];
+    assert_eq!(held.active, 1);
+    assert!(held.floating_shown);
+    assert_eq!(held.floating.len(), 1);
+    let kept_floating = &held.floating[0];
+    assert_eq!(
+        (
+            kept_floating.x,
+            kept_floating.y,
+            kept_floating.width,
+            kept_floating.height
+        ),
+        (0.1, 0.2, 0.5, 0.4)
+    );
+    assert_eq!(kept.panes(), 2);
+    // Read back the same, and opened as it was, its floating pane hidden
+    // as the tab kept it.
+    let state = state("floating");
+    let mut hidden = kept.clone();
+    hidden.windows[0].tabs[0].floating_shown = false;
+    hidden.windows[0].tabs[0].active = 0;
+    write(&state, &hidden).unwrap();
+    let read = read(&state).unwrap().unwrap();
+    assert_eq!(read, hidden);
+    let _ = fs::remove_dir_all(&state);
+    let mut again = Workspace::new();
+    let opened = read.windows[0].open(&mut again, |_| pane()).unwrap();
+    let tab = again.window(opened).unwrap().active_tab();
+    let held = again.tab(tab).unwrap();
+    assert_eq!(held.panes().len(), 2);
+    assert_eq!(held.floating().len(), 1);
+    assert!(!held.floating_shown());
+    let frame = held.floating()[0].frame;
+    assert_eq!(
+        (frame.x(), frame.y(), frame.width(), frame.height()),
+        (0.1, 0.2, 0.5, 0.4)
+    );
+    assert_eq!(held.active_pane(), held.layout().panes()[0]);
+    let _ = floating;
 }

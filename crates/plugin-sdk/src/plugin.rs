@@ -1404,6 +1404,38 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// Opens a popup that runs `command` in `folder`, over the active tab
+    /// of `window`, of `width` and `height`, shares of the tab's room, as
+    /// [`Request::OpenPopup`] says: its pane, whose close comes as
+    /// [`Event::PopupClosed`](crate::message::Event::PopupClosed).
+    pub fn open_popup(
+        &mut self,
+        window: Option<WindowId>,
+        command: &str,
+        folder: Option<&str>,
+        width: Option<f64>,
+        height: Option<f64>,
+    ) -> Result<PaneId, Error> {
+        match self.request(Request::OpenPopup {
+            window,
+            command: command.to_owned(),
+            folder: folder.map(str::to_owned),
+            width,
+            height,
+        }) {
+            Response::Pane(Some(pane)) => Ok(pane),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// `tab`'s floating panes, as [`Request::FloatingPanes`] says.
+    pub fn floating_panes(&mut self, tab: TabId) -> Result<crate::host::FloatingPanes, Error> {
+        match self.request(Request::FloatingPanes(tab)) {
+            Response::FloatingPanes(floating) => Ok(floating),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Sends `window`'s typed input to `to`, as [`Request::SetBroadcast`]
     /// says.
     pub fn set_broadcast(

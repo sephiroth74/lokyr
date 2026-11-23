@@ -497,6 +497,20 @@ pub trait Panes {
     /// its size as a new pane's beside it; its directory `directory`, if
     /// given, a path absolute or from `~`, or the folder of a file there.
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
+
+    /// A popup's pane, as [`Panes::spawn`] gives a pane, whose program is
+    /// the user's login shell running `command`: a new pane's of a factory
+    /// that runs no command of its own.
+    fn spawn_popup(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        command: &str,
+    ) -> Pane {
+        let _ = command;
+        self.spawn(id, near, directory)
+    }
 }
 
 /// Whether the color of a name of a theme of a name can take a value, or
@@ -663,6 +677,9 @@ struct State {
     held_cursors: BTreeSet<host::PaneId>,
     /// What it keeps from idle sleep, which the app holds as it is active.
     awake: host::Awake,
+    /// The popups that it opened, and the status of each one's command
+    /// once it ended, which it hears as each closes.
+    popups: BTreeMap<host::PaneId, Option<i32>>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1305,6 +1322,16 @@ enum Write {
         side: Side,
         new: PaneId,
     },
+    /// A popup over the active tab of `window`, the focused one's for none,
+    /// of the id that the host gave its pane.
+    OpenPopup {
+        window: Option<WindowId>,
+        pane: PaneId,
+        command: String,
+        folder: Option<String>,
+        width: f64,
+        height: f64,
+    },
     /// A group of tabs, of the id that the host gave it.
     NewGroup {
         id: GroupId,
@@ -1813,6 +1840,7 @@ impl Plugins {
                 gutter_marks: BTreeMap::new(),
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
+                popups: BTreeMap::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -3012,6 +3040,19 @@ impl Plugins {
             .push((Some(plugin.to_owned()), Event::Answered { id, text }));
     }
 
+    /// Notes the status of the command of the popup `pane`, which ended,
+    /// of 128 and a signal's number for a signal, as shells give it, or
+    /// none of one that it cannot tell: its plugin hears it as the popup
+    /// closes.
+    pub fn popup_ended(&mut self, pane: PaneId, status: Option<i32>) {
+        let pane = host::PaneId(pane.get());
+        for entry in &mut self.entries {
+            if let Some(kept) = entry.state.popups.get_mut(&pane) {
+                *kept = status;
+            }
+        }
+    }
+
     /// Tells `plugin` the end of its save `id`: the file's path, none as
     /// the user cancelled, or the error of a write that failed, for the
     /// next delivery, to it alone.
@@ -3160,13 +3201,22 @@ impl Plugins {
                 }
             }
             // A pane's header goes with it, and its searches stop, its
-            // terminal gone.
+            // terminal gone; a popup's plugin hears that it closed.
             Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
                 for entry in &mut self.entries {
                     entry.state.views.remove(&ViewId::PaneHeader(*pane));
                     entry.state.searches.retain(|search| search.pane != *pane);
                     entry.state.lingering.retain(|search| search.pane != *pane);
                     entry.state.replaced.retain(|search| search.pane != *pane);
+                    if let Some(status) = entry.state.popups.remove(pane) {
+                        self.out.events.push((
+                            Some(entry.state.name.clone()),
+                            Event::PopupClosed {
+                                pane: *pane,
+                                status,
+                            },
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -4920,6 +4970,36 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 }
                 continue;
             }
+            // The popup, over the active tab of its window, beside the
+            // pane with its keyboard; none of a window that closed.
+            Write::OpenPopup {
+                window,
+                pane,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                let tab = window
+                    .or(context.focused)
+                    .and_then(|window| context.workspace.window(window))
+                    .map(crate::workspace::Window::active_tab);
+                if let Some(tab) = tab {
+                    let near = context
+                        .workspace
+                        .tab(tab)
+                        .map(crate::workspace::Tab::active_pane)
+                        .and_then(|near| context.workspace.pane(near));
+                    let new = context
+                        .panes
+                        .spawn_popup(pane, near, folder.as_deref(), &command);
+                    let frame = crate::workspace::FloatingFrame::centered(width, height);
+                    if context.workspace.open_popup(tab, new, frame).is_some() {
+                        state.popups.insert(host::PaneId(pane.get()), None);
+                    }
+                }
+                continue;
+            }
             Write::Render(view) => {
                 if !out
                     .renders
@@ -5817,9 +5897,9 @@ impl Host<'_, '_> {
     /// or of a split.
     fn opens_pane(&self, pane: host::PaneId) -> bool {
         self.writes.iter().any(|write| match write {
-            Write::NewTab { pane: opened, .. } | Write::Split { new: opened, .. } => {
-                opened.get() == pane.0
-            }
+            Write::NewTab { pane: opened, .. }
+            | Write::Split { new: opened, .. }
+            | Write::OpenPopup { pane: opened, .. } => opened.get() == pane.0,
             _ => false,
         })
     }
@@ -5836,6 +5916,12 @@ impl Host<'_, '_> {
                 .workspace
                 .tab_of(*of)
                 .or_else(|| self.opened_tab_of(host::PaneId(of.get()))),
+            Write::OpenPopup {
+                window, pane: new, ..
+            } if new.get() == pane.0 => window
+                .or(self.context.focused)
+                .and_then(|window| self.context.workspace.window(window))
+                .map(crate::workspace::Window::active_tab),
             _ => None,
         })
     }
@@ -6372,6 +6458,23 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            Asked::FloatingPanes(tab) => {
+                let shown = self.tab(tab)?;
+                Response::FloatingPanes(host::FloatingPanes {
+                    shown: shown.floating_shown(),
+                    panes: shown
+                        .floating()
+                        .iter()
+                        .map(|floating| host::FloatingPane {
+                            pane: floating.pane.into(),
+                            x: floating.frame.x(),
+                            y: floating.frame.y(),
+                            width: floating.frame.width(),
+                            height: floating.frame.height(),
+                        })
+                        .collect(),
+                })
+            }
             Asked::Broadcast(window) => {
                 let id = self.window(window)?.id();
                 let workspace = &*self.context.workspace;
@@ -6817,6 +6920,40 @@ impl Host<'_, '_> {
                     tab: tab.into(),
                     pane: pane.into(),
                 });
+            }
+            Asked::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                host::check_popup(command, folder.as_deref(), *width, *height)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                let window = match window {
+                    Some(window) => {
+                        self.window(*window)?;
+                        self.takes_tabs(*window)?;
+                        Some(WindowId::of(window.0))
+                    }
+                    None if self.context.focused.is_none() => {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            "no window has the focus, which a popup opens in",
+                        ));
+                    }
+                    None => None,
+                };
+                let pane = PaneId::new();
+                self.writes.push(Write::OpenPopup {
+                    window,
+                    pane,
+                    command: command.clone(),
+                    folder: folder.clone(),
+                    width: width.unwrap_or(host::POPUP_WIDTH),
+                    height: height.unwrap_or(host::POPUP_HEIGHT),
+                });
+                return Ok(Response::Pane(Some(pane.into())));
             }
             Asked::Split {
                 pane,
@@ -8005,7 +8142,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         title: title.to_owned(),
         color: host_color(tab.color()),
         active,
-        panes: tab.layout().panes().into_iter().map(Into::into).collect(),
+        panes: tab.shown_panes().into_iter().map(Into::into).collect(),
         focused: tab.active_pane().into(),
         zoomed: tab.zoomed().map(Into::into),
         activity: marks.activity,

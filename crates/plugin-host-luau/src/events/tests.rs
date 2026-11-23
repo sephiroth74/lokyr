@@ -151,6 +151,14 @@ fn every() -> Vec<Event> {
             id: 13,
             button: Some(1),
         },
+        Event::PopupClosed {
+            pane: PaneId(7),
+            status: Some(130),
+        },
+        Event::PopupClosed {
+            pane: PaneId(8),
+            status: None,
+        },
         Event::Package {
             id: 12,
             line: lokyr_plugin_sdk::message::Data::Map(
@@ -247,6 +255,9 @@ fn every_event_is_a_flat_table_of_its_kind_and_its_fields_both_ways() {
         assert(closed.kind == "color-panel-closed" and next(closed, next(closed)) == nil)
         local chosen = events[38]
         assert(chosen.kind == "chosen" and chosen.id == 13 and chosen.button == 1)
+        local ended, cut = events[39], events[40]
+        assert(ended.kind == "popup-closed" and ended.pane == 7 and ended.status == 130)
+        assert(cut.kind == "popup-closed" and cut.pane == 8 and cut.status == nil)
         "#,
     )
     .exec()

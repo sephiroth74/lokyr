@@ -22,11 +22,11 @@ use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
     ABOUT, APPEARANCES, App, BROADCAST_OFF, BROADCAST_TAB, BROADCAST_WINDOW, BROADCASTS,
-    CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL, FLOAT_ON_TOP, IMPORT_THEMES,
-    INSTALL_CLAUDE_CODE, INSTALL_TOOLS, JOIN_BROADCAST, LEAVE_BROADCAST, LOOK_UP, LOOK_UP_TITLE,
-    MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT,
-    NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB,
-    SECURE_INPUT, SESSIONS, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection,
+    CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL, DOCK_PANE, FLOAT_ON_TOP, FLOAT_PANE,
+    IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, JOIN_BROADCAST, LEAVE_BROADCAST, LOOK_UP,
+    LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME,
+    NEXT_AGENT, NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE,
+    SEARCH_WEB, SECURE_INPUT, SESSIONS, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection,
     shown_number,
 };
 use crate::drawing::Backend;
@@ -155,6 +155,20 @@ impl<B: Backend> App<B> {
             } else {
                 LEAVE_BROADCAST
             };
+            groups.push(self.commands.get(name).map(of).into_iter().collect());
+        }
+        // A pane of the splits floats, of a tab of more than one, and a
+        // floating one goes into the splits.
+        let placed = shown.and_then(|shown| {
+            let pane = self.workspace.focused(shown)?.id();
+            let tab = self.workspace.tab(self.workspace.tab_of(pane)?)?;
+            if tab.is_floating(pane) {
+                Some(DOCK_PANE)
+            } else {
+                (tab.layout().panes().len() > 1).then_some(FLOAT_PANE)
+            }
+        });
+        if let Some(name) = placed {
             groups.push(self.commands.get(name).map(of).into_iter().collect());
         }
         let mut last = None;
@@ -697,6 +711,8 @@ pub(super) fn main_menu(
                     && !BROADCASTS.contains(&command.name.as_str())
                     && command.name != LEAVE_BROADCAST
                     && command.name != JOIN_BROADCAST
+                    && command.name != FLOAT_PANE
+                    && command.name != DOCK_PANE
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })

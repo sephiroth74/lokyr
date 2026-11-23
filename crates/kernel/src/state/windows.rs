@@ -179,6 +179,51 @@ pub struct Tab {
     /// The index of its group among its window's, if it is in one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<usize>,
+    /// Its panes that float over its layout, from the back to the front,
+    /// which an earlier Lokyr reads past.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub floating: Vec<Floating>,
+    /// Whether its floating panes show.
+    #[serde(default = "shown", skip_serializing_if = "is_shown")]
+    pub floating_shown: bool,
+}
+
+/// Floating panes show, unless a tab keeps them hidden.
+fn shown() -> bool {
+    true
+}
+
+/// Whether floating panes show, which a file writes not.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `skip_serializing_if` passes a reference"
+)]
+fn is_shown(shown: &bool) -> bool {
+    *shown
+}
+
+/// A pane that floats over its tab's layout, that the app keeps: the pane,
+/// as a layout of it alone, and its frame's corner and size, shares of the
+/// tab's room.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Floating {
+    /// The pane.
+    pub pane: Layout,
+    /// Its corner's share across.
+    pub x: f64,
+    /// Its corner's share down.
+    pub y: f64,
+    /// Its share across.
+    pub width: f64,
+    /// Its share down.
+    pub height: f64,
+}
+
+impl Tab {
+    /// The number of its panes, its layout's and its floating ones.
+    pub fn panes(&self) -> usize {
+        self.layout.panes() + self.floating.len()
+    }
 }
 
 /// A tab's layout that the app keeps: a tree of splits whose leaves are
@@ -288,7 +333,7 @@ pub fn read(state: &Path) -> Result<Option<Kept>, Unread> {
         .windows
         .iter()
         .flat_map(|window| &window.tabs)
-        .map(|tab| tab.layout.panes())
+        .map(Tab::panes)
         .sum();
     if kept.windows.len() > MOST_WINDOWS {
         return Err(Unread::Invalid(format!(
@@ -354,7 +399,7 @@ fn within_bounds(
                 .tabs()
                 .iter()
                 .filter_map(|&tab| workspace.tab(tab))
-                .map(|tab| tab.layout().panes().len())
+                .map(|tab| tab.panes().len())
                 .sum();
             Some((rank, at, panes))
         })
@@ -492,11 +537,7 @@ impl Kept {
     ) {
         let mut panes = self.panes();
         for (session, mut window) in windows {
-            let more = window
-                .tabs
-                .iter()
-                .map(|tab| tab.layout.panes())
-                .sum::<usize>();
+            let more = window.tabs.iter().map(Tab::panes).sum::<usize>();
             if self.windows.len() >= MOST_WINDOWS || panes + more > MOST_PANES {
                 self.left.windows += 1;
                 self.left.panes += more;
@@ -515,7 +556,7 @@ impl Kept {
         self.windows
             .iter()
             .flat_map(|window| &window.tabs)
-            .map(|tab| tab.layout.panes())
+            .map(Tab::panes)
             .sum()
     }
 
@@ -583,6 +624,9 @@ impl Window {
     pub fn rename_scrollbacks(&mut self, mut rename: impl FnMut(Option<String>) -> Option<String>) {
         for tab in &mut self.tabs {
             tab.layout.rename_scrollbacks(&mut rename);
+            for floating in &mut tab.floating {
+                floating.pane.rename_scrollbacks(&mut rename);
+            }
         }
     }
 }
@@ -646,16 +690,46 @@ impl Tab {
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
         scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
-        let panes = tab.layout().panes();
+        // Its layout's panes, then its floating ones but its popups, which
+        // no quit keeps, as the keyboard's index counts them and their
+        // files are named: the keyboard of a popup the layout's pane's that
+        // had it last.
+        let panes: Vec<_> = tab
+            .panes()
+            .into_iter()
+            .filter(|&pane| !tab.is_popup(pane))
+            .collect();
         let index = |pane| panes.iter().position(|&id| id == pane);
+        let layout = Layout::of(workspace, tab.layout(), directory, scrollback);
+        let floating = tab
+            .floating()
+            .iter()
+            .filter(|floating| !floating.popup)
+            .map(|floating| Floating {
+                pane: Layout::of(
+                    workspace,
+                    &workspace::Layout::Leaf(floating.pane),
+                    directory,
+                    scrollback,
+                ),
+                x: floating.frame.x(),
+                y: floating.frame.y(),
+                width: floating.frame.width(),
+                height: floating.frame.height(),
+            })
+            .collect();
         Self {
             title: tab.own_title().map(str::to_owned),
             color: tab.own_color().map(hex),
-            layout: Layout::of(workspace, tab.layout(), directory, scrollback),
-            active: index(tab.active_pane()).unwrap_or(0),
+            layout,
+            active: index(tab.active_pane())
+                .or_else(|| index(tab.split_active()))
+                .unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
             pinned: tab.marks().pinned,
             group: None,
+            floating,
+            floating_shown: tab.floating_shown(),
         }
     }
 
@@ -674,9 +748,24 @@ impl Tab {
         };
         self.layout
             .grow(workspace, tab, first, &mut Vec::new(), spawn);
+        // Its floating panes, over the layout, from the back to the front,
+        // shown or hidden as they were.
+        for floating in &self.floating {
+            let pane = spawn(floating.pane.first_pane());
+            let frame = workspace::FloatingFrame::new(
+                floating.x,
+                floating.y,
+                floating.width,
+                floating.height,
+            );
+            workspace.float_pane(tab, pane, frame);
+        }
+        if !self.floating.is_empty() {
+            workspace.set_floating_shown(tab, self.floating_shown);
+        }
         let panes = workspace
             .tab(tab)
-            .map(|tab| tab.layout().panes())
+            .map(workspace::Tab::panes)
             .unwrap_or_default();
         if let Some(&active) = panes.get(self.active) {
             workspace.focus_pane(active);

@@ -2273,6 +2273,7 @@ fn a_call_is_its_own_plugin_s() {
             gutter_marks: BTreeMap::new(),
             held_cursors: std::collections::BTreeSet::new(),
             awake: host::Awake::Off,
+            popups: BTreeMap::new(),
             double_tap: None,
             images: (image::Budget::default(), None),
             quick_windows: Vec::new(),
@@ -5853,4 +5854,169 @@ fn a_paste_as_the_user_s_reaches_the_panes_that_the_window_broadcasts_to_of_one_
         .run("paster.paste", Args::new(), &mut app.context())
         .unwrap();
     assert!(plugins.take_requests().is_empty());
+}
+
+#[test]
+fn a_tab_s_floating_panes_are_among_its_panes_while_they_show_and_read_of_their_frames() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let first = app.workspace.focused(window).unwrap().id();
+    let pane = Pane::spawn(
+        &Program::command("/bin/sh", ["-c", "sleep 30"]),
+        &Environment::default(),
+        &Settings::default(),
+        GRID,
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    );
+    let floating = app
+        .workspace
+        .float_pane(
+            tab,
+            pane,
+            crate::workspace::FloatingFrame::new(0.25, 0.25, 0.5, 0.5),
+        )
+        .unwrap();
+    let read = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&read);
+    let host_tab = host::TabId(tab.get());
+    let host_window = host::WindowId(window.get());
+    let mut plugins = Plugins::new();
+    plugins
+        .add(
+            "reader",
+            scripted(
+                |cx| cx.register_command(command("reader.read")),
+                move |cx, _, _| {
+                    let panes = cx.tabs(host_window)?[0].panes.clone();
+                    *seen.borrow_mut() = Some((panes, cx.floating_panes(host_tab)?));
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let read_now = |plugins: &mut Plugins, app: &mut App| {
+        plugins
+            .run("reader.read", Args::new(), &mut app.context())
+            .unwrap();
+        read.borrow_mut().take().unwrap()
+    };
+    let (panes, floating_panes) = read_now(&mut plugins, &mut app);
+    let ids = |panes: &[crate::workspace::PaneId]| -> Vec<host::PaneId> {
+        panes.iter().map(|&pane| pane.into()).collect()
+    };
+    assert_eq!(panes, ids(&[first, floating]));
+    assert_eq!(
+        floating_panes,
+        host::FloatingPanes {
+            shown: true,
+            panes: vec![host::FloatingPane {
+                pane: floating.into(),
+                x: 0.25,
+                y: 0.25,
+                width: 0.5,
+                height: 0.5,
+            }],
+        }
+    );
+    // Hidden, they are not among the panes that show.
+    assert!(app.workspace.set_floating_shown(tab, false));
+    let (panes, floating_panes) = read_now(&mut plugins, &mut app);
+    assert_eq!(panes, ids(&[first]));
+    assert!(!floating_panes.shown);
+}
+
+#[test]
+fn a_popup_s_plugin_hears_it_close_of_its_command_s_status_and_one_of_no_pty_write_opens_none() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 30");
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let first = app.workspace.focused(window).unwrap().id();
+    let mut plugins = Plugins::new();
+    let opened: Rc<RefCell<Vec<Result<host::PaneId, Error>>>> = Rc::default();
+    let heard: Rc<RefCell<Vec<Event>>> = Rc::default();
+    for (name, capabilities) in [
+        ("acme/popper", "workspace-write = true\npty-write = true\n"),
+        ("acme/writer", "workspace-write = true\n"),
+    ] {
+        let manifest = Manifest::parse(&format!(
+            "[plugin]\nname = \"{name}\"\nversion = \"1.0.0\"\nkind = \"luau\"\napi = \"^0.1\"\nlicense = \"MIT\"\n[capabilities]\n{capabilities}"
+        ))
+        .unwrap();
+        let (opens, hears) = (Rc::clone(&opened), Rc::clone(&heard));
+        let command_name = format!("{}.open", name.trim_start_matches("acme/"));
+        let registered = command_name.clone();
+        plugins
+            .add_declared(
+                manifest,
+                Box::new(Scripted {
+                    activate: Box::new(move |cx| cx.register_command(command(&registered))),
+                    on_command: Box::new(move |cx, _, _| {
+                        opens.borrow_mut().push(cx.open_popup(
+                            None,
+                            "lazygit",
+                            None,
+                            Some(0.5),
+                            None,
+                        ));
+                        Ok(())
+                    }),
+                    on_event: Some(Box::new(move |_, events| {
+                        hears.borrow_mut().extend(events.iter().cloned());
+                        Ok(())
+                    })),
+                }),
+            )
+            .unwrap();
+    }
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let deliver = |app: &mut App, plugins: &mut Plugins| {
+        for event in app.workspace.take_events() {
+            if let crate::workspace::Event::Changed(change) = event {
+                plugins.post(Event::Workspace(change));
+            }
+        }
+        assert!(plugins.deliver(&mut app.context()).is_empty());
+    };
+    // Over the focused window's tab, in its middle, of its shares, with the
+    // keyboard.
+    plugins
+        .run("popper.open", Args::new(), &mut app.context())
+        .unwrap();
+    let popup = opened.borrow_mut().remove(0).unwrap();
+    let pane = PaneId::of(popup.0);
+    assert!(app.workspace.is_popup(pane));
+    assert_eq!(app.workspace.focused(window).unwrap().id(), pane);
+    let frame = app.workspace.tab(tab).unwrap().floating()[0].frame;
+    assert_eq!(
+        frame,
+        crate::workspace::FloatingFrame::centered(0.5, host::POPUP_HEIGHT)
+    );
+    deliver(&mut app, &mut plugins);
+    assert!(heard.borrow().is_empty());
+    // Its command's status, as the app tells it, heard by its plugin alone
+    // as it closes, the keyboard back to the tab's pane.
+    plugins.popup_ended(pane, Some(3));
+    app.workspace.close_pane(pane);
+    deliver(&mut app, &mut plugins);
+    assert_eq!(
+        *heard.borrow(),
+        [Event::PopupClosed {
+            pane: popup,
+            status: Some(3)
+        }]
+    );
+    assert_eq!(app.workspace.focused(window).unwrap().id(), first);
+    // A plugin that writes the workspace and not to the programs opens
+    // none.
+    plugins
+        .run("writer.open", Args::new(), &mut app.context())
+        .unwrap();
+    let refused = opened.borrow_mut().remove(0).unwrap_err();
+    assert_eq!(refused.code, Code::MissingCapability);
+    assert!(refused.message.contains("pty-write"), "{refused:?}");
+    assert!(app.workspace.tab(tab).unwrap().floating().is_empty());
 }

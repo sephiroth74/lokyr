@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 53] = [
+pub const BINDINGS: [(&str, &str); 55] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -38,6 +38,10 @@ pub const BINDINGS: [(&str, &str); 53] = [
     // The typed input broadcast to the tab's panes, or to the window's.
     ("alt+cmd+i", "window.broadcast-to-tab"),
     ("shift+alt+cmd+i", "window.broadcast-to-window"),
+    // A floating pane over the tab's, and the tab's floating panes shown or
+    // hidden.
+    ("shift+alt+cmd+f", "pane.new-floating"),
+    ("alt+cmd+f", "pane.toggle-floating"),
     // The next AI agent that waits, near the windows' numbers.
     ("alt+cmd+a", "window.next-agent"),
     ("shift+alt+cmd+a", "command-palette.agents"),

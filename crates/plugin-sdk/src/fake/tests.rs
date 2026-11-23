@@ -2660,3 +2660,60 @@ fn the_fake_s_moved_panes_and_the_switcher_s_folders_are_the_app_s() {
     assert_eq!(sessions[1].id, api);
     assert_eq!(sessions[1].windows.len(), 2);
 }
+
+#[test]
+fn a_popup_opens_over_the_focused_window_s_tab_and_its_close_is_owed_of_its_status() {
+    let mut host = FakeHost::new("acme/probe")
+        .with_capabilities(vec![Capability::WorkspaceWrite, Capability::PtyWrite]);
+    let (window, tab, first) = (WindowId(1), TabId(1), PaneId(1));
+    let pane = host.pane(first);
+    (pane.window, pane.tab) = (window, tab);
+    host.focus(Some(first));
+    let opened = Rc::new(RefCell::new(Vec::new()));
+    let kept = Rc::clone(&opened);
+    let mut probe = Probe::new(move |cx, _| {
+        kept.borrow_mut()
+            .push(cx.open_popup(None, "lazygit", Some("~/src"), None, Some(0.5)));
+        Ok(())
+    });
+    host.activate(&mut probe).unwrap();
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let popup = opened.borrow_mut().remove(0).unwrap();
+    assert_eq!(
+        host.popups(),
+        [FakePopup {
+            pane: popup,
+            tab,
+            command: "lazygit".to_owned(),
+            folder: Some("~/src".to_owned()),
+            width: crate::host::POPUP_WIDTH,
+            height: 0.5,
+        }]
+    );
+    // Its close, as its command ends, is owed of the status, the keyboard
+    // back to the tab's pane.
+    let focused = Rc::new(RefCell::new(None));
+    let seen = Rc::clone(&focused);
+    let mut look = Probe::new(move |cx, _| {
+        *seen.borrow_mut() = cx.focused_pane();
+        Ok(())
+    });
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    assert_eq!(*focused.borrow(), Some(popup));
+    host.close_popup(popup, Some(130));
+    assert!(host.popups().is_empty());
+    host.deliver(&mut probe).unwrap();
+    assert_eq!(probe.heard.last().unwrap(), &["popup-closed"]);
+    host.command(&mut look, "probe.go", Args::new()).unwrap();
+    assert_eq!(*focused.borrow(), Some(first));
+    host.command(&mut probe, "probe.go", Args::new()).unwrap();
+    let again = opened.borrow_mut().remove(0).unwrap();
+    assert_ne!(again, popup);
+    // A blank command opens none.
+    let mut blank = Probe::new(|cx, _| {
+        assert!(cx.open_popup(None, " ", None, None, None).is_err());
+        Ok(())
+    });
+    host.command(&mut blank, "probe.go", Args::new()).unwrap();
+    assert_eq!(host.popups().len(), 1);
+}

@@ -76,6 +76,66 @@ pub fn check_session_directory(directory: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The most bytes of a popup's command.
+pub const MOST_POPUP_COMMAND: usize = 4096;
+
+/// The most bytes of a popup's folder.
+pub const MOST_POPUP_FOLDER: usize = 1024;
+
+/// The share of its tab's room that a popup takes across, of a request
+/// that asks for none.
+pub const POPUP_WIDTH: f64 = 0.8;
+
+/// The share of its tab's room that a popup takes down, of a request that
+/// asks for none.
+pub const POPUP_HEIGHT: f64 = 0.7;
+
+/// Whether a popup can run `command` in `folder`, if given, of `width`
+/// and `height`, shares of its tab's room, if given: a command of
+/// something past blanks, of [`MOST_POPUP_COMMAND`] bytes at most and no
+/// NUL; a folder absolute or from `~`, of [`MOST_POPUP_FOLDER`] bytes at
+/// most and no control character; shares past 0 and 1 at most. Why not
+/// otherwise.
+pub fn check_popup(
+    command: &str,
+    folder: Option<&str>,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<(), String> {
+    if command.trim().is_empty() {
+        return Err("a popup's command is something past blanks".to_owned());
+    }
+    if command.len() > MOST_POPUP_COMMAND {
+        return Err(format!(
+            "a popup's command is {MOST_POPUP_COMMAND} bytes at most, not {}",
+            command.len()
+        ));
+    }
+    if command.contains('\0') {
+        return Err("a popup's command holds no NUL".to_owned());
+    }
+    if let Some(folder) = folder {
+        check_directory(folder)?;
+        if folder.len() > MOST_POPUP_FOLDER {
+            return Err(format!(
+                "a popup's folder is {MOST_POPUP_FOLDER} bytes at most, not {}",
+                folder.len()
+            ));
+        }
+        if folder.chars().any(char::is_control) {
+            return Err("a popup's folder holds no control character".to_owned());
+        }
+    }
+    for share in [width, height].into_iter().flatten() {
+        if !(share > 0.0 && share <= 1.0) {
+            return Err(format!(
+                "a popup's width and height are shares of its tab's room, past 0 and 1 at most, not {share}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The folders that the switcher lists, `configured` then `recent`, as
 /// they are named, each once and none of `sessions`, the folders that
 /// sessions were opened in, as their real paths tell, which the system
@@ -134,6 +194,35 @@ pub enum BroadcastTo {
     Tab,
     /// To every pane of the window, of all its tabs.
     Window,
+}
+
+/// A pane that floats over its tab's split panes, as a read of the tab's
+/// floating panes gives it: its frame's top left corner and its size, each
+/// a share of the tab's room, from 0 to 1.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPane {
+    /// The pane.
+    pub pane: PaneId,
+    /// Its corner's share across the room.
+    pub x: f64,
+    /// Its corner's share down the room.
+    pub y: f64,
+    /// Its share across.
+    pub width: f64,
+    /// Its share down.
+    pub height: f64,
+}
+
+/// A tab's floating panes, as a read of them gives them: whether they
+/// show, which they do or not together, and each, from the one at the back
+/// to the one in front.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPanes {
+    /// Whether they show.
+    pub shown: bool,
+    /// The panes, from the back to the front.
+    #[serde(default)]
+    pub panes: Vec<FloatingPane>,
 }
 
 /// A window's broadcast of the typed input, as a read of it gives it.

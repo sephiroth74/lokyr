@@ -341,6 +341,10 @@ impl Symbols {
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
             Event::Chosen { button, .. } => Event::Chosen { id: 0, button },
             Event::Saved { path, error, .. } => Event::Saved { id: 0, path, error },
+            Event::PopupClosed { pane, status } => Event::PopupClosed {
+                pane: self.pane(pane),
+                status,
+            },
             Event::Package { line, .. } => Event::Package { id: 0, line },
             Event::PackagesEnded { ok, .. } => Event::PackagesEnded { id: 0, ok },
             Event::Timer { id } => Event::Timer { id: self.timer(id) },
@@ -1239,11 +1243,13 @@ fn kind(request: &Request) -> usize {
         Request::SetBroadcast { .. } => 157,
         Request::SetPaneBroadcast { .. } => 158,
         Request::PasteBroadcast { .. } => 159,
+        Request::FloatingPanes(_) => 160,
+        Request::OpenPopup { .. } => 161,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 160;
+const KINDS: usize = 162;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

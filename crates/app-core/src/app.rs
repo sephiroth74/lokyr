@@ -63,6 +63,7 @@ pub(crate) mod chrome;
 mod claude_code;
 mod consent;
 pub(crate) mod dividers;
+mod floating;
 mod folders;
 pub(crate) mod frame;
 pub(crate) mod images;
@@ -237,6 +238,20 @@ const BROADCASTS: [&str; 3] = [BROADCAST_OFF, BROADCAST_TAB, BROADCAST_WINDOW];
 /// broadcast and take it back in, which its context menu shows.
 const LEAVE_BROADCAST: &str = "pane.leave-broadcast";
 const JOIN_BROADCAST: &str = "pane.join-broadcast";
+
+/// The command that floats a new pane over the active tab's panes.
+const NEW_FLOATING: &str = "pane.new-floating";
+/// The command that shows the active tab's floating panes, or hides them,
+/// or floats a new one over a tab of none.
+const TOGGLE_FLOATING: &str = "pane.toggle-floating";
+/// The commands that float the pane with the keyboard, of its tab's
+/// splits, and move a floating one into them, which its context menu
+/// shows.
+const FLOAT_PANE: &str = "pane.float";
+const DOCK_PANE: &str = "pane.move-into-splits";
+/// The command that opens a popup of its `command` over the active tab's
+/// panes, which closes as the command ends.
+const POPUP: &str = "pane.popup";
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -644,6 +659,9 @@ pub struct App<B: Backend> {
     /// The program that an `ssh` link runs, `ssh` as the system finds it,
     /// or the tests' own.
     ssh: PathBuf,
+    /// The shell that runs a popup's command, of its `-c`, in place of the
+    /// login shell, as the tests give one.
+    popup_shell: Option<PathBuf>,
     /// The config in force.
     config: Config,
     /// The file of the config, if it has one.
@@ -1102,6 +1120,7 @@ impl<B: Backend> App<B> {
             program: Program::LoginShell,
             man: None,
             ssh: PathBuf::from("ssh"),
+            popup_shell: None,
             config,
             config_file: path.map(|path| ConfigFile {
                 path,
@@ -3254,7 +3273,7 @@ impl<B: Backend> App<B> {
             .get(&window)
             .and_then(|state| self.workspace.window(state.window))
             .and_then(|shown| self.workspace.tab(shown.active_tab()))
-            .map(|tab| tab.layout().panes())
+            .map(lokyr_kernel::workspace::Tab::panes)
             .unwrap_or_default()
             .into_iter()
             .filter(|&pane| Some(pane) != now)
@@ -3342,17 +3361,32 @@ impl<B: Backend> App<B> {
             })
             .collect();
         for (window, id, page) in panes {
+            let popup = self.workspace.is_popup(id);
             let Some(pane) = self.workspace.pane_mut(id) else {
                 continue;
             };
             // A man page's window keeps the page, from its top, and a
-            // script's pane what it printed.
+            // script's pane what it printed; a popup closes of its own
+            // rule, whatever `close-on-exit` says.
             let close = if page || self.scripts.contains(&id) {
                 CloseOnExit::Never
             } else {
                 close
             };
-            match pane.exited(close, now, &self.texts) {
+            let exited = if popup {
+                pane.popup_exited(now, &self.texts)
+            } else {
+                pane.exited(close, now, &self.texts)
+            };
+            // A popup's plugin hears its command's status as it closes.
+            if popup && exited.is_some() {
+                let status = pane.exit_status().map(|exit| match exit {
+                    lokyr_pty::Exit::Code(code) => code,
+                    lokyr_pty::Exit::Signal(signal) => 128 + signal,
+                });
+                self.plugins.popup_ended(id, status);
+            }
+            match exited {
                 Some(Exited::Close) => {
                     closing.push((window, id));
                     ended.push(window);
@@ -3569,6 +3603,19 @@ impl<B: Backend> App<B> {
                     self.leave_broadcast(platform, name == LEAVE_BROADCAST);
                     Ok(())
                 }
+                NEW_FLOATING => {
+                    self.new_floating_pane(platform);
+                    Ok(())
+                }
+                TOGGLE_FLOATING => {
+                    self.toggle_floating_panes(platform);
+                    Ok(())
+                }
+                FLOAT_PANE | DOCK_PANE => {
+                    self.float_or_dock(platform, name == FLOAT_PANE);
+                    Ok(())
+                }
+                POPUP => self.open_popup(platform, &args),
                 FLOAT_ON_TOP => {
                     if let Some(window) = self.acting.or_else(|| platform.focused_window())
                         && !self.quick.contains_key(&window)
@@ -3744,6 +3791,7 @@ impl<B: Backend> App<B> {
         let dark = platform.appearance() == Appearance::Dark;
         let mut panes = spawn::Spawner {
             program: &self.program,
+            popup_shell: self.popup_shell.as_deref(),
             environment: &self.environment,
             budget: &self.budget,
             colors: &self.theme.variant(dark).colors,
@@ -5815,6 +5863,7 @@ impl<B: Backend> App<B> {
             }
             WindowEvent::MouseExited => {
                 self.bar_hovered(platform, window, None);
+                self.floating_hovered(platform, window, None);
                 self.surface_exited(platform, window);
             }
             WindowEvent::Scroll {
@@ -6076,6 +6125,11 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         ),
         (LEAVE_BROADCAST, "pane-leave-broadcast", Category::Panes),
         (JOIN_BROADCAST, "pane-join-broadcast", Category::Panes),
+        (NEW_FLOATING, "pane-new-floating", Category::Panes),
+        (TOGGLE_FLOATING, "pane-toggle-floating", Category::Panes),
+        (FLOAT_PANE, "pane-float", Category::Panes),
+        (DOCK_PANE, "pane-move-into-splits", Category::Panes),
+        (POPUP, "pane-popup", Category::Panes),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -6105,6 +6159,28 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 kind: Kind::String,
                 default: None,
             }]
+        } else if name == POPUP {
+            // Its command, of no default; its folder, the pane's in front's
+            // for none; and its shares of the tab's room.
+            let param = |name: &str, kind, default| Param {
+                name: name.to_owned(),
+                kind,
+                default,
+            };
+            vec![
+                param("command", Kind::String, None),
+                param("folder", Kind::String, Some(Value::String(String::new()))),
+                param(
+                    "width",
+                    Kind::Number,
+                    Some(Value::Number(floating::POPUP_WIDTH)),
+                ),
+                param(
+                    "height",
+                    Kind::Number,
+                    Some(Value::Number(floating::POPUP_HEIGHT)),
+                ),
+            ]
         } else if name == NEW_THEME {
             ["theme", "variant"]
                 .map(|name| Param {
@@ -6121,6 +6197,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         // the workspace's writes, and a layout's commands typed into its
         // shells.
         let capabilities = if name == OPEN_LAYOUT
+            || name == POPUP
             || BROADCASTS.contains(&name)
             || name == LEAVE_BROADCAST
             || name == JOIN_BROADCAST
@@ -6129,7 +6206,10 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 lokyr_kernel::commands::Capability::WorkspaceWrite,
                 lokyr_kernel::commands::Capability::PtyWrite,
             ]
-        } else if SESSIONS.contains(&name) || name == SWITCH_SESSION {
+        } else if SESSIONS.contains(&name)
+            || name == SWITCH_SESSION
+            || [NEW_FLOATING, TOGGLE_FLOATING, FLOAT_PANE, DOCK_PANE].contains(&name)
+        {
             vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
         } else {
             Vec::new()

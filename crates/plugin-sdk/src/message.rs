@@ -932,6 +932,37 @@ pub enum Request {
     /// method's text and the user's pastes go beside the pane that has its
     /// keyboard, and its panes left out.
     Broadcast(WindowId),
+    /// A tab's panes that float over its split panes, and whether they
+    /// show.
+    FloatingPanes(TabId),
+    /// Opens a popup over the active tab of `window`, of the window that
+    /// has the focus for none: a floating pane in the tab's middle, of
+    /// `width` and `height`, shares of its room,
+    /// [`POPUP_WIDTH`](crate::host::POPUP_WIDTH) and
+    /// [`POPUP_HEIGHT`](crate::host::POPUP_HEIGHT) by default, whose
+    /// program is the user's login shell running `command`, in `folder`, a
+    /// path absolute or from `~`, the focused pane's for none. It shows of
+    /// its own, whether the tab's floating panes do, and closes as the
+    /// command exits with 0 or an interrupt ends it, keeping its screen
+    /// otherwise until a key; [`Event::PopupClosed`] tells its close to the
+    /// plugin alone. The popup's pane, of an id given at once, which the
+    /// call's later writes take.
+    OpenPopup {
+        /// The window, the one that has the focus for none.
+        #[serde(default)]
+        window: Option<WindowId>,
+        /// The command, which the login shell runs as its `-c` takes one.
+        command: String,
+        /// The folder that it runs in.
+        #[serde(default)]
+        folder: Option<String>,
+        /// Its share of the tab's room across.
+        #[serde(default)]
+        width: Option<f64>,
+        /// Its share of the tab's room down.
+        #[serde(default)]
+        height: Option<f64>,
+    },
     /// Sends a window's typed input to `to`, beside the pane that has its
     /// keyboard, or to that pane alone, of [`BroadcastTo::Off`]: each key
     /// encoded of each pane's own terminal's modes.
@@ -1321,8 +1352,9 @@ impl Request {
                 needed
             }
             // The workspace's state, of where the typed input goes, to the
-            // programs of other panes.
-            Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } => {
+            // programs of other panes; and a popup, a pane of a command that
+            // the shell runs.
+            Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } | Self::OpenPopup { .. } => {
                 vec![Capability::WorkspaceWrite, Capability::PtyWrite]
             }
             _ => self.capability().into_iter().collect(),
@@ -1522,7 +1554,9 @@ impl Request {
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
             | Self::ShowPage(_)
-            | Self::Broadcast(_) => None,
+            | Self::Broadcast(_)
+            | Self::FloatingPanes(_)
+            | Self::OpenPopup { .. } => None,
             Self::WatchDoubleTap(_) => Some(Capability::GlobalHotkey),
         }
     }
@@ -1560,6 +1594,7 @@ impl Request {
             | Self::Groups(_)
             | Self::Sessions
             | Self::Broadcast(_)
+            | Self::FloatingPanes(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1609,6 +1644,7 @@ impl Request {
             | Self::Emit { .. }
             | Self::NewTab { .. }
             | Self::Split { .. }
+            | Self::OpenPopup { .. }
             | Self::CloseTab { .. }
             | Self::ClosePane { .. }
             | Self::SetTabTitle { .. }
@@ -1799,6 +1835,8 @@ pub enum Response {
     Sessions(Vec<SessionInfo>),
     /// A window's broadcast of the typed input.
     Broadcast(crate::host::Broadcast),
+    /// A tab's floating panes.
+    FloatingPanes(crate::host::FloatingPanes),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -2059,6 +2097,16 @@ pub enum Event {
         /// What failed, if the write did.
         error: Option<String>,
     },
+    /// A popup that the plugin opened closed, to it alone: as its command
+    /// ended, a key after it failed, or the user or a plugin closed it, its
+    /// tab or its window. The status of its command, of 128 and a signal's
+    /// number for a signal, as shells give it; none while it ran still.
+    PopupClosed {
+        /// The popup's pane.
+        pane: PaneId,
+        /// Its command's status.
+        status: Option<i32>,
+    },
     /// A line of a job of the packages' service, to its plugin alone:
     /// Sleip's event, an object of its `event`, as `installed`, and its
     /// fields, as Sleip's guide writes them down of each command.
@@ -2156,6 +2204,7 @@ impl Event {
             Self::ColorPicked { .. } => "color-picked",
             Self::ColorPanelClosed => "color-panel-closed",
             Self::Saved { .. } => "saved",
+            Self::PopupClosed { .. } => "popup-closed",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
             Self::PluginsChanged => PLUGINS_CHANGED,
@@ -2356,7 +2405,7 @@ impl Request {
             | Self::TempFile { .. }
             | Self::GitBranch { .. } => "text",
             Self::FocusedWindow { .. } | Self::OpenQuickWindow { .. } => "window",
-            Self::FocusedPane { .. } | Self::Split { .. } => "pane",
+            Self::FocusedPane { .. } | Self::Split { .. } | Self::OpenPopup { .. } => "pane",
             Self::LineText { .. } => "line",
             Self::ReadLines { .. } => "reading",
             Self::Search { .. } => "searching",
@@ -2382,6 +2431,7 @@ impl Request {
             Self::NewGroup { .. } => "group",
             Self::Sessions => "sessions",
             Self::Broadcast(_) => "broadcast",
+            Self::FloatingPanes(_) => "floating-panes",
             Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
@@ -2445,6 +2495,9 @@ impl Request {
             Self::SetFontSize(Some(size)) => vec![f64::from(*size)],
             Self::SetInactiveDim(dim) => vec![f64::from(*dim)],
             Self::RenderImage(image) => image.numbers(),
+            Self::OpenPopup { width, height, .. } => {
+                [*width, *height].into_iter().flatten().collect()
+            }
             _ => Vec::new(),
         }
     }

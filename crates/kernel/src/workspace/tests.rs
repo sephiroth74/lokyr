@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use lokyr_pty::Program;
 use lokyr_vt_core::terminal::Colors;
 
+use super::floating::LEAST_SHARE;
 use super::*;
 use crate::l10n::Texts;
 use lokyr_plugin_sdk::event::WorkspaceEvent as Change;
@@ -959,7 +960,7 @@ fn a_kept_screen_tells_how_its_program_ended_in_the_language_shown() {
         })
         .collect();
     assert!(
-        shown.contains("[il programma è uscito con codice 3; un tasto chiude la finestra]"),
+        shown.contains("[il programma è uscito con codice 3; un tasto chiude il pannello]"),
         "{shown:?}"
     );
 }
@@ -3211,4 +3212,90 @@ fn a_broadcast_takes_the_tab_s_or_the_window_s_panes_but_those_left_out() {
     assert_eq!(told, [window.into(); 3]);
     // Of no window there, nothing.
     assert!(!workspace.set_broadcast(WindowId::new(), BroadcastTo::Tab));
+}
+
+#[test]
+fn floating_panes_float_take_the_keyboard_hide_together_and_close() {
+    let mut workspace = Workspace::new();
+    let window = workspace.open_window(pane("sleep 30"));
+    let tab = workspace.window(window).unwrap().active_tab();
+    let a = workspace.tab(tab).unwrap().active_pane();
+    let b = workspace
+        .split(a, Direction::Horizontal, pane("sleep 30"), Side::Second)
+        .unwrap();
+    workspace.take_events();
+    // A floating pane over the split: in front, of the keyboard, among the
+    // tab's panes after its layout's.
+    let c = workspace
+        .float_pane(tab, pane("sleep 30"), FloatingFrame::centered(0.5, 0.5))
+        .unwrap();
+    let shown = workspace.tab(tab).unwrap();
+    assert_eq!(shown.active_pane(), c);
+    assert_eq!(shown.panes(), [a, b, c]);
+    assert_eq!(shown.layout().panes(), [a, b]);
+    assert_eq!(workspace.tab_of(c), Some(tab));
+    let told: Vec<&str> = workspace
+        .take_events()
+        .iter()
+        .filter_map(|event| match event {
+            Event::Changed(change) => Some(change.name()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        told.starts_with(&["pane-created", "layout-changed"]) && told.contains(&"pane-focused"),
+        "{told:?}"
+    );
+    // Another, in front; the first focused comes in front again.
+    let d = workspace
+        .float_pane(
+            tab,
+            pane("sleep 30"),
+            FloatingFrame::new(0.1, 0.1, 0.3, 0.3),
+        )
+        .unwrap();
+    assert!(workspace.focus_pane(c));
+    let order: Vec<PaneId> = workspace
+        .tab(tab)
+        .unwrap()
+        .floating()
+        .iter()
+        .map(|floating| floating.pane)
+        .collect();
+    assert_eq!(order, [d, c]);
+    // Hidden together: the layout's pane that had the keyboard takes it
+    // back, and the panes that show are the layout's.
+    assert!(workspace.set_floating_shown(tab, false));
+    let shown = workspace.tab(tab).unwrap();
+    assert_eq!(shown.active_pane(), a);
+    assert_eq!(shown.shown_panes(), [a, b]);
+    // A floating pane focused shows them again.
+    assert!(workspace.focus_pane(d));
+    assert!(workspace.tab(tab).unwrap().floating_shown());
+    // Moved within the tab's room, and no zoom of one.
+    assert!(workspace.move_floating(d, FloatingFrame::new(0.9, -1.0, 0.5, f64::NAN)));
+    let frame = workspace.tab(tab).unwrap().floating()[1].frame;
+    assert_eq!(
+        (frame.x(), frame.y(), frame.width(), frame.height()),
+        (0.5, 0.0, 0.5, LEAST_SHARE)
+    );
+    assert!(!workspace.zoom(tab, Some(d)));
+    // Closed, the keyboard to the one in front of those left.
+    assert!(workspace.close_pane(d));
+    assert_eq!(workspace.tab(tab).unwrap().active_pane(), c);
+    // The layout's last pane closed: the floating pane takes its place, and
+    // the tab stays.
+    assert!(workspace.close_pane(a));
+    assert!(workspace.close_pane(b));
+    let shown = workspace.tab(tab).unwrap();
+    assert_eq!(shown.layout().panes(), [c]);
+    assert!(shown.floating().is_empty());
+    assert_eq!(shown.active_pane(), c);
+    // A floating pane moved out to a window takes no tab along.
+    let e = workspace
+        .float_pane(tab, pane("sleep 30"), FloatingFrame::centered(0.4, 0.4))
+        .unwrap();
+    let out = workspace.pane_to_new_window(e).unwrap();
+    assert_ne!(out, window);
+    assert_eq!(workspace.tab(tab).unwrap().panes(), [c]);
 }

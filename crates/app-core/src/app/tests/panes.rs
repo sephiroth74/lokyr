@@ -1091,3 +1091,107 @@ fn each_pane_that_takes_the_broadcast_shows_a_ring_of_its_color() {
     assert!(app.workspace.set_broadcast(shown, BroadcastTo::Off));
     assert!(frame(&mut fake, &mut app).is_empty());
 }
+
+/// Floats a pane of `program` over `window`'s active tab, in `frame`, once
+/// it shows `ready-` and its `name`, of the keyboard: its id.
+fn float_in(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    program: &Program,
+    frame: lokyr_kernel::workspace::FloatingFrame,
+    name: &str,
+) -> PaneId {
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        fake,
+        program,
+        &Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let floating = app.workspace.float_pane(tab, pane, frame).unwrap();
+    fake.send(app, window, WindowEvent::Frame);
+    let ready = format!("ready-{name}");
+    run_until(fake, app, |_, app| {
+        screen_of(app, floating).contains(&ready)
+    });
+    floating
+}
+
+#[test]
+fn a_floating_pane_over_the_splits_takes_the_clicks_and_the_keys_of_its_box_and_rests() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
+    let frame = lokyr_kernel::workspace::FloatingFrame::new(0.55, 0.55, 0.4, 0.4);
+    let floating = float_in(&mut fake, &mut app, window, &echoing("f"), frame, "f");
+    // Its grid is its box's, below its header, which its program learns.
+    let state = &app.windows[&window];
+    let (_, room) = state.floating_rooms[0];
+    let view = state
+        .views
+        .iter()
+        .find(|view| view.pane == floating)
+        .copied()
+        .unwrap();
+    assert_eq!(view.rect, room.grid);
+    assert!(room.grid.y > room.outer.y && room.grid.width < room.outer.width);
+    assert_eq!(app.workspace.pane(floating).unwrap().grid(), view.grid);
+    assert_eq!(app.focused(window), Some(floating));
+    // A click on the first pane, beside the box: its keyboard.
+    click_in(&mut fake, &mut app, window, a);
+    assert_eq!(app.focused(window), Some(a));
+    // A click on the box's header, over the second pane: the floating
+    // pane's.
+    let scale = fake.window(window).unwrap().size.scale;
+    let header = Point {
+        x: (f64::from(room.header.x) + f64::from(room.header.width) / 2.0) / scale,
+        y: (f64::from(room.header.y) + f64::from(room.header.height) / 2.0) / scale,
+    };
+    fake.send(&mut app, window, click(true, header, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, header, Modifiers::NONE, 1));
+    assert_eq!(app.focused(window), Some(floating));
+    // Its keys reach its program alone.
+    fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, floating).contains("f:x")
+    });
+    assert!(!screen_of(&app, b).contains('x'));
+    // Once still, it draws no frame of its own.
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.window(window).unwrap().frame_requested
+    });
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // Its frame drew over the panes, after their cells: its box, of the
+    // shadow.
+    let surface = app.windows[&window].surface.as_ref().unwrap();
+    let last = surface.last.lock().unwrap();
+    let items = &last.as_ref().unwrap().items;
+    let boxed = items.iter().position(|item| {
+        matches!(item, lokyr_render_core::Item::Shapes(shapes)
+            if shapes.iter().any(|shape| shape.rect == room.outer && shape.shadow.is_some()))
+    });
+    let first_cells = items
+        .iter()
+        .position(|item| matches!(item, lokyr_render_core::Item::Cells(_)));
+    assert!(
+        boxed.is_some() && first_cells < boxed,
+        "{boxed:?} {first_cells:?}"
+    );
+    drop(last);
+    // Accessibility finds it beside the others, a terminal each.
+    assert!(fake.ask_accessibility(&mut app, window));
+    let tree = fake.window(window).unwrap().accessibility.last().unwrap();
+    let terminals = tree
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.role() == accesskit::Role::Terminal)
+        .count();
+    assert_eq!(terminals, 3);
+}
