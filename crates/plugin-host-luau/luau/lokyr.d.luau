@@ -928,6 +928,7 @@ export type SessionFolders = {
     configured: { string },
     recent: { string },
     home: string?,
+    layouts: { string }?,
 }
 
 export type SessionId = number

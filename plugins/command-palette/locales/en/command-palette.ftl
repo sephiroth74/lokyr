@@ -39,3 +39,4 @@ palette-sessions-none = No sessions nor folders
 palette-sessions = Sessions
 palette-session-untitled = Untitled Session
 palette-folder-recent = Recent
+palette-layout = Layout

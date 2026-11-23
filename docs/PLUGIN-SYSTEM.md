@@ -307,6 +307,7 @@ type SessionFolders = {
     configured: { string }, -- those of the config's `[sessions] folders`, in their order
     recent: { string }, -- those that the panes' shells told last, the latest first, there still
     home: string?, -- the home directory, which a switcher shows the folders under as of `~`
+    layouts: { string }, -- the names of the layouts, each opening as a new session of `window.open-layout`
 }
 
 -- A tab's layout: a pane, or a split of two layouts, whose ratio is the

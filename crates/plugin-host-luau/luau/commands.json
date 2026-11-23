@@ -1335,6 +1335,21 @@
   {
     "capabilities": [],
     "category": "windows",
+    "name": "window.open-layout",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Layout",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
     "name": "window.previous",
     "params": [],
     "plugin": null,
@@ -1348,6 +1363,15 @@
     "params": [],
     "plugin": null,
     "title": "Rename Session…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "windows",
+    "name": "window.save-layout",
+    "params": [],
+    "plugin": null,
+    "title": "Save Session as Layout…",
     "when": null
   },
   {

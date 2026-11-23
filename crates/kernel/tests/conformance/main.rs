@@ -721,6 +721,7 @@ impl Kernel {
             theme_value: &|_, _, _| Ok(()),
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
+            layouts: &Vec::new,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],

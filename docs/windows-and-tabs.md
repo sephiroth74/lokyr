@@ -53,6 +53,7 @@ A session is a group of windows, such as one for each project. One session shows
 - **Window › Sessions › New Session** opens a session with one window of a new shell, and hides the windows you had.
 - **Window › Sessions › Switch to Last Session**, ⌃⌘L, switches to the session you used before. Press it again to come back.
 - **Window › Sessions › Rename Session…** names the session. The name shows in the titlebar of its windows, before their keys, such as `api · ⌥⌘1`.
+- **Window › Sessions › Save Session as Layout…** saves the session to a file that the switcher lists, which opens as a new session with new shells: [Layouts](layouts.md) tells how to add the commands that its panes run.
 - **Window › Sessions › Close Session** closes the session's windows. Lokyr asks first while a program other than a shell runs in one of them.
 
 Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in.

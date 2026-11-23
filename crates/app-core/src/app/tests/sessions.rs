@@ -117,6 +117,7 @@ fn the_window_menu_s_sessions_rename_and_close_a_session() {
             "New Session",
             "Switch to Last Session ⌨",
             "Rename Session…",
+            "Save Session as Layout…",
             "Close Session"
         ]
     );
@@ -249,4 +250,70 @@ fn the_recent_folders_are_kept_for_the_next_start() {
 /// An app of the default config of the state's directory `state`.
 fn app_of_state(state: std::path::PathBuf) -> App {
     app(Config::default(), quiet()).with_state(Some(state))
+}
+
+#[test]
+fn a_session_saved_as_a_layout_opens_again_as_a_new_session() {
+    let (mut fake, mut app, path) = with_file("layouts", "");
+    let first = fake.windows().next().unwrap();
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    let session = app.workspace.active_session();
+    app.workspace.rename_session(session, "api");
+    // Asked for its name, of the session's at first, it writes the file.
+    command(&mut fake, &mut app, SAVE_LAYOUT);
+    let open = fake.alerts().last().expect("the question").clone();
+    assert_eq!(open.alert.input.as_deref(), Some("api"));
+    fake.answer_alert_typed(&mut app, open.id, (0, false), Some(" work "));
+    let folder = path.parent().unwrap().join("layouts");
+    let file = folder.join("work.toml");
+    let layout = lokyr_kernel::layouts::Layout::read(&file).unwrap();
+    assert_eq!(layout.windows.len(), 1);
+    // Saved again of that name, it asks before it replaces it.
+    command(&mut fake, &mut app, SAVE_LAYOUT);
+    let open = fake.alerts().last().unwrap().clone();
+    fake.answer_alert_typed(&mut app, open.id, (0, false), Some("work"));
+    let replace = fake.alerts().last().unwrap().clone();
+    assert_eq!(replace.alert.message, "Replace the layout “work”?");
+    fake.answer_alert(&mut app, replace.id, 1);
+    // A pane's command, added by hand, runs in its shell as it starts.
+    std::fs::write(
+        &file,
+        concat!(
+            "[[window]]\n[[window.tab]]\ntitle = \"server\"\n[window.tab.split]\n",
+            "direction = \"right\"\n[window.tab.split.first.pane]\n",
+            "command = \"printf 'from the layout'\"\n[window.tab.split.second.pane]\n",
+        ),
+    )
+    .unwrap();
+    let named = |name: &str| {
+        lokyr_kernel::commands::Args::from([(
+            "name".to_owned(),
+            lokyr_kernel::commands::Value::String(name.to_owned()),
+        )])
+    };
+    app.run(&mut fake, OPEN_LAYOUT, named("work"));
+    let opened = app.workspace.active_session();
+    assert_ne!(opened, session);
+    assert_eq!(app.workspace.session(opened).unwrap().name(), "work");
+    let [window] = app.workspace.session_windows(opened)[..] else {
+        panic!("one window");
+    };
+    assert!(hidden(&fake, first));
+    let tab = app.workspace.window(window).unwrap().active_tab();
+    let tab = app.workspace.tab(tab).unwrap();
+    assert_eq!(tab.title(), "server");
+    assert_eq!(tab.layout().panes().len(), 2);
+    // The shell of the test is `cat`, which echoes what its pane typed.
+    let pane = tab.layout().panes()[0];
+    run_until(&mut fake, &mut app, |_, app| {
+        let terminal = app.workspace.pane(pane).unwrap().terminal().unwrap();
+        (0..terminal.rows()).any(|y| terminal.row_text(y).contains("printf 'from the layout'"))
+    });
+    // A layout that does not read is told, of its file and line.
+    std::fs::write(folder.join("broken.toml"), "[[window]]\nshape = 1\n").unwrap();
+    app.run(&mut fake, OPEN_LAYOUT, named("broken"));
+    let shown = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert!(shown.text.contains("broken.toml: line 2"), "{shown:?}");
+    assert_eq!(app.workspace.active_session(), opened);
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }

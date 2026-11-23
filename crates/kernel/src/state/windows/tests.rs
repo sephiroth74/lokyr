@@ -44,6 +44,7 @@ fn sample() -> Kept {
     let pane = |directory: &str| Layout::Pane {
         directory: Some(directory.to_owned()),
         scrollback: None,
+        command: None,
     };
     Kept {
         sessions: Vec::new(),
@@ -132,6 +133,7 @@ fn sample() -> Kept {
                         first: Box::new(Layout::Pane {
                             directory: None,
                             scrollback: None,
+                            command: None,
                         }),
                         second: Box::new(pane("/e")),
                     },
@@ -217,6 +219,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             layout: Layout::Pane {
                 directory: None,
                 scrollback: None,
+                command: None,
             },
             active: 0,
             zoomed: None,
@@ -441,7 +444,8 @@ fn each_pane_names_its_scrollback_s_file_in_the_layout_s_order() {
         earlier,
         Layout::Pane {
             directory: Some("/tmp".to_owned()),
-            scrollback: None
+            scrollback: None,
+            command: None,
         }
     );
 }
@@ -512,6 +516,7 @@ fn a_session_that_never_showed_keeps_its_windows_and_their_files_new_names() {
             layout: Layout::Pane {
                 directory: None,
                 scrollback: Some("7.scrollback".to_owned()),
+                command: None,
             },
             active: 0,
             zoomed: None,

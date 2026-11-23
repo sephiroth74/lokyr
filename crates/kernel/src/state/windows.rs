@@ -175,6 +175,10 @@ pub enum Layout {
         /// reads past.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scrollback: Option<String>,
+        /// The command line that its shell runs as it starts, of a layout's
+        /// pane; none of a window kept as the app quit.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        command: Option<String>,
     },
     /// Two parts that share the room.
     Split {
@@ -201,6 +205,9 @@ pub struct KeptPane<'a> {
     /// The name of its scrollback's file in the state's folder of the
     /// panes' scrollback, if it kept one.
     pub scrollback: Option<&'a str>,
+    /// The command line that its shell runs as it starts, of a layout's
+    /// pane.
+    pub command: Option<&'a str>,
 }
 
 /// How a kept split lays its two parts out.
@@ -604,6 +611,7 @@ impl Layout {
                     .and_then(directory)
                     .map(|path| path.to_string_lossy().into_owned()),
                 scrollback: workspace.pane(*pane).and_then(&mut *scrollback),
+                command: None,
             },
             workspace::Layout::Split {
                 direction,
@@ -648,9 +656,11 @@ impl Layout {
             Self::Pane {
                 directory,
                 scrollback,
+                command,
             } => KeptPane {
                 directory: directory.as_deref().map(Path::new),
                 scrollback: scrollback.as_deref(),
+                command: command.as_deref(),
             },
             Self::Split { first, .. } => first.first_pane(),
         }

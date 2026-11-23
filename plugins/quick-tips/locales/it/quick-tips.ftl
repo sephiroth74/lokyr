@@ -54,6 +54,7 @@ tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › 
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
 tip-sessions = Finestra › Sessioni › Nuova sessione apre una sessione a sé, una finestra con una nuova shell, e nasconde le altre finestre, con i loro programmi in esecuzione, finché non torni indietro.
+tip-layouts = Finestra › Sessioni › Salva sessione come layout… salva finestre, tab e split in un file; aggiungi un comando a un pane lì, e il selettore apre il layout come nuova sessione che lo esegue.
 tip-session-switcher = Premi { $keys } per passare a una sessione o aprirne una nella cartella di un progetto: aggiungi folders = ["~/src/*"] a una sezione [sessions] della config per elencare i tuoi progetti.
 tip-last-session = Premi { $keys } per passare alla sessione che usavi prima, con le sue finestre dove le avevi lasciate.
 tip-smooth-scroll = Imposta smooth-scroll = true in [window] nella config, e il trackpad scorre il testo a pixel, continuando a scivolare quando alzi le dita; anche lo scatto della rotella del mouse scivola.

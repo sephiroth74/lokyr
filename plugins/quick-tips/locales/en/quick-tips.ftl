@@ -59,6 +59,7 @@ tip-services = In the Finder, right-click a folder and choose Services › New L
 tip-itermcolors = Double-click an .itermcolors file, or drop it on Lokyr's Dock icon, to install its theme.
 tip-float = Window › Float on Top keeps the window above every other app's.
 tip-sessions = Window › Sessions › New Session opens a session of its own, a window of a new shell, and hides your other windows, their programs running, until you switch back.
+tip-layouts = Window › Sessions › Save Session as Layout… saves your windows, tabs and splits to a file; add a command to a pane there, and the switcher opens the layout as a new session that runs it.
 tip-session-switcher = Press { $keys } to switch to a session, or to open one in a project's folder: add folders = ["~/src/*"] to a [sessions] section of your config to list your projects.
 tip-last-session = Press { $keys } to switch to the session that you used before, its windows where you left them.
 tip-smooth-scroll = Set smooth-scroll = true under [window] in the config, and the trackpad scrolls the text by pixels, gliding on as you lift your fingers; a mouse wheel's step glides too.

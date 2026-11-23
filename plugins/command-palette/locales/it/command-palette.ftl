@@ -28,3 +28,4 @@ palette-sessions-none = Nessuna sessione né cartella
 palette-sessions = Sessioni
 palette-session-untitled = Sessione senza nome
 palette-folder-recent = Recente
+palette-layout = Layout

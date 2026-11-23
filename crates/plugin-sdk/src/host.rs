@@ -106,6 +106,10 @@ pub struct SessionFolders {
     /// `~`, if there is one.
     #[serde(default)]
     pub home: Option<String>,
+    /// The names of the layouts, sessions saved to files, each opening as
+    /// a new session of the app's command `window.open-layout`.
+    #[serde(default)]
+    pub layouts: Vec<String>,
 }
 
 /// Whether a group's `name` and `color` are a group's: a name of

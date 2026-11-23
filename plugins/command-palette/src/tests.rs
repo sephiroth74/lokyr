@@ -604,6 +604,7 @@ fn the_switcher_lists_the_sessions_then_the_folders_of_no_session() {
         ],
         recent: vec!["/Users/me/src/api".to_owned(), "/tmp/scratch".to_owned()],
         home: Some(home),
+        layouts: Vec::new(),
     });
     run(&mut host, &mut plugin, SESSIONS, Args::new());
     // The session that the host starts in, of no name, then the config's
@@ -672,4 +673,50 @@ fn a_folder_s_parent_shows_of_the_home_directory() {
         ("/Users/meow".to_owned(), "x".to_owned())
     );
     assert_eq!(parts("/tmp", None), ("/".to_owned(), "tmp".to_owned()));
+}
+
+#[test]
+fn the_switcher_lists_the_layouts_after_the_sessions_and_opens_one() {
+    let (mut host, mut plugin) = host();
+    // The app's command that opens a layout, of its name.
+    let name = Param {
+        name: "name".to_owned(),
+        kind: Kind::String,
+        default: None,
+    };
+    host.set_registry(vec![info(
+        "window.open-layout",
+        "Open Layout",
+        None,
+        vec![name],
+    )]);
+    host.set_session_folders(lokyr_plugin_sdk::host::SessionFolders {
+        configured: vec!["/Users/me/src/api".to_owned()],
+        layouts: vec!["review".to_owned(), "server".to_owned()],
+        home: Some("/Users/me".to_owned()),
+        ..lokyr_plugin_sdk::host::SessionFolders::default()
+    });
+    run(&mut host, &mut plugin, SESSIONS, Args::new());
+    assert_eq!(
+        shown(&mut host, &mut plugin),
+        ["Untitled Session", "review", "server", "api"]
+    );
+    // A query ranks within each group, the groups in their order.
+    typed(&mut host, &mut plugin, "s");
+    let titles = shown(&mut host, &mut plugin);
+    let server = titles.iter().position(|title| title == "server").unwrap();
+    let api = titles.iter().position(|title| title == "api");
+    assert!(api.is_none_or(|api| server < api), "{titles:?}");
+    // A layout opens of the app's command, by its name.
+    typed(&mut host, &mut plugin, "server");
+    let requests = submit(&mut host, &mut plugin);
+    assert!(
+        requests.iter().any(|request| matches!(
+            request,
+            Request::RunCommand { name, args }
+                if name == "window.open-layout"
+                    && args.get("name") == Some(&Value::String("server".to_owned()))
+        )),
+        "{requests:?}"
+    );
 }

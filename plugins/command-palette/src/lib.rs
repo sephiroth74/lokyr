@@ -15,9 +15,10 @@
 //! its message or its tab's title, its state and how long it has been in
 //! it; Return brings the agent's pane, its tab and its window forward. Its
 //! sessions' switcher lists the sessions open, in the order of their use,
-//! then the folders of the config's `[sessions] folders` and the recent
-//! ones, those of no session; Return switches to the session, or opens one
-//! in the folder, named after it.
+//! then the layouts, then the folders of the config's `[sessions] folders`
+//! and the recent ones, those of no session; Return switches to the
+//! session, opens the layout as a new session, or opens one in the folder,
+//! named after it.
 //! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
@@ -54,9 +55,13 @@ const AGENTS: &str = "command-palette.agents";
 const SESSIONS: &str = "command-palette.sessions";
 
 /// The starts of the names of a switcher's entries: a session's, of its
-/// id, and a folder's, of its path.
+/// id, a layout's, of its name, and a folder's, of its path.
 const SESSION: &str = "session:";
+const LAYOUT: &str = "layout:";
 const FOLDER: &str = "folder:";
+
+/// The app's command that opens a layout as a new session.
+const OPEN_LAYOUT: &str = "window.open-layout";
 
 /// The app's command that brings a window forward by its number.
 const GOTO_WINDOW: &str = "window.goto";
@@ -90,7 +95,7 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 19] = [
+const ENGLISH: [(&str, &str); 20] = [
     ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
@@ -113,6 +118,7 @@ const ENGLISH: [(&str, &str); 19] = [
     ("palette-sessions", "Sessions"),
     ("palette-session-untitled", "Untitled Session"),
     ("palette-folder-recent", "Recent"),
+    ("palette-layout", "Layout"),
 ];
 
 /// The text of the message `id`, in the language shown, or English's where
@@ -188,9 +194,10 @@ struct Open {
     commands: Vec<Entry>,
     /// The agents of the agents' list, each of its entry's place.
     agents: Vec<AgentInfo>,
-    /// Of the sessions' switcher, the entries of sessions, first, before
-    /// those of folders, which rank after them.
-    sessions: usize,
+    /// Of the sessions' switcher, the numbers of entries of its groups, in
+    /// their order, each ranked after the one before: its sessions, its
+    /// layouts, then its folders.
+    groups: Vec<usize>,
     query: String,
     ranked: Vec<usize>,
     selected: usize,
@@ -204,7 +211,7 @@ impl Open {
             mode,
             commands,
             agents: Vec::new(),
-            sessions: 0,
+            groups: Vec::new(),
             query: String::new(),
             ranked: Vec::new(),
             selected: 0,
@@ -215,20 +222,23 @@ impl Open {
 
     /// Ranks the entries for the field's text, of the recent commands'
     /// names `recent`: of the sessions' switcher, its sessions first, then
-    /// its folders, each ranked of its own.
+    /// its layouts, then its folders, each group ranked of its own.
     fn rank(&mut self, recent: &[String]) {
         if self.mode != Mode::Sessions {
             self.ranked = rank::rank(&self.commands, &self.query, recent);
             return;
         }
-        let split = self.sessions.min(self.commands.len());
-        let (sessions, folders) = self.commands.split_at(split);
-        self.ranked = rank::rank(sessions, &self.query, &[]);
-        self.ranked.extend(
-            rank::rank(folders, &self.query, &[])
-                .into_iter()
-                .map(|at| at + split),
-        );
+        self.ranked.clear();
+        let mut start = 0;
+        for &count in &self.groups {
+            let end = (start + count).min(self.commands.len());
+            self.ranked.extend(
+                rank::rank(&self.commands[start..end], &self.query, &[])
+                    .into_iter()
+                    .map(|at| at + start),
+            );
+            start = end;
+        }
     }
 
     /// The selected command, if one is.
@@ -547,6 +557,14 @@ impl Palette {
             })
             .collect();
         let count = entries.len();
+        let layout_mark = message(cx, "palette-layout");
+        entries.extend(folders.layouts.iter().map(|name| Entry {
+            name: format!("{LAYOUT}{name}"),
+            title: name.clone(),
+            keys: Some(layout_mark.clone()),
+            plugin: None,
+        }));
+        let layouts = folders.layouts.len();
         let taken: Vec<&str> = sessions
             .iter()
             .filter_map(|session| session.folder.as_deref())
@@ -574,9 +592,10 @@ impl Palette {
                 plugin: Some(folder.clone()),
             });
         }
+        let listed = entries.len() - count - layouts;
         self.show(cx, Mode::Sessions, entries)?;
         if let Some(open) = &mut self.open {
-            open.sessions = count;
+            open.groups = vec![count, layouts, listed];
             open.rank(&[]);
         }
         Ok(())
@@ -727,6 +746,11 @@ fn bring_forward(cx: &mut Cx<'_>, agent: &AgentInfo) -> Result<(), Error> {
 /// folder's, to the session opened there, or to one that it opens there,
 /// named after the folder.
 fn switch_to(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+    if let Some(layout) = name.strip_prefix(LAYOUT) {
+        let mut args = Args::new();
+        args.insert("name".to_owned(), Value::String(layout.to_owned()));
+        return cx.run_command(OPEN_LAYOUT, args);
+    }
     if let Some(id) = name.strip_prefix(SESSION) {
         let Ok(id) = id.parse::<u64>() else {
             return Ok(());

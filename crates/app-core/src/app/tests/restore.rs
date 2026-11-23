@@ -166,6 +166,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&a),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(
@@ -173,6 +174,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&b),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(one.tabs[1].title.as_deref(), Some("logs"));
@@ -182,6 +184,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&c),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(two.tabs[0].zoomed, Some(0));
@@ -223,6 +226,7 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                     layout: windows::Layout::Pane {
                         directory: None,
                         scrollback: None,
+                        command: None,
                     },
                     active: 0,
                     zoomed: None,

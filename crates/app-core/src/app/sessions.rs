@@ -2,12 +2,15 @@
 //! hidden, drawing nothing, and the active one's shown where they were, the
 //! last of them to have had the keyboard taking it again; the Window menu's
 //! Sessions, of a new session, the last two toggled, a session renamed and
-//! closed; and a session's name beside the window's number in its
-//! titlebar. The quick terminal's window, the settings' and a man page's
+//! closed, and saved as a layout, which opens as a new session; and a
+//! session's name beside the window's number in its titlebar. The quick terminal's window, the settings' and a man page's
 //! are of no session, and show whichever is active.
 
 use lokyr_kernel::commands::{Args, Code, Error, Value};
+use lokyr_kernel::diagnostics::{About, Diagnostic};
 use lokyr_kernel::l10n::Arg;
+use lokyr_kernel::layouts::{self, Layout};
+use lokyr_kernel::state::windows::{self, Kept};
 use lokyr_kernel::workspace::{self, Pane, SessionId};
 use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, WindowId};
 
@@ -15,12 +18,16 @@ use super::{App, LAST_SESSION};
 use crate::drawing::Backend;
 
 /// A question of the app's of a session.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum SessionAsk {
     /// Its name.
     Rename,
     /// Whether to close it, as a program runs in one of its windows.
     Close,
+    /// The name of the layout that it is saved as.
+    SaveLayout,
+    /// Whether to replace the layout of a name, which it is saved as.
+    ReplaceLayout(String),
 }
 
 impl<B: Backend> App<B> {
@@ -76,7 +83,7 @@ impl<B: Backend> App<B> {
         if self
             .session_asks
             .values()
-            .any(|&(ask, asked, _)| ask == SessionAsk::Rename && asked == session)
+            .any(|(ask, asked, _)| *ask == SessionAsk::Rename && *asked == session)
         {
             return;
         }
@@ -113,7 +120,7 @@ impl<B: Backend> App<B> {
         if self
             .session_asks
             .values()
-            .any(|&(ask, asked, _)| ask == SessionAsk::Close && asked == session)
+            .any(|(ask, asked, _)| *ask == SessionAsk::Close && *asked == session)
         {
             return;
         }
@@ -172,7 +179,7 @@ impl<B: Backend> App<B> {
         button: usize,
         text: Option<&str>,
     ) {
-        let Some((ask, session, _)) = self.session_asks.remove(&alert) else {
+        let Some((ask, session, window)) = self.session_asks.remove(&alert) else {
             return;
         };
         if button != 0 {
@@ -186,14 +193,203 @@ impl<B: Backend> App<B> {
                 }
             }
             SessionAsk::Close => self.close_session(platform, session),
+            SessionAsk::SaveLayout => {
+                let name = text.map(str::trim).unwrap_or_default().to_owned();
+                self.layout_named(platform, (session, window), name);
+            }
+            SessionAsk::ReplaceLayout(name) => self.save_layout(platform, session, &name),
         }
+    }
+
+    /// Asks for the name of the layout that the active session is saved
+    /// as, on the window in front, of the session's name at first.
+    pub(super) fn ask_layout_name(&mut self, platform: &mut dyn Platform) {
+        let session = self.workspace.active_session();
+        let Some(window) = self.acting.or_else(|| platform.focused_window()) else {
+            return;
+        };
+        let name = self
+            .workspace
+            .session(session)
+            .map(|shown| shown.name().to_owned())
+            .unwrap_or_default();
+        let alert = Alert {
+            style: AlertStyle::Informational,
+            message: self.texts.text("save-layout-message"),
+            detail: self.texts.text("save-layout-detail"),
+            buttons: vec![
+                self.texts.text("save-layout-save"),
+                self.texts.text("save-layout-cancel"),
+            ],
+            suppression: None,
+            input: Some(name),
+        };
+        let asked = platform.show_alert(Some(window), &alert);
+        self.session_asks
+            .insert(asked, (SessionAsk::SaveLayout, session, window));
+    }
+
+    /// Saves `session` as the layout `name`, once the user confirms that it
+    /// replaces the one of that name there; a name that is no file's is
+    /// told.
+    fn layout_named(
+        &mut self,
+        platform: &mut dyn Platform,
+        (session, window): (SessionId, WindowId),
+        name: String,
+    ) {
+        if let Err(error) = layout_name(&name) {
+            self.report(platform, Diagnostic::new(Code::Failed, error, About::Other));
+            return;
+        }
+        let Some(folder) = self.layouts_folder() else {
+            return;
+        };
+        if !layouts::path(&folder, &name).exists() {
+            self.save_layout(platform, session, &name);
+            return;
+        }
+        let alert = Alert {
+            style: AlertStyle::Warning,
+            message: self
+                .texts
+                .text_with("replace-layout-message", &[("name", Arg::Text(&name))]),
+            detail: self.texts.text("replace-layout-detail"),
+            buttons: vec![
+                self.texts.text("replace-layout-replace"),
+                self.texts.text("replace-layout-cancel"),
+            ],
+            suppression: None,
+            input: None,
+        };
+        let asked = platform.show_alert(Some(window), &alert);
+        self.session_asks
+            .insert(asked, (SessionAsk::ReplaceLayout(name), session, window));
+    }
+
+    /// Writes `session`'s windows as the layout `name`: their frames, tabs,
+    /// splits and each pane's folder, of `~` for the home directory.
+    fn save_layout(&mut self, platform: &mut dyn Platform, session: SessionId, name: &str) {
+        let Some(folder) = self.layouts_folder() else {
+            return;
+        };
+        let host = lokyr_pty::host_name();
+        let home = std::env::home_dir();
+        let shown: Vec<(workspace::WindowId, Option<windows::Frame>)> = self
+            .windows_of_session(session)
+            .into_iter()
+            .filter_map(|window| {
+                let open = self.windows.get(&window)?;
+                let frame = platform.windowed_frame(window).map(|frame| windows::Frame {
+                    x: frame.x,
+                    y: frame.y,
+                    width: frame.width,
+                    height: frame.height,
+                });
+                Some((open.window, frame))
+            })
+            .collect();
+        let kept = Kept::of(
+            &self.workspace,
+            &shown,
+            None,
+            |pane| {
+                let path = pane
+                    .told_directory(&host)
+                    .or_else(|| pane.working_directory())?;
+                // Of `~` for the home directory, as a layout goes from one
+                // account to another.
+                Some(
+                    match home
+                        .as_deref()
+                        .and_then(|home| path.strip_prefix(home).ok())
+                    {
+                        Some(rest) if rest.as_os_str().is_empty() => "~".into(),
+                        Some(rest) => std::path::Path::new("~").join(rest),
+                        None => path,
+                    },
+                )
+            },
+            |_, _| None,
+        );
+        let session_folder = self
+            .workspace
+            .session(session)
+            .and_then(workspace::Session::folder);
+        let layout = Layout::of(&kept.windows, session_folder);
+        let path = layouts::path(&folder, name);
+        if let Err(error) = layout.write(&path) {
+            let text = format!(
+                "the session is not saved as the layout `{name}`, as {} cannot be written: {error}",
+                path.display()
+            );
+            self.report(platform, Diagnostic::new(Code::Failed, text, About::Other));
+        }
+    }
+
+    /// Opens the layout of `args`' `name` as a new session of its name, of
+    /// new programs, its panes' commands run in their shells as they start;
+    /// a layout that does not read is told, of its file and its line.
+    pub(super) fn open_layout(
+        &mut self,
+        platform: &mut dyn Platform,
+        args: &Args,
+    ) -> Result<(), Error> {
+        let Some(Value::String(name)) = args.get("name") else {
+            return Err(Error::new(
+                Code::MissingArgument,
+                "a layout's opening takes its `name`",
+            ));
+        };
+        layout_name(name).map_err(|error| Error::new(Code::Failed, error))?;
+        let Some(folder) = self.layouts_folder() else {
+            return Err(Error::new(Code::NotFound, "there is no folder of layouts"));
+        };
+        let path = layouts::path(&folder, name);
+        let layout = Layout::read(&path).map_err(|error| {
+            Error::new(
+                Code::Failed,
+                format!(
+                    "the layout `{name}` does not open: {}: {error}",
+                    path.display()
+                ),
+            )
+        })?;
+        let Some(session) = self.workspace.new_session(name) else {
+            return Ok(());
+        };
+        let folder = layout
+            .folder
+            .as_ref()
+            .map(|folder| lokyr_kernel::plugins::host::home_expanded(&folder.0));
+        self.workspace.set_session_folder(session, folder);
+        // The windows of the session left hide first.
+        self.settle_sessions(platform);
+        let opened = layout
+            .windows()
+            .iter()
+            .filter_map(|window| self.restore_window(platform, window))
+            .count();
+        if opened == 0 {
+            self.workspace.close_session(session);
+        }
+        self.settle_sessions(platform);
+        Ok(())
+    }
+
+    /// The folder of the layouts, beside the config file, if the app has
+    /// one.
+    fn layouts_folder(&self) -> Option<std::path::PathBuf> {
+        self.config_file
+            .as_ref()
+            .map(|file| layouts::folder(&file.path))
     }
 
     /// Whether a question of a session's is open on `window`.
     pub(super) fn asks_session_on(&self, window: WindowId) -> bool {
         self.session_asks
             .values()
-            .any(|&(_, _, asked)| asked == window)
+            .any(|(_, _, asked)| *asked == window)
     }
 
     /// Forgets the questions of sessions on `window`, which closes.
@@ -324,4 +520,14 @@ impl<B: Backend> App<B> {
             self.show_window_keys(platform, window);
         }
     }
+}
+
+/// Whether `name` is a layout's: a file's name, of no dot first, whose
+/// file the layouts' folder holds of `.toml`; why not otherwise.
+fn layout_name(name: &str) -> Result<(), String> {
+    lokyr_kernel::plugins::host::check_file_name(name).map_err(|error| error.message)?;
+    if name.starts_with('.') {
+        return Err("a layout's name does not start with a dot".to_owned());
+    }
+    Ok(())
 }

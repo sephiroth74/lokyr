@@ -206,8 +206,19 @@ const CLOSE_SESSION: &str = "window.close-session";
 /// The command that switches to the session of its `name`, for keys of the
 /// user's own.
 const SWITCH_SESSION: &str = "window.switch-session";
+/// The command that saves the active session as a layout, of a name that
+/// it asks for.
+const SAVE_LAYOUT: &str = "window.save-layout";
+/// The command that opens the layout of its `name` as a new session.
+const OPEN_LAYOUT: &str = "window.open-layout";
 /// The sessions' commands, which the Window menu's Sessions shows.
-const SESSIONS: [&str; 4] = [NEW_SESSION, LAST_SESSION, RENAME_SESSION, CLOSE_SESSION];
+const SESSIONS: [&str; 5] = [
+    NEW_SESSION,
+    LAST_SESSION,
+    RENAME_SESSION,
+    SAVE_LAYOUT,
+    CLOSE_SESSION,
+];
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -3557,6 +3568,11 @@ impl<B: Backend> App<B> {
                     Ok(())
                 }
                 SWITCH_SESSION => self.switch_session_named(platform, &args),
+                SAVE_LAYOUT => {
+                    self.ask_layout_name(platform);
+                    Ok(())
+                }
+                OPEN_LAYOUT => self.open_layout(platform, &args),
                 CLOSE_WINDOW => {
                     if let Some(window) = platform.focused_window() {
                         self.ask_close(platform, window);
@@ -3715,6 +3731,15 @@ impl<B: Backend> App<B> {
         // The themes that a picker lists, read as a plugin asks, of the
         // places of themes then.
         let (config_file, held_themes) = (&self.config_file, &self.held_themes);
+        // The layouts of the config's folder, read as the switcher opens.
+        let layouts = || {
+            config_file
+                .as_ref()
+                .map(|file| {
+                    lokyr_kernel::layouts::names(&lokyr_kernel::layouts::folder(&file.path))
+                })
+                .unwrap_or_default()
+        };
         let catalog = &self.theme_catalog;
         let (appearance, theme_config) = (platform.appearance(), &self.config.theme);
         let waker = self.waker.as_ref();
@@ -3804,6 +3829,7 @@ impl<B: Backend> App<B> {
             theme_value: &theme_value,
             fonts: &fonts,
             font_styles: &font_styles,
+            layouts: &layouts,
             plugins: &plugin_infos,
             config: &self.config,
             default_bindings: &self.default_bindings,
@@ -5964,6 +5990,8 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         (RENAME_SESSION, "window-rename-session", Category::Windows),
         (CLOSE_SESSION, "window-close-session", Category::Windows),
         (SWITCH_SESSION, "window-switch-session", Category::Windows),
+        (SAVE_LAYOUT, "window-save-layout", Category::Windows),
+        (OPEN_LAYOUT, "window-open-layout", Category::Windows),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -5987,7 +6015,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 kind: Kind::Integer,
                 default: None,
             }]
-        } else if name == SWITCH_SESSION {
+        } else if name == SWITCH_SESSION || name == OPEN_LAYOUT {
             vec![Param {
                 name: "name".to_owned(),
                 kind: Kind::String,

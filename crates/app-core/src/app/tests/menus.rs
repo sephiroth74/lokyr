@@ -433,6 +433,7 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ("window.new-session", "New Session", Category::Windows),
             ("window.next", "Cycle Through Windows", Category::Windows),
             ("window.next-agent", "Go to Next Agent", Category::Windows),
+            ("window.open-layout", "Open Layout", Category::Windows),
             (
                 "window.previous",
                 "Cycle Back Through Windows",
@@ -441,6 +442,11 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             (
                 "window.rename-session",
                 "Rename Session…",
+                Category::Windows
+            ),
+            (
+                "window.save-layout",
+                "Save Session as Layout…",
                 Category::Windows
             ),
             ("window.set-title", "Set Title…", Category::Windows),

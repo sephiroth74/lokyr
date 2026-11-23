@@ -532,6 +532,9 @@ pub struct Context<'a> {
     pub fonts: &'a dyn Fn() -> host::Fonts,
     /// The styles of a font family, by its name, from the lightest.
     pub font_styles: &'a dyn Fn(&str) -> Vec<String>,
+    /// The names of the layouts of the config's folder, which the sessions'
+    /// switcher lists, in their order.
+    pub layouts: &'a dyn Fn() -> Vec<String>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -6492,6 +6495,7 @@ impl Host<'_, '_> {
                 Response::SessionFolders(host::SessionFolders {
                     configured,
                     recent,
+                    layouts: (self.context.layouts)(),
                     home: home.map(|home| home.to_string_lossy().into_owned()),
                 })
             }

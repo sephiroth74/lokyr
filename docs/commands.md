@@ -54,8 +54,10 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.new-session` | New Session |  | · not released yet |
 | `window.next` | Cycle Through Windows |  | ⌘\` (`` cmd+` ``) |
 | `window.next-agent` | Go to Next Agent |  | ⌥⌘A (`cmd+alt+a`) |
+| `window.open-layout` | Open Layout | `name`, text | · not released yet |
 | `window.previous` | Cycle Back Through Windows |  | ⇧⌘\` (`` cmd+shift+` ``) |
 | `window.rename-session` | Rename Session… |  | · not released yet |
+| `window.save-layout` | Save Session as Layout… |  | · not released yet |
 | `window.set-title` | Set Title… |  | ⇧⌘I (`cmd+shift+i`) |
 | `window.switch-session` | Switch to Session | `name`, text | · not released yet |
 | `window.switch-to-last-session` | Switch to Last Session |  | ⌃⌘L (`cmd+ctrl+l`) · not released yet |

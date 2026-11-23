@@ -315,7 +315,7 @@ impl<B: Backend> App<B> {
                 restored,
                 ..environment.clone()
             };
-            spawn::Start {
+            let new = spawn::Start {
                 program: &program,
                 environment: &environment,
                 settings: &settings,
@@ -325,7 +325,13 @@ impl<B: Backend> App<B> {
                 waker: waker.clone(),
                 wakes,
             }
-            .pane(PaneId::new(), grid)
+            .pane(PaneId::new(), grid);
+            // A layout's pane's command, as though typed, its shell staying
+            // once it ends.
+            if let Some(command) = pane.command {
+                new.send_text(&format!("{command}\r"));
+            }
+            new
         });
         let Some(shown) = shown else {
             platform.close_window(window);
