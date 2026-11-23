@@ -346,6 +346,62 @@ fn copy_s_item_is_enabled_with_a_selection_alone() {
 }
 
 #[test]
+fn the_app_s_commands_take_the_capabilities_of_what_they_do_of_a_plugin() {
+    use lokyr_kernel::commands::{Capability, Uses};
+    let registry = commands(&Texts::new("en", &CATALOGS), &Plugins::new());
+    let uses = Uses::new([
+        "app.quit",
+        "window.new",
+        "window.close",
+        "window.set-title",
+        "app.make-default-terminal",
+        "app.install-command-line-tools",
+        "pane.search-web",
+        "app.about",
+    ]);
+    let run = |name: &str, granted: &[Capability]| {
+        registry.check_for_plugin(name, Args::new(), &[], &uses, granted)
+    };
+    // A plugin of no capabilities neither quits, nor opens or closes a
+    // window, nor titles one, nor changes the system; About opens.
+    for name in [
+        "app.quit",
+        "window.new",
+        "window.close",
+        "window.set-title",
+        "app.make-default-terminal",
+        "app.install-command-line-tools",
+        "pane.search-web",
+    ] {
+        let refused = run(name, &[]).unwrap_err();
+        assert_eq!(refused.code, Code::MissingCapability, "{name}: {refused:?}");
+    }
+    assert!(run("app.about", &[]).is_ok());
+    // Of the workspace's writes, the quit and the windows; of a view's,
+    // the title; of what opens and reads the terminal, the web's search.
+    for name in ["app.quit", "window.new", "window.close"] {
+        assert!(run(name, &[Capability::WorkspaceWrite]).is_ok(), "{name}");
+    }
+    assert!(run("window.set-title", &[Capability::PaneView]).is_ok());
+    assert!(
+        run(
+            "pane.search-web",
+            &[Capability::Open, Capability::TerminalRead]
+        )
+        .is_ok()
+    );
+    // The system's and the integrations', the user's alone.
+    let all = [
+        Capability::WorkspaceWrite,
+        Capability::PaneView,
+        Capability::Open,
+        Capability::Config,
+    ];
+    assert!(run("app.make-default-terminal", &all).is_err());
+    assert!(run("app.make-default-terminal", &[Capability::UserCommands]).is_ok());
+}
+
+#[test]
 fn the_app_s_commands_register_with_their_categories_and_titles() {
     let registry = commands(&Texts::new("en", &CATALOGS), &Plugins::new());
     let registered: Vec<(&str, &str, Category)> = registry

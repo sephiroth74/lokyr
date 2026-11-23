@@ -6193,28 +6193,7 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         } else {
             Vec::new()
         };
-        // The sessions' commands take what their requests take, so that a
-        // plugin that declares them runs them of the same capabilities:
-        // the workspace's writes, and a layout's commands typed into its
-        // shells.
-        let capabilities = if name == OPEN_LAYOUT
-            || name == POPUP
-            || BROADCASTS.contains(&name)
-            || name == LEAVE_BROADCAST
-            || name == JOIN_BROADCAST
-        {
-            vec![
-                lokyr_kernel::commands::Capability::WorkspaceWrite,
-                lokyr_kernel::commands::Capability::PtyWrite,
-            ]
-        } else if SESSIONS.contains(&name)
-            || name == SWITCH_SESSION
-            || [NEW_FLOATING, TOGGLE_FLOATING, FLOAT_PANE, DOCK_PANE].contains(&name)
-        {
-            vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
-        } else {
-            Vec::new()
-        };
+        let capabilities = command_capabilities(name);
         let command = Command {
             name: name.to_owned(),
             title: texts.text(&format!("command-{title}")),
@@ -6239,6 +6218,52 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         }
     }
     registry
+}
+
+/// The capabilities that the app's command `name` takes of a plugin that
+/// runs it, those of what it does, so that a plugin runs no command that
+/// does more than its capabilities allow: the workspace's writes of the
+/// windows, tabs, panes, sessions and the quit; with the programs' input
+/// too, of a layout's commands, a popup's and the broadcast; a pane's and
+/// a window's looks; the appearance; the themes' files; what opens in
+/// another app; and the user's own, of the system and the integrations,
+/// which a plugin runs as the user's alone. The user's keys, menus and
+/// palette take none.
+fn command_capabilities(name: &str) -> Vec<lokyr_kernel::commands::Capability> {
+    use lokyr_kernel::commands::Capability::{
+        AppearanceWrite, Config, Open, PaneView, PtyWrite, TerminalRead, UserCommands,
+        WorkspaceWrite,
+    };
+    if name == OPEN_LAYOUT
+        || name == POPUP
+        || BROADCASTS.contains(&name)
+        || name == LEAVE_BROADCAST
+        || name == JOIN_BROADCAST
+    {
+        return vec![WorkspaceWrite, PtyWrite];
+    }
+    if APPEARANCES
+        .iter()
+        .any(|(appearance, ..)| *appearance == name)
+    {
+        return vec![AppearanceWrite];
+    }
+    if SESSIONS.contains(&name) {
+        return vec![WorkspaceWrite];
+    }
+    match name {
+        SWITCH_SESSION | NEW_FLOATING | TOGGLE_FLOATING | FLOAT_PANE | DOCK_PANE | NEW_WINDOW
+        | CLOSE_WINDOW | GOTO_WINDOW | NEXT_WINDOW | PREVIOUS_WINDOW | NEXT_AGENT
+        | FLOAT_ON_TOP | SETTINGS_TAB | QUIT | MAN_PAGE | MAN_SEARCH => vec![WorkspaceWrite],
+        SET_TITLE | CURSOR_GUIDE | OPACITY => vec![PaneView],
+        NEW_THEME | IMPORT_THEMES => vec![Config],
+        SETTINGS | OPEN_THEMES | REPORT_ISSUE => vec![Open],
+        SEARCH_WEB => vec![Open, TerminalRead],
+        DEFAULT_TERMINAL | INSTALL_TOOLS | INSTALL_CLAUDE_CODE | SECURE_INPUT | CHECK_UPDATES => {
+            vec![UserCommands]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Whether `program`, by its name, as the terminal's foreground tells it,

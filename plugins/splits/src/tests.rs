@@ -599,3 +599,29 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
         );
     }
 }
+
+#[test]
+fn every_command_declares_the_capabilities_of_the_requests_that_it_makes() {
+    let commands = host().0.commands().to_vec();
+    assert!(!commands.is_empty());
+    for command in commands {
+        let (mut host, mut plugin) = host();
+        // A second pane, so that each command acts.
+        host.pane(PaneId(2)).tab = TAB;
+        let args = if command.params.iter().any(|param| param.name == "direction") {
+            towards("right", None)
+        } else {
+            Args::new()
+        };
+        host.take_done();
+        let _ = host.command(&mut plugin, &command.name, args);
+        for request in host.take_done() {
+            assert!(
+                request.lacking(&command.capabilities).is_none(),
+                "`{}` declares {:?} and makes {request:?}",
+                command.name,
+                command.capabilities
+            );
+        }
+    }
+}

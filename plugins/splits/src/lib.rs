@@ -15,7 +15,9 @@
 
 mod geometry;
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
+};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{Direction as Lie, Edge, MenuItem, MenuPlace, PaneId, Side, TabInfo};
 use lokyr_plugin_sdk::message::{Data, Event};
@@ -258,7 +260,10 @@ impl Plugin for Splits {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category: Category::Panes,
-                capabilities: Vec::new(),
+                // Each splits, closes, moves or focuses the tab's panes,
+                // which a plugin that runs it takes the workspace's writes
+                // of.
+                capabilities: vec![Capability::WorkspaceWrite],
                 params: params
                     .iter()
                     .map(|&(name, kind, default)| Param {

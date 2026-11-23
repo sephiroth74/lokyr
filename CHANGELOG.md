@@ -34,6 +34,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - Quitting with more than 100 windows or 256 panes no longer loses every window at the next start: Lokyr keeps those of the session that shows first, up to that many, and a notice tells how many it left out.
 
+### Security
+
+- A plugin that runs Lokyr's own commands needs the capabilities of what they do: `workspace-write` to open, close, move or select windows, tabs and panes or to quit, `pane-view` for a tab's or a window's title, `open` for what opens in another app, and what the find bar and the copy mode read and draw; the commands of the system and the integrations, such as Make Lokyr the Default Terminal, run of `user-commands` alone. A plugin could run them of none before.
+
 ## [1.4.0] - 2026-11-22
 
 ### Added
