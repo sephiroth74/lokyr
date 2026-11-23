@@ -88,5 +88,5 @@ folder = "~/notes"
 
 ## See also
 
-- [Windows and tabs](windows-and-tabs.md#use-sessions), for the sessions and their switcher.
+- [Sessions](sessions.md), for the sessions and their switcher.
 - [Commands](commands.md), for `window.save-layout` and `window.open-layout`.

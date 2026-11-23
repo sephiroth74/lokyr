@@ -27,7 +27,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 
 ## The sessions' switcher
 
-- **Window › Sessions › Switch Session…**, ⌃⌘S, opens the palette of your [sessions](../windows-and-tabs.md#use-sessions): those open first, the one you used last at the top, the one that shows marked Current; then your layouts; then folders, those that [`[sessions] folders`](../CONFIGURATION.md#sessions) lists, then those where your shells worked last, marked Recent, each with the folder that holds it, your home folder as `~`. Sessions with no name show as Untitled Session, then Untitled Session 2 and on, in the order you opened them. · not released yet
+- **Window › Sessions › Switch Session…**, ⌃⌘S, opens the palette of your [sessions](../sessions.md): those open first, the one you used last at the top, the one that shows marked Current; then your layouts; then folders, those that [`[sessions] folders`](../CONFIGURATION.md#sessions) lists, then those where your shells worked last, marked Recent, each with the folder that holds it, your home folder as `~`. Sessions with no name show as Untitled Session, then Untitled Session 2 and on, in the order you opened them. · not released yet
 - **As you type**, it finds the sessions by their names, the layouts by theirs, and the folders by their names and paths, the best match first: `ui` finds the folder `ui` before Untitled Session. When two match as well, the sessions come first, then the layouts, then the folders.
 - **Return**, or a click, switches to the session you chose. A folder opens a session there, named after it, its first window's shell in the folder; a folder that a session was opened in already switches to that session instead, and doesn't show among the folders.
 

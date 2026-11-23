@@ -34,7 +34,7 @@ A pane closes when its shell exits, such as after `exit`, as [`close-on-exit`](C
 
 ## Move between windows
 
-Each window takes a number when it opens, the lowest that no other open window of its [session](#use-sessions) has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
+Each window takes a number when it opens, the lowest that no other open window of its [session](sessions.md) has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
 
 - **⌥⌘1 to ⌥⌘9** bring that window forward.
 - **⌘\`** brings forward the next window, in the order they opened, and **⇧⌘\`** the one before. The key is the one left of 1, whatever your keyboard's layout prints on it.
@@ -47,25 +47,7 @@ Each window takes a number when it opens, the lowest that no other open window o
 
 ## Use sessions
 
-A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide. The programs in hidden windows keep running, and hidden windows draw nothing. · not released yet
-
-- **Window › Sessions › Switch Session…**, ⌃⌘S, lists your sessions, then folders: those that [`[sessions] folders`](CONFIGURATION.md#sessions) names, such as every project in `~/src`, and those where your shells worked last. Choose a session to switch to it, or a folder to open a session there, named after the folder. A folder that has a session already switches to it. The [command palette's page](plugins/command-palette.md#the-sessions-switcher) tells more.
-- **Window › Sessions › New Session** opens a session with one window of a new shell, and hides the windows you had.
-- **Window › Sessions › Switch to Last Session**, ⌃⌘L, switches to the session you used before. Press it again to come back.
-- **Window › Sessions › Rename Session…** names the session. The name shows in the titlebar of its windows, before their keys, such as `api · ⌥⌘1`.
-- **Window › Sessions › Save Session as Layout…** saves the session to a file that the switcher lists, which opens as a new session with new shells: [Layouts](layouts.md) tells how to add the commands that its panes run.
-- **Window › Sessions › Close Session** closes the session's windows. Lokyr asks first while a program other than a shell runs in one of them.
-
-Lokyr starts in a session with no name. A session closes with its last window, and then the session you used before shows. A session with no window goes when you switch away from it. Each session numbers its own windows from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. The quick terminal, the settings window and man pages' windows belong to no session: they show whichever session you're in. A man page's window takes a number that none of the sessions' windows has, and a tab or a pane that you drag out of one of these windows joins the session that shows.
-
-Bind a key to a session of your own with `window.switch-session`, which switches to the session of its `name`:
-
-```toml
-[keys]
-"ctrl+cmd+1" = { command = "window.switch-session", args = { name = "api" } }
-```
-
-**Try it**: choose Window › Sessions › New Session: your windows hide and a new one opens. Press ⌃⌘L: your windows come back. Then add `folders = ["~/src/*"]` to a `[sessions]` section of your config, and press ⌃⌘S: your projects show after your sessions.
+A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide, their programs running. Window › Sessions › New Session opens one, ⌃⌘S switches to a session or opens one in a project's folder, and ⌃⌘L switches to the session you used before. [Sessions](sessions.md) covers them. · not released yet
 
 ## Float a window or use full screen
 
@@ -115,7 +97,7 @@ What a program showed on its own screen, such as vim or less, isn't kept: the pa
 
 Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
 
-[Sessions](#use-sessions) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · not released yet
+[Sessions](sessions.md) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · not released yet
 
 **Try it**: set `restore-windows = "always"` and `restore-scrollback = true`, open a second tab with ⌘T, and run `cd /usr/share` and `ls` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`, its `ls` and the files it listed above the new prompt.
 
