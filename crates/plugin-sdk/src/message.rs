@@ -28,8 +28,8 @@ use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Bytes, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
     GroupId, GroupInfo, Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
-    WindowInfo,
+    SearchQuery, SelectionKind, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
+    TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -255,6 +255,9 @@ pub enum Request {
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
     Agents,
+    /// The folders that the sessions' switcher lists, of `process-read`, as
+    /// the panes' shells told them.
+    SessionFolders,
     /// The plugins, built in and installed, in the order of their
     /// activation: each one's state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.
@@ -809,8 +812,9 @@ pub enum Request {
         keep: u32,
     },
     /// Gives back the tab closed last that the host keeps, at its place in
-    /// its window, or in `window` once its own closed, which shows it, as a
-    /// tab opened anew, of its panes, tells; nothing of none kept.
+    /// its window, or in `window` once its own closed or hides with its
+    /// session, which shows it, as a tab opened anew, of its panes, tells;
+    /// nothing of none kept.
     ReopenTab(WindowId),
     /// Closes a pane, whose program is hung up: its room goes to its
     /// sibling, and its tab closes with its last pane. With `ask`, the
@@ -901,6 +905,29 @@ pub enum Request {
     },
     /// Takes a group apart, its tabs staying where they are.
     Ungroup(GroupId),
+    /// The sessions, in the order of their use, the active one first and
+    /// the one before it second.
+    Sessions,
+    /// Makes a session of `name` and switches to it, the windows of the
+    /// session left hidden, their programs running, then opens its first
+    /// window, its pane in `directory`, a path absolute or from `~`, if
+    /// given: the session's id, given at once, which the call's later
+    /// writes take. A session that a switch leaves of no window goes, as
+    /// a second one made in the same call leaves the first, whose window
+    /// opens not.
+    NewSession {
+        /// Its name, empty for none,
+        /// [`MOST_SESSION_NAME`](crate::host::MOST_SESSION_NAME) characters
+        /// at most.
+        #[serde(default)]
+        name: String,
+        /// The folder of its first window's pane.
+        #[serde(default)]
+        directory: Option<String>,
+    },
+    /// Switches to a session: the active one's windows hidden, their
+    /// programs running, and this one's shown.
+    SwitchSession(SessionId),
     /// Puts the plugin's view of the status bar on `side`, in place of its
     /// manifest's side, or of the one asked before, until the plugin stops;
     /// no capability, as it moves the plugin's own view within the bar.
@@ -1318,9 +1345,10 @@ impl Request {
             | Self::ScreenCells(_)
             | Self::RowCells { .. }
             | Self::EditedLine(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) | Self::Agents | Self::GitBranch { .. } => {
-                Some(Capability::ProcessRead)
-            }
+            Self::WorkingDirectory(_)
+            | Self::Agents
+            | Self::SessionFolders
+            | Self::GitBranch { .. } => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. }
             | Self::CommandLine { .. }
@@ -1373,6 +1401,8 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
             | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
@@ -1413,6 +1443,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1488,6 +1519,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1507,6 +1539,7 @@ impl Request {
             | Self::TempFile { .. }
             | Self::GitBranch { .. }
             | Self::Agents
+            | Self::SessionFolders
             | Self::Plugins
             | Self::Settings
             | Self::FontStyles(_)
@@ -1548,6 +1581,8 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
@@ -1660,6 +1695,8 @@ pub enum Response {
     Now(crate::host::LocalTime),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
+    /// The folders that the sessions' switcher lists.
+    SessionFolders(crate::host::SessionFolders),
     /// The plugins, built in and installed.
     Plugins(Vec<crate::host::PluginInfo>),
     /// The settings, of their sections and keys.
@@ -1713,6 +1750,10 @@ pub enum Response {
     Group(GroupId),
     /// A window's groups of tabs.
     Groups(Vec<GroupInfo>),
+    /// A session that is made as the call returns.
+    Session(SessionId),
+    /// The sessions.
+    Sessions(Vec<SessionInfo>),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -2214,6 +2255,7 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
+            | Self::SwitchSession { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
@@ -2251,6 +2293,7 @@ impl Request {
             Self::Day { .. } => "day",
             Self::Now { .. } => "now",
             Self::Agents { .. } => "agents",
+            Self::SessionFolders => "session-folders",
             Self::Plugins { .. } => "plugins",
             Self::Settings { .. } => "settings",
             Self::ClipboardText { .. }
@@ -2289,6 +2332,8 @@ impl Request {
             Self::Tabs { .. } | Self::RecentTabs { .. } => "tabs",
             Self::Groups { .. } => "groups",
             Self::NewGroup { .. } => "group",
+            Self::Sessions => "sessions",
+            Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",

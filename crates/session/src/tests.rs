@@ -961,3 +961,32 @@ fn a_restored_scrollback_shows_above_the_program_s_output_of_no_event() {
     assert_eq!(terminal.commands()[0].status, Some(0));
     assert!(woken.load(Ordering::SeqCst));
 }
+
+#[test]
+fn a_replay_leaves_its_rows_alone() {
+    // A file's bytes of modes, a folder, a bell and a title, past the rows
+    // that an archive writes.
+    let rows = concat!(
+        "\x1b[?1000h\x1b[?1006h\x1b[?2004h\x1b[?1004h",
+        "\x1b]7;file://localhost/tmp/elsewhere\x1b\\",
+        "\x1b]2;a title\x1b\\\x07",
+        "\x1b[1;31mred\r\nkept\r\n",
+    );
+    let mut options = sh("exec sleep 30");
+    options.restored = Some(Restored::of(
+        rows.as_bytes().to_vec(),
+        "── Restored ──".to_owned(),
+    ));
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "the restored line", |terminal| {
+        shows(terminal, "── Restored ──")
+    });
+    let terminal = session.lock();
+    assert!(shows(&terminal, "kept"));
+    let modes = terminal.input_modes();
+    assert_eq!(modes.mouse_tracking, terminal::MouseTracking::default());
+    assert!(!modes.bracketed_paste && !modes.focus_events);
+    assert!(terminal.working_directory().is_none());
+    assert_eq!(terminal.title(), "");
+    assert_eq!(terminal.bells(), 0);
+}

@@ -156,6 +156,10 @@ name = "run_loop"
 harness = false
 
 [[test]]
+name = "hidden_window"
+harness = false
+
+[[test]]
 name = "opened_frame"
 harness = false
 

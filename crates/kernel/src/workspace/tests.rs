@@ -1184,11 +1184,12 @@ mod told {
         /// layouts it changed into `laid_out`.
         fn take(&mut self, change: &Change, laid_out: &mut BTreeSet<sdk::TabId>) {
             match *change {
-                // A tab's look, a pane's title and a group, which the model
-                // does not keep.
+                // A tab's look, a pane's title, a group and a session, which
+                // the model does not keep.
                 Change::TabChanged { .. }
                 | Change::PaneChanged { .. }
-                | Change::GroupChanged { .. } => {}
+                | Change::GroupChanged { .. }
+                | Change::SessionChanged { .. } => {}
                 Change::WindowOpened { window } => {
                     assert!(self.windows.insert(window, Window::default()).is_none());
                 }
@@ -2893,4 +2894,279 @@ fn a_group_keeps_its_tabs_together_through_moves_and_goes_with_its_last() {
     assert!(told_groups(&mut workspace).contains(&group.into()));
     assert!(workspace.close_window(other));
     assert_eq!(workspace.group(alone), None);
+}
+
+/// The sessions that `workspace`'s events since the last take told of.
+fn told_sessions(workspace: &mut Workspace) -> Vec<sdk::SessionId> {
+    workspace
+        .take_events()
+        .into_iter()
+        .filter_map(|event| match event {
+            Event::Changed(Change::SessionChanged { session }) => Some(session),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The ids of `workspace`'s sessions, in the order of their use.
+fn session_ids(workspace: &Workspace) -> Vec<SessionId> {
+    workspace
+        .sessions()
+        .iter()
+        .map(|session| session.id())
+        .collect()
+}
+
+#[test]
+fn lokyr_starts_in_a_session_of_no_name_whose_windows_show() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    assert_eq!(session_ids(&workspace), [first]);
+    assert_eq!(workspace.session(first).unwrap().name(), "");
+    assert_eq!(workspace.last_session(), None);
+    let window = workspace.open_window(pane("sleep 30"));
+    assert_eq!(workspace.window(window).unwrap().session(), Some(first));
+    assert_eq!(workspace.session_windows(first), [window]);
+    assert!(workspace.in_active_session(window));
+    // The quick windows and the settings' are of none, and show whichever
+    // session is active.
+    let quick = workspace.open_quick_window(pane("sleep 30"), WindowId::new());
+    let settings = workspace.open_settings_window("Settings");
+    for window in [quick, settings] {
+        assert_eq!(workspace.window(window).unwrap().session(), None);
+    }
+    assert_eq!(workspace.session_windows(first), [window]);
+    let other = workspace.new_session("work").unwrap();
+    assert!(workspace.in_active_session(quick) && workspace.in_active_session(settings));
+    assert!(!workspace.in_active_session(window));
+    // A session of no window goes as a switch leaves it; the only one
+    // closes not as its last window goes.
+    assert!(workspace.switch_session(first));
+    assert!(workspace.session(other).is_none());
+    workspace.close_window(window);
+    assert_eq!(session_ids(&workspace), [first]);
+}
+
+#[test]
+fn a_tab_or_a_pane_out_of_a_window_of_no_session_joins_the_active_one() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    // The quick terminal's window, of two tabs, the second of two panes.
+    let quick = workspace.open_quick_window(pane("sleep 30"), WindowId::new());
+    let tab = workspace.open_tab(quick, pane("sleep 30"), 1).unwrap();
+    let alone = workspace.window(quick).unwrap().tabs()[0];
+    let shown = workspace.tab(tab).unwrap().active_pane();
+    let split = workspace
+        .split(shown, Direction::Horizontal, pane("sleep 30"), Side::Second)
+        .unwrap();
+    // A pane out of it, and a tab, each in a window of the session that
+    // shows, which a switch hides.
+    let of_pane = workspace.pane_to_new_window(split).unwrap();
+    let of_tab = workspace.tab_to_new_window(alone).unwrap();
+    for window in [of_pane, of_tab] {
+        assert_eq!(workspace.window(window).unwrap().session(), Some(work));
+    }
+    assert_eq!(workspace.window(quick).unwrap().session(), None);
+    assert!(workspace.switch_session(first));
+    assert!(!workspace.in_active_session(of_pane) && !workspace.in_active_session(of_tab));
+    // A man page's window, of no session too: a tab out of it joins the
+    // session that shows then.
+    let man = workspace.open_window(pane("sleep 30"));
+    assert!(workspace.leave_sessions(man));
+    workspace.open_tab(man, pane("sleep 30"), 1).unwrap();
+    let out = workspace.window(man).unwrap().tabs()[1];
+    let moved = workspace.tab_to_new_window(out).unwrap();
+    assert_eq!(workspace.window(moved).unwrap().session(), Some(first));
+}
+
+#[test]
+fn a_switch_takes_away_the_session_that_it_leaves_of_no_window_but_one_waited_for() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    workspace.open_window(pane("sleep 30"));
+    // A session made, then another before a window opens in it.
+    let one = workspace.new_session("one").unwrap();
+    let two = workspace.new_session("two").unwrap();
+    assert_eq!(session_ids(&workspace), [two, first]);
+    assert!(workspace.session(one).is_none());
+    // A session whose windows wait to open, as the app keeps them, stays.
+    let kept = workspace.add_session("kept");
+    assert!(workspace.set_session_waiting(kept, true));
+    assert!(workspace.switch_session(kept));
+    assert!(workspace.session(two).is_none());
+    assert!(workspace.switch_session(first));
+    assert_eq!(session_ids(&workspace), [first, kept]);
+    // Its windows open: of none left, it goes as the others.
+    assert!(workspace.set_session_waiting(kept, false));
+    assert!(workspace.switch_session(kept));
+    assert!(workspace.switch_session(first));
+    assert_eq!(session_ids(&workspace), [first]);
+}
+
+#[test]
+fn a_closed_tab_comes_back_into_a_window_that_shows() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    let shown = workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    let hidden = workspace.open_window(pane("sleep 30"));
+    let tab = workspace.open_tab(hidden, pane("sleep 30"), 1).unwrap();
+    assert!(workspace.close_tab_kept(tab, Instant::now() + Duration::from_secs(60)));
+    // Its window hides with its session: the tab comes back into the
+    // window that shows, which the app gives.
+    assert!(workspace.switch_session(first));
+    let back = workspace.reopen_tab(shown).unwrap();
+    assert_eq!(workspace.window_of_tab(back), Some(shown));
+    // Of a window that shows, into it.
+    assert!(workspace.close_tab_kept(back, Instant::now() + Duration::from_secs(60)));
+    let again = workspace.reopen_tab(hidden).unwrap();
+    assert_eq!(workspace.window_of_tab(again), Some(shown));
+    let _ = work;
+}
+
+#[test]
+fn a_new_session_is_switched_to_and_the_last_two_toggle() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    let window = workspace.open_window(pane("sleep 30"));
+    workspace.take_events();
+    // Made, it is the active one, the window of the one before it hidden;
+    // each session's change told, the one left first.
+    let work = workspace.new_session("work").unwrap();
+    assert_eq!(workspace.active_session(), work);
+    assert_eq!(told_sessions(&mut workspace), [first.into(), work.into()]);
+    assert!(workspace.session_windows(work).is_empty());
+    let shell = workspace.open_window(pane("sleep 30"));
+    assert_eq!(workspace.window(shell).unwrap().session(), Some(work));
+    assert!(workspace.in_active_session(shell) && !workspace.in_active_session(window));
+    // The last two toggle, in the order of their use.
+    let notes = workspace.new_session("notes").unwrap();
+    workspace.open_window(pane("sleep 30"));
+    assert_eq!(session_ids(&workspace), [notes, work, first]);
+    assert_eq!(workspace.last_session(), Some(work));
+    workspace.take_events();
+    assert!(workspace.switch_to_last_session());
+    assert_eq!(session_ids(&workspace), [work, notes, first]);
+    assert_eq!(told_sessions(&mut workspace), [notes.into(), work.into()]);
+    assert!(workspace.switch_to_last_session());
+    assert_eq!(workspace.active_session(), notes);
+    workspace.take_events();
+    // The active one again, or one not there, tells nothing.
+    assert!(workspace.switch_session(notes));
+    assert!(!workspace.switch_session(SessionId::of(999_999)));
+    assert!(told_sessions(&mut workspace).is_empty());
+    // Renamed.
+    assert!(workspace.rename_session(first, "home"));
+    assert_eq!(workspace.session(first).unwrap().name(), "home");
+    assert_eq!(told_sessions(&mut workspace), [first.into()]);
+    assert!(workspace.rename_session(first, "home"));
+    assert!(told_sessions(&mut workspace).is_empty());
+    assert_eq!(workspace.new_session_as(work, "again"), None);
+}
+
+#[test]
+fn a_session_goes_with_its_last_window_the_one_before_it_active_again() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    let window = workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    let shell = workspace.open_window(pane("sleep 30"));
+    let tab = workspace.open_tab(shell, pane("sleep 30"), 1).unwrap();
+    // A tab moved to a window of its own takes the session of its window,
+    // whichever is active.
+    assert!(workspace.switch_session(first));
+    let moved = workspace.tab_to_new_window(tab).unwrap();
+    assert_eq!(workspace.window(moved).unwrap().session(), Some(work));
+    assert_eq!(workspace.session_windows(work), [shell, moved]);
+    // A hidden session that loses its last window goes, told.
+    workspace.close_window(shell);
+    assert_eq!(session_ids(&workspace).len(), 2);
+    workspace.take_events();
+    let last = workspace.tab(tab).unwrap().active_pane();
+    assert!(workspace.close_pane(last));
+    assert_eq!(session_ids(&workspace), [first]);
+    assert_eq!(told_sessions(&mut workspace), [work.into()]);
+    // The active one that goes leaves the one used before it active.
+    let notes = workspace.new_session("notes").unwrap();
+    let other = workspace.open_window(pane("sleep 30"));
+    workspace.take_events();
+    workspace.close_window(other);
+    assert_eq!(workspace.active_session(), first);
+    assert_eq!(workspace.session(notes), None);
+    assert_eq!(
+        told_sessions(&mut workspace),
+        [notes.into(), first.into(), notes.into()]
+    );
+    assert!(workspace.in_active_session(window));
+}
+
+#[test]
+fn closing_a_session_closes_its_windows() {
+    let mut workspace = Workspace::new();
+    let first = workspace.active_session();
+    let window = workspace.open_window(pane("sleep 30"));
+    let work = workspace.new_session("work").unwrap();
+    let shells = [
+        workspace.open_window(pane("sleep 30")),
+        workspace.open_window(pane("sleep 30")),
+    ];
+    let panes: Vec<PaneId> = workspace.pane_ids();
+    assert!(workspace.close_session(work));
+    for shell in shells {
+        assert!(workspace.window(shell).is_none());
+    }
+    assert_eq!(workspace.pane_ids().len(), panes.len() - 2);
+    assert_eq!(session_ids(&workspace), [first]);
+    assert_eq!(workspace.active_session(), first);
+    assert!(!workspace.close_session(work));
+    // A session of no window yet goes as it closes, the one before it
+    // active again.
+    let empty = workspace.new_session("").unwrap();
+    assert!(workspace.close_session(empty));
+    assert_eq!(session_ids(&workspace), [first]);
+    // The only one stays, of no window.
+    assert!(workspace.close_session(first));
+    assert!(workspace.window(window).is_none());
+    assert_eq!(session_ids(&workspace), [first]);
+}
+
+#[test]
+fn the_folders_that_the_shells_tell_are_the_recent_ones_the_latest_first() {
+    let mut workspace = Workspace::new();
+    // A remote shell's folder is no recent one; the same folder told again
+    // goes first once. A shell tells its folder at each prompt, a while
+    // apart, as the terminal keeps the last of a batch.
+    workspace.open_window(pane(concat!(
+        "printf '\\033]7;file:///tmp/one\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file://elsewhere.example/far\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file://localhost/tmp/two\\033\\\\'; sleep 0.2; ",
+        "printf '\\033]7;file:///tmp/one\\033\\\\'; exec sleep 30"
+    )));
+    let start = Instant::now();
+    while workspace.recent_folders().first().map(String::as_str) != Some("/tmp/one")
+        || workspace.recent_folders().len() < 2
+    {
+        let ids = workspace.pane_ids();
+        workspace.collect(&ids, Instant::now());
+        workspace.take_events();
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{:?}",
+            workspace.recent_folders()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(workspace.recent_folders(), ["/tmp/one", "/tmp/two"]);
+    // Those of a run before come after this run's, each once, 50 at most.
+    let before: Vec<String> = (0..60).map(|n| format!("/kept/{n}")).collect();
+    workspace.set_recent_folders(
+        std::iter::once("/tmp/two".to_owned())
+            .chain(before)
+            .collect(),
+    );
+    let recent = workspace.recent_folders();
+    assert_eq!(recent.len(), MOST_RECENT_FOLDERS);
+    assert_eq!(recent[..3], ["/tmp/one", "/tmp/two", "/kept/0"]);
 }

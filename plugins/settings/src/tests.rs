@@ -1924,6 +1924,7 @@ fn each_section_has_an_icon_of_its_own_of_the_host_s() {
         "bell",
         "notifications",
         "agents",
+        "sessions",
         "theme",
         "app",
         "updates",

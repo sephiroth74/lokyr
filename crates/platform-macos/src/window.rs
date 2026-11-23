@@ -437,9 +437,66 @@ impl Window {
         &self.ns_window
     }
 
-    /// Brings the window in front of the others, with the focus.
+    /// Brings the window in front of the others, with the focus; one that
+    /// [`Window::set_hidden`] hid shows again, in the Window menu too.
     pub(crate) fn show(&self) {
+        self.ns_window.setExcludedFromWindowsMenu(false);
         self.ns_window.makeKeyAndOrderFront(None);
+    }
+
+    /// Hides the window, off the screen, the Window menu and the windows'
+    /// cycle, as the windows of a session that is not active hide, or shows
+    /// it again where it was, in front of the app's others, without the
+    /// keyboard. Hidden, it draws nothing from then, before the system tells
+    /// that it does not show; shown, it draws at once. Whether it leaves
+    /// full screen first, which it hides once it has left, as
+    /// [`Pending::LeftFullScreen`] tells.
+    pub(crate) fn set_hidden(&self, hidden: bool) -> bool {
+        self.ns_window.setExcludedFromWindowsMenu(hidden);
+        let ivars = self.delegate.ivars();
+        // In full screen it leaves it first, and hides once it has, as the
+        // system shows another window of the app in full screen too while
+        // the one with the keyboard is; it goes back into it as it shows.
+        let full_screen = self
+            .ns_window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullScreen);
+        if hidden && full_screen {
+            if !ivars.hides_out_of_full_screen.replace(true) {
+                ivars.back_into_full_screen.set(true);
+                self.ns_window.toggleFullScreen(None);
+            }
+            return true;
+        }
+        if hidden {
+            self.ns_window.orderOut(None);
+        } else {
+            self.ns_window.orderFront(None);
+            if ivars.back_into_full_screen.replace(false) {
+                self.ns_window.toggleFullScreen(None);
+            }
+        }
+        if self.occluded.replace(hidden) != hidden
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(self.id, WindowEvent::Occluded(hidden)));
+        }
+        false
+    }
+
+    /// Hides it at once, of no exit from full screen that never ended: out
+    /// of the screen, drawing nothing; out of full screen as it shows
+    /// again, rather than back into it, which it may never have left.
+    pub(crate) fn force_hidden(&self) {
+        let ivars = self.delegate.ivars();
+        ivars.hides_out_of_full_screen.set(false);
+        ivars.back_into_full_screen.set(false);
+        self.ns_window.orderOut(None);
+        if !self.occluded.replace(true)
+            && let Some(shared) = self.shared.upgrade()
+        {
+            shared.enqueue(Pending::Window(self.id, WindowEvent::Occluded(true)));
+        }
     }
 
     /// Asks for a frame. Returns whether it is due at once, rather than at
@@ -1707,6 +1764,12 @@ pub(crate) struct WindowDelegateIvars {
     /// Whether the window floats above the other applications' windows,
     /// out of full screen.
     floating: Cell<bool>,
+    /// Whether the window leaves full screen to hide, as its session hides,
+    /// once it has left it.
+    hides_out_of_full_screen: Cell<bool>,
+    /// Whether the window goes back into full screen as it shows again,
+    /// having left it to hide.
+    back_into_full_screen: Cell<bool>,
 }
 
 /// The name under which the windows keep their frame, in the app's
@@ -1778,6 +1841,29 @@ define_class!(
                 && self.ivars().floating.get()
             {
                 window.setLevel(NSFloatingWindowLevel);
+            }
+            self.hide_out_of_full_screen(notification);
+        }
+
+        // A window that could not leave full screen hides all the same, as
+        // its session does, in full screen still, which it does not go back
+        // into as it shows.
+        #[unsafe(method(windowDidFailToExitFullScreen:))]
+        fn window_did_fail_to_exit_full_screen(&self, window: &NSWindow) {
+            if self.ivars().hides_out_of_full_screen.replace(false) {
+                self.ivars().back_into_full_screen.set(false);
+                self.hide(window);
+            }
+        }
+
+        // A window asked to leave full screen as it entered it, which AppKit
+        // ignores during the transition, leaves it now.
+        #[unsafe(method(windowDidEnterFullScreen:))]
+        fn window_did_enter_full_screen(&self, notification: &NSNotification) {
+            if self.ivars().hides_out_of_full_screen.get()
+                && let Some(window) = window_of(notification)
+            {
+                window.toggleFullScreen(None);
             }
         }
 
@@ -1856,6 +1942,8 @@ impl WindowDelegate {
             occluded,
             windowed: Cell::new(None),
             floating: Cell::new(false),
+            hides_out_of_full_screen: Cell::new(false),
+            back_into_full_screen: Cell::new(false),
         });
         // SAFETY: `NSObject`'s `init` has this signature.
         unsafe { msg_send![super(this), init] }
@@ -1876,6 +1964,30 @@ impl WindowDelegate {
         let ivars = self.ivars();
         if let Some(shared) = ivars.shared.upgrade() {
             shared.post(Pending::Window(ivars.id, event));
+        }
+    }
+
+    /// Hides the window of `notification`, which left full screen to hide,
+    /// if it did.
+    fn hide_out_of_full_screen(&self, notification: &NSNotification) {
+        if self.ivars().hides_out_of_full_screen.replace(false)
+            && let Some(window) = window_of(notification)
+        {
+            self.hide(&window);
+        }
+    }
+
+    /// Orders `window`, out of full screen, out, drawing nothing from then,
+    /// and tells the backend, which shows the other windows that wait for
+    /// it.
+    fn hide(&self, window: &NSWindow) {
+        window.orderOut(None);
+        let ivars = self.ivars();
+        if !ivars.occluded.replace(true) {
+            self.post(WindowEvent::Occluded(true));
+        }
+        if let Some(shared) = ivars.shared.upgrade() {
+            shared.post(Pending::LeftFullScreen(ivars.id));
         }
     }
 }

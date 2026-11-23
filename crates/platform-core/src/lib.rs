@@ -654,8 +654,21 @@ pub trait Platform {
 
     /// Brings a window in front of the others, with the focus; a hidden
     /// quick window, which [`Platform::show_quick_window`] shows, takes
-    /// nothing.
+    /// nothing. A window that [`Platform::set_window_hidden`] hid shows
+    /// again.
     fn focus_window(&mut self, window: WindowId);
+
+    /// Hides a window, as the windows of a session that is not active hide:
+    /// off the screen, the Window menu and the windows' cycle, drawing
+    /// nothing, as [`WindowEvent::Occluded`] tells, the frames that it asks
+    /// for meanwhile held until it shows; or shows it again where it was, in
+    /// front of the app's others, without the keyboard, which
+    /// [`Platform::focus_window`] gives. A window in full screen leaves it
+    /// first, as the system would show the app's next window in full screen
+    /// too, and goes back into it as it shows: the windows shown, focused or
+    /// opened meanwhile wait for it to have left. A quick window takes
+    /// nothing.
+    fn set_window_hidden(&mut self, window: WindowId, hidden: bool);
 
     /// The window that has the keyboard's focus, if one of the
     /// application's has it.

@@ -109,20 +109,37 @@ pub(crate) fn score(query: &str, text: &str) -> Option<i32> {
     before.into_iter().flatten().max()
 }
 
-/// How well `query` matches `entry`, by its title, its name, its keys or
-/// its plugin, the best of them, the title's costing nothing.
-fn entry_score(query: &str, entry: &Entry) -> Option<i32> {
+/// How well `query` matches `entry`, by its title, its name, if `names`,
+/// its keys or its plugin, the best of them, the title's costing nothing.
+fn entry_score(query: &str, entry: &Entry, names: bool) -> Option<i32> {
     let of =
         |text: Option<&str>, cost: i32| text.and_then(|text| score(query, text)).map(|s| s - cost);
     [
         of(Some(&entry.title), 0),
-        of(Some(&entry.name), NAME),
+        of(names.then_some(entry.name.as_str()), NAME),
         of(entry.keys.as_deref(), KEYS),
         of(entry.plugin.as_deref(), PLUGIN),
     ]
     .into_iter()
     .flatten()
     .max()
+}
+
+/// The places of the switcher's `entries` that match `query`, the best
+/// first, a tie in their order, which is their groups', of no query in
+/// their order: by their titles, keys and plugins, not their names, which
+/// are the switcher's own, as `session:` and `folder:`.
+pub(crate) fn rank_switcher(entries: &[Entry], query: &str) -> Vec<usize> {
+    if query.trim().is_empty() {
+        return (0..entries.len()).collect();
+    }
+    let mut scored: Vec<(i32, usize)> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(at, entry)| Some((entry_score(query, entry, false)?, at)))
+        .collect();
+    scored.sort_by(|(one, at), (other, other_at)| other.cmp(one).then(at.cmp(other_at)));
+    scored.into_iter().map(|(_, at)| at).collect()
 }
 
 /// The places of `entries` that match `query`, the best first, of the
@@ -142,7 +159,7 @@ pub(crate) fn rank(entries: &[Entry], query: &str, recent: &[String]) -> Vec<usi
         .iter()
         .enumerate()
         .filter_map(|(at, entry)| {
-            let score = entry_score(query, entry)?;
+            let score = entry_score(query, entry, true)?;
             let bonus = recency(entry).map_or(0, |place| RECENT.saturating_sub(place));
             Some((score + i32::try_from(bonus).unwrap_or(0), at))
         })

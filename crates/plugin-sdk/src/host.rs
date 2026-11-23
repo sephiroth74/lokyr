@@ -33,6 +33,138 @@ pub struct GroupId(pub u64);
 /// The most characters of a group's name.
 pub const MOST_GROUP_NAME: usize = 256;
 
+/// A session of windows, by the host's id, which no other session of the
+/// process has had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub u64);
+
+/// The most characters of a session's name.
+pub const MOST_SESSION_NAME: usize = 256;
+
+/// Whether `name` is a session's: of [`MOST_SESSION_NAME`] characters at
+/// most and of no control character; why not otherwise.
+pub fn check_session_name(name: &str) -> Result<(), String> {
+    let length = name.chars().count();
+    if length > MOST_SESSION_NAME {
+        return Err(format!(
+            "a session's name is {MOST_SESSION_NAME} characters at most, not {length}"
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("a session's name holds no control character".to_owned());
+    }
+    Ok(())
+}
+
+/// The most bytes of a session's folder.
+pub const MOST_SESSION_DIRECTORY: usize = 1024;
+
+/// Whether `directory` is a session's folder: a path absolute or from `~`,
+/// of [`MOST_SESSION_DIRECTORY`] bytes at most and no control character;
+/// why not otherwise.
+pub fn check_session_directory(directory: &str) -> Result<(), String> {
+    check_directory(directory)?;
+    if directory.len() > MOST_SESSION_DIRECTORY {
+        return Err(format!(
+            "a session's folder is {MOST_SESSION_DIRECTORY} bytes at most, not {}",
+            directory.len()
+        ));
+    }
+    if directory.chars().any(char::is_control) {
+        return Err("a session's folder holds no control character".to_owned());
+    }
+    Ok(())
+}
+
+/// The folders that the switcher lists, `configured` then `recent`, as
+/// they are named, each once and none of `sessions`, the folders that
+/// sessions were opened in, as their real paths tell, which the system
+/// resolves of their links, as `/tmp` of `/private/tmp` on macOS: a recent
+/// folder that is a configured one, or a session's, by another path, goes.
+pub fn without_sessions(
+    configured: Vec<String>,
+    recent: Vec<String>,
+    sessions: &[&str],
+) -> (Vec<String>, Vec<String>) {
+    let real = |folder: &str| {
+        std::fs::canonicalize(folder).unwrap_or_else(|_| std::path::PathBuf::from(folder))
+    };
+    let mut seen: Vec<std::path::PathBuf> = sessions.iter().map(|folder| real(folder)).collect();
+    let mut keep = |folders: Vec<String>| -> Vec<String> {
+        folders
+            .into_iter()
+            .filter(|folder| {
+                let path = real(folder);
+                let fresh = !seen.contains(&path);
+                if fresh {
+                    seen.push(path);
+                }
+                fresh
+            })
+            .collect()
+    };
+    let configured = keep(configured);
+    let recent = keep(recent);
+    (configured, recent)
+}
+
+/// `path`, a path absolute or from `~`, of the home directory for `~`, as
+/// a session opened in a folder keeps it; as it is without a home
+/// directory.
+pub fn home_expanded(path: &str) -> String {
+    let rest = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => return path.to_owned(),
+    };
+    match std::env::home_dir() {
+        Some(home) => format!("{}{rest}", home.to_string_lossy()),
+        None => path.to_owned(),
+    }
+}
+
+/// A session, as a read of the sessions gives it: a group of windows, of
+/// which the active session's show and the others' are hidden, their
+/// programs running.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    /// The session.
+    pub id: SessionId,
+    /// Its name, empty for none.
+    pub name: String,
+    /// Whether it is the active one, whose windows show.
+    #[serde(default)]
+    pub active: bool,
+    /// Its windows, in the order they opened; none of a session whose
+    /// first window has yet to open.
+    pub windows: Vec<WindowId>,
+    /// The folder that it was opened in, an absolute path, as the
+    /// sessions' switcher opens one of a folder, to a plugin that reads the
+    /// processes (`process-read`); none of another.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+/// The folders that the sessions' switcher lists, each an absolute path:
+/// those of the config's `[sessions] folders`, in their order, and those
+/// that the panes' shells told last, the latest first, of this machine and
+/// there still; each once, and none that a session was opened in, as
+/// their real paths tell, whatever the path that names them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionFolders {
+    /// The config's.
+    pub configured: Vec<String>,
+    /// The recent ones.
+    pub recent: Vec<String>,
+    /// The home directory, which a switcher shows the folders under as of
+    /// `~`, if there is one.
+    #[serde(default)]
+    pub home: Option<String>,
+    /// The names of the layouts, sessions saved to files, each opening as
+    /// a new session of the app's command `window.open-layout`.
+    #[serde(default)]
+    pub layouts: Vec<String>,
+}
+
 /// Whether a group's `name` and `color` are a group's: a name of
 /// [`MOST_GROUP_NAME`] characters at most and of no control character, and
 /// an RGB color; why not otherwise.

@@ -78,6 +78,7 @@ mod panels;
 mod pickers;
 mod restore;
 pub(crate) mod scrollbars;
+mod sessions;
 mod settings_tab;
 mod spawn;
 mod surfaces;
@@ -191,6 +192,33 @@ const PREVIOUS_WINDOW: &str = "window.previous";
 /// The command that keeps the window above the other applications'
 /// windows, or puts it back among them, which the Window menu's item ticks.
 const FLOAT_ON_TOP: &str = "window.toggle-float-on-top";
+
+/// The command that makes a session of no name, switches to it and opens
+/// its first window.
+const NEW_SESSION: &str = "window.new-session";
+/// The command that switches to the session used before the active one.
+const LAST_SESSION: &str = "window.switch-to-last-session";
+/// The command that asks for the active session's name.
+const RENAME_SESSION: &str = "window.rename-session";
+/// The command that closes the active session's windows, once the user
+/// confirms it while a program runs in one of them.
+const CLOSE_SESSION: &str = "window.close-session";
+/// The command that switches to the session of its `name`, for keys of the
+/// user's own.
+const SWITCH_SESSION: &str = "window.switch-session";
+/// The command that saves the active session as a layout, of a name that
+/// it asks for.
+const SAVE_LAYOUT: &str = "window.save-layout";
+/// The command that opens the layout of its `name` as a new session.
+const OPEN_LAYOUT: &str = "window.open-layout";
+/// The sessions' commands, which the Window menu's Sessions shows.
+const SESSIONS: [&str; 5] = [
+    NEW_SESSION,
+    LAST_SESSION,
+    RENAME_SESSION,
+    SAVE_LAYOUT,
+    CLOSE_SESSION,
+];
 
 /// Shows the cursor guide, the band across the cursor's row, or hides it,
 /// in every window, until the config's `[cursor] guide` changes.
@@ -869,6 +897,19 @@ pub struct App<B: Backend> {
     close_asks: BTreeMap<AlertId, WindowId>,
     /// The windows whose title the user is asked for, by their alerts.
     title_asks: BTreeMap<AlertId, WindowId>,
+    /// The sessions whose name the user is asked for, or whose closing the
+    /// user is asked to confirm, by their alerts, with the window that
+    /// shows the question.
+    session_asks: BTreeMap<AlertId, (sessions::SessionAsk, workspace::SessionId, WindowId)>,
+    /// The window of each session that took the keyboard last, which takes
+    /// it again as the session shows.
+    session_fronts: BTreeMap<workspace::SessionId, WindowId>,
+    /// The session whose windows show, as the app showed them last.
+    shown_session: Option<workspace::SessionId>,
+    /// The windows kept of each session that has not shown since the app
+    /// started, which open as it first shows, their shells starting then,
+    /// and which the app keeps again as it quits.
+    pending_windows: BTreeMap<workspace::SessionId, Vec<lokyr_kernel::state::windows::Window>>,
     /// The tabs and the panes, of their windows, that plugins close, whose
     /// closing the user is asked to confirm, by their alerts.
     part_asks: BTreeMap<AlertId, (WindowId, plugins::Closing)>,
@@ -1142,6 +1183,10 @@ impl<B: Backend> App<B> {
             acting: None,
             close_asks: BTreeMap::new(),
             title_asks: BTreeMap::new(),
+            session_asks: BTreeMap::new(),
+            session_fronts: BTreeMap::new(),
+            shown_session: None,
+            pending_windows: BTreeMap::new(),
             part_asks: BTreeMap::new(),
             text_asks: BTreeMap::new(),
             choice_asks: BTreeMap::new(),
@@ -2467,6 +2512,9 @@ impl<B: Backend> App<B> {
         page: Option<String>,
         directory: Option<PathBuf>,
     ) -> Option<WindowId> {
+        // The windows of a session left hide first, as a new session's
+        // window opens.
+        self.settle_sessions(platform);
         // Of its cells, at the scale of the screen that it opens on; a man
         // page's of its own, which it neither keeps nor restores.
         let window_config = &self.config.window;
@@ -2539,6 +2587,10 @@ impl<B: Backend> App<B> {
             Some(id) => self.workspace.open_quick_window(pane, id),
             None => self.workspace.open_window(pane),
         };
+        // A man page's window shows whichever session is active.
+        if page.is_some() {
+            self.workspace.leave_sessions(shown);
+        }
         self.attach(platform, window, shown, page);
     }
 
@@ -2564,11 +2616,15 @@ impl<B: Backend> App<B> {
         let mut state = Window::new(surfaces, shown, focused, Instant::now());
         state.page = page;
         state.keyboard = self.workspace.focused(shown).map(Pane::id);
-        // The lowest number that no other open window has; the quick
-        // terminal's has none, nor the settings' of their own.
+        // The lowest number that no other open window of its session has;
+        // the quick terminal's has none, nor the settings' of their own.
         let quick =
             self.quick.contains_key(&window) || self.workspace.settings_window() == Some(shown);
-        let number = (!quick).then(|| self.free_number());
+        let session = self
+            .workspace
+            .window(shown)
+            .and_then(workspace::Window::session);
+        let number = (!quick).then(|| self.free_number(session));
         self.workspace.number_window(shown, number, None);
         self.windows.insert(window, state);
         self.window_keys(platform);
@@ -2583,12 +2639,19 @@ impl<B: Backend> App<B> {
         self.draw(platform, window, size);
     }
 
-    /// The lowest number, from 1, that no open window has.
-    fn free_number(&self) -> u32 {
+    /// The lowest number, from 1, that no open window that shows beside a
+    /// window of `session` has: of `session`, or of none, as a man page's
+    /// window shows in every session; of any session, for a window of
+    /// none.
+    fn free_number(&self, session: Option<workspace::SessionId>) -> u32 {
         let taken: BTreeSet<u32> = self
             .windows
             .values()
-            .filter_map(|state| self.workspace.window(state.window)?.number())
+            .filter_map(|state| self.workspace.window(state.window))
+            .filter(|shown| {
+                session.is_none() || shown.session().is_none() || shown.session() == session
+            })
+            .filter_map(workspace::Window::number)
             .collect();
         (1..).find(|number| !taken.contains(number)).unwrap_or(1)
     }
@@ -2634,17 +2697,28 @@ impl<B: Backend> App<B> {
     /// titlebar of its title, unless the config hides them; a titlebar of
     /// tabs leaves them to the bar's plugin. It takes no frame.
     pub(super) fn show_window_keys(&mut self, platform: &mut dyn Platform, window: WindowId) {
-        let Some(state) = self.windows.get_mut(&window) else {
+        let Some(state) = self.windows.get(&window) else {
             return;
         };
+        let tabs = state.titlebar == lokyr_platform_core::Titlebar::Tabs;
         let keys = self
             .workspace
             .window(state.window)
             .and_then(workspace::Window::keys)
-            .filter(|_| state.titlebar != lokyr_platform_core::Titlebar::Tabs);
-        if keys != state.accessory.as_deref() {
-            platform.set_title_accessory(window, keys);
-            state.accessory = keys.map(str::to_owned);
+            .filter(|_| !tabs);
+        // The session's name before them, of a session of a name.
+        let name = self.session_name_of(state.window).filter(|_| !tabs);
+        let shown = match (name, keys) {
+            (Some(name), Some(keys)) => Some(format!("{name} · {keys}")),
+            (Some(text), None) | (None, Some(text)) => Some(text.to_owned()),
+            (None, None) => None,
+        };
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if shown != state.accessory {
+            platform.set_title_accessory(window, shown.as_deref());
+            state.accessory = shown;
         }
     }
 
@@ -2655,10 +2729,12 @@ impl<B: Backend> App<B> {
             return;
         };
         let found = self.windows.iter().find(|(_, state)| {
-            self.workspace
-                .window(state.window)
-                .and_then(workspace::Window::number)
-                .is_some_and(|number| i64::from(number) == index)
+            self.workspace.in_active_session(state.window)
+                && self
+                    .workspace
+                    .window(state.window)
+                    .and_then(workspace::Window::number)
+                    .is_some_and(|number| i64::from(number) == index)
         });
         if let Some((&window, _)) = found {
             platform.focus_window(window);
@@ -2667,15 +2743,17 @@ impl<B: Backend> App<B> {
 
     /// Brings forward the window after the one with the focus, or before
     /// it where not `forward`, in the order that the windows opened, round:
-    /// the terminals' windows and the settings', not the quick terminal's,
-    /// which its own key shows and hides; the first of no window of them
-    /// with the focus.
+    /// the terminals' windows of the active session and the settings', not
+    /// the quick terminal's, which its own key shows and hides; the first of
+    /// no window of them with the focus.
     fn cycle_window(&mut self, platform: &mut dyn Platform, forward: bool) {
         let windows: Vec<WindowId> = self
             .windows
-            .keys()
-            .copied()
-            .filter(|window| !self.quick.contains_key(window))
+            .iter()
+            .filter(|(window, state)| {
+                !self.quick.contains_key(window) && self.workspace.in_active_session(state.window)
+            })
+            .map(|(&window, _)| window)
             .collect();
         let focused = self
             .windows
@@ -3041,6 +3119,7 @@ impl<B: Backend> App<B> {
                 .retain(|_, (asked, _)| *asked != Some(window));
             self.close_asks.retain(|_, asked| *asked != window);
             self.title_asks.retain(|_, asked| *asked != window);
+            self.forget_session_asks(window);
             let kept = &mut self.kept_closes;
             self.part_asks.retain(|_, (asked, closing)| {
                 let stays = *asked != window;
@@ -3476,6 +3555,28 @@ impl<B: Backend> App<B> {
                     self.open_window(platform);
                     Ok(())
                 }
+                NEW_SESSION => {
+                    self.new_session(platform);
+                    Ok(())
+                }
+                LAST_SESSION => {
+                    self.switch_to_last_session(platform);
+                    Ok(())
+                }
+                RENAME_SESSION => {
+                    self.ask_session_name(platform);
+                    Ok(())
+                }
+                CLOSE_SESSION => {
+                    self.ask_close_session(platform);
+                    Ok(())
+                }
+                SWITCH_SESSION => self.switch_session_named(platform, &args),
+                SAVE_LAYOUT => {
+                    self.ask_layout_name(platform);
+                    Ok(())
+                }
+                OPEN_LAYOUT => self.open_layout(platform, &args),
                 CLOSE_WINDOW => {
                     if let Some(window) = platform.focused_window() {
                         self.ask_close(platform, window);
@@ -3634,6 +3735,15 @@ impl<B: Backend> App<B> {
         // The themes that a picker lists, read as a plugin asks, of the
         // places of themes then.
         let (config_file, held_themes) = (&self.config_file, &self.held_themes);
+        // The layouts of the config's folder, read as the switcher opens.
+        let layouts = || {
+            config_file
+                .as_ref()
+                .map(|file| {
+                    lokyr_kernel::layouts::names(&lokyr_kernel::layouts::folder(&file.path))
+                })
+                .unwrap_or_default()
+        };
         let catalog = &self.theme_catalog;
         let (appearance, theme_config) = (platform.appearance(), &self.config.theme);
         let waker = self.waker.as_ref();
@@ -3723,6 +3833,7 @@ impl<B: Backend> App<B> {
             theme_value: &theme_value,
             fonts: &fonts,
             font_styles: &font_styles,
+            layouts: &layouts,
             plugins: &plugin_infos,
             config: &self.config,
             default_bindings: &self.default_bindings,
@@ -3795,6 +3906,16 @@ impl<B: Backend> App<B> {
                     if let Some(shown) = shown {
                         let place = place.as_ref().map(quick::host_place);
                         self.show_quick(platform, shown, place);
+                    }
+                }
+                // A plugin's new session's first window, in that session,
+                // which shows; none of one that a later write of its call
+                // took away, as a switch from it of no window does.
+                Request::OpenSessionWindow { session, directory } => {
+                    if self.workspace.switch_session(session) {
+                        let program = self.program.clone();
+                        let folder = directory.as_deref().and_then(spawn::folder_of);
+                        self.open_window_running(platform, &program, None, folder);
                     }
                 }
                 // A window in the folder that the plugin asked for, or a
@@ -4339,6 +4460,7 @@ impl<B: Backend> App<B> {
             // The keys recorded while a field that records a shortcut has
             // the keyboard, as a click or a key moved the focus.
             self.settle_recording(platform);
+            self.settle_sessions(platform);
             return;
         }
         for (plugin, event) in &ui_events {
@@ -4377,6 +4499,9 @@ impl<B: Backend> App<B> {
         // The keys recorded while a field that records a shortcut has the
         // keyboard, as the focus moved in the turn.
         self.settle_recording(platform);
+        // The windows of the session that the turn left active show, the
+        // others' hide.
+        self.settle_sessions(platform);
     }
 
     /// Takes the workspace's events, whose changes the plugins take. A
@@ -4521,11 +4646,12 @@ impl<B: Backend> App<B> {
             WorkspaceEvent::PaneCreated { tab, .. }
             | WorkspaceEvent::PaneFocused { tab, .. }
             | WorkspaceEvent::LayoutChanged { tab } => vec![of_tab(self, tab)],
-            // A tab's label and color, and a group, which the plugins'
-            // views show.
+            // A tab's label and color, a group and a session, which the
+            // plugins' views show.
             WorkspaceEvent::TabChanged { .. }
             | WorkspaceEvent::PaneChanged { .. }
-            | WorkspaceEvent::GroupChanged { .. } => return,
+            | WorkspaceEvent::GroupChanged { .. }
+            | WorkspaceEvent::SessionChanged { .. } => return,
             WorkspaceEvent::PaneMoved { from, tab, .. } => {
                 self.close_strayed_panels(platform);
                 vec![of_tab(self, from), of_tab(self, tab)]
@@ -5498,6 +5624,25 @@ impl<B: Backend> App<B> {
         window: WindowId,
         event: WindowEvent,
     ) {
+        // A window of a session that hides, which keeps the keyboard as it
+        // animates out of full screen, takes no keys, text, clicks nor
+        // scrolls: they would reach the session left.
+        let input = matches!(
+            event,
+            WindowEvent::Key(_)
+                | WindowEvent::Ime(_)
+                | WindowEvent::MouseButton { .. }
+                | WindowEvent::Scroll { .. }
+                | WindowEvent::Dropped(_)
+        );
+        if input
+            && self
+                .windows
+                .get(&window)
+                .is_some_and(|state| state.session_hidden)
+        {
+            return;
+        }
         match event {
             // A step of a live resize draws at once, so that the content
             // follows the edge, but not within half a refresh of the last
@@ -5591,6 +5736,7 @@ impl<B: Backend> App<B> {
                 }
                 self.settle_recording(platform);
                 if focused {
+                    self.session_focused(platform, window);
                     self.show_floating(platform, Some(window));
                     self.show_opacity(platform, Some(window));
                 }
@@ -5868,6 +6014,17 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
             "window-toggle-float-on-top",
             Category::Windows,
         ),
+        (NEW_SESSION, "window-new-session", Category::Windows),
+        (
+            LAST_SESSION,
+            "window-switch-to-last-session",
+            Category::Windows,
+        ),
+        (RENAME_SESSION, "window-rename-session", Category::Windows),
+        (CLOSE_SESSION, "window-close-session", Category::Windows),
+        (SWITCH_SESSION, "window-switch-session", Category::Windows),
+        (SAVE_LAYOUT, "window-save-layout", Category::Windows),
+        (OPEN_LAYOUT, "window-open-layout", Category::Windows),
         (CURSOR_GUIDE, "window-toggle-cursor-guide", Category::View),
         (OPACITY, "window-toggle-opacity", Category::View),
         (QUIT, "app-quit", Category::App),
@@ -5891,6 +6048,12 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
                 kind: Kind::Integer,
                 default: None,
             }]
+        } else if name == SWITCH_SESSION || name == OPEN_LAYOUT {
+            vec![Param {
+                name: "name".to_owned(),
+                kind: Kind::String,
+                default: None,
+            }]
         } else if name == NEW_THEME {
             ["theme", "variant"]
                 .map(|name| Param {
@@ -5902,11 +6065,25 @@ fn commands(texts: &Texts, plugins: &Plugins) -> Registry {
         } else {
             Vec::new()
         };
+        // The sessions' commands take what their requests take, so that a
+        // plugin that declares them runs them of the same capabilities:
+        // the workspace's writes, and a layout's commands typed into its
+        // shells.
+        let capabilities = if name == OPEN_LAYOUT {
+            vec![
+                lokyr_kernel::commands::Capability::WorkspaceWrite,
+                lokyr_kernel::commands::Capability::PtyWrite,
+            ]
+        } else if SESSIONS.contains(&name) || name == SWITCH_SESSION {
+            vec![lokyr_kernel::commands::Capability::WorkspaceWrite]
+        } else {
+            Vec::new()
+        };
         let command = Command {
             name: name.to_owned(),
             title: texts.text(&format!("command-{title}")),
             category,
-            capabilities: Vec::new(),
+            capabilities,
             params,
             when: CONTEXT_ONLY.contains(&name).then(|| "selection".to_owned()),
         };

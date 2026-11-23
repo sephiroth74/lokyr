@@ -1,6 +1,6 @@
 # Windows and tabs
 
-<sub>macOS · on by default · the [`tabs`](plugins/tabs.md) plugin · [`[window]`](CONFIGURATION.md#window), [`[plugins.tabs]`](CONFIGURATION.md#pluginstabs), [`[app] restore-windows`](CONFIGURATION.md#restore-windows)</sub>
+<sub>macOS · on by default · the [`tabs`](plugins/tabs.md) plugin · [`[window]`](CONFIGURATION.md#window), [`[plugins.tabs]`](CONFIGURATION.md#pluginstabs), [`[app] restore-windows`](CONFIGURATION.md#restore-windows), [`[sessions]`](CONFIGURATION.md#sessions)</sub>
 
 Open as many windows as you need, each with its own tabs, and move between them from the keyboard. Drag tabs to reorder them, to move them to another window or to split a pane, give them titles and colors of your own, and have your windows open again where you left them.
 
@@ -18,6 +18,7 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Pinned tabs**, kept at the start of the bar, and **groups** of tabs under a name and a color. · Since 1.3
 - **A tab you closed**, back with ⇧⌘T. · Since 1.3
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
+- **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -33,7 +34,7 @@ A pane closes when its shell exits, such as after `exit`, as [`close-on-exit`](C
 
 ## Move between windows
 
-Each window takes a number when it opens, the lowest that no other open window has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
+Each window takes a number when it opens, the lowest that no other open window of its [session](sessions.md) has, and shows its keys at the right of its titlebar, such as ⌥⌘2.
 
 - **⌥⌘1 to ⌥⌘9** bring that window forward.
 - **⌘\`** brings forward the next window, in the order they opened, and **⇧⌘\`** the one before. The key is the one left of 1, whatever your keyboard's layout prints on it.
@@ -43,6 +44,10 @@ Each window takes a number when it opens, the lowest that no other open window h
 [`title-shortcut`](CONFIGURATION.md#title-shortcut) hides the keys in the titlebar.
 
 **Try it**: press ⌘N: the new window's titlebar shows ⌥⌘2. Press ⌥⌘1: the first window comes forward.
+
+## Use sessions
+
+A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide, their programs running. Window › Sessions › New Session opens one, ⌃⌘S switches to a session or opens one in a project's folder, and ⌃⌘L switches to the session you used before. [Sessions](sessions.md) covers them. · not released yet
 
 ## Float a window or use full screen
 
@@ -91,6 +96,8 @@ restore-scrollback = true    # the panes show again what they showed
 What a program showed on its own screen, such as vim or less, isn't kept: the pane shows what the shell had printed before it. Images aren't kept either.
 
 Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
+
+[Sessions](sessions.md) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · not released yet
 
 **Try it**: set `restore-windows = "always"` and `restore-scrollback = true`, open a second tab with ⌘T, and run `cd /usr/share` and `ls` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`, its `ls` and the files it listed above the new prompt.
 
@@ -160,7 +167,7 @@ Right-click a tab and choose Pin Tab, or choose Shell › Pin Tab, to keep it at
 
 <sub>Platforms: macOS · Since 1.3</sub>
 
-Press ⇧⌘T, or choose Shell › Reopen Closed Tab, to bring back the tab you closed last, at its place and as you left it. Press it again for the one before.
+Press ⇧⌘T, or choose Shell › Reopen Closed Tab, to bring back the tab you closed last, at its place and as you left it. Press it again for the one before. When its window closed, or belongs to a session that's hidden, the tab comes back in the window in front.
 
 For 10 seconds after you close a tab, its programs keep running and what they print is kept; then the tab closes for good. A closed tab keeps its memory while it waits. [`reopen-seconds`](CONFIGURATION.md#reopen-seconds) sets how long it waits, and `0` closes tabs at once.
 
@@ -237,6 +244,8 @@ close-button = "hover"            # "always" or "never"
 | ⌥⌘1 to ⌥⌘9 | `cmd+alt+1` to `cmd+alt+9` | Bring that window forward |
 | ⌘\`, ⇧⌘\` | `` cmd+` ``, `` cmd+shift+` `` | Bring the next or the previous window forward |
 | ⇧⌘I | `cmd+shift+i` | Give the window a title |
+| ⌃⌘S | `cmd+ctrl+s` | Switch to a session, or open one in a folder · not released yet |
+| ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |
@@ -253,8 +262,10 @@ close-button = "hover"            # "always" or "never"
 - **A program can't move, resize or minimize its window**, nor read its title.
 - **Restored windows start new shells**: the panes' text and their programs don't come back, and a window that was in full screen opens out of it.
 - **The quick terminal and man pages' windows** don't open again when Lokyr starts.
+- **Lokyr keeps 100 windows and 256 panes at most** as it quits: those of the session that shows first, then the other sessions' from the one you used last. A notice at the next start tells how many it left out. · not released yet
 - **macOS's own window tabs**, and its Prefer tabs setting, don't apply: Lokyr's tabs are its own.
 - **Keys reach the first nine** windows and tabs: bind more in [`[keys]`](CONFIGURATION.md#bindings).
+- **A window with its tabs in the titlebar doesn't show its session's name.** · not released yet
 
 ## Troubleshooting
 

@@ -166,6 +166,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&a),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(
@@ -173,6 +174,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&b),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(one.tabs[1].title.as_deref(), Some("logs"));
@@ -182,6 +184,7 @@ fn two_windows_of_tabs_and_splits_open_again_as_they_were() {
         windows::Layout::Pane {
             directory: place(&c),
             scrollback: None,
+            command: None,
         }
     );
     assert_eq!(two.tabs[0].zoomed, Some(0));
@@ -212,9 +215,8 @@ fn app_of(config: Config, program: Program) -> App {
 
 /// Keeps, in `state`, windows of a pane each at `frames`.
 fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
-    let kept = Kept {
-        version: windows::VERSION,
-        windows: frames
+    let kept = Kept::new(
+        frames
             .iter()
             .map(|&frame| windows::Window {
                 frame,
@@ -224,6 +226,7 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                     layout: windows::Layout::Pane {
                         directory: None,
                         scrollback: None,
+                        command: None,
                     },
                     active: 0,
                     zoomed: None,
@@ -232,10 +235,11 @@ fn keep_frames(state: &std::path::Path, frames: &[Option<windows::Frame>]) {
                 }],
                 active: 0,
                 groups: Vec::new(),
+                session: None,
             })
             .collect(),
-        front: None,
-    };
+        None,
+    );
     windows::write(state, &kept).unwrap();
 }
 
@@ -310,6 +314,7 @@ fn a_window_of_a_display_that_went_opens_on_one_that_is_there() {
         tabs: Vec::new(),
         active: 0,
         groups: Vec::new(),
+        session: None,
     });
     windows::write(&state, &kept).unwrap();
     let mut fake = Fake::default();
@@ -354,6 +359,37 @@ fn a_newer_or_unreadable_file_is_left_aside_with_a_notice() {
         app.quit(&mut fake);
         assert_eq!(kept(&state).version, windows::VERSION);
     }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn the_windows_that_the_last_run_left_out_are_told() {
+    let base = real_directory("restore-left");
+    let state = base.join("state");
+    keep_frames(&state, &[None]);
+    let mut file = kept(&state);
+    file.left = windows::Left {
+        windows: 3,
+        panes: 40,
+    };
+    windows::write(&state, &file).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(restoring(), quiet()).with_state(Some(state.clone()));
+    fake.start(&mut app);
+    // The window kept opens, and a notice tells those that do not.
+    assert_eq!(fake.windows().count(), 1);
+    let notice = app.diagnostics.shown_diagnostic().expect("a notice");
+    assert!(
+        notice
+            .text
+            .starts_with("3 windows of the last run, of 40 panes, do not open again"),
+        "{}",
+        notice.text
+    );
+    assert_eq!(notice.about, About::KeptWindows);
+    // Kept anew as it quits, of none left out.
+    app.quit(&mut fake);
+    assert!(kept(&state).left.is_none());
     let _ = std::fs::remove_dir_all(base);
 }
 
@@ -664,5 +700,219 @@ fn scrollback_costs() {
             }
         }
     }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+/// The rows of the screen of the pane of `window`, a window of a pane.
+fn rows_of(app: &App, window: WindowId) -> Vec<String> {
+    let shown = app.windows[&window].window;
+    let pane = app.workspace.focused(shown).unwrap();
+    let terminal = pane.terminal().unwrap();
+    (0..terminal.rows()).map(|y| terminal.row_text(y)).collect()
+}
+
+/// The names of `app`'s sessions, in the order of their use.
+fn session_names(app: &App) -> Vec<String> {
+    app.workspace
+        .sessions()
+        .iter()
+        .map(|session| session.name().to_owned())
+        .collect()
+}
+
+/// The session of `app` of the name `name`.
+fn session_of(app: &App, name: &str) -> workspace::SessionId {
+    app.workspace
+        .sessions()
+        .iter()
+        .find(|session| session.name() == name)
+        .map(|session| session.id())
+        .unwrap()
+}
+
+#[test]
+fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
+    let base = real_directory("restore-sessions");
+    let state = base.join("state");
+    // A run of three sessions: home of two windows, api, then web, active,
+    // each window's pane of a line of its own.
+    let mut fake = Fake::default();
+    let mut app = app(
+        restoring_scrollback(),
+        shell("printf 'kept in %s\\n' \"$LOKYR_TEST_MARK\"; exec sleep 30"),
+    )
+    .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    let home = app.workspace.active_session();
+    app.workspace.rename_session(home, "home");
+    fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+    for name in ["api", "web"] {
+        fake.send_app(&mut app, AppEvent::Command("window.new-session".to_owned()));
+        let session = app.workspace.active_session();
+        app.workspace.rename_session(session, name);
+    }
+    assert_eq!(fake.windows().count(), 4);
+    run_until(&mut fake, &mut app, |_, app| {
+        app.windows.keys().all(|&window| {
+            rows_of(app, window)
+                .iter()
+                .any(|row| row.starts_with("kept"))
+        })
+    });
+    app.quit(&mut fake);
+    // The next start: every session, the one that was active shown, of its
+    // window alone; the others' windows open as each first shows.
+    let started = |state: &std::path::Path| {
+        let mut fake = Fake::default();
+        let mut app = super::app(restoring_scrollback(), shell("exec sleep 30"))
+            .with_state(Some(state.to_path_buf()));
+        fake.start(&mut app);
+        (fake, app)
+    };
+    let (mut fake, mut app) = started(&state);
+    assert_eq!(session_names(&app), ["web", "api", "home"]);
+    assert_eq!(fake.windows().count(), 1);
+    let api = session_of(&app, "api");
+    assert!(app.workspace.session_windows(api).is_empty());
+    // A switch that passes through it before it shows keeps it, of the
+    // windows that wait for it.
+    let web = session_of(&app, "web");
+    assert!(app.workspace.switch_session(api));
+    assert!(app.workspace.switch_session(web));
+    assert_eq!(session_names(&app), ["web", "api", "home"]);
+    let named = |name: &str| {
+        lokyr_kernel::commands::Args::from([(
+            "name".to_owned(),
+            lokyr_kernel::commands::Value::String(name.to_owned()),
+        )])
+    };
+    app.run(&mut fake, "window.switch-session", named("home"));
+    assert_eq!(fake.windows().count(), 3);
+    let home = session_of(&app, "home");
+    assert_eq!(app.workspace.session_windows(home).len(), 2);
+    for window in app.workspace.session_windows(home) {
+        let (&shown, _) = app
+            .windows
+            .iter()
+            .find(|(_, state)| state.window == window)
+            .unwrap();
+        assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+        assert!(!fake.window(shown).unwrap().hidden);
+    }
+    // Quit with api never shown: its window is kept as it was, of its
+    // scrollback, and shows it as api first shows after the next start.
+    app.quit(&mut fake);
+    let (mut fake, mut app) = started(&state);
+    assert_eq!(session_names(&app), ["home", "web", "api"]);
+    assert_eq!(fake.windows().count(), 2);
+    app.run(&mut fake, "window.switch-session", named("api"));
+    let api = session_of(&app, "api");
+    let [window] = app.workspace.session_windows(api)[..] else {
+        panic!("one window of api");
+    };
+    let (&shown, _) = app
+        .windows
+        .iter()
+        .find(|(_, state)| state.window == window)
+        .unwrap();
+    assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+    app.quit(&mut fake);
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn a_split_s_panes_show_their_restored_lines_on_one_row() {
+    let base = real_directory("restore-split-lines");
+    let state = base.join("state");
+    // A window of two panes side by side, each of its file.
+    let mut kept_rows =
+        lokyr_vt_core::terminal::Terminal::new(40, 10, lokyr_vt_core::terminal::Options::default());
+    lokyr_vt_core::parser::Parser::new().advance(&mut kept_rows, b"a line kept\r\n");
+    let bytes = kept_rows.archive(usize::MAX);
+    scrollback::write(
+        &state,
+        &[
+            (scrollback::name(0), bytes.clone()),
+            (scrollback::name(1), bytes),
+        ],
+    )
+    .unwrap();
+    let pane = |name: usize| windows::Layout::Pane {
+        directory: None,
+        scrollback: Some(scrollback::name(name)),
+        command: None,
+    };
+    let kept = Kept::new(
+        vec![windows::Window {
+            frame: None,
+            tabs: vec![windows::Tab {
+                title: None,
+                color: None,
+                layout: windows::Layout::Split {
+                    direction: windows::Direction::Horizontal,
+                    ratio: None,
+                    first: Box::new(pane(0)),
+                    second: Box::new(pane(1)),
+                },
+                active: 0,
+                zoomed: None,
+                pinned: false,
+                group: None,
+            }],
+            active: 0,
+            groups: Vec::new(),
+            session: None,
+        }],
+        None,
+    );
+    windows::write(&state, &kept).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(restoring_scrollback(), shell("exec sleep 30")).with_state(Some(state));
+    fake.start(&mut app);
+    let line_of = |app: &App, pane: PaneId| {
+        let terminal = app.workspace.pane(pane)?.terminal()?;
+        let rows: Vec<String> = (0..terminal.rows()).map(|y| terminal.row_text(y)).collect();
+        let at = rows
+            .iter()
+            .position(|row| row.starts_with("── Restored from"))?;
+        Some((
+            rows[at].clone(),
+            rows.get(at + 1).cloned().unwrap_or_default(),
+        ))
+    };
+    let panes: Vec<PaneId> = app.workspace.pane_ids();
+    assert_eq!(panes.len(), 2);
+    run_until(&mut fake, &mut app, |_, app| {
+        panes.iter().all(|&pane| line_of(app, pane).is_some())
+    });
+    for &pane in &panes {
+        let (line, next) = line_of(&app, pane).unwrap();
+        // Of its own length, its row alone, whatever the pane's width.
+        assert!(line.ends_with(" ──"), "{line:?}");
+        assert!(!next.starts_with('─'), "{next:?}");
+    }
+    let _ = std::fs::remove_dir_all(base);
+}
+
+#[test]
+fn the_panes_files_go_of_a_windows_file_that_cannot_be_written() {
+    let base = real_directory("restore-failed-keep");
+    let state = base.join("state");
+    // A folder where the windows' file goes, which no write replaces.
+    std::fs::create_dir_all(state.join("windows.json")).unwrap();
+    let mut fake = Fake::default();
+    let mut app = app(
+        restoring_scrollback(),
+        shell("printf 'a line kept\\n'; exec sleep 30"),
+    )
+    .with_state(Some(state.clone()));
+    fake.start(&mut app);
+    run_until(&mut fake, &mut app, |_, app| {
+        first_rows(app)
+            .iter()
+            .any(|row| row.contains("a line kept"))
+    });
+    app.quit(&mut fake);
+    assert!(!scrollback::folder(&state).exists());
     let _ = std::fs::remove_dir_all(base);
 }

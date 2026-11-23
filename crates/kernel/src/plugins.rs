@@ -60,7 +60,8 @@ use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
 use crate::workspace::{
-    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
+    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, SessionId, Side, TabId, WindowId,
+    Workspace,
 };
 
 mod search;
@@ -98,6 +99,15 @@ pub enum Request {
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
     OpenWindow(Option<String>),
+    /// Open the first window of the session `session`, which a plugin made,
+    /// as [`Request::OpenWindow`] opens one, in that session, which shows:
+    /// none of a session that a later write of the call took away.
+    OpenSessionWindow {
+        /// The session.
+        session: crate::workspace::SessionId,
+        /// The folder of its pane.
+        directory: Option<String>,
+    },
     /// Open a quick window of the id `window`, which the plugin's request
     /// gave, shown at `place`, its pane in `directory`, if given.
     OpenQuickWindow {
@@ -531,6 +541,9 @@ pub struct Context<'a> {
     pub fonts: &'a dyn Fn() -> host::Fonts,
     /// The styles of a font family, by its name, from the lightest.
     pub font_styles: &'a dyn Fn(&str) -> Vec<String>,
+    /// The names of the layouts of the config's folder, which the sessions'
+    /// switcher lists, in their order.
+    pub layouts: &'a dyn Fn() -> Vec<String>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -1297,6 +1310,13 @@ enum Write {
         tabs: Vec<TabId>,
         name: String,
         color: Option<Rgb>,
+    },
+    /// A session, of the id that the host gave it, and the folder of its
+    /// first window's pane.
+    NewSession {
+        id: SessionId,
+        name: String,
+        directory: Option<String>,
     },
     /// A render of one of the call's plugin's views.
     Render(ViewId),
@@ -4851,6 +4871,23 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.new_group_as(id, &tabs, &name, color);
                 continue;
             }
+            // The session, active as it is made, then its first window,
+            // which the app opens in it.
+            Write::NewSession {
+                id,
+                name,
+                directory,
+            } => {
+                if context.workspace.new_session_as(id, &name).is_some() {
+                    let folder = directory.as_deref().map(host::home_expanded);
+                    context.workspace.set_session_folder(id, folder);
+                    requests.push(Request::OpenSessionWindow {
+                        session: id,
+                        directory,
+                    });
+                }
+                continue;
+            }
             // A tab or a split of a window or a pane that an earlier write
             // of the call closed starts no program.
             Write::NewTab {
@@ -5123,6 +5160,9 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             }
             Asked::Ungroup(group) => {
                 context.workspace.ungroup(GroupId::of(group.0));
+            }
+            Asked::SwitchSession(session) => {
+                context.workspace.switch_session(SessionId::of(session.0));
             }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
@@ -5827,6 +5867,28 @@ impl Host<'_, '_> {
         Ok(shown.window().into())
     }
 
+    /// Whether the session `session` is there, or the call's writes so far
+    /// make it; `not-found` otherwise.
+    fn known_session(&self, session: host::SessionId) -> Result<(), Error> {
+        let made = self
+            .writes
+            .iter()
+            .any(|write| matches!(write, Write::NewSession { id, .. } if id.get() == session.0));
+        if made
+            || self
+                .context
+                .workspace
+                .session(SessionId::of(session.0))
+                .is_some()
+        {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::NotFound,
+            format!("there is no session {}", session.0),
+        ))
+    }
+
     /// Whether the group `group` is there, or the call's writes so far make
     /// it; `not-found` otherwise.
     fn known_group(&self, group: host::GroupId) -> Result<(), Error> {
@@ -6275,6 +6337,30 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
+            Asked::Sessions => {
+                let reads = self.state.reads_processes();
+                let workspace = &*self.context.workspace;
+                let active = workspace.active_session();
+                Response::Sessions(
+                    workspace
+                        .sessions()
+                        .into_iter()
+                        .map(|session| host::SessionInfo {
+                            id: session.id().into(),
+                            name: session.name().to_owned(),
+                            active: session.id() == active,
+                            folder: session.folder().filter(|_| reads).map(str::to_owned),
+                            windows: workspace
+                                .session_windows(session.id())
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             Asked::CommandLine { pane, command } => {
                 Response::Text(self.pane(pane)?.command_line(command))
@@ -6395,6 +6481,37 @@ impl Host<'_, '_> {
                     sections,
                     keys,
                     error: self.context.config_error.cloned(),
+                })
+            }
+            // The config's folders, and the recent ones that are there still.
+            Asked::SessionFolders => {
+                let home = std::env::home_dir();
+                let configured = crate::session_folders::listed(
+                    &self.context.config.sessions.folders,
+                    home.as_deref(),
+                )
+                .into_iter()
+                .map(|folder| folder.to_string_lossy().into_owned())
+                .collect();
+                let workspace = &self.context.workspace;
+                let recent = workspace
+                    .recent_folders()
+                    .iter()
+                    .filter(|folder| std::path::Path::new(folder).is_dir())
+                    .cloned()
+                    .collect();
+                let sessions: Vec<&str> = workspace
+                    .sessions()
+                    .into_iter()
+                    .filter_map(crate::workspace::Session::folder)
+                    .collect();
+                let (configured, recent) =
+                    crate::session_folders::without_sessions(configured, recent, &sessions);
+                Response::SessionFolders(host::SessionFolders {
+                    configured,
+                    recent,
+                    layouts: (self.context.layouts)(),
+                    home: home.map(|home| home.to_string_lossy().into_owned()),
                 })
             }
             Asked::Agents => {
@@ -6728,6 +6845,22 @@ impl Host<'_, '_> {
                 self.known_group(*group)?;
             }
             Asked::FoldGroup { group, .. } | Asked::Ungroup(group) => self.known_group(*group)?,
+            Asked::NewSession { name, directory } => {
+                host::check_session_name(name)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = directory {
+                    host::check_session_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let id = SessionId::new();
+                self.writes.push(Write::NewSession {
+                    id,
+                    name: name.clone(),
+                    directory: directory.clone(),
+                });
+                return Ok(Response::Session(id.into()));
+            }
+            Asked::SwitchSession(session) => self.known_session(*session)?,
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;
                 if matches!(color, Some(host::Color::Palette(_))) {

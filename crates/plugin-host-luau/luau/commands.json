@@ -383,6 +383,15 @@
   },
   {
     "capabilities": [],
+    "category": "windows",
+    "name": "command-palette.sessions",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Switch Session…",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "view",
     "name": "command-palette.theme",
     "params": [],
@@ -1264,6 +1273,17 @@
     "when": null
   },
   {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.close-session",
+    "params": [],
+    "plugin": null,
+    "title": "Close Session",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "windows",
     "name": "window.goto",
@@ -1288,6 +1308,17 @@
     "when": null
   },
   {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.new-session",
+    "params": [],
+    "plugin": null,
+    "title": "New Session",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "windows",
     "name": "window.next",
@@ -1306,6 +1337,24 @@
     "when": null
   },
   {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "windows",
+    "name": "window.open-layout",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Layout",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "windows",
     "name": "window.previous",
@@ -1315,12 +1364,62 @@
     "when": null
   },
   {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.rename-session",
+    "params": [],
+    "plugin": null,
+    "title": "Rename Session…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.save-layout",
+    "params": [],
+    "plugin": null,
+    "title": "Save Session as Layout…",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "windows",
     "name": "window.set-title",
     "params": [],
     "plugin": null,
     "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.switch-session",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Switch to Session",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.switch-to-last-session",
+    "params": [],
+    "plugin": null,
+    "title": "Switch to Last Session",
     "when": null
   },
   {

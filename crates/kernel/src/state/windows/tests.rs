@@ -44,11 +44,16 @@ fn sample() -> Kept {
     let pane = |directory: &str| Layout::Pane {
         directory: Some(directory.to_owned()),
         scrollback: None,
+        command: None,
     };
     Kept {
+        sessions: Vec::new(),
+        left: Left::default(),
+        of_sessions: Vec::new(),
         version: VERSION,
         windows: vec![
             Window {
+                session: None,
                 frame: Some(Frame {
                     x: 40.0,
                     y: 60.0,
@@ -118,6 +123,7 @@ fn sample() -> Kept {
                 ],
             },
             Window {
+                session: None,
                 frame: None,
                 tabs: vec![Tab {
                     title: None,
@@ -128,6 +134,7 @@ fn sample() -> Kept {
                         first: Box::new(Layout::Pane {
                             directory: None,
                             scrollback: None,
+                            command: None,
                         }),
                         second: Box::new(pane("/e")),
                     },
@@ -213,6 +220,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
             layout: Layout::Pane {
                 directory: None,
                 scrollback: None,
+                command: None,
             },
             active: 0,
             zoomed: None,
@@ -229,6 +237,7 @@ fn a_newer_or_unreadable_file_is_left_aside() {
     let mut kept = sample();
     kept.windows = (0..=MOST_WINDOWS)
         .map(|_| Window {
+            session: None,
             frame: None,
             tabs: Vec::new(),
             active: 0,
@@ -240,6 +249,14 @@ fn a_newer_or_unreadable_file_is_left_aside() {
         panic!("a file of too many windows reads");
     };
     assert!(error.contains("101 windows"), "{error}");
+    // More sessions than windows may open.
+    let mut kept = sample();
+    kept.sessions = vec![Session::default(); MOST_WINDOWS + 1];
+    write(&state, &kept).unwrap();
+    let Err(Unread::Invalid(error)) = read(&state) else {
+        panic!("a file of too many sessions reads");
+    };
+    assert!(error.contains("101 sessions"), "{error}");
     let _ = fs::remove_dir_all(&state);
 }
 
@@ -367,6 +384,7 @@ fn a_window_of_another_workspace_or_of_no_tab_is_left_out() {
     assert_eq!(kept.windows.len(), 1);
     assert_eq!(kept.front, None);
     let empty = Window {
+        session: None,
         frame: None,
         tabs: Vec::new(),
         active: 0,
@@ -435,7 +453,251 @@ fn each_pane_names_its_scrollback_s_file_in_the_layout_s_order() {
         earlier,
         Layout::Pane {
             directory: Some("/tmp".to_owned()),
-            scrollback: None
+            scrollback: None,
+            command: None,
         }
     );
+}
+
+#[test]
+fn the_windows_keep_their_sessions_in_the_order_of_their_use() {
+    let mut workspace = Workspace::new();
+    let home = workspace.active_session();
+    let first = workspace.open_window(pane());
+    let api = workspace.new_session("api").unwrap();
+    workspace.set_session_folder(api, Some("/src/api".to_owned()));
+    let second = workspace.open_window(pane());
+    let web = workspace.new_session("web").unwrap();
+    let third = workspace.open_window(pane());
+    assert!(workspace.rename_session(home, "home"));
+    let shown = [(first, None), (second, None), (third, None)];
+    let kept = Kept::of(&workspace, &shown, Some(third), |_| None, |_, _| None);
+    // The active one first, then the one before it.
+    assert_eq!(
+        kept.sessions,
+        [
+            Session {
+                name: "web".to_owned(),
+                folder: None
+            },
+            Session {
+                name: "api".to_owned(),
+                folder: Some("/src/api".to_owned())
+            },
+            Session {
+                name: "home".to_owned(),
+                folder: None
+            },
+        ]
+    );
+    let of: Vec<Option<usize>> = kept.windows.iter().map(|window| window.session).collect();
+    assert_eq!(of, [Some(2), Some(1), None]);
+    assert_eq!(kept.windows[1].session_index(3), 1);
+    assert_eq!(kept.windows[2].session_index(3), 0);
+    // Written and read, the same.
+    let state = state("sessions");
+    write(&state, &kept).unwrap();
+    assert_eq!(read(&state).unwrap(), Some(kept.clone()));
+    let _ = fs::remove_dir_all(&state);
+    // Of one session of no name nor folder, none, as before sessions.
+    let mut plain = Workspace::new();
+    let alone = plain.open_window(pane());
+    let kept = Kept::of(&plain, &[(alone, None)], None, |_| None, |_, _| None);
+    assert!(kept.sessions.is_empty() && kept.windows[0].session.is_none());
+    assert_eq!(kept.sessions_to_open(), [Session::default()]);
+    let _ = (web, api);
+}
+
+#[test]
+fn a_session_that_never_showed_keeps_its_windows_and_their_files_new_names() {
+    let mut workspace = Workspace::new();
+    let first = workspace.open_window(pane());
+    let later = workspace.add_session("later");
+    assert_eq!(workspace.active_session(), workspace.sessions()[0].id());
+    let mut kept = Kept::of(&workspace, &[(first, None)], None, |_| None, |_, _| None);
+    // A window kept of a pane of a file, whose name the window takes anew.
+    let window = Window {
+        session: None,
+        frame: None,
+        tabs: vec![Tab {
+            title: None,
+            color: None,
+            layout: Layout::Pane {
+                directory: None,
+                scrollback: Some("7.scrollback".to_owned()),
+                command: None,
+            },
+            active: 0,
+            zoomed: None,
+            pinned: false,
+            group: None,
+        }],
+        active: 0,
+        groups: Vec::new(),
+    };
+    let mut index = kept.panes();
+    kept.append(&workspace, vec![(later, window)], |window| {
+        window.rename_scrollbacks(|name| {
+            index += 1;
+            name.map(|_| super::super::scrollback::name(index - 1))
+        });
+    });
+    assert_eq!(kept.sessions.len(), 2);
+    assert_eq!(kept.sessions[1].name, "later");
+    assert_eq!(kept.windows[1].session, Some(1));
+    assert_eq!(
+        kept.windows[1].tabs[0].layout.first_pane().scrollback,
+        Some("1.scrollback")
+    );
+    // A name that the file holds as no plugin could write it goes.
+    kept.sessions[1].name = "a\nb".to_owned();
+    assert_eq!(kept.sessions_to_open()[1].name, "");
+}
+
+/// A pane of a program that does not start, of no process, as a test of
+/// hundreds of panes makes them.
+fn idle() -> Pane {
+    let program = Program::command("/lokyr/no-such-program", ["a"]);
+    Pane::spawn(
+        &program,
+        &Environment::default(),
+        &Settings::default(),
+        Grid {
+            columns: 20,
+            rows: 4,
+            cell_width: 8,
+            cell_height: 16,
+        },
+        &Colors::default(),
+        &Texts::new("en", &crate::l10n::KERNEL),
+        || {},
+    )
+}
+
+/// A window of `workspace` of `panes` tabs, each of one pane.
+fn window_of(workspace: &mut Workspace, panes: usize) -> WindowId {
+    let window = workspace.open_window(idle());
+    for index in 1..panes {
+        workspace.open_tab(window, idle(), index).unwrap();
+    }
+    window
+}
+
+#[test]
+fn sessions_past_the_bounds_keep_within_them_the_active_one_whole() {
+    let mut workspace = Workspace::new();
+    let home = workspace.active_session();
+    assert!(workspace.rename_session(home, "home"));
+    let h = window_of(&mut workspace, 10);
+    let api = workspace.new_session("api").unwrap();
+    let (a1, a2) = (
+        window_of(&mut workspace, 200),
+        window_of(&mut workspace, 50),
+    );
+    let web = workspace.new_session("web").unwrap();
+    let (w1, w2) = (
+        window_of(&mut workspace, 100),
+        window_of(&mut workspace, 100),
+    );
+    let shown: Vec<_> = [h, a1, a2, w1, w2]
+        .into_iter()
+        .map(|window| (window, None))
+        .collect();
+    let mut names = Vec::new();
+    let kept = Kept::of(
+        &workspace,
+        &shown,
+        Some(w2),
+        |_| None,
+        |_, index| {
+            names.push(index);
+            None
+        },
+    );
+    // The active session's windows whole, then the one before it's that
+    // fit, of 256 panes; the oldest's left out, and its session with it.
+    let panes: Vec<usize> = kept
+        .windows
+        .iter()
+        .map(|window| window.tabs.len())
+        .collect();
+    assert_eq!(panes, [50, 100, 100]);
+    assert_eq!(kept.panes(), MOST_PANES - 6);
+    assert_eq!(
+        kept.left,
+        Left {
+            windows: 2,
+            panes: 210
+        }
+    );
+    let sessions: Vec<&str> = kept
+        .sessions
+        .iter()
+        .map(|session| session.name.as_str())
+        .collect();
+    assert_eq!(sessions, ["web", "api"]);
+    assert_eq!(kept.front, Some(2));
+    // The panes' files named of the kept panes alone, in their order.
+    assert_eq!(names, (0..kept.panes()).collect::<Vec<_>>());
+    // A session that never showed: its windows while they fit.
+    let later = workspace.add_session("later");
+    let pending = |panes: usize| Window {
+        session: None,
+        frame: None,
+        tabs: (0..panes)
+            .map(|_| Tab {
+                title: None,
+                color: None,
+                layout: Layout::Pane {
+                    directory: None,
+                    scrollback: None,
+                    command: None,
+                },
+                active: 0,
+                zoomed: None,
+                pinned: false,
+                group: None,
+            })
+            .collect(),
+        active: 0,
+        groups: Vec::new(),
+    };
+    let mut kept = kept;
+    let mut taken = Vec::new();
+    kept.append(
+        &workspace,
+        vec![(later, pending(10)), (later, pending(6))],
+        |window| taken.push(window.tabs.len()),
+    );
+    assert_eq!(taken, [6]);
+    assert_eq!(kept.panes(), MOST_PANES);
+    assert_eq!(
+        kept.left,
+        Left {
+            windows: 3,
+            panes: 220
+        }
+    );
+    // Written and read, what was left out too, which the next start tells.
+    let state = state("bounds");
+    write(&state, &kept).unwrap();
+    assert_eq!(read(&state).unwrap(), Some(kept.clone()));
+    let _ = fs::remove_dir_all(&state);
+    // Past the windows' bound, the oldest session's go first.
+    let mut many = Workspace::new();
+    let old = window_of(&mut many, 1);
+    many.new_session("new").unwrap();
+    let mut shown = vec![(old, None)];
+    shown.extend((0..MOST_WINDOWS).map(|_| (window_of(&mut many, 1), None)));
+    let kept = Kept::of(&many, &shown, None, |_| None, |_, _| None);
+    assert_eq!(kept.windows.len(), MOST_WINDOWS);
+    assert_eq!(
+        kept.left,
+        Left {
+            windows: 1,
+            panes: 1
+        }
+    );
+    assert_eq!(kept.sessions.len(), 1);
+    let _ = (api, web);
 }

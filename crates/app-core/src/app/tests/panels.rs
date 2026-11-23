@@ -1137,8 +1137,8 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
         (frame.x + frame.width / 2.0 - width / 2.0).abs() <= 1.0,
         "{frame:?} in {width}"
     );
-    // Typed: New Window first, of the app, then New Theme from Current…,
-    // then New Tab, of the tabs.
+    // Typed: New Window first, of the app, then New Theme from Current…
+    // and New Session, then New Tab, of the tabs.
     fake.send(
         &mut app,
         window,
@@ -1146,8 +1146,9 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     );
     frames(&mut fake, &mut app, window);
     // The arrows move the selection while the field takes the keys: down
-    // three times, up once, to New Tab.
+    // four times, up once, to New Tab.
     for code in [
+        KeyCode::ArrowDown,
         KeyCode::ArrowDown,
         KeyCode::ArrowDown,
         KeyCode::ArrowDown,
@@ -1157,7 +1158,7 @@ fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_i
     }
     frames(&mut fake, &mut app, window);
     assert!(focused_in(&app, window, "command-palette"));
-    assert_eq!(selected(&app), Some(2));
+    assert_eq!(selected(&app), Some(3));
     // Return runs it, the palette closed.
     let tabs = |app: &App| {
         app.workspace
@@ -1693,4 +1694,91 @@ fn the_find_bar_s_field_leaves_option_command_and_an_arrow_to_the_panes_move() {
         key_event(KeyCode::ArrowLeft, "", option_command, false),
     );
     run_until(&mut fake, &mut app, |_, app| focused(app) == Some(first));
+}
+
+/// The titles of the palette's list in `window`, in their order.
+fn palette_titles(app: &App, window: WindowId) -> Vec<String> {
+    let Some(view) = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("command-palette")))
+    else {
+        return Vec::new();
+    };
+    let tree = &view.surface.tree;
+    let Some(list) = tree.by_key(&"commands".into()) else {
+        return Vec::new();
+    };
+    match tree.kind(list) {
+        Some(lokyr_kernel::plugins::view::Kind::List(list)) => list
+            .items
+            .iter()
+            .map(|item| item.texts[0].clone())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+#[test]
+fn the_sessions_switcher_lists_a_folder_s_session_in_place_of_the_folder() {
+    let real = real_directory("switcher-projects");
+    for folder in ["api", "web"] {
+        std::fs::create_dir_all(real.join(folder)).unwrap();
+    }
+    // The config names the projects through a link, as `/tmp` names
+    // `/private/tmp` on macOS, whose real path the shells tell.
+    let projects = real.with_file_name("switcher-link");
+    let _ = std::fs::remove_file(&projects);
+    std::os::unix::fs::symlink(&real, &projects).unwrap();
+    let mut config = unpadded();
+    config.sessions.folders = vec![format!("{}/*", projects.display())];
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), config, None).with_program(quiet());
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    let open = |fake: &mut Fake, app: &mut App, window| {
+        fake.send_app(
+            app,
+            AppEvent::Command("command-palette.sessions".to_owned()),
+        );
+        run_until(fake, app, |_, app| !palette_titles(app, window).is_empty());
+        palette_titles(app, window)
+    };
+    assert_eq!(
+        open(&mut fake, &mut app, window),
+        ["Untitled Session", "api", "web"]
+    );
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("web".to_owned())),
+    );
+    frames(&mut fake, &mut app, window);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", Modifiers::NONE, true),
+    );
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let web = fake.windows().find(|&shown| shown != window).unwrap();
+    app.windows.get_mut(&web).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, web, WindowEvent::Focused(true));
+    // Its session, of the folder, first, in place of the folder.
+    let folder = app
+        .workspace
+        .session(app.workspace.active_session())
+        .and_then(|session| session.folder().map(str::to_owned));
+    assert_eq!(folder, Some(projects.join("web").display().to_string()));
+    // Its shell tells the folder's real path, which is no other folder.
+    app.workspace
+        .set_recent_folders(vec![real.join("web").display().to_string()]);
+    assert_eq!(
+        open(&mut fake, &mut app, web),
+        ["web", "Untitled Session", "api"]
+    );
+    let _ = std::fs::remove_file(projects);
+    let _ = std::fs::remove_dir_all(real);
 }

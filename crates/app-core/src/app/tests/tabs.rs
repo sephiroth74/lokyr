@@ -1481,3 +1481,28 @@ fn past_the_most_closed_tabs_kept_the_oldest_closes_for_good() {
     );
     assert!(app.closed_timer.is_some());
 }
+
+#[test]
+fn a_closed_tab_of_a_hidden_session_comes_back_into_the_window_that_shows() {
+    let (mut fake, mut app, window) =
+        tabs_running("unified", "top", 2, idle(), "reopen-seconds = 60\n");
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    fake.send_app(&mut app, AppEvent::Command("tabs.close".to_owned()));
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.keeps_closed_tabs()
+    });
+    // Its window hides with its session, as another shows.
+    fake.send_app(&mut app, AppEvent::Command(NEW_SESSION.to_owned()));
+    let other = fake.windows().find(|&id| id != window).unwrap();
+    assert!(fake.window(window).unwrap().hidden);
+    fake.send(&mut app, other, WindowEvent::Focused(true));
+    app.run(&mut fake, "tabs.reopen", Args::new());
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.tab(tab).is_some()
+    });
+    assert_eq!(
+        app.workspace.tab(tab).map(workspace::Tab::window),
+        Some(app.windows[&other].window)
+    );
+}

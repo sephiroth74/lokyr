@@ -156,6 +156,7 @@ impl<B: Backend> App<B> {
         {
             self.close(platform, window);
         }
+        self.session_answered(platform, alert, button, text);
         if let Some((window, closing)) = self.part_asks.remove(&alert) {
             if button == 0 && self.part_in(window, closing) {
                 // Confirmed while its program runs, it closes for good, as
@@ -235,6 +236,7 @@ impl<B: Backend> App<B> {
         self.saves.values().any(|save| Some(save.window) == shown)
             || self.close_asks.values().any(|&asked| asked == window)
             || self.title_asks.values().any(|&asked| asked == window)
+            || self.asks_session_on(window)
             || self.part_asks.values().any(|(asked, _)| *asked == window)
             || self.text_asks.values().any(|(asked, ..)| *asked == window)
             || self

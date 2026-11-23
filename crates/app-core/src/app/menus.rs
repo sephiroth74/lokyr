@@ -25,7 +25,8 @@ use super::{
     FLOAT_ON_TOP, IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE,
     MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT,
     NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB,
-    SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_number,
+    SECURE_INPUT, SESSIONS, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection,
+    shown_number,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -535,6 +536,10 @@ impl<B: Backend> App<B> {
 /// The palette's list of the agents, which the windows' menu holds beside
 /// the next agent.
 const SHOW_AGENTS: &str = "command-palette.agents";
+
+/// The palette's sessions' switcher, which the Window menu's Sessions
+/// shows first.
+const SWITCH_SESSION: &str = "command-palette.sessions";
 /// The arguments of `man` for the page that `text` names: its name, and
 /// its section before it when `text` ends with one in brackets, as
 /// `ls(1)`, after `--`; `None` for a text that is no page's name, which
@@ -667,8 +672,10 @@ pub(super) fn main_menu(
                     && command.name != super::OPACITY
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
+                    && command.name != SWITCH_SESSION
                     && command.name != NEXT_WINDOW
                     && command.name != PREVIOUS_WINDOW
+                    && !SESSIONS.contains(&command.name.as_str())
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })
@@ -915,6 +922,29 @@ pub(super) fn main_menu(
         application.push(MenuItem::Separator);
         application.extend(app_commands);
     }
+    // The Window menu's Sessions, of the sessions' commands, then a line.
+    let session_items: Vec<MenuItem> = std::iter::once(SWITCH_SESSION)
+        .chain(SESSIONS)
+        .filter_map(|name| {
+            commands.get(name).map(|command| MenuItem::Command {
+                title: command.title.clone(),
+                command: name.to_owned(),
+                shortcut: keymap.shortcut(name).and_then(shortcut),
+            })
+        })
+        .collect();
+    let sessions: Vec<MenuItem> = if session_items.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            MenuItem::Submenu(Menu {
+                title: texts.text("menu-sessions"),
+                items: session_items,
+                role: None,
+            }),
+            MenuItem::Separator,
+        ]
+    };
     let mut main = MainMenu {
         menus: vec![
             Menu {
@@ -952,6 +982,8 @@ pub(super) fn main_menu(
                     shortcut: keymap.shortcut(NEXT_WINDOW).and_then(shortcut),
                 }))
                 .chain([MenuItem::Separator])
+                // The sessions, in a menu of their own.
+                .chain(sessions)
                 // Float on Top, and the agents, in the windows' menu.
                 .chain(
                     [FLOAT_ON_TOP, NEXT_AGENT, SHOW_AGENTS]

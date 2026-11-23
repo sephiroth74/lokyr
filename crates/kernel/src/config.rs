@@ -160,6 +160,8 @@ pub struct Config {
     pub notifications: NotificationsConfig,
     /// The `[agents]` section.
     pub agents: AgentsConfig,
+    /// The `[sessions]` section.
+    pub sessions: SessionsConfig,
     /// The `[theme]` section.
     pub theme: ThemeConfig,
     /// The `[app]` section.
@@ -1083,6 +1085,17 @@ impl Default for AgentsConfig {
             dock_badge: true,
         }
     }
+}
+
+/// The `[sessions]` section: the folders that the sessions' switcher lists,
+/// beside the sessions open and the recent folders, each starting a
+/// session there.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct SessionsConfig {
+    /// The folders, each a path from `/` or `~`, or of a last part `*`, the
+    /// folders in it.
+    pub folders: Vec<String>,
 }
 
 /// How long after its last sign of work an agent is done, in seconds, from
@@ -2512,7 +2525,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 18] {
+fn sections() -> [(&'static str, &'static [&'static str]); 19] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -2528,6 +2541,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 18] {
         ("bell", keys::<BellConfig>()),
         ("notifications", keys::<NotificationsConfig>()),
         ("agents", keys::<AgentsConfig>()),
+        ("sessions", keys::<SessionsConfig>()),
         ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
         ("updates", keys::<UpdatesConfig>()),
@@ -3786,6 +3800,7 @@ long-command = 0
                 "bell",
                 "notifications",
                 "agents",
+                "sessions",
                 "theme",
                 "app",
                 "updates",
