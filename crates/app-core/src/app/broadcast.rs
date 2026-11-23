@@ -81,14 +81,6 @@ impl<B: Backend> App<B> {
     /// Whether `pane` takes its window's broadcast of the typed input, as
     /// its ring and what accessibility calls it tell.
     pub(super) fn takes_broadcast(&self, pane: lokyr_kernel::workspace::PaneId) -> bool {
-        let Some(shown) = self.workspace.pane(pane) else {
-            return false;
-        };
-        !shown.broadcast_left()
-            && !shown.is_kept()
-            && self
-                .workspace
-                .tab_of(pane)
-                .is_some_and(|tab| self.workspace.broadcasts_tab(tab))
+        self.workspace.takes_broadcast(pane)
     }
 }

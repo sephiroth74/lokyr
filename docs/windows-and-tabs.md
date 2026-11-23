@@ -230,6 +230,7 @@ Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and w
 - **Leave a pane out**: right-click it and choose Leave Broadcast. It then takes only what you type into it. Join Broadcast takes it back.
 - **A paste of several lines** that a program would run line by line asks once for all the panes.
 - **Clicks and scrolls** go to one pane, and a pane whose program ended takes nothing.
+- **A popup** takes none of it, and what you type into a popup goes to it alone. The panes that a zoom hides take none either.
 
 The ring's color is the theme's [`broadcast.ring`](themes/authoring.md), red by default.
 

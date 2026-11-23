@@ -960,6 +960,50 @@ fn read_of(app: &App, pane: PaneId) -> String {
 }
 
 #[test]
+fn a_popup_s_keys_reach_it_alone_under_a_broadcast_which_it_takes_none_of() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes(raw_reader("a", false), &raw_reader("b", false));
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    let shown = app.windows[&window].window;
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ready-a") && read_of(app, b).contains("ready-b")
+    });
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    let mut args = Args::new();
+    args.insert(
+        "command".to_owned(),
+        Value::String("stty raw -echo; echo ready-p; cat -v".to_owned()),
+    );
+    app.run(&mut fake, POPUP, args);
+    let popup = app.focused(window).unwrap();
+    assert!(app.workspace.is_popup(popup));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, popup).contains("ready-p")
+    });
+    // Typed into the popup: it alone.
+    fake.send(&mut app, window, typed(KeyCode::KeyZ, "z", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, popup).contains('z')
+    });
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(!read_of(&app, a).contains('z') && !read_of(&app, b).contains('z'));
+    // Typed into a split pane: the tab's split panes, not the popup.
+    app.focus_pane(&mut fake, window, a);
+    fake.send(&mut app, window, typed(KeyCode::KeyK, "k", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains('k') && read_of(app, b).contains('k')
+    });
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(
+        !read_of(&app, popup).contains('k'),
+        "{}",
+        read_of(&app, popup)
+    );
+}
+
+#[test]
 fn a_broadcast_s_keys_text_and_pastes_reach_each_pane_that_takes_them_of_its_own_modes() {
     let (mut fake, mut app, window, a, b) =
         two_panes(raw_reader("a", true), &raw_reader("b", false));
