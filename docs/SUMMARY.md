@@ -16,6 +16,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 - [Notifications](notifications.md)
 - [Mouse and selection](mouse-and-selection.md)
 - [Windows and tabs](windows-and-tabs.md)
+- [Floating panes and popups](floating-panes.md)
 - [Sessions](sessions.md)
 - [Layouts](layouts.md)
 - [Links](links.md)
