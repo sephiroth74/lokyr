@@ -1,0 +1,14 @@
+[plugin]
+name = "lokyr-bench/hidden-session"
+version = "0.1.0"
+kind = "luau"
+api = "^0.1"
+license = "MIT"
+description = "Builds the hidden session's scenario of Lokyr's benchmarks as Lokyr starts: a second session, then the first again, the second's window hidden."
+
+[activation]
+on = ["startup"]
+
+[capabilities]
+workspace-write = true
+pty-write = true

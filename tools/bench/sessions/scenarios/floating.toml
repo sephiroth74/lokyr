@@ -1,0 +1,36 @@
+# The floating pane's scenario, about 10 minutes: a window at rest of B
+# alone, and of B of a popup over its pane of a program at rest; 30
+# seconds of rest, 20 seconds after the launch, its memory, and its frames
+# at rest of Instruments' trace, in each of four cycles. A floating pane at
+# rest draws and wakes nothing more.
+terminals = ["lokyr-b", "lokyr-b-floating"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-b", b = "lokyr-b-floating" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/scenario-floating-{date}"
+
+[[run]]
+tool = "idle"
+args = ["--settle", "20", "--duration", "30", "--interval", "1"]
+rounds = 1
+
+[[run]]
+tool = "memory"
+rounds = 1
+
+[[run]]
+tool = "frames"
+args = ["--workload", "rest", "--seconds", "10"]
+rounds = 1
+
+[[budget]]
+metric = "interrupt_wakeups_per_s"
+stat = "mean"
+at-most = 0.5
+change-at-most = 0.1
+
+[[budget]]
+metric = "package_idle_wakeups_per_s"
+stat = "mean"
+at-most = 0

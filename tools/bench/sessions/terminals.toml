@@ -58,3 +58,22 @@ launch = "open"
 [terminals.warp]
 app = "/Applications/Warp.app"
 launch = "open"
+
+# The scenarios of the measured copy, B, each of a config whose plugin
+# builds it as Lokyr starts: B's own cost of a feature, of an A/B of B
+# against itself, as the release before has not the feature.
+
+[terminals.lokyr-b-broadcast]
+app = "/tmp/lokyr/ttybench/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/broadcast" }
+
+[terminals.lokyr-b-hidden-session]
+app = "/tmp/lokyr/ttybench/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/hidden-session" }
+
+[terminals.lokyr-b-floating]
+app = "/tmp/lokyr/ttybench/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/floating" }

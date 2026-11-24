@@ -1,0 +1,12 @@
+# The scenario's plugin, of its folder as `sleip dev` names one, where
+# `just bench-prepare` puts it.
+version = 1
+api = "0.1.6"
+
+[[package]]
+name = "lokyr-bench/hidden-session"
+version = "0.1.0"
+kind = "luau"
+source = "dev+/tmp/lokyr/ttybench/plugins/hidden-session"
+capabilities = ["workspace-write", "pty-write"]
+dependencies = []
