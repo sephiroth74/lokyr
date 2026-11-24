@@ -1,0 +1,124 @@
+22:08:51 step prepare
+--- prepare
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+22:08  up 2 days,  6:07, 123 users, load averages: 1.26 1.87 2.10
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+22:08:51 lokyr-bench
+22:08:52 workloads
+22:08:53 v140: 1.4.0 (202611220721)
+22:08:53 v150: 1.4.0 (202611241345)
+22:08:53 step prepare done
+22:08:59 step startup
+--- startup
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+22:08  up 2 days,  6:07, 123 users, load averages: 1.22 1.85 2.09
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+22:08:59 30 starts of v140
+22:09:09 30 starts of v150
+22:09:19 startup v140 1
+22:09:37 startup v150 1
+22:09:55 startup floor 1
+22:10:10 load { 4.39 2.79 2.43 }
+22:10:12 startup v150 2
+22:10:29 startup v140 2
+22:10:47 startup floor 2
+22:11:02 load { 5.75 3.47 2.70 }
+22:11:04 startup v150 3
+22:11:21 startup v140 3
+22:11:39 startup floor 3
+22:11:54 load { 4.59 3.49 2.75 }
+22:11:56 startup v140 4
+22:12:13 startup v150 4
+22:12:31 startup floor 4
+22:12:46 load { 4.60 3.68 2.87 }
+22:12:46 step startup done
+22:12:58 step memory
+--- memory
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+22:12  up 2 days,  6:11, 123 users, load averages: 3.94 3.58 2.85
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+22:12:59 memory v140-1
+22:13:32 memory v150-1
+22:14:06 load { 3.66 3.53 2.88 }
+22:14:06 memory v150-2
+22:14:39 memory v140-2
+22:15:13 load { 3.11 3.40 2.88 }
+22:15:13 memory v150-3
+22:15:46 memory v140-3
+22:16:20 load { 2.87 3.28 2.87 }
+22:16:20 memory v140-4
+22:16:53 memory v150-4
+22:17:27 load { 2.76 3.17 2.85 }
+22:17:27 throughput ascii v140 1
+22:17:35 throughput ascii v150 1
+22:17:43 throughput ascii v150 2
+22:17:51 throughput ascii v140 2
+22:17:59 load { 3.67 3.35 2.93 }
+22:17:59 throughput seq v140 1
+22:18:00 throughput seq v150 1
+22:18:01 throughput seq v150 2
+22:18:02 throughput seq v140 2
+22:18:04 load { 4.17 3.46 2.97 }
+22:18:04 throughput sgr v140 1
+22:18:05 throughput sgr v150 1
+22:18:07 throughput sgr v150 2
+22:18:08 throughput sgr v140 2
+22:18:09 load { 4.08 3.45 2.97 }
+22:18:09 throughput cjk v140 1
+22:18:11 throughput cjk v150 1
+22:18:13 throughput cjk v150 2
+22:18:14 throughput cjk v140 2
+22:18:16 load { 3.99 3.45 2.97 }
+22:18:16 step memory done
+22:18:48 step startup-again
+--- startup-again
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+22:18  up 2 days,  6:17, 123 users, load averages: 3.53 3.39 2.97
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+22:18:49 30 starts of v140
+22:18:57 30 starts of v150
+22:19:07 startup v140 1
+22:19:25 startup v150 1
+22:19:42 startup floor 1
+22:19:57 load { 4.19 3.65 3.10 }
+22:19:59 startup v150 2
+22:20:17 startup v140 2
+22:20:34 startup floor 2
+22:20:49 load { 4.25 3.69 3.15 }
+22:20:51 startup v150 3
+22:21:09 startup v140 3
+22:21:26 startup floor 3
+22:21:41 load { 5.40 4.12 3.33 }
+22:21:43 startup v140 4
+22:22:00 startup v150 4
+22:22:18 startup floor 4
+22:22:33 load { 3.75 3.87 3.29 }
+22:22:35 startup v140 5
+22:22:53 startup v150 5
+22:23:10 startup floor 5
+22:23:25 load { 4.42 4.05 3.39 }
+22:23:27 startup v150 6
+22:23:45 startup v140 6
+22:24:02 startup floor 6
+22:24:17 load { 4.41 4.10 3.44 }
+22:24:19 startup v150 7
+22:24:36 startup v140 7
+22:24:54 startup floor 7
+22:25:09 load { 5.68 4.47 3.62 }
+22:25:11 startup v140 8
+22:25:28 startup v150 8
+22:25:46 startup floor 8
+22:26:01 load { 5.84 4.71 3.75 }
+22:26:01 step startup-again done

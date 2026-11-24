@@ -1,0 +1,26 @@
+# The broadcast's scenario, about 7 minutes: a key's latency of B alone,
+# and of B whose typed input goes to eight panes of the tab, seven of a
+# program that takes the keys and draws nothing; 100 keys a run, eight
+# cycles. The budgets are the releases', of a display at 60 Hz. Leave the
+# Mac alone before the session starts.
+terminals = ["lokyr-b", "lokyr-b-broadcast"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-b", b = "lokyr-b-broadcast" }
+pause = 2
+cycles = 8
+season = 4
+folder = "/tmp/lokyr/ttybench/sessions/scenario-broadcast-{date}"
+
+[[run]]
+tool = "latency"
+args = ["--keys", "100"]
+rounds = 1
+
+[[budget]]
+metric = "latency_ms"
+at-most = 33.3
+
+[[budget]]
+metric = "latency_ms"
+stat = "p99"
+at-most = 75

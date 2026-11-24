@@ -1,0 +1,501 @@
+{
+  "session": "ab-2-idle-2026-11-24-1554",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795532101,
+    1795532525
+  ],
+  "runs": {
+    "done": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-a",
+      "version": "1.4.0 (202611220721)"
+    },
+    {
+      "name": "lokyr-b",
+      "version": "1.4.0 (202611241345)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-a",
+    "b": "lokyr-b"
+  },
+  "groups": [
+    {
+      "tool": "idle",
+      "metric": "cpu_percent",
+      "unit": "%",
+      "title": "Its CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 120,
+            "min": 0.022462854009946808,
+            "median": 0.0589558056422847,
+            "p95": 0.06860561370583936,
+            "p99": 0.08022664920350862,
+            "max": 0.2012375966517453,
+            "mean": 0.055494094489106596,
+            "stddev": 0.019182682362044703,
+            "median_interval": [
+              0.0569786953350236,
+              0.060455985493257
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.05948910733193979
+            },
+            {
+              "cycle": 2,
+              "median": 0.0591812830109629
+            },
+            {
+              "cycle": 3,
+              "median": 0.05779323124799718
+            },
+            {
+              "cycle": 4,
+              "median": 0.05576883769399313
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.016153031641608823,
+            "median": 0.05497376135551673,
+            "p95": 0.06942259639531717,
+            "p99": 0.08422701520670031,
+            "max": 0.08514060234246942,
+            "mean": 0.05038985596871553,
+            "stddev": 0.015513521718186629,
+            "median_interval": [
+              0.05010000566448849,
+              0.05732060007973486
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.060980273837611676
+            },
+            {
+              "cycle": 2,
+              "median": 0.058868121912231064
+            },
+            {
+              "cycle": 3,
+              "median": 0.05618951627474794
+            },
+            {
+              "cycle": 4,
+              "median": 0.03813934261822372
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0589558056422847,
+        "b": 0.05497376135551673,
+        "change": -0.003982044286767968,
+        "percent": -6.754286950006392,
+        "interval": [
+          -0.009368582342483651,
+          -0.000676402767430872
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "package_idle_wakeups_per_s",
+      "unit": "/s",
+      "title": "Package idle wakeups a second",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "interrupt_wakeups_per_s",
+      "unit": "/s",
+      "title": "Interrupt wakeups a second",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.9968187140970747,
+            "p99": 0.9978180767153739,
+            "max": 1.9887594480716029,
+            "mean": 0.3476424678794166,
+            "stddev": 0.4929020710228167,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.9956250679485791,
+            "p99": 0.99696936759487,
+            "max": 0.9984837186006724,
+            "mean": 0.3308647135348278,
+            "stddev": 0.46987823132238554,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "power_mw",
+      "unit": "mW",
+      "title": "The power that the kernel bills it",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 120,
+            "min": 0.02869849462870455,
+            "median": 0.069609913397916,
+            "p95": 0.10150031987274172,
+            "p99": 0.14421061201269358,
+            "max": 0.4457645202096652,
+            "mean": 0.07308170081576675,
+            "stddev": 0.03926819473194989,
+            "median_interval": [
+              0.06684333446392574,
+              0.07210588160729975
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0703359930608593
+            },
+            {
+              "cycle": 2,
+              "median": 0.06981135245018441
+            },
+            {
+              "cycle": 3,
+              "median": 0.07006577087656202
+            },
+            {
+              "cycle": 4,
+              "median": 0.06767451905549149
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.030851413375859907,
+            "median": 0.07007792796351069,
+            "p95": 0.10992675768496284,
+            "p99": 0.13837316527733345,
+            "max": 0.154964052293438,
+            "mean": 0.0710515281862696,
+            "stddev": 0.022903985093376166,
+            "median_interval": [
+              0.06756867028093776,
+              0.07233883899441473
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.07052809570011645
+            },
+            {
+              "cycle": 2,
+              "median": 0.07262192969770723
+            },
+            {
+              "cycle": 3,
+              "median": 0.0701421020139393
+            },
+            {
+              "cycle": 4,
+              "median": 0.06806734620762955
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.069609913397916,
+        "b": 0.07007792796351069,
+        "change": 0.0004680145655946849,
+        "percent": 0.6723389568369962,
+        "interval": [
+          -0.0032938221377731202,
+          0.0039035774876327264
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [
+    {
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "at-most": 0.5
+    },
+    {
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "at-most": 0.0
+    }
+  ],
+  "judgements": [
+    {
+      "budget": 1,
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "group": 2,
+      "terminal": "lokyr-a",
+      "limit": "≤ 0.5 /s",
+      "value": 0.3476424678794166,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 1,
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "group": 2,
+      "terminal": "lokyr-b",
+      "limit": "≤ 0.5 /s",
+      "value": 0.3308647135348278,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "group": 1,
+      "terminal": "lokyr-a",
+      "limit": "≤ 0 /s",
+      "value": 0.0,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "group": 1,
+      "terminal": "lokyr-b",
+      "limit": "≤ 0 /s",
+      "value": 0.0,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    }
+  ],
+  "unmeasured": []
+}

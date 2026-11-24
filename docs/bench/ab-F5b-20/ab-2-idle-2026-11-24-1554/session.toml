@@ -1,0 +1,27 @@
+# A release's A/B, step 2 of 6, about 7 minutes: a window at rest, 30
+# seconds of each copy in each cycle, 20 seconds after its launch, as the
+# releases' measures count it: Lokyr wakes more in its first seconds. A
+# wakeup comes a few times a minute, so that most intervals of a second
+# hold none: the budgets judge the mean of the intervals, the rate, where
+# their median would be 0.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/ab-2-idle-{date}"
+
+[[run]]
+tool = "idle"
+args = ["--settle", "20", "--duration", "30", "--interval", "1"]
+rounds = 1
+
+[[budget]]
+metric = "interrupt_wakeups_per_s"
+stat = "mean"
+at-most = 0.5
+
+[[budget]]
+metric = "package_idle_wakeups_per_s"
+stat = "mean"
+at-most = 0

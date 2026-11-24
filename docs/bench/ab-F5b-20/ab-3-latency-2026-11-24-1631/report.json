@@ -1,0 +1,467 @@
+{
+  "session": "ab-3-latency-2026-11-24-1631",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795534279,
+    1795534591
+  ],
+  "runs": {
+    "done": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-a",
+      "version": "1.4.0 (202611220721)"
+    },
+    {
+      "name": "lokyr-b",
+      "version": "1.4.0 (202611241345)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-a",
+    "b": "lokyr-b"
+  },
+  "groups": [
+    {
+      "tool": "latency",
+      "metric": "latency_ms",
+      "unit": "ms",
+      "title": "A key to its echo",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "beside": "rest",
+        "cols": 120,
+        "echo": "tty",
+        "jitter_ms": 16.666667,
+        "keys": 200,
+        "phase": "random",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "rows": 40,
+        "source": "window",
+        "spacing_ms": 150.0,
+        "to": "process"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 800,
+            "min": 3.260709,
+            "median": 13.514812,
+            "p95": 22.304698249999998,
+            "p99": 24.75638175,
+            "max": 32.495,
+            "mean": 13.643042523750003,
+            "stddev": 5.1495667728314,
+            "median_interval": [
+              11.554834,
+              15.527752412499998
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 12.287354
+            },
+            {
+              "cycle": 2,
+              "median": 13.138
+            },
+            {
+              "cycle": 3,
+              "median": 11.4538545
+            },
+            {
+              "cycle": 4,
+              "median": 15.873896
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 800,
+            "min": 4.615,
+            "median": 14.978208500000001,
+            "p95": 23.05727085,
+            "p99": 26.60799101,
+            "max": 33.480709,
+            "mean": 14.56761887374999,
+            "stddev": 5.120091280675699,
+            "median_interval": [
+              12.515959,
+              15.99
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 12.879854
+            },
+            {
+              "cycle": 2,
+              "median": 12.372021
+            },
+            {
+              "cycle": 3,
+              "median": 16.051541999999998
+            },
+            {
+              "cycle": 4,
+              "median": 15.9275
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 13.514812,
+        "b": 14.978208500000001,
+        "change": 1.4633965000000018,
+        "percent": 10.828093650137358,
+        "interval": [
+          -1.7004067625000006,
+          3.929660925
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "latency",
+      "metric": "missed_keys",
+      "unit": "keys",
+      "title": "Keys of no echo seen",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "beside": "rest",
+        "cols": 120,
+        "echo": "tty",
+        "jitter_ms": 16.666667,
+        "keys": 200,
+        "phase": "random",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "rows": 40,
+        "source": "window",
+        "spacing_ms": 150.0,
+        "to": "process"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [
+    {
+      "metric": "latency_ms",
+      "stat": "median",
+      "at-most": 33.3
+    },
+    {
+      "metric": "latency_ms",
+      "stat": "p99",
+      "at-most": 75.0
+    }
+  ],
+  "judgements": [
+    {
+      "budget": 1,
+      "metric": "latency_ms",
+      "stat": "median",
+      "group": 0,
+      "terminal": "lokyr-a",
+      "limit": "≤ 33.3 ms",
+      "value": 13.514812,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 1,
+      "metric": "latency_ms",
+      "stat": "median",
+      "group": 0,
+      "terminal": "lokyr-b",
+      "limit": "≤ 33.3 ms",
+      "value": 14.978208500000001,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "latency_ms",
+      "stat": "p99",
+      "group": 0,
+      "terminal": "lokyr-a",
+      "limit": "≤ 75 ms",
+      "value": 24.75638175,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "latency_ms",
+      "stat": "p99",
+      "group": 0,
+      "terminal": "lokyr-b",
+      "limit": "≤ 75 ms",
+      "value": 26.60799101,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    }
+  ],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-latency-lokyr-a",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "latency",
+      "terminal": "lokyr-a",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534279,
+      "seconds": 37.029247583,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c1-r1-latency-lokyr-b",
+      "cycle": 1,
+      "run": 1,
+      "position": 2,
+      "tool": "latency",
+      "terminal": "lokyr-b",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534318,
+      "seconds": 37.187092,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c2-r1-latency-lokyr-b",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "latency",
+      "terminal": "lokyr-b",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534357,
+      "seconds": 36.971120042,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c2-r1-latency-lokyr-a",
+      "cycle": 2,
+      "run": 1,
+      "position": 2,
+      "tool": "latency",
+      "terminal": "lokyr-a",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534396,
+      "seconds": 37.172997541,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c3-r1-latency-lokyr-a",
+      "cycle": 3,
+      "run": 1,
+      "position": 1,
+      "tool": "latency",
+      "terminal": "lokyr-a",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534435,
+      "seconds": 36.998749125,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c3-r1-latency-lokyr-b",
+      "cycle": 3,
+      "run": 1,
+      "position": 2,
+      "tool": "latency",
+      "terminal": "lokyr-b",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534474,
+      "seconds": 37.154306042,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c4-r1-latency-lokyr-b",
+      "cycle": 4,
+      "run": 1,
+      "position": 1,
+      "tool": "latency",
+      "terminal": "lokyr-b",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534514,
+      "seconds": 37.209018125,
+      "status": "done",
+      "code": 0
+    },
+    {
+      "id": "c4-r1-latency-lokyr-a",
+      "cycle": 4,
+      "run": 1,
+      "position": 2,
+      "tool": "latency",
+      "terminal": "lokyr-a",
+      "args": [
+        "--keys",
+        "200",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795534553,
+      "seconds": 37.31334575,
+      "status": "done",
+      "code": 0
+    }
+  ]
+}
