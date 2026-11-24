@@ -1,0 +1,60 @@
+# The terminals of Lokyr's sessions of ttybench: the two copies of a
+# release's A/B, `lokyr-a` the release before and `lokyr-b` the one
+# measured, and the terminals that the comparison measures beside Lokyr.
+# `just bench-prepare` puts the two copies and the configs in
+# /tmp/lokyr/ttybench; the configs of `configs/base` are alike for every
+# terminal, Menlo at 13 points, 120 × 40 cells, no ligatures, a cursor
+# that doesn't blink, an opaque window; those of `configs/<feature>` turn a
+# feature on. Terminal.app and iTerm2 read no config folder: give their
+# default profiles the same by hand before a comparison.
+
+[terminals.lokyr-a]
+app = "/tmp/lokyr/ttybench/a/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+beside = { open = ["cmd+d"], back = ["cmd+["] }
+features.smooth-scroll = { env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/smooth-scroll" } }
+
+[terminals.lokyr-b]
+app = "/tmp/lokyr/ttybench/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+beside = { open = ["cmd+d"], back = ["cmd+["] }
+features.smooth-scroll = { env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/smooth-scroll" } }
+
+[terminals.lokyr]
+app = "/Applications/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+beside = { open = ["cmd+d"], back = ["cmd+["] }
+features.smooth-scroll = { env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/smooth-scroll" } }
+
+[terminals.ghostty]
+app = "/Applications/Ghostty.app"
+launch = ["{app}/Contents/MacOS/ghostty", "-e", "{command}"]
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+beside = { open = ["cmd+d"], back = ["cmd+["] }
+
+[terminals.kitty]
+app = "/Applications/kitty.app"
+launch = ["{app}/Contents/MacOS/kitty", "{command}"]
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+beside = { open = ["cmd+enter"], click = [0.5, 0.25] }
+
+[terminals.alacritty]
+app = "/Applications/Alacritty.app"
+launch = ["{app}/Contents/MacOS/alacritty", "-e", "{command}"]
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/base" }
+
+[terminals.iterm2]
+app = "/Applications/iTerm.app"
+launch = "open"
+beside = { open = ["cmd+d"], back = ["cmd+["] }
+
+[terminals.terminal]
+app = "/System/Applications/Utilities/Terminal.app"
+launch = "open"
+
+[terminals.warp]
+app = "/Applications/Warp.app"
+launch = "open"

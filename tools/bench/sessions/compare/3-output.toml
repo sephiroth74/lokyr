@@ -1,0 +1,23 @@
+# The terminals compared, step 3 of 4: 1 GiB of plain text printed on
+# screen, as the releases' budget counts it, then 256 MiB of colored text
+# and of wide characters.
+terminals = ["lokyr", "ghostty", "kitty", "iterm2", "terminal", "warp"]
+terminals-file = "../terminals.toml"
+pause = 2
+cycles = 6
+folder = "/tmp/lokyr/ttybench/sessions/compare-3-output-{date}"
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain", "--mib", "1024"]
+rounds = 1
+
+[[run]]
+tool = "throughput"
+args = ["--text", "colors", "--mib", "256"]
+rounds = 1
+
+[[run]]
+tool = "throughput"
+args = ["--text", "wide", "--mib", "256"]
+rounds = 1

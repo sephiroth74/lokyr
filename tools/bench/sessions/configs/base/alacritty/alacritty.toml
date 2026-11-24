@@ -1,0 +1,17 @@
+# Alacritty's base config for the sessions: Menlo at 13 points, 120 × 40 cells,
+# a cursor that doesn't blink, an opaque window, 10 000 rows of
+# scrollback. It has no ligatures.
+[font]
+size = 13
+normal = { family = "Menlo" }
+
+[window]
+dimensions = { columns = 120, lines = 40 }
+opacity = 1.0
+blur = false
+
+[cursor]
+style = { blinking = "Never" }
+
+[scrolling]
+history = 10000

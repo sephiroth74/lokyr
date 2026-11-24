@@ -1,0 +1,17 @@
+# A release's A/B, step 1 of 6, about 5 minutes: the startup, each copy
+# launched 30 times first, and the memory at rest.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+season = 30
+folder = "/tmp/lokyr/ttybench/sessions/ab-1-start-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 8
+
+[[run]]
+tool = "memory"
+rounds = 2
