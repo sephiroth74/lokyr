@@ -1,8 +1,10 @@
 --!strict
 -- The hidden session's scenario of Lokyr's benchmarks. As Lokyr starts, as
 -- soon as its first window shows: a second session, of a window of its
--- own, then the first session again, so that the second's window hides,
--- its shell running, as a session that someone switched away from.
+-- own; once its shell runs, a program at rest in its place, which wakes
+-- nothing, as a login shell's prompt may wake each second of its own;
+-- then the first session again, so that the second's window hides, as a
+-- session that someone switched away from.
 
 local Plugin: Plugin = {}
 
@@ -10,6 +12,9 @@ local Plugin: Plugin = {}
 -- session's window takes to show before the first comes back.
 local LOOK_MS = 100
 local SHOW_MS = 1500
+
+-- The second session's program, in its shell's place.
+local AT_REST = "exec cat > /dev/null\r"
 
 local looking: number? = nil
 local waiting: number? = nil
@@ -45,6 +50,10 @@ function Plugin.on_event(cx: Cx, events: { Event })
             waiting = assert(cx.start_timer(SHOW_MS, false))
         elseif event.id == waiting then
             waiting = nil
+            local pane = cx.focused_pane()
+            if pane ~= nil then
+                assert(cx.send_text(pane, AT_REST))
+            end
             if first ~= nil then
                 assert(cx.switch_session(first))
             end

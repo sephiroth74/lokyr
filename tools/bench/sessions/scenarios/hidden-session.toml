@@ -1,8 +1,10 @@
 # The hidden session's scenario, about 7 minutes: a window at rest of B
-# alone, and of B whose second session hides its window, its shell
-# running; 30 seconds of each, 20 seconds after its launch, in each of four
-# cycles. A hidden session wakes nothing: the wakeups' mean rises by 0.1 a
-# second at most, within the releases' budgets.
+# alone, and of B whose second session hides its window, of a program at
+# rest in its shell's place, as a login shell's prompt may wake each second
+# of its own; 30 seconds of each, 20 seconds after its launch, in each of
+# four cycles. A hidden session wakes nothing: the wakeups' mean rises by
+# 0.1 a second at most, within the releases' budgets. Its memory is a
+# second window's, a terminal and a surface more, of no budget.
 terminals = ["lokyr-b", "lokyr-b-hidden-session"]
 terminals-file = "../terminals.toml"
 ab = { a = "lokyr-b", b = "lokyr-b-hidden-session" }
