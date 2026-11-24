@@ -476,6 +476,31 @@ fn command_w_of_hidden_floating_panes_closes_the_split_pane_not_the_tab() {
     assert_eq!(app.focused(window), Some(floating));
 }
 
+/// The places in the window's last frame of the floating pane's box and
+/// of the last item that holds a mark in its box's inset left of its grid,
+/// none of no frame or no floating pane.
+fn gutter_mark_and_box(app: &App, window: WindowId) -> Option<(Option<usize>, usize)> {
+    let state = &app.windows[&window];
+    let &(_, room) = state.floating_rooms.first()?;
+    let items = &state.shown.as_ref()?.items;
+    let shapes = |item: &Item| match item {
+        Item::Shapes(shapes) => shapes.clone(),
+        _ => Vec::new(),
+    };
+    let boxed = items
+        .iter()
+        .position(|item| shapes(item).iter().any(|shape| shape.rect == room.outer))?;
+    let marked = items.iter().rposition(|item| {
+        shapes(item).iter().any(|shape| {
+            shape.rect.x >= room.outer.x
+                && shape.rect.x < room.grid.x
+                && shape.rect.y >= room.grid.y
+                && shape.rect != room.outer
+        })
+    });
+    Some((marked, boxed))
+}
+
 #[test]
 fn a_floating_pane_s_gutter_marks_draw_over_its_box() {
     // A command that ended, of a gutter's mark, then a prompt.
@@ -485,36 +510,14 @@ fn a_floating_pane_s_gutter_marks_draw_over_its_box() {
     let (mut fake, mut app, window) = super::scrollbars::drawn(Config::default(), program);
     fake.send(&mut app, window, WindowEvent::Focused(true));
     command(&mut fake, &mut app, NEW_FLOATING);
-    let floating = app.focused(window).unwrap();
+    // The output may come before the box's first frame gives the pane its
+    // size or after it, and a new size's screen shows as the program draws
+    // or its time runs out: the frames go on until the mark shows.
     run_until(&mut fake, &mut app, |_, app| {
-        app.workspace.pane(floating).is_some_and(|pane| {
-            pane.line_text(1, 0)
-                .is_some_and(|(text, _)| text.contains("ready"))
-        })
+        gutter_mark_and_box(app, window).is_some_and(|(marked, _)| marked.is_some())
     });
-    for _ in 0..4 {
-        fake.send(&mut app, window, WindowEvent::Frame);
-    }
-    let state = &app.windows[&window];
-    let (_, room) = state.floating_rooms[0];
-    let items = &state.shown.as_ref().expect("a frame").items;
-    let shapes = |item: &Item| match item {
-        Item::Shapes(shapes) => shapes.clone(),
-        _ => Vec::new(),
-    };
-    let boxed = items
-        .iter()
-        .position(|item| shapes(item).iter().any(|shape| shape.rect == room.outer))
-        .expect("the floating pane's box");
     // Its mark, in the box's inset left of its grid, after the box.
-    let marked = items.iter().rposition(|item| {
-        shapes(item).iter().any(|shape| {
-            shape.rect.x >= room.outer.x
-                && shape.rect.x < room.grid.x
-                && shape.rect.y >= room.grid.y
-                && shape.rect != room.outer
-        })
-    });
+    let (marked, boxed) = gutter_mark_and_box(&app, window).expect("a frame of the box");
     assert!(
         marked.is_some_and(|at| at > boxed),
         "the mark at {marked:?}, the box at {boxed}"
