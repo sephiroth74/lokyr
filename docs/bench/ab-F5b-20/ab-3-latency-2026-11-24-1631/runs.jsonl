@@ -1,0 +1,8 @@
+{"id":"c1-r1-latency-lokyr-a","cycle":1,"run":1,"position":1,"tool":"latency","terminal":"lokyr-a","args":["--keys","200","--rounds","1"],"started":1795534279,"seconds":37.029247583,"status":"done","code":0}
+{"id":"c1-r1-latency-lokyr-b","cycle":1,"run":1,"position":2,"tool":"latency","terminal":"lokyr-b","args":["--keys","200","--rounds","1"],"started":1795534318,"seconds":37.187092,"status":"done","code":0}
+{"id":"c2-r1-latency-lokyr-b","cycle":2,"run":1,"position":1,"tool":"latency","terminal":"lokyr-b","args":["--keys","200","--rounds","1"],"started":1795534357,"seconds":36.971120042,"status":"done","code":0}
+{"id":"c2-r1-latency-lokyr-a","cycle":2,"run":1,"position":2,"tool":"latency","terminal":"lokyr-a","args":["--keys","200","--rounds","1"],"started":1795534396,"seconds":37.172997541,"status":"done","code":0}
+{"id":"c3-r1-latency-lokyr-a","cycle":3,"run":1,"position":1,"tool":"latency","terminal":"lokyr-a","args":["--keys","200","--rounds","1"],"started":1795534435,"seconds":36.998749125,"status":"done","code":0}
+{"id":"c3-r1-latency-lokyr-b","cycle":3,"run":1,"position":2,"tool":"latency","terminal":"lokyr-b","args":["--keys","200","--rounds","1"],"started":1795534474,"seconds":37.154306042,"status":"done","code":0}
+{"id":"c4-r1-latency-lokyr-b","cycle":4,"run":1,"position":1,"tool":"latency","terminal":"lokyr-b","args":["--keys","200","--rounds","1"],"started":1795534514,"seconds":37.209018125,"status":"done","code":0}
+{"id":"c4-r1-latency-lokyr-a","cycle":4,"run":1,"position":2,"tool":"latency","terminal":"lokyr-a","args":["--keys","200","--rounds","1"],"started":1795534553,"seconds":37.31334575,"status":"done","code":0}

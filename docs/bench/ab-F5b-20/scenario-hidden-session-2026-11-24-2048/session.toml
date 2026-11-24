@@ -1,0 +1,31 @@
+# The hidden session's scenario, about 7 minutes: a window at rest of B
+# alone, and of B whose second session hides its window, its shell
+# running; 30 seconds of each, 20 seconds after its launch, in each of four
+# cycles. A hidden session wakes nothing: the wakeups' mean rises by 0.1 a
+# second at most, within the releases' budgets.
+terminals = ["lokyr-b", "lokyr-b-hidden-session"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-b", b = "lokyr-b-hidden-session" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/scenario-hidden-session-{date}"
+
+[[run]]
+tool = "idle"
+args = ["--settle", "20", "--duration", "30", "--interval", "1"]
+rounds = 1
+
+[[run]]
+tool = "memory"
+rounds = 1
+
+[[budget]]
+metric = "interrupt_wakeups_per_s"
+stat = "mean"
+at-most = 0.5
+change-at-most = 0.1
+
+[[budget]]
+metric = "package_idle_wakeups_per_s"
+stat = "mean"
+at-most = 0

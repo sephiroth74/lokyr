@@ -1,0 +1,27 @@
+# A release's A/B, step 3 of 6, about 5 minutes: 200 keys of each copy in
+# each cycle, at every phase of the refresh, after four launches of each
+# that settle the Mac first. The budgets are of a display at 60 Hz: 2
+# refreshes at the median, 4.5 at the 99th percentile. Leave the Mac alone
+# before the step starts: a Mac in use echoes keys some milliseconds
+# sooner than one at rest, which would split the cycles.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+season = 4
+folder = "/tmp/lokyr/ttybench/sessions/ab-3-latency-{date}"
+
+[[run]]
+tool = "latency"
+args = ["--keys", "200"]
+rounds = 1
+
+[[budget]]
+metric = "latency_ms"
+at-most = 33.3
+
+[[budget]]
+metric = "latency_ms"
+stat = "p99"
+at-most = 75

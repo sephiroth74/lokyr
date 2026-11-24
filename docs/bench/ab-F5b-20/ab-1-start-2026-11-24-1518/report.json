@@ -1,0 +1,433 @@
+{
+  "session": "ab-1-start-2026-11-24-1518",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795530014,
+    1795530300
+  ],
+  "runs": {
+    "done": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-a",
+      "version": "1.4.0 (202611220721)"
+    },
+    {
+      "name": "lokyr-b",
+      "version": "1.4.0 (202611241345)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-a",
+    "b": "lokyr-b"
+  },
+  "groups": [
+    {
+      "tool": "startup",
+      "metric": "window_ms",
+      "unit": "ms",
+      "title": "From the launch to its window",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 32,
+            "min": 326.522875,
+            "median": 365.841459,
+            "p95": 381.7775587,
+            "p99": 389.92613796,
+            "max": 391.772834,
+            "mean": 363.1028347187498,
+            "stddev": 13.930767666796049,
+            "median_interval": [
+              356.1643335,
+              371.152958
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 364.43787499999996
+            },
+            {
+              "cycle": 2,
+              "median": 366.1251045
+            },
+            {
+              "cycle": 3,
+              "median": 368.3915835
+            },
+            {
+              "cycle": 4,
+              "median": 352.556396
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 32,
+            "min": 309.90075,
+            "median": 372.090167,
+            "p95": 386.13211615,
+            "p99": 395.43646948,
+            "max": 398.648625,
+            "mean": 367.36036834375005,
+            "stddev": 18.11028674959366,
+            "median_interval": [
+              366.429291,
+              375.872541
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 370.106625
+            },
+            {
+              "cycle": 2,
+              "median": 363.119937
+            },
+            {
+              "cycle": 3,
+              "median": 373.9739165
+            },
+            {
+              "cycle": 4,
+              "median": 379.431979
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 365.841459,
+        "b": 372.090167,
+        "change": 6.248708000000022,
+        "percent": 1.7080371418483824,
+        "interval": [
+          -0.6145937499999703,
+          16.517649487499998
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "startup",
+      "metric": "ready_ms",
+      "unit": "ms",
+      "title": "From the launch to running the payload",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 32,
+            "min": 668.603917,
+            "median": 713.789792,
+            "p95": 751.7815285,
+            "p99": 887.6893019200002,
+            "max": 940.686334,
+            "mean": 720.4571106874998,
+            "stddev": 44.04017803712995,
+            "median_interval": [
+              709.4399585,
+              720.292416
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 716.8749164999999
+            },
+            {
+              "cycle": 2,
+              "median": 711.824604
+            },
+            {
+              "cycle": 3,
+              "median": 718.945479
+            },
+            {
+              "cycle": 4,
+              "median": 709.0341249999999
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 32,
+            "min": 671.323833,
+            "median": 718.631083,
+            "p95": 739.83506005,
+            "p99": 739.89816273,
+            "max": 739.898292,
+            "mean": 714.6483709687501,
+            "stddev": 18.16002033094829,
+            "median_interval": [
+              711.421333,
+              724.000959
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 719.2998540000001
+            },
+            {
+              "cycle": 2,
+              "median": 712.641208
+            },
+            {
+              "cycle": 3,
+              "median": 716.7018125
+            },
+            {
+              "cycle": 4,
+              "median": 720.9042079999999
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 713.789792,
+        "b": 718.631083,
+        "change": 4.841290999999956,
+        "percent": 0.6782516441479112,
+        "interval": [
+          -4.241692550000061,
+          11.162185262500035
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "memory",
+      "metric": "footprint_mib",
+      "unit": "MiB",
+      "title": "Its memory's footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 2,
+        "settle_s": 3.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 8,
+            "min": 45.095603942871094,
+            "median": 45.259700775146484,
+            "p95": 45.515188980102536,
+            "p99": 45.55455757141113,
+            "max": 45.56439971923828,
+            "mean": 45.288997650146484,
+            "stddev": 0.14441838671011262,
+            "median_interval": [
+              45.20500183105469,
+              45.42377529144287
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 45.220638275146484
+            },
+            {
+              "cycle": 2,
+              "median": 45.35347366333008
+            },
+            {
+              "cycle": 3,
+              "median": 45.25187683105469
+            },
+            {
+              "cycle": 4,
+              "median": 45.33000183105469
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 8,
+            "min": 45.14252471923828,
+            "median": 45.2909049987793,
+            "p95": 45.391720581054685,
+            "p99": 45.40484558105469,
+            "max": 45.40812683105469,
+            "mean": 45.28507995605469,
+            "stddev": 0.08452364983413048,
+            "median_interval": [
+              45.22064971923828,
+              45.36125183105469
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 45.353416442871094
+            },
+            {
+              "cycle": 2,
+              "median": 45.29875183105469
+            },
+            {
+              "cycle": 3,
+              "median": 45.18158721923828
+            },
+            {
+              "cycle": 4,
+              "median": 45.30656433105469
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 45.259700775146484,
+        "b": 45.2909049987793,
+        "change": 0.0312042236328125,
+        "percent": 0.06894482972354893,
+        "interval": [
+          -0.12502288818359375,
+          0.12501144409179688
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "memory",
+      "metric": "peak_mib",
+      "unit": "MiB",
+      "title": "Its memory's peak footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 2,
+        "settle_s": 3.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 8,
+            "min": 205.8924789428711,
+            "median": 206.05657577514648,
+            "p95": 206.31753273010253,
+            "p99": 206.35252632141112,
+            "max": 206.36127471923828,
+            "mean": 206.09173202514648,
+            "stddev": 0.14437327504629652,
+            "median_interval": [
+              206.0175018310547,
+              206.22104091644286
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 206.02532577514648
+            },
+            {
+              "cycle": 2,
+              "median": 206.15816116333008
+            },
+            {
+              "cycle": 3,
+              "median": 206.0565643310547
+            },
+            {
+              "cycle": 4,
+              "median": 206.1268768310547
+            }
+          ]
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 8,
+            "min": 205.92377471923828,
+            "median": 206.1034049987793,
+            "p95": 206.2042205810547,
+            "p99": 206.2173455810547,
+            "max": 206.2206268310547,
+            "mean": 206.0917205810547,
+            "stddev": 0.09138689734341572,
+            "median_interval": [
+              206.03314971923828,
+              206.1737518310547
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 206.1659164428711
+            },
+            {
+              "cycle": 2,
+              "median": 206.1112518310547
+            },
+            {
+              "cycle": 3,
+              "median": 205.97846221923828
+            },
+            {
+              "cycle": 4,
+              "median": 206.1112518310547
+            }
+          ]
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 206.05657577514648,
+        "b": 206.1034049987793,
+        "change": 0.0468292236328125,
+        "percent": 0.022726391262520827,
+        "interval": [
+          -0.11724472045898438,
+          0.12501144409179688
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [],
+  "judgements": [],
+  "unmeasured": []
+}

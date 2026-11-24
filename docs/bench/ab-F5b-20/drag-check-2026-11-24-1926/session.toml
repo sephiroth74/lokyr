@@ -1,0 +1,14 @@
+# The drag alone of four cycles, of a session's file in /tmp beside the
+# steps', as the step of the motion's two cycles told one run of B a
+# refresh longer.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/drag-check-{date}"
+
+[[run]]
+tool = "motion"
+args = ["--kind", "drag", "--seconds", "10"]
+rounds = 1
