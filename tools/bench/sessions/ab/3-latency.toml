@@ -2,10 +2,11 @@
 # each of eight cycles, at every phase of the refresh, after four launches
 # of each that settle the Mac first. A run's keys move together of the
 # machine's state, as another program's work raises the processor's
-# clocks: eight runs a copy, interleaved, meet its states alike. The budgets are of a display at 60 Hz: 2
-# refreshes at the median, 4.5 at the 99th percentile. Leave the Mac alone
-# before the step starts: a Mac in use echoes keys some milliseconds
-# sooner than one at rest, which would split the cycles.
+# clocks: eight runs a copy, interleaved, meet its states alike. The
+# budgets are of a display at 60 Hz: 2 refreshes at the median, 4.5 at the
+# 99th percentile. Leave the Mac alone before the step starts: a Mac in
+# use echoes keys some milliseconds sooner than one at rest, which would
+# split the cycles.
 terminals = ["lokyr-a", "lokyr-b"]
 terminals-file = "../terminals.toml"
 ab = { a = "lokyr-a", b = "lokyr-b" }
