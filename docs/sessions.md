@@ -1,6 +1,6 @@
 # Sessions
 
-<sub>macOS · not released yet · [`[sessions] folders`](CONFIGURATION.md#folders), [`[app] restore-windows`](CONFIGURATION.md#restore-windows)</sub>
+<sub>macOS · Since 1.5 · [`[sessions] folders`](CONFIGURATION.md#folders), [`[app] restore-windows`](CONFIGURATION.md#restore-windows)</sub>
 
 A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide. The programs in hidden windows keep running, so a build or a server goes on while you work on something else.
 

@@ -18,10 +18,10 @@ Press ⌘T: the tab bar shows two tabs, the new one in front. Press ⌘1 to show
 - **Pinned tabs**, kept at the start of the bar, and **groups** of tabs under a name and a color. · Since 1.3
 - **A tab you closed**, back with ⇧⌘T. · Since 1.3
 - **Your windows**, opened again as Lokyr starts, with their tabs and splits, when you turn it on.
-- **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · not released yet
-- **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · not released yet
-- **[Floating panes](floating-panes.md)** over a tab's splits, such as a scratch shell you show and hide with a key. · not released yet
-- **[Popups](floating-panes.md#run-a-command-in-a-popup)**: a key of your own runs a command, such as `lazygit` or `fzf`, in a floating pane that closes as the command ends. · not released yet
+- **Sessions**, groups of windows that you switch between, the others hidden with their programs running. · Since 1.5
+- **Input broadcast** to every pane of a tab or a window, such as the same command on several servers. · Since 1.5
+- **[Floating panes](floating-panes.md)** over a tab's splits, such as a scratch shell you show and hide with a key. · Since 1.5
+- **[Popups](floating-panes.md#run-a-command-in-a-popup)**: a key of your own runs a command, such as `lazygit` or `fzf`, in a floating pane that closes as the command ends. · Since 1.5
 - **A window that floats** above other apps, or one that you see through.
 - **The [quick terminal](plugins/quick-terminal.md)**, a window that slides in from an edge of the screen over any app, at a key's press.
 
@@ -50,7 +50,7 @@ Each window takes a number when it opens, the lowest that no other open window o
 
 ## Use sessions
 
-A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide, their programs running. Window › Sessions › New Session opens one, ⌃⌘S switches to a session or opens one in a project's folder, and ⌃⌘L switches to the session you used before. [Sessions](sessions.md) covers them. · not released yet
+A session is a group of windows, such as one for each project. One session shows at a time: when you switch, its windows come back where you left them, and the others hide, their programs running. Window › Sessions › New Session opens one, ⌃⌘S switches to a session or opens one in a project's folder, and ⌃⌘L switches to the session you used before. [Sessions](sessions.md) covers them. · Since 1.5
 
 ## Float a window or use full screen
 
@@ -89,7 +89,7 @@ Lokyr can open the windows that were open when you quit it: each where it was, w
 restore-windows = "always"   # open the last windows again at every start
 ```
 
-Each pane starts a new shell, in the folder where its shell was. The programs that ran in the panes don't come back. With [`[app] restore-scrollback`](CONFIGURATION.md#restore-scrollback) set to `true`, what they showed does: each pane shows its scrollback again, its colors, links and commands too, up to the prompt where you typed, then a line that tells when it was kept, then the new shell's prompt. The gutter's marks, the blocks and the jumps between prompts work on the restored commands. Lokyr keeps all that a pane held within its [`[scrollback] limit`](CONFIGURATION.md#limit), in a file of each pane that only your account can read, and removes it once the pane shows it again. It's off by default, as what the panes showed may hold what you wouldn't keep, such as a token that a command printed. · not released yet
+Each pane starts a new shell, in the folder where its shell was. The programs that ran in the panes don't come back. With [`[app] restore-scrollback`](CONFIGURATION.md#restore-scrollback) set to `true`, what they showed does: each pane shows its scrollback again, its colors, links and commands too, up to the prompt where you typed, then a line that tells when it was kept, then the new shell's prompt. The gutter's marks, the blocks and the jumps between prompts work on the restored commands. Lokyr keeps all that a pane held within its [`[scrollback] limit`](CONFIGURATION.md#limit), in a file of each pane that only your account can read, and removes it once the pane shows it again. It's off by default, as what the panes showed may hold what you wouldn't keep, such as a token that a command printed. · Since 1.5
 
 ```toml
 [app]
@@ -100,7 +100,7 @@ What a program showed on its own screen, such as vim or less, isn't kept: the pa
 
 Pinned tabs come back pinned, and groups come back with their names, colors and folds. · Since 1.3
 
-[Sessions](sessions.md) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · not released yet
+[Sessions](sessions.md) come back too, with their names, the one you used last showing. The windows of the other sessions open the first time you switch to each, their shells starting then, so Lokyr starts as fast as it does with the windows that show. A session you don't switch to keeps its windows, and their scrollback, for the next start. · Since 1.5
 
 **Try it**: set `restore-windows = "always"` and `restore-scrollback = true`, open a second tab with ⌘T, and run `cd /usr/share` and `ls` in it. Quit Lokyr with ⌘Q, then open it again: the window opens with both tabs, the second one in `/usr/share`, its `ls` and the files it listed above the new prompt.
 
@@ -217,13 +217,13 @@ style = "seamless"
 
 ## Float panes over a tab
 
-Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that floats over the tab's splits, in a box with its title at the top; drag its title to move it and its edges to resize it. Shell › Show or Hide Floating Panes, ⌥⌘F, hides the tab's floating panes together and shows them again. A popup is a floating pane in the middle of the tab that runs a command of your keys, such as `lazygit`, and closes when it ends. [Floating panes and popups](floating-panes.md) covers them. · not released yet
+Choose Shell › New Floating Pane, or press ⇧⌥⌘F, to open a pane that floats over the tab's splits, in a box with its title at the top; drag its title to move it and its edges to resize it. Shell › Show or Hide Floating Panes, ⌥⌘F, hides the tab's floating panes together and shows them again. A popup is a floating pane in the middle of the tab that runs a command of your keys, such as `lazygit`, and closes when it ends. [Floating panes and popups](floating-panes.md) covers them. · Since 1.5
 
 **Try it**: press ⇧⌥⌘F and run `top`. Press ⌥⌘F to hide it and ⌥⌘F again to see it still running.
 
 ## Type into several panes at once
 
-Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and what you type into the pane with the keyboard goes to every pane of the tab too: your keys, the text of an input method, and what you paste with ⌘V or drop. Each pane takes it as its own program asks, such as with bracketed paste in one and without it in another. A red ring marks each pane that takes it, and a megaphone marks the tab. · not released yet
+Choose Shell › Broadcast Input › To the Tab's Panes, or press ⌥⌘I, and what you type into the pane with the keyboard goes to every pane of the tab too: your keys, the text of an input method, and what you paste with ⌘V or drop. Each pane takes it as its own program asks, such as with bracketed paste in one and without it in another. A red ring marks each pane that takes it, and a megaphone marks the tab. · Since 1.5
 
 - **To the Window's Panes**, ⇧⌥⌘I, sends it to every pane of the window, in all its tabs.
 - **Press the same keys again**, or choose Off, to type into one pane again.
@@ -269,12 +269,12 @@ close-button = "hover"            # "always" or "never"
 | ⌥⌘1 to ⌥⌘9 | `cmd+alt+1` to `cmd+alt+9` | Bring that window forward |
 | ⌘\`, ⇧⌘\` | `` cmd+` ``, `` cmd+shift+` `` | Bring the next or the previous window forward |
 | ⇧⌘I | `cmd+shift+i` | Give the window a title |
-| ⌃⌘S | `cmd+ctrl+s` | Switch to a session, or open one in a folder · not released yet |
-| ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · not released yet |
-| ⌥⌘I | `cmd+alt+i` | Send what you type to every pane of the tab, or to one pane again · not released yet |
-| ⇧⌥⌘I | `cmd+alt+shift+i` | Send what you type to every pane of the window, or to one pane again · not released yet |
-| ⇧⌥⌘F | `cmd+alt+shift+f` | Float a new pane over the tab · not released yet |
-| ⌥⌘F | `cmd+alt+f` | Show or hide the tab's floating panes · not released yet |
+| ⌃⌘S | `cmd+ctrl+s` | Switch to a session, or open one in a folder · Since 1.5 |
+| ⌃⌘L | `cmd+ctrl+l` | Switch to the session you used before · Since 1.5 |
+| ⌥⌘I | `cmd+alt+i` | Send what you type to every pane of the tab, or to one pane again · Since 1.5 |
+| ⇧⌥⌘I | `cmd+alt+shift+i` | Send what you type to every pane of the window, or to one pane again · Since 1.5 |
+| ⇧⌥⌘F | `cmd+alt+shift+f` | Float a new pane over the tab · Since 1.5 |
+| ⌥⌘F | `cmd+alt+f` | Show or hide the tab's floating panes · Since 1.5 |
 | ⌘T | `cmd+t` | Open a tab |
 | ⌘W | `cmd+w` | Close the tab, or the pane while the tab has splits or floating panes |
 | ⌘1 to ⌘9 | `cmd+1` to `cmd+9` | Show that tab |
@@ -291,10 +291,10 @@ close-button = "hover"            # "always" or "never"
 - **A program can't move, resize or minimize its window**, nor read its title.
 - **Restored windows start new shells**: the panes' text and their programs don't come back, and a window that was in full screen opens out of it.
 - **The quick terminal and man pages' windows** don't open again when Lokyr starts.
-- **Lokyr keeps 100 windows and 256 panes at most** as it quits: those of the session that shows first, then the other sessions' from the one you used last. A notice at the next start tells how many it left out. · not released yet
+- **Lokyr keeps 100 windows and 256 panes at most** as it quits: those of the session that shows first, then the other sessions' from the one you used last. A notice at the next start tells how many it left out. · Since 1.5
 - **macOS's own window tabs**, and its Prefer tabs setting, don't apply: Lokyr's tabs are its own.
 - **Keys reach the first nine** windows and tabs: bind more in [`[keys]`](CONFIGURATION.md#bindings).
-- **A window with its tabs in the titlebar doesn't show its session's name.** · not released yet
+- **A window with its tabs in the titlebar doesn't show its session's name.** · Since 1.5
 
 ## Troubleshooting
 

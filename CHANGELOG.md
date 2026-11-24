@@ -8,6 +8,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-24
+
 ### Added
 
 - The plugin API draws a line above a list's row, `divider` of a list's item, as a sidebar divides its groups.
@@ -399,7 +401,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 - The first numbered version, not distributed: the macOS app, a window of one pane, of Lokyr's own terminal core and Metal renderer, configured by `~/.config/lokyr/config.toml`.
 
-[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/sephiroth74/lokyr/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/sephiroth74/lokyr/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/sephiroth74/lokyr/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/sephiroth74/lokyr/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/sephiroth74/lokyr/compare/v1.1.0...v1.2.0

@@ -27,7 +27,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 
 ## The sessions' switcher
 
-- **Window › Sessions › Switch Session…**, ⌃⌘S, opens the palette of your [sessions](../sessions.md): those open first, the one you used last at the top, the one that shows marked Current; then your layouts; then folders, those that [`[sessions] folders`](../CONFIGURATION.md#sessions) lists, then those where your shells worked last, marked Recent, each with the folder that holds it, your home folder as `~`. Sessions with no name show as Untitled Session, then Untitled Session 2 and on, in the order you opened them. · not released yet
+- **Window › Sessions › Switch Session…**, ⌃⌘S, opens the palette of your [sessions](../sessions.md): those open first, the one you used last at the top, the one that shows marked Current; then your layouts; then folders, those that [`[sessions] folders`](../CONFIGURATION.md#sessions) lists, then those where your shells worked last, marked Recent, each with the folder that holds it, your home folder as `~`. Sessions with no name show as Untitled Session, then Untitled Session 2 and on, in the order you opened them. · Since 1.5
 - **As you type**, it finds the sessions by their names, the layouts by theirs, and the folders by their names and paths, the best match first: `ui` finds the folder `ui` before Untitled Session. When two match as well, the sessions come first, then the layouts, then the folders.
 - **Return**, or a click, switches to the session you chose. A folder opens a session there, named after it, its first window's shell in the folder; a folder that a session was opened in already switches to that session instead, and doesn't show among the folders.
 
@@ -40,7 +40,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 | `command-palette.open` | View › Command Palette… | ⇧⌘P | Opens the palette in the window that has the focus |
 | `command-palette.theme` | View › Choose Theme… | | Opens the theme picker, of the themes of the appearance in force |
 | `command-palette.agents` | Window › Show Agents… | ⌥⇧⌘A | Opens the agents' list, of every window's AI agents, the most urgent first |
-| `command-palette.sessions` | Window › Sessions › Switch Session… | ⌃⌘S | Opens the sessions' switcher, of the sessions open, then the folders of your config and your shells · not released yet |
+| `command-palette.sessions` | Window › Sessions › Switch Session… | ⌃⌘S | Opens the sessions' switcher, of the sessions open, then the folders of your config and your shells · Since 1.5 |
 | `command-palette.move` | — | ↑, ↓ while `command-palette.focused` | Moves the list's selection, by its argument `delta`, a whole number of items |
 
 <!-- commands end -->

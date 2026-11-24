@@ -793,7 +793,7 @@ The folder that the first window's shell starts in, as Lokyr starts.
 
 <sub>Platforms: macOS</sub>
 
-The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's, a split's, a floating pane's or a popup's, of a popup that names no folder of its own · not released yet.
+The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's, a split's, a floating pane's or a popup's, of a popup that names no folder of its own · Since 1.5.
 
 | Values | Default |
 |---|---|
@@ -1412,7 +1412,7 @@ The sessions' switcher, ⌃⌘S, lists the sessions open, then folders: those th
 
 ### `folders`
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.5</sub>
 
 The folders that the sessions' switcher lists, ⌃⌘S or Window › Sessions › Switch Session…, beside the sessions open and the folders where your panes' shells worked last.
 
@@ -1599,7 +1599,7 @@ Whether the windows that were open as you quit Lokyr open again as it starts: ea
 
 ### `restore-scrollback`
 
-<sub>Platforms: macOS · not released yet</sub>
+<sub>Platforms: macOS · Since 1.5</sub>
 
 Whether the panes that open again with your windows show what they showed as you quit: their text, its colors and styles, its links, and the commands that your shell marked.
 
@@ -1748,12 +1748,12 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
 | `` cmd+` `` | `window.next` | Brings forward your next window of the session that shows, in the order that they opened, the settings window too and not the quick terminal, the first after the last: the key left of 1 by its place, as macOS's, ⌘\ on the Italian layout; Window › Cycle Through Windows runs it too |
 | `` cmd+shift+` `` | `window.previous` | Brings forward the previous window, the last before the first |
-| `ctrl+cmd+s` | `command-palette.sessions` | Opens the sessions' switcher in the palette: the sessions open, the one that shows marked Current, then the folders of [`[sessions] folders`](#sessions) and those where your shells worked last; Return switches to the session, or opens one in the folder, named after it, or switches to the one opened there already; Window › Sessions › Switch Session… runs it too · not released yet |
-| `ctrl+cmd+l` | `window.switch-to-last-session` | Switches to the session that you used before the one that shows: its windows show where they were, the one that you used last in front, and the others hide, their programs running; Window › Sessions › Switch to Last Session runs it too · not released yet |
-| `alt+cmd+i` | `window.broadcast-to-tab` | Sends what you type into the pane with the keyboard to every pane of its tab too, each as its own program takes it, a ring round each; again, to that pane alone · not released yet |
-| `shift+alt+cmd+i` | `window.broadcast-to-window` | Sends what you type into the pane with the keyboard to every pane of the window too, of all its tabs; again, to that pane alone · not released yet |
-| `shift+alt+cmd+f` | `pane.new-floating` | Floats a new pane over the tab's panes, its shell in the folder of the pane with the keyboard · not released yet |
-| `alt+cmd+f` | `pane.toggle-floating` | Shows the tab's floating panes, or hides them; of a tab of none, floats a new one · not released yet |
+| `ctrl+cmd+s` | `command-palette.sessions` | Opens the sessions' switcher in the palette: the sessions open, the one that shows marked Current, then the folders of [`[sessions] folders`](#sessions) and those where your shells worked last; Return switches to the session, or opens one in the folder, named after it, or switches to the one opened there already; Window › Sessions › Switch Session… runs it too · Since 1.5 |
+| `ctrl+cmd+l` | `window.switch-to-last-session` | Switches to the session that you used before the one that shows: its windows show where they were, the one that you used last in front, and the others hide, their programs running; Window › Sessions › Switch to Last Session runs it too · Since 1.5 |
+| `alt+cmd+i` | `window.broadcast-to-tab` | Sends what you type into the pane with the keyboard to every pane of its tab too, each as its own program takes it, a ring round each; again, to that pane alone · Since 1.5 |
+| `shift+alt+cmd+i` | `window.broadcast-to-window` | Sends what you type into the pane with the keyboard to every pane of the window too, of all its tabs; again, to that pane alone · Since 1.5 |
+| `shift+alt+cmd+f` | `pane.new-floating` | Floats a new pane over the tab's panes, its shell in the folder of the pane with the keyboard · Since 1.5 |
+| `alt+cmd+f` | `pane.toggle-floating` | Shows the tab's floating panes, or hides them; of a tab of none, floats a new one · Since 1.5 |
 | `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other window of its session has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
 | `shift+alt+cmd+a` | `command-palette.agents` | Opens the palette's list of the AI agents of every window, the most urgent first, of each one's message or tab, its state and how long it has been in it; Return brings the chosen one's pane forward; Window › Show Agents… runs it too |
 | `alt+cmd+a` | `window.next-agent` | Brings forward the next tab, in any window, whose AI agent waits for you; or, of none, whose agent is done; or, of none, at work, as [`[agents]`](#agents) tells; Window › Go to Next Agent runs it too |

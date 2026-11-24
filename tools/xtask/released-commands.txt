@@ -28,6 +28,8 @@ command-palette.move	down	delta=1	command-palette.focused
 command-palette.move	up	delta=-1	command-palette.focused
 command-palette.open
 command-palette.open	cmd+shift+p		
+command-palette.sessions
+command-palette.sessions	cmd+ctrl+s		
 command-palette.theme
 copy-mode.act
 copy-mode.act	ctrl+c	action="exit"	copy-mode.open && pane.focused
@@ -109,11 +111,18 @@ pane.copy
 pane.copy	cmd+c		
 pane.copy-output
 pane.copy-output	cmd+alt+shift+c		
+pane.float
+pane.join-broadcast
+pane.leave-broadcast
 pane.look-up
 pane.man-page
 pane.man-search
+pane.move-into-splits
+pane.new-floating
+pane.new-floating	cmd+alt+shift+f		
 pane.paste
 pane.paste	cmd+v		
+pane.popup
 pane.prompt-next
 pane.prompt-next	cmd+down		
 pane.prompt-previous
@@ -138,6 +147,8 @@ pane.select-all	cmd+a
 pane.select-output
 pane.select-output	cmd+shift+a		
 pane.send-text
+pane.toggle-floating
+pane.toggle-floating	cmd+alt+f		
 plugin-manager.open
 quick-tips.show
 search.next
@@ -208,8 +219,14 @@ tabs.switch-back
 tabs.switch-back	ctrl+shift+tab		
 tabs.toggle-pin
 tabs.ungroup
+window.broadcast-off
+window.broadcast-to-tab
+window.broadcast-to-tab	cmd+alt+i		
+window.broadcast-to-window
+window.broadcast-to-window	cmd+alt+shift+i		
 window.close
 window.close	cmd+shift+w		
+window.close-session
 window.goto
 window.goto	cmd+alt+1	index=1	
 window.goto	cmd+alt+2	index=2	
@@ -222,14 +239,21 @@ window.goto	cmd+alt+8	index=8
 window.goto	cmd+alt+9	index=9	
 window.new
 window.new	cmd+n		
+window.new-session
 window.next
 window.next	cmd+`		
 window.next-agent
 window.next-agent	cmd+alt+a		
+window.open-layout
 window.previous
 window.previous	cmd+shift+`		
+window.rename-session
+window.save-layout
 window.set-title
 window.set-title	cmd+shift+i		
+window.switch-session
+window.switch-to-last-session
+window.switch-to-last-session	cmd+ctrl+l		
 window.toggle-cursor-guide
 window.toggle-cursor-guide	cmd+alt+;		
 window.toggle-float-on-top

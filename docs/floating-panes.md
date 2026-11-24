@@ -1,6 +1,6 @@
 # Floating panes and popups
 
-<sub>macOS · not released yet · [`[keys]`](CONFIGURATION.md#bindings), [`[app] restore-scrollback`](CONFIGURATION.md#restore-scrollback)</sub>
+<sub>macOS · Since 1.5 · [`[keys]`](CONFIGURATION.md#bindings), [`[app] restore-scrollback`](CONFIGURATION.md#restore-scrollback)</sub>
 
 A floating pane floats over a tab's splits, in a box with its title at the top, such as a scratch shell that you show and hide with a key. A popup is a floating pane in the middle of the tab that runs one command, such as `lazygit` or `fzf`, and closes when the command ends.
 

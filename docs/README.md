@@ -17,9 +17,9 @@ Lokyr is a fast terminal for macOS, written in Rust. Every feature that you see,
 - [Notifications](notifications.md): the notifications of programs, agents, long commands and the bell, and how to allow them.
 - [Mouse and selection](mouse-and-selection.md): selecting and copying text, ⌘-click on links and paths, the context menu, scrolling, and programs that take the mouse.
 - [Windows and tabs](windows-and-tabs.md): opening, moving between and restoring windows, and the tabs' drags, titles, colors, pins and groups.
-- [Floating panes and popups](floating-panes.md): panes that float over a tab's splits, and popups that run a command, such as `lazygit`, and close when it ends. · not released yet
-- [Sessions](sessions.md): groups of windows, such as one for each project, that you switch between, with the programs of the hidden ones running. · not released yet
-- [Layouts](layouts.md): a session saved to a file, which opens again as a new session with new shells. · not released yet
+- [Floating panes and popups](floating-panes.md): panes that float over a tab's splits, and popups that run a command, such as `lazygit`, and close when it ends. · Since 1.5
+- [Sessions](sessions.md): groups of windows, such as one for each project, that you switch between, with the programs of the hidden ones running. · Since 1.5
+- [Layouts](layouts.md): a session saved to a file, which opens again as a new session with new shells. · Since 1.5
 - [Links](links.md): ⌘-click on URLs, paths and programs' links, a path's line in your editor, and hints from the keyboard, with patterns of your own.
 - [Plugins](plugins/README.md): the plugins that come with Lokyr, a page each, such as the [tab bar](plugins/tabs.md), the [splits](plugins/splits.md), [find](plugins/search.md), [links and hints](plugins/links.md) and the [quick terminal](plugins/quick-terminal.md); and how to install more with Sleip.
 

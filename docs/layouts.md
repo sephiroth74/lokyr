@@ -1,8 +1,8 @@
 # Layouts
 
-<sub>macOS · not released yet · `~/.config/lokyr/layouts/`</sub>
+<sub>macOS · Since 1.5 · `~/.config/lokyr/layouts/`</sub>
 
-A layout is a session saved to a file: its windows, their tabs and splits, the folder of each pane, and, if you add them, the commands that the panes run. Open a layout and Lokyr opens a new session that looks the same, with new shells. · not released yet
+A layout is a session saved to a file: its windows, their tabs and splits, the folder of each pane, and, if you add them, the commands that the panes run. Open a layout and Lokyr opens a new session that looks the same, with new shells. · Since 1.5
 
 ## Try it
 
