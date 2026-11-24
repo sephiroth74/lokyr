@@ -1,5 +1,7 @@
 # A release's A/B, step 2 of 6, about 5 minutes: a window at rest, 30
-# seconds of each copy in each cycle.
+# seconds of each copy in each cycle. A wakeup comes a few times a minute,
+# so that most intervals of a second hold none: the budgets judge the
+# mean of the intervals, the rate, where their median would be 0.
 terminals = ["lokyr-a", "lokyr-b"]
 terminals-file = "../terminals.toml"
 ab = { a = "lokyr-a", b = "lokyr-b" }
@@ -14,8 +16,10 @@ rounds = 1
 
 [[budget]]
 metric = "interrupt_wakeups_per_s"
+stat = "mean"
 at-most = 0.5
 
 [[budget]]
 metric = "package_idle_wakeups_per_s"
+stat = "mean"
 at-most = 0
