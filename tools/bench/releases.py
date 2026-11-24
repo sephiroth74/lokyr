@@ -5,6 +5,13 @@ each group of measures over the releases, in `docs/bench/releases/`.
 
     python3 tools/bench/releases.py            # writes them
     python3 tools/bench/releases.py --check    # fails where they differ
+
+A release's session of ttybench gives its values to `releases.json`: of
+each measure that names its `ttybench` record, the A/B's B's statistic is
+the release's value, and A's its baseline.
+
+    python3 tools/bench/releases.py --from <folder>... --release 1.5.0 \
+        --against 1.4.0 --report ab-F5b-20.md [--dry-run]
 """
 import json
 import os
@@ -290,7 +297,116 @@ def recent(data):
     return {**data, "releases": releases[-SHOWN:]}
 
 
+def matches(group, spec):
+    """Whether the report's `group` holds the record that `spec`, a
+    measure's `ttybench`, names: its tool, metric, the conditions that it
+    names, and no feature but the one that it names."""
+    conditions = group.get("conditions", {})
+    wanted = spec.get("conditions", {})
+    return (group["tool"] == spec["tool"]
+            and group["metric"] == spec["metric"]
+            and all(conditions.get(key) == value for key, value in wanted.items())
+            and group.get("feature") == spec.get("feature"))
+
+
+def from_sessions(data, reports, release, against, report):
+    """Gives `data` the values of `release`, of the A/B of the ttybench
+    sessions' `reports`, each a session's `report.json`: of each measure
+    that names its record, B's statistic its value and A's its baseline,
+    and the release's entry, against `against`, of its `report`. The lines
+    that tell what it took, and what it did not."""
+    told = []
+    for measure in data["measures"]:
+        spec = measure.get("ttybench")
+        if not spec:
+            told.append(f"{measure['id']}: of no ttybench record, left as it is")
+            continue
+        found = []
+        for session in reports:
+            ab = session.get("ab")
+            if not ab:
+                continue
+            for group in session["groups"]:
+                if not matches(group, spec):
+                    continue
+                rows = {row["terminal"]: row["summary"] for row in group["rows"]}
+                if ab["a"] in rows and ab["b"] in rows:
+                    stat = spec.get("stat", "median")
+                    found.append((session["session"], rows[ab["a"]][stat], rows[ab["b"]][stat]))
+        if len(found) > 1:
+            raise ValueError(f"{measure['id']}: {len(found)} sessions hold its record: "
+                             + ", ".join(name for name, _, _ in found))
+        if not found:
+            told.append(f"{measure['id']}: no session holds its record")
+            continue
+        name, before, after = found[0]
+        # Two decimals past the measure's own, as the reports' figures.
+        places = measure.get("digits", 1) + 2
+        before, after = round(before, places), round(after, places)
+        measure.setdefault("values", {})[release] = after
+        measure.setdefault("baseline", {})[release] = before
+        told.append(f"{measure['id']}: {before:g} then {after:g}, of {name}")
+    if not any(entry["id"] == release for entry in data["releases"]):
+        data["releases"].append({"id": release, "label": release, "title": release,
+                                 "report": report, "against": against})
+        told.append(f"the release {release}, against {against}, of {report}: added")
+    return told
+
+
+def import_sessions(argv):
+    """`--from <folder>... --release <id> --against <id> --report <page>
+    [--data <file>] [--dry-run]`: the release's values of its sessions."""
+    options, folders, at = {}, [], 0
+    while at < len(argv):
+        arg = argv[at]
+        if arg == "--from":
+            at += 1
+            while at < len(argv) and not argv[at].startswith("--"):
+                folders.append(argv[at])
+                at += 1
+            continue
+        if arg == "--dry-run":
+            options["dry-run"] = True
+        elif arg in ("--release", "--against", "--report", "--data") and at + 1 < len(argv):
+            options[arg[2:]] = argv[at + 1]
+            at += 1
+        else:
+            print(f"releases.py: {arg} is no option", file=sys.stderr)
+            return 2
+        at += 1
+    missing = [name for name in ("release", "against", "report") if name not in options]
+    if not folders or missing:
+        print("releases.py: --from takes the sessions' folders, with --release, --against "
+              "and --report", file=sys.stderr)
+        return 2
+    path = options.get("data", DATA)
+    with open(path) as file:
+        data = json.load(file)
+    reports = []
+    for folder in folders:
+        with open(os.path.join(folder, "report.json")) as file:
+            reports.append(json.load(file))
+    try:
+        told = from_sessions(data, reports, options["release"], options["against"],
+                             options["report"])
+    except ValueError as error:
+        print(f"releases.py: {error}", file=sys.stderr)
+        return 1
+    for line in told:
+        print(line)
+    if options.get("dry-run"):
+        print(f"(a dry run: {path} left as it was)")
+        return 0
+    with open(path, "w") as file:
+        file.write(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    print(f"wrote {path}: `just release-charts` draws it; "
+          "the table's cells and the release's notes are yours to write")
+    return 0
+
+
 def main(argv):
+    if "--from" in argv:
+        return import_sessions(argv)
     check = "--check" in argv
     with open(DATA) as file:
         data = recent(json.load(file))

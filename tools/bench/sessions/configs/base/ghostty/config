@@ -1,0 +1,18 @@
+# Ghostty's base config for the sessions: Menlo at 13 points, 120 × 40 cells,
+# no ligatures, a cursor that doesn't blink, an opaque window, no shell
+# integration, about 10 000 rows of scrollback (its limit counts bytes).
+# Its defaults that the measures depend on: window-vsync = true.
+font-family = Menlo
+font-size = 13
+font-feature = -calt
+font-feature = -liga
+window-width = 120
+window-height = 40
+background-opacity = 1
+background-blur = false
+cursor-style-blink = false
+scrollback-limit = 10000000
+window-save-state = never
+shell-integration = none
+confirm-close-surface = false
+quit-after-last-window-closed = true

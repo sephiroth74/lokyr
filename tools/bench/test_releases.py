@@ -119,3 +119,61 @@ class Files(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FromSessions(unittest.TestCase):
+    def report(self, name, groups, ab=("old", "new")):
+        return {"session": name, "ab": {"a": ab[0], "b": ab[1]} if ab else None,
+                "groups": groups}
+
+    def group(self, tool, metric, conditions, values, feature=None):
+        return {"tool": tool, "metric": metric, "conditions": conditions, "feature": feature,
+                "rows": [{"terminal": terminal, "summary": {"median": median, "p99": median * 2}}
+                         for terminal, median in values.items()]}
+
+    def data(self):
+        latency = {"tool": "latency", "metric": "latency_ms",
+                   "conditions": {"beside": "rest", "phase": "random"}}
+        return {
+            "releases": [{"id": "1.4.0", "label": "1.4.0", "title": "1.4.0",
+                          "report": "ab.md", "against": "1.3.0"}],
+            "measures": [
+                {"id": "latency-p50", "ttybench": {**latency, "stat": "median"}},
+                {"id": "latency-p99", "ttybench": {**latency, "stat": "p99"}},
+                {"id": "throughput-cat", "ttybench": {"tool": "throughput", "metric": "quiet_mib_s",
+                                                     "conditions": {"text": "plain"}}},
+                {"id": "startup-gap"},
+            ],
+        }
+
+    def test_b_is_the_release_and_a_its_baseline_of_the_records_that_match(self):
+        data = self.data()
+        rest = {"beside": "rest", "phase": "random", "rounds": 1}
+        reports = [
+            self.report("ab-3-latency", [
+                self.group("latency", "latency_ms", rest, {"old": 14.5, "new": 13.000000001}),
+                self.group("latency", "latency_ms", {**rest, "beside": "flood"}, {"old": 40, "new": 30}),
+                self.group("latency", "latency_ms", rest, {"old": 9, "new": 9}, feature="smooth"),
+            ]),
+            self.report("compare", [
+                self.group("throughput", "quiet_mib_s", {"text": "plain"}, {"old": 300, "new": 310}),
+            ], ab=None),
+        ]
+        told = releases.from_sessions(data, reports, "1.5.0", "1.4.0", "ab-F5b-20.md")
+        measures = {m["id"]: m for m in data["measures"]}
+        self.assertEqual(measures["latency-p50"]["values"], {"1.5.0": 13.0})
+        self.assertEqual(measures["latency-p50"]["baseline"], {"1.5.0": 14.5})
+        self.assertEqual(measures["latency-p99"]["values"], {"1.5.0": 26.0})
+        # A session of no A/B gives nothing; a measure of no record stays.
+        self.assertNotIn("values", measures["throughput-cat"])
+        self.assertNotIn("values", measures["startup-gap"])
+        self.assertIn("throughput-cat: no session holds its record", told)
+        self.assertEqual(data["releases"][-1], {"id": "1.5.0", "label": "1.5.0", "title": "1.5.0",
+                                                "report": "ab-F5b-20.md", "against": "1.4.0"})
+
+    def test_two_sessions_of_one_record_are_refused(self):
+        rest = {"beside": "rest", "phase": "random"}
+        reports = [self.report(name, [self.group("latency", "latency_ms", rest, {"old": 1, "new": 2})])
+                   for name in ("one", "two")]
+        with self.assertRaises(ValueError):
+            releases.from_sessions(self.data(), reports, "1.5.0", "1.4.0", "ab.md")

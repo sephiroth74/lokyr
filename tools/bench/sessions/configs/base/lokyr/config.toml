@@ -1,0 +1,41 @@
+# Lokyr's config of the releases' sessions: the least work beside
+# the terminal's own, the same for every release's measures from 1.1.0 on,
+# of keys that both versions know: Menlo at 13 points, 120 × 40
+# cells, about 10 000 rows of scrollback; no ligatures, an opaque window of
+# no blur; no blinking, of the cursor nor of the text, the cursor moving at
+# once; no bell's flash nor bounce; no quick tip at the start, and no
+# windows of a run before restored; smooth scrolling off, a feature of its
+# own config.
+[app]
+restore-windows = "never"
+
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+background-blur = 0
+smooth-scroll = false
+
+[cursor]
+blink = false
+smooth-blink = "off"
+movement = "instant"
+
+[text]
+blink = false
+
+[bell]
+flash = false
+bounce = false
+
+[scrollback]
+limit = 10
+
+[plugins.quick-tips]
+enabled = false

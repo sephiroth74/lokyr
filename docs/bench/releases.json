@@ -1,5 +1,5 @@
 {
-  "about": "The last eight releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line. `table` holds RELEASES.md's table of every measure, which releases.py writes: its groups of rows, each row's name of its unit, its budget's text, the measure whose verdicts mark its cells and the limit that marks a cell past its budget, and each release's cell, its value as the table shows it, or its value and a note, which the table numbers under it.",
+  "about": "The last eight releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line. `table` holds RELEASES.md's table of every measure, which releases.py writes: its groups of rows, each row's name of its unit, its budget's text, the measure whose verdicts mark its cells and the limit that marks a cell past its budget, and each release's cell, its value as the table shows it, or its value and a note, which the table numbers under it. `ttybench` names the record of a ttybench session's report that gives a measure, its tool, metric, statistic of the report's summary, and the conditions that its group holds, of no feature; `releases.py --from` takes a release's value and its baseline of the A/B's B and A there.",
   "releases": [
     {
       "id": "0.7.0",
@@ -127,6 +127,15 @@
         "lokyr": 22.4,
         "source": "compare-F5a-78.md",
         "how": "Typometer"
+      },
+      "ttybench": {
+        "tool": "latency",
+        "metric": "latency_ms",
+        "conditions": {
+          "beside": "rest",
+          "phase": "random"
+        },
+        "stat": "median"
       }
     },
     {
@@ -162,6 +171,15 @@
         "lokyr": 29.5,
         "source": "compare-F5a-78.md",
         "how": "Typometer"
+      },
+      "ttybench": {
+        "tool": "latency",
+        "metric": "latency_ms",
+        "conditions": {
+          "beside": "rest",
+          "phase": "random"
+        },
+        "stat": "p99"
       }
     },
     {
@@ -232,6 +250,11 @@
         "value": 0.33,
         "lokyr": 0.35,
         "source": "compare-F5a-78.md"
+      },
+      "ttybench": {
+        "tool": "idle",
+        "metric": "interrupt_wakeups_per_s",
+        "stat": "median"
       }
     },
     {
@@ -261,6 +284,11 @@
         "1.2.0": 0,
         "1.3.0": 0,
         "1.4.0": 0
+      },
+      "ttybench": {
+        "tool": "idle",
+        "metric": "package_idle_wakeups_per_s",
+        "stat": "median"
       }
     },
     {
@@ -300,6 +328,14 @@
         "1.4.0": {
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
+        }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "plain"
         }
       }
     },
@@ -365,6 +401,14 @@
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
         }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "colors"
+        }
       }
     },
     {
@@ -396,6 +440,14 @@
         "1.4.0": {
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
+        }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "wide"
         }
       }
     },
@@ -501,6 +553,14 @@
         "name": "Ghostty",
         "value": 58.3,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "frames_per_s",
+        "stat": "median",
+        "conditions": {
+          "kind": "drag"
+        }
       }
     },
     {
@@ -551,6 +611,14 @@
         "name": "Ghostty",
         "value": 57.0,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "frames_per_s",
+        "stat": "median",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {
@@ -601,6 +669,14 @@
         "name": "Ghostty",
         "value": 25.0,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "missed_frames",
+        "stat": "median",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {
@@ -651,6 +727,14 @@
         "name": "Ghostty",
         "value": 27.7,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "compositor_delay_ms",
+        "stat": "p95",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {

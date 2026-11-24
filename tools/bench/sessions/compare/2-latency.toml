@@ -1,0 +1,19 @@
+# The terminals compared, step 2 of 4: 100 keys of each terminal in each
+# cycle, at every phase of the refresh, then beside a pane of `yes`, of
+# three terminals that open one, which six cycles balance.
+terminals = ["lokyr", "ghostty", "kitty", "iterm2", "terminal", "warp"]
+terminals-file = "../terminals.toml"
+pause = 2
+cycles = 6
+folder = "/tmp/lokyr/ttybench/sessions/compare-2-latency-{date}"
+
+[[run]]
+tool = "latency"
+args = ["--keys", "100"]
+rounds = 1
+
+[[run]]
+tool = "latency"
+args = ["--keys", "100", "--flood"]
+rounds = 1
+terminals = ["lokyr", "ghostty", "kitty"]

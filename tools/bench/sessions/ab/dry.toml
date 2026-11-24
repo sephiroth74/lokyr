@@ -1,0 +1,48 @@
+# A dry run of a release's A/B, about 4 minutes: every step's tools of the
+# least rounds, a cycle, to check the copies, the configs and ttybench end
+# to end before the steps; its figures measure nothing worth telling.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 1
+season = 2
+folder = "/tmp/lokyr/ttybench/sessions/ab-dry-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 2
+
+[[run]]
+tool = "memory"
+rounds = 1
+
+[[run]]
+tool = "idle"
+args = ["--duration", "4", "--interval", "1"]
+rounds = 1
+
+[[run]]
+tool = "latency"
+args = ["--keys", "20"]
+rounds = 1
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain", "--mib", "64"]
+rounds = 1
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "4"]
+rounds = 1
+feature = "smooth-scroll"
+
+[[run]]
+tool = "motion"
+args = ["--kind", "drag", "--seconds", "4"]
+rounds = 1
+
+[[budget]]
+metric = "latency_ms"
+at-most = 33.3
