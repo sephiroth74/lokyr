@@ -1,0 +1,14 @@
+[plugin]
+name = "lokyr-bench/floating"
+version = "0.1.0"
+kind = "luau"
+api = "^0.1"
+license = "MIT"
+description = "Builds the floating pane's scenario of Lokyr's benchmarks as Lokyr starts: a popup of a program at rest over the first pane."
+
+[activation]
+on = ["startup"]
+
+[capabilities]
+workspace-write = true
+pty-write = true

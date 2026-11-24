@@ -369,13 +369,14 @@ bench: vtebench
 release-charts:
     python3 tools/bench/releases.py
 
-# Put a release's A/B's two copies and the sessions' configs in /tmp/lokyr/ttybench, as tools/bench/sessions/terminals.toml names them: `a`, the release before, and `b`, the one measured, each a DMG or an app, copied of their signatures as they are.
+# Put a release's A/B's two copies, the sessions' configs and the scenarios' plugins in /tmp/lokyr/ttybench, as tools/bench/sessions/terminals.toml names them: `a`, the release before, and `b`, the one measured, each a DMG or an app, copied of their signatures as they are.
 bench-prepare a b:
     #!/usr/bin/env bash
     set -euo pipefail
     place=/tmp/lokyr/ttybench
     mkdir -p "$place"
     rm -rf "$place/configs" && cp -R tools/bench/sessions/configs "$place/configs"
+    rm -rf "$place/plugins" && cp -R tools/bench/sessions/scenarios/plugins "$place/plugins"
     copy() {
         local from=$1 to=$place/$2
         rm -rf "$to" && mkdir -p "$to"
@@ -392,7 +393,7 @@ bench-prepare a b:
     copy "{{a}}" a
     copy "{{b}}" b
 
-# Run one of tools/bench/sessions' sessions of ttybench, as `ab/3-latency`, or `ab/dry` first: `ttybench` on the PATH, or as TTYBENCH names it.
+# Run one of tools/bench/sessions' sessions of ttybench, as `ab/3-latency` or `scenarios/broadcast`, or `ab/dry` first: `ttybench` on the PATH, or as TTYBENCH names it.
 bench-session name *args:
     ${TTYBENCH:-ttybench} run tools/bench/sessions/{{name}}.toml {{args}}
 

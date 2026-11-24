@@ -1,0 +1,37 @@
+# Lokyr's config of the scenario `floating` of its benchmarks: the releases'
+# config of the least work, as configs/base/lokyr/config.toml, and the
+# scenario's plugin, which plugins.lock beside names of its folder and
+# permissions.toml grants its capabilities, so that it asks nothing.
+[app]
+restore-windows = "never"
+
+[font]
+family = "Menlo"
+size = 13
+ligatures = false
+
+[window]
+columns = 120
+rows = 40
+remember-frame = false
+background-opacity = 1
+background-blur = 0
+smooth-scroll = false
+
+[cursor]
+blink = false
+smooth-blink = "off"
+movement = "instant"
+
+[text]
+blink = false
+
+[bell]
+flash = false
+bounce = false
+
+[scrollback]
+limit = 10
+
+[plugins.quick-tips]
+enabled = false
