@@ -40,7 +40,7 @@ The releases' A/B and the comparison of the terminals, as sessions of [ttybench]
 
    The startup's gap to a minimal app, the memory without the GPU's, `seq`'s throughput and a frame's time on the CPU have no ttybench record: they keep their values of the earlier tools, which their rows tell.
 
-The budgets of the steps are the releases': the latency's 2 refreshes at the median and 4.5 at the 99th percentile of a display at 60 Hz, the interrupt wakeups at rest 0.5 a second at most and the package's none, and `cat`'s 275 MiB/s.
+The budgets of the steps are the releases': the latency's 2 refreshes at the median and 4.5 at the 99th percentile of a display at 60 Hz, the interrupt wakeups at rest 0.5 a second at most and the package's none, of the mean of their intervals, as a wakeup comes a few times a minute and most intervals of a second hold none, and `cat`'s 275 MiB/s.
 
 ## The terminals compared
 

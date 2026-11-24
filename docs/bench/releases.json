@@ -254,7 +254,7 @@
       "ttybench": {
         "tool": "idle",
         "metric": "interrupt_wakeups_per_s",
-        "stat": "median"
+        "stat": "mean"
       }
     },
     {
@@ -288,7 +288,7 @@
       "ttybench": {
         "tool": "idle",
         "metric": "package_idle_wakeups_per_s",
-        "stat": "median"
+        "stat": "mean"
       }
     },
     {
