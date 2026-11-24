@@ -81,7 +81,7 @@
         "1.0.0": 26.72,
         "1.3.0": 27.15,
         "1.4.0": 20.8,
-        "1.5.0": 34.6
+        "1.5.0": 55.0
       },
       "baseline": {
         "0.7.0": 15.1,
@@ -90,7 +90,7 @@
         "1.0.0": 28.86,
         "1.3.0": 28.6,
         "1.4.0": 21.7,
-        "1.5.0": 34.9
+        "1.5.0": 54.6
       },
       "sessions": {
         "0.7.0": {
@@ -102,8 +102,8 @@
           "report": "startup-F5a-79.md"
         },
         "1.5.0": {
-          "title": "the startup at rest",
-          "report": "ab-F5b-20.md#the-measures-of-lokyr-bench"
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-21.md"
         }
       }
     },
@@ -988,8 +988,8 @@
                 "the mean of twelve rounds of the release's DMG, notarized, 1.3.0's DMG 250.1 in the same session, [startup-F5a-79](startup-F5a-79.md#results); 240.5 in the A/B and 267.2 at rest, of a bundle not notarized"
               ],
               "1.5.0": [
-                "253.1",
-                "the median of eight rounds of `lokyr-bench`, 1.4.0's tag of a bundle 250.2 in the same session, neither notarized, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
+                "268.2",
+                "the mean of twelve rounds of the release's DMG, notarized, 1.4.0's DMG 267.8 in the same session, [startup-F5b-21](startup-F5b-21.md#results); 253.1 of bundles not notarized in the A/B, 1.4.0's tag 250.2, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
               ]
             }
           },
@@ -1035,8 +1035,8 @@
                 "of twelve rounds of the releases' notarized DMGs, 1.3.0's 21.7, of a minimal app of 222 to 243 ms, [startup-F5a-79](startup-F5a-79.md#results); 60.9 in the A/B and 43.5 at rest, of a bundle not notarized"
               ],
               "1.5.0": [
-                "34.6",
-                "at rest, from a terminal of no other app open, eight rounds of bundles not notarized, 1.4.0's 34.9 in the same session, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench); 47.8 and 47.1 in the A/B, of a minimal app of 182 to 226 ms"
+                "55.0",
+                "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
               ]
             }
           }
