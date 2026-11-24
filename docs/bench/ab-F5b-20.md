@@ -96,6 +96,28 @@ The releases' measures that ttybench does not take came of `lokyr-bench`, of the
 - **The memory at rest and a frame's time on the CPU are 1.4.0's.**
 - **`cat` on screen in a window of 1920 × 1080 came 2.4 % slower** of 1.5.0, three runs of four, 270.4 against 277.1 MiB/s, where ttybench's of a window of 120 × 40 cells told both copies alike, 313.9 against 313.0; `seq`'s and the colored text's runs spread too widely to tell a change.
 
+## The sessions
+
+Each session's report, of ttybench, in the order that they ran:
+
+- [ab-1-start-2026-11-24-1518](ab-F5b-20/ab-1-start-2026-11-24-1518/report.md): the startup, each copy launched 30 times first, and the memory.
+- [ab-2-idle-2026-11-24-1538](ab-F5b-20/ab-2-idle-2026-11-24-1538/report.md): a window at rest, 3 s after the launch, which Lokyr's first seconds' wakeups moved.
+- [ab-2-idle-2026-11-24-1554](ab-F5b-20/ab-2-idle-2026-11-24-1554/report.md): a window at rest, 20 s after the launch.
+- [ab-3-latency-2026-11-24-1616](ab-F5b-20/ab-3-latency-2026-11-24-1616/report.md): the latency, four cycles of 200 keys, beside the machine's other work.
+- [ab-3-latency-2026-11-24-1631](ab-F5b-20/ab-3-latency-2026-11-24-1631/report.md): the latency again, the Mac left alone first.
+- [ab-3-latency-2026-11-24-1644](ab-F5b-20/ab-3-latency-2026-11-24-1644/report.md): the latency again, beside the antivirus's scans.
+- [ab-3-latency-2026-11-24-1827](ab-F5b-20/ab-3-latency-2026-11-24-1827/report.md): the latency, eight cycles of 100 keys.
+- [ab-4-output-2026-11-24-1841](ab-F5b-20/ab-4-output-2026-11-24-1841/report.md): the output on screen, each run's file written anew.
+- [ab-4-output-2026-11-24-1923](ab-F5b-20/ab-4-output-2026-11-24-1923/report.md): the output on screen, each file written once.
+- [ab-5-scroll-2026-11-24-1859](ab-F5b-20/ab-5-scroll-2026-11-24-1859/report.md): the scroll by rows and smooth.
+- [ab-6-motion-2026-11-24-1904](ab-F5b-20/ab-6-motion-2026-11-24-1904/report.md): the window's motion and a smooth scroll's frames.
+- [drag-check-2026-11-24-1926](ab-F5b-20/drag-check-2026-11-24-1926/report.md): the drag alone, four cycles.
+- [scenario-broadcast-2026-11-24-2008](ab-F5b-20/scenario-broadcast-2026-11-24-2008/report.md): a key broadcast to eight panes.
+- [broadcast-of-no-size](ab-F5b-20/broadcast-of-no-size/report.md): the broadcast's session of no cells' count, of its A/B.
+- [scenario-hidden-session-2026-11-24-2048](ab-F5b-20/scenario-hidden-session-2026-11-24-2048/report.md): a hidden session, its login shell running.
+- [scenario-hidden-session-2026-11-24-2058](ab-F5b-20/scenario-hidden-session-2026-11-24-2058/report.md): a hidden session, a program at rest in its shell's place.
+- [scenario-floating-2026-11-24-2106](ab-F5b-20/scenario-floating-2026-11-24-2106/report.md): a floating pane at rest.
+
 ## Of ttybench's measures and the releases' before
 
 The releases' measures before 1.5.0 came of `lokyr-bench` and the scripts of `tools/bench`. ttybench measures any terminal alike, and some figures differ of its method: the latency of its capture of the window, and of its keys at every phase of the refresh; the throughput to the quiet of the terminal's processes; the memory of the processes' footprint with the GPU's. [RELEASES.md](RELEASES.md) takes 1.5.0's values and 1.4.0's of this session, which its summary compares, and tells which measures came of which tool.
