@@ -84,6 +84,7 @@ The releases' measures that ttybench does not take came of `lokyr-bench`, of the
 |---|---|---|---|
 | Startup, warm, first frame, the median of eight rounds | 250.2 ms | 253.1 ms | |
 | Its gap to the minimal app's first window, the mean of eight rounds | 47.1 ms | 47.8 ms | ≤ 35 ms ✘ both |
+| The same at rest, from a terminal of no other app open, eight rounds | 34.9 ms | 34.6 ms | ≤ 35 ms ✔ |
 | Memory at rest without the GPU's, the median of four rounds | 28.9 MB | 29.0 MB | ≤ 35 MB ✔ |
 | A frame on the CPU, ASCII, p50 and p99 of each round | 0.363 and 0.440, 0.358 and 0.461 ms | 0.358 and 0.443, 0.361 and 0.463 ms | p99 ≤ 2 ms ✔ |
 | A frame on the CPU, CJK and emoji, p50 of each round | 0.795 and 0.791 ms | 0.738 and 0.815 ms | |
@@ -91,7 +92,7 @@ The releases' measures that ttybench does not take came of `lokyr-bench`, of the
 | `seq 1 10000000` on screen | 185.8 MiB/s | 208.9 MiB/s | |
 
 - **The startup is 1.4.0's**: 1.5.0 started 0.7 ms later in the mean of eight rounds, each round's change from −18.1 to +23.3 ms, and 7.1 ms later of four rounds before, of a first round 20 ms apart.
-- **The startup's gap is past its budget for both copies**, 47.1 and 47.8 ms, as the minimal app's first window came in 182 to 226 ms from a round to the next, which moved each round's gap by as much: the session's machine, its load average 3 to 8, starts the minimal app faster than its own copies of Lokyr at times, as [the startup and the output at rest](rest-F5a-123.md) found of 1.4's A/B. Measured at rest, from a terminal and of no other app open, as that report measured 1.4.0's gap at 30.7 ms, it holds or not of the release.
+- **The startup's gap was past its budget for both copies in the session**, 47.1 and 47.8 ms, as the minimal app's first window came in 182 to 226 ms from a round to the next, which moved each round's gap by as much, as [the startup and the output at rest](rest-F5a-123.md) found of 1.4's A/B. **At rest**, eight rounds more from a terminal of no other app open, of [their reports](ab-F5b-20/lokyr-bench/rest/) and [tables](ab-F5b-20/analysis-rest.txt), the minimal app came in 218 to 224 ms, and the gap is within its budget for both, 34.9 ms of 1.4.0 and 34.6 of 1.5.0, 1.5.0 0.3 ms quicker in the mean of the rounds; of bundles not notarized, which start up to 12.5 ms later than the same code notarized, as that report found.
 - **The memory at rest and a frame's time on the CPU are 1.4.0's.**
 - **`cat` on screen in a window of 1920 × 1080 came 2.4 % slower** of 1.5.0, three runs of four, 270.4 against 277.1 MiB/s, where ttybench's of a window of 120 × 40 cells told both copies alike, 313.9 against 313.0; `seq`'s and the colored text's runs spread too widely to tell a change.
 
