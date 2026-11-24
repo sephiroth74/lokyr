@@ -47,7 +47,7 @@ The budgets of the steps are the releases': the latency's 2 refreshes at the med
 A feature that the release before lacks has no A/B of the two copies: its scenario measures the copy measured, B, against itself, of a config whose plugin builds the scenario as Lokyr starts. Each scenario's config in `configs/<scenario>` names its plugin of [`scenarios/plugins`](scenarios/plugins) in its `plugins.lock`, as a folder that `sleip dev` would name, and grants its capabilities in its `permissions.toml`, so that Lokyr asks nothing; `just bench-prepare` puts both in place.
 
 - [`scenarios/broadcast.toml`](scenarios/broadcast.toml): a key's latency of B alone, and of B whose typed input goes to eight panes of the tab: the measured pane above, of the window's whole width, and seven below, each of a program that takes the keys and draws nothing, so that the capture sees the measured pane alone while every key goes to eight terminals.
-- [`scenarios/hidden-session.toml`](scenarios/hidden-session.toml): a window at rest of B alone, and of B whose second session's window hides, its shell running.
+- [`scenarios/hidden-session.toml`](scenarios/hidden-session.toml): a window at rest of B alone, and of B whose second session's window hides, of a program at rest in its shell's place, as a login shell's prompt may wake each second of its own.
 - [`scenarios/floating.toml`](scenarios/floating.toml): a window at rest, its memory and its frames, of B alone and of B of a popup of `cat` at rest over its pane.
 
 ```sh
