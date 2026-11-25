@@ -15,8 +15,8 @@ Each phase is broken into tasks of one day or less. A phase's breakdown is writt
 | F4 Plugin ecosystem | Before 1.0.0: Luau host, Luau API, Sleip, registry v0, `snap` and `awake` published | Publishing and installing work end to end; `snap` and `awake` in the registry; then 1.0.0 |
 | F3b Settings and themes | After 1.0.0: a settings window, of the `plugin-manager`'s page and the config's; themes made, duplicated and imported in the app | The settings window edits the config and the keys' bindings; a theme made and imported in the app |
 | F5a The programs' status, the prompt, the tabs and blocks | As 1.3 and 1.4: the programs' and the agents' status of OSC 7501, a click at the prompt, the tabs' management and groups, hints; Warp-style blocks, smooth scrolling | Every agent that tells its state shown exactly; blocks verified in zsh, bash and fish; smooth scrolling of no frame at rest |
-| F5b Sessions and iTerm2 power features | As 1.5 and 1.6: the scrollback restored, named sessions and layouts, broadcast, floating panes; tmux -CC, triggers, profiles, Shortcuts and AppleScript | A session restored and switched; tmux -CC workflows on par with iTerm2 |
-| F5c Graphics and feel | As 1.7: all of kitty's graphics and sixel, the cursor's trail, kitty's drag and drop | `kitten icat`, `imgcat` and `chafa` work, inside tmux too |
+| F5b Sessions and iTerm2 power features | As 1.5 to 1.7: the scrollback restored, named sessions and layouts, broadcast, floating panes; tmux -CC and the search's filter; triggers, profiles, Shortcuts and AppleScript | A session restored and switched; tmux -CC workflows on par with iTerm2 |
+| F5c Graphics and feel | As 1.8: all of kitty's graphics and sixel, the cursor's trail, kitty's drag and drop | `kitten icat`, `imgcat` and `chafa` work, inside tmux too |
 | F6 Plugin API 1.0 and hardening | Hardening, docs, stable plugin API 1.0 | The plugin API 1.0's criteria (see [Versions](#versions)) |
 | F7 After 1.0 | Linux, registry v1, Windows, mux daemon, lz4, custom shaders, an AI assistant | — |
 
@@ -205,16 +205,20 @@ Of no version, planned for 1.4 before: `ssh` in your shell installing Lokyr's te
 - **Floating panes** over a tab's splits, moved and resized by the mouse, shown and hidden together, a pane of the splits floated and a floating one put back from the context menu, kept with their tab; and popups that run a command and close, as fzf's or lazygit's, of a binding's `pane.popup`.
 - **The plugin API 0.1.7**: the sessions, the broadcast's state, a tab's floating panes, and popups that plugins open of `workspace-write` and `pty-write` together.
 
-**1.6, iTerm2's power features**:
-- **tmux -CC**: tmux windows and panes become native tabs and splits.
-- **Automation**: triggers, of the output's patterns that highlight, notify, mark or run a command, off unless configured; profiles with automatic switching (by host or directory), and a tab's or a pane's colors; Shortcuts (App Intents) and AppleScript, of the commands' registry and their capabilities.
+**1.6, tmux and the search**:
+- **tmux -CC**: tmux windows and panes become native tabs and splits, of tmux 3.2 or later, local or over ssh. Lokyr's actions on tabs and splits act on tmux, and tmux's own show in Lokyr; detached as the window closes or Lokyr quits, and a local session attached again at the next start.
 - **Search**: filter mode, and a search of every tab.
+- **Memory**: a hidden session's windows give their surfaces back until they show again.
+- **Releases**: each made by the CI as its branch merges into `main`, which tags it there.
+
+**1.7, iTerm2's power features**:
+- **Automation**: triggers, of the output's patterns that highlight, notify, mark or run a command, off unless configured; profiles with automatic switching, by directory or by host, the host that the shell reports or that `ssh` reaches, and a tab's or a pane's colors; Shortcuts (App Intents) and AppleScript, of the commands' registry and their capabilities.
 - **The context menu**: locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)), the broadcast's items having come in 1.5.
 - **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
 
 ### F5c — Graphics and feel
 
-**1.7**:
+**1.8**:
 - **Images**, past F3's OSC 1337 `File=` and kitty graphics' subset of direct transmission: sixel, kitty graphics' Unicode placeholders for tmux, its animation and relative placements, and the files of its transmission.
 - **Feel**: the cursor's trail, in the window server's animation as the cursor's slide; kitty's drag and drop protocol (OSC 72); a background image.
 - **Choosing a font**: `lokyr +list-fonts`, beside `+show-config` and `+validate-config`, which since F2 lists the system's families and their styles as `[font]` names them, as text, with `--monospace` for the fixed-pitch families and `--family` for a family's styles alone, draws each family in its own face with a line of samples, as images that the terminal shows.
@@ -265,8 +269,9 @@ Releases are `X.Y.Z`, nightly and beta builds `X.Y.Z-YYYYMMDD`, release candidat
 | 1.3 | The programs' status of OSC 7501, a click at the prompt, the tabs' management and groups, hints (F5a's first block) |
 | 1.4 | Warp-style blocks, smooth scrolling, and two plugins of the registry (F5a's second block) |
 | 1.5 | The scrollback restored, named sessions and layouts, broadcast input, floating panes and popups (F5b's first block) |
-| 1.6 | tmux -CC, triggers, profiles, Shortcuts and AppleScript, the search's filter (F5b's second block) |
-| 1.7 | All of kitty's graphics and sixel, the cursor's trail, drag and drop (F5c) |
+| 1.6 | tmux -CC, the search's filter and a search of every tab, releases made by the CI (F5b's second block) |
+| 1.7 | Triggers, profiles and encodings, the context menu's items, Shortcuts and AppleScript (F5b's third block) |
+| 1.8 | All of kitty's graphics and sixel, the cursor's trail, drag and drop (F5c) |
 | 1.x | The plugin API 1.0 (F6): stable plugin API in both front ends, complete docs, no open critical bug for three months; a major only for a change that breaks what people rely on |
 | later | Linux (F7), registry v1 |
 
