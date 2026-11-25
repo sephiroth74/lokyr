@@ -1,0 +1,72 @@
+== the App Launch traces: each period's duration, ms, and its start from dyld's launch
+few v140 1: System Interface Initialization 4.5@-0.5; Static Runtime Initialization 2.7@4.0; applicationWillFinishLaunching() 0.0@58.0; AppKit Scene Creation 30.5@58.0; applicationDidFinishLaunching() 103.8@88.4; Foreground 57.2@192.2
+few v140 2: System Interface Initialization 4.4@-0.5; Static Runtime Initialization 2.7@4.0; applicationWillFinishLaunching() 0.0@65.9; AppKit Scene Creation 48.3@65.9; applicationDidFinishLaunching() 104.8@114.2; Foreground 61.1@219.0
+few v150 1: System Interface Initialization 4.5@-0.5; Static Runtime Initialization 2.8@4.0; applicationWillFinishLaunching() 0.0@60.5; AppKit Scene Creation 30.9@60.5; applicationDidFinishLaunching() 111.4@91.4; Foreground 60.8@202.7
+few v150 2: System Interface Initialization 4.5@-0.5; Static Runtime Initialization 2.7@4.1; applicationWillFinishLaunching() 0.0@59.5; AppKit Scene Creation 34.1@59.5; applicationDidFinishLaunching() 102.9@93.6; Foreground 59.8@196.5
+many v140 1: System Interface Initialization 4.4@-0.5; Static Runtime Initialization 2.7@3.9; applicationWillFinishLaunching() 0.0@66.9; AppKit Scene Creation 41.1@67.0; applicationDidFinishLaunching() 99.6@108.0; Foreground 60.0@207.7
+many v140 2: System Interface Initialization 4.4@-0.5; Static Runtime Initialization 2.8@4.0; applicationWillFinishLaunching() 0.0@58.6; AppKit Scene Creation 33.2@58.6; applicationDidFinishLaunching() 104.1@91.8; Foreground 73.6@195.9
+many v150 1: System Interface Initialization 4.5@-0.5; Static Runtime Initialization 2.8@4.0; applicationWillFinishLaunching() 0.0@61.1; AppKit Scene Creation 30.4@61.1; applicationDidFinishLaunching() 103.7@91.5; Foreground 72.2@195.2
+many v150 2: System Interface Initialization 4.4@-0.5; Static Runtime Initialization 2.7@3.9; applicationWillFinishLaunching() 0.0@62.0; AppKit Scene Creation 41.5@62.0; applicationDidFinishLaunching() 104.4@103.5; Foreground 62.1@207.9
+
+few v140 Initializing - System Interface Initialization: duration 4.5 (sd 0.0), start -0.5 (sd 0.0)
+few v140 Initializing - Static Runtime Initialization: duration 2.7 (sd 0.0), start 4.0 (sd 0.0)
+few v140 Launching - applicationWillFinishLaunching(): duration 0.0 (sd 0.0), start 62.0 (sd 4.0)
+few v140 Launching - AppKit Scene Creation: duration 39.4 (sd 8.9), start 62.0 (sd 4.0)
+few v140 Launching - applicationDidFinishLaunching(): duration 104.3 (sd 0.5), start 101.3 (sd 12.9)
+few v140 Foreground: duration 59.1 (sd 1.9), start 205.6 (sd 13.4)
+few v150 Initializing - System Interface Initialization: duration 4.5 (sd 0.0), start -0.5 (sd 0.0)
+few v150 Initializing - Static Runtime Initialization: duration 2.8 (sd 0.0), start 4.0 (sd 0.0)
+few v150 Launching - applicationWillFinishLaunching(): duration 0.0 (sd 0.0), start 60.0 (sd 0.5)
+few v150 Launching - AppKit Scene Creation: duration 32.5 (sd 1.6), start 60.0 (sd 0.5)
+few v150 Launching - applicationDidFinishLaunching(): duration 107.2 (sd 4.2), start 92.5 (sd 1.1)
+few v150 Foreground: duration 60.3 (sd 0.5), start 199.6 (sd 3.1)
+many v140 Initializing - System Interface Initialization: duration 4.4 (sd 0.0), start -0.5 (sd 0.0)
+many v140 Initializing - Static Runtime Initialization: duration 2.7 (sd 0.0), start 4.0 (sd 0.0)
+many v140 Launching - applicationWillFinishLaunching(): duration 0.0 (sd 0.0), start 62.8 (sd 4.2)
+many v140 Launching - AppKit Scene Creation: duration 37.1 (sd 3.9), start 62.8 (sd 4.2)
+many v140 Launching - applicationDidFinishLaunching(): duration 101.9 (sd 2.2), start 99.9 (sd 8.1)
+many v140 Foreground: duration 66.8 (sd 6.8), start 201.8 (sd 5.9)
+many v150 Initializing - System Interface Initialization: duration 4.5 (sd 0.0), start -0.5 (sd 0.0)
+many v150 Initializing - Static Runtime Initialization: duration 2.7 (sd 0.0), start 4.0 (sd 0.0)
+many v150 Launching - applicationWillFinishLaunching(): duration 0.0 (sd 0.0), start 61.6 (sd 0.5)
+many v150 Launching - AppKit Scene Creation: duration 36.0 (sd 5.5), start 61.6 (sd 0.5)
+many v150 Launching - applicationDidFinishLaunching(): duration 104.1 (sd 0.3), start 97.5 (sd 6.0)
+many v150 Foreground: duration 67.1 (sd 5.1), start 201.6 (sd 6.4)
+
+== startup few, warm, first frame, 10 runs after 2
+round 1: v140 228.8; v150 220.4; floor 196.1
+round 2: v140 221.2; v150 220.8; floor 198.8
+round 3: v140 235.6; v150 236.1; floor 195.3
+round 4: v140 221.7; v150 228.4; floor 201.1
+round 5: v140 224.8; v150 222.3; floor 195.2
+floor: mean 197.3 (sd 2.3), from 195.2 to 201.1
+v140: mean of rounds 226.4 (sd 5.3); gap mean 29.1 (sd 7.1)
+v150: mean of rounds 225.6 (sd 6.0); gap mean 28.3 (sd 6.5)
+
+== startup many, warm, first frame, 10 runs after 2
+round 1: v140 236.8; v150 229.8; floor 195.6
+round 2: v140 244.2; v150 229.1; floor 194.4
+round 3: v140 219.2; v150 239.2; floor 154.6
+round 4: v140 203.7; v150 204.0; floor 154.5
+round 5: v140 212.1; v150 204.3; floor 149.8
+floor: mean 169.8 (sd 20.7), from 149.8 to 195.6
+v140: mean of rounds 223.2 (sd 15.1); gap mean 53.4 (sd 8.8)
+v150: mean of rounds 221.3 (sd 14.4); gap mean 51.5 (sd 18.4)
+
+== startup again, warm, first frame, 10 runs after 2
+round 1: v140 203.5; v150 203.1; floor 147.8
+round 2: v140 219.3; v150 211.7; floor 153.3
+round 3: v140 203.7; v150 203.2; floor 158.5
+round 4: v140 203.5; v150 203.2; floor 158.7
+floor: mean 154.6 (sd 4.5), from 147.8 to 158.7
+v140: mean of rounds 207.5 (sd 6.8); gap mean 52.9 (sd 8.7)
+v150: mean of rounds 205.3 (sd 3.7); gap mean 50.7 (sd 6.2)
+
+== many − few
+v140: startup -3.2, gap +24.3
+v150: startup -4.3, gap +23.2
+floor: startup -27.5
+== again − few
+v140: startup -18.9, gap +23.8
+v150: startup -20.3, gap +22.4
+floor: startup -42.7
