@@ -156,6 +156,27 @@ fn a_start_to_open_folders_opens_no_new_window_of_its_own() {
     let _ = std::fs::remove_dir_all(base);
 }
 
+#[test]
+fn the_launch_sets_the_menu_bar_and_the_global_keys_once_after_its_first_windows() {
+    // A start to open a folder: its window first, then the menu bar and
+    // the global keys, each once.
+    let base = real_directory("launch-menu");
+    let mut fake = Fake::default();
+    fake.set_default_launch(false);
+    let mut app = app(Config::default(), waiting());
+    fake.start_opening(&mut app, vec![AppEvent::OpenFiles(vec![base.clone()])]);
+    assert_eq!(fake.windows().count(), 1);
+    assert_eq!(fake.windows_at_first_menu(), Some(1));
+    assert_eq!((fake.main_menu_sets(), fake.global_key_sets()), (1, 1));
+    // A default start alike, after its new window.
+    let mut fake = Fake::default();
+    let mut app = app_of(Config::default(), waiting());
+    fake.start(&mut app);
+    assert_eq!(fake.windows_at_first_menu(), Some(1));
+    assert_eq!((fake.main_menu_sets(), fake.global_key_sets()), (1, 1));
+    let _ = std::fs::remove_dir_all(base);
+}
+
 /// The app, of `config`, whose windows run `program`, as [`app`] makes
 /// it, where a local of that name hides it.
 fn app_of(config: Config, program: Program) -> App {

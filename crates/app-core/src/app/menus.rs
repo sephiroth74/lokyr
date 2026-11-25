@@ -525,10 +525,7 @@ impl<B: Backend> App<B> {
         // The windows' keys follow the keymap's too, and the plugins learn
         // that the keys may be others, as they are.
         self.window_keys(platform);
-        if self.keys_told.as_ref() != Some(&self.keymap) {
-            self.keys_told = Some(self.keymap.clone());
-            self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
-        }
+        self.tell_keys_changed();
         for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
             if !enabled {
                 platform.set_command_enabled(&command, true);
@@ -547,6 +544,15 @@ impl<B: Backend> App<B> {
             if matches!(entry.place, MenuPlace::Bar(_)) {
                 platform.set_command_checked(&item_id(at), entry.ticked);
             }
+        }
+    }
+
+    /// Tells the plugins that the keys may be others, of a keymap that they
+    /// have not heard of.
+    pub(super) fn tell_keys_changed(&mut self) {
+        if self.keys_told.as_ref() != Some(&self.keymap) {
+            self.keys_told = Some(self.keymap.clone());
+            self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
         }
     }
 

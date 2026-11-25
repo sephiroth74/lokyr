@@ -907,6 +907,10 @@ pub struct App<B: Backend> {
     /// them, which a keymap made anew of the same bindings does not tell
     /// again.
     keys_told: Option<Keymap>,
+    /// Whether the launch goes on, from the start until its first windows
+    /// are open: the menu bar, the global keys, the Dock's icon, the
+    /// config's watch and the updates wait for its end.
+    launching: bool,
     /// The window that the last context menu opened on, whose pane marks
     /// the cell that it opened on, which its commands of a cell take.
     context_window: Option<WindowId>,
@@ -1221,6 +1225,7 @@ impl<B: Backend> App<B> {
             menu_items: Vec::new(),
             menu_bar: Vec::new(),
             keys_told: None,
+            launching: true,
             context_window: None,
             acting: None,
             close_asks: BTreeMap::new(),
@@ -3958,11 +3963,17 @@ impl<B: Backend> App<B> {
             self.commands = commands(&self.texts, &self.plugins);
             self.default_bindings = bindings(&self.plugins, &self.commands);
             self.keymap = Keymap::with_config(self.default_bindings.clone(), &self.config.keys);
-            self.set_menu(platform);
-            // The plugins' global keys, which the benches leave to the
-            // user's Lokyr.
-            if !self.benched {
-                self.take_global_keys(platform);
+            // The menu bar and the global keys once the launch ends, which
+            // sets them once.
+            if self.launching {
+                self.tell_keys_changed();
+            } else {
+                self.set_menu(platform);
+                // The plugins' global keys, which the benches leave to the
+                // user's Lokyr.
+                if !self.benched {
+                    self.take_global_keys(platform);
+                }
             }
         }
         for request in self.plugins.take_requests() {
@@ -5345,29 +5356,17 @@ impl<B: Backend> App<B> {
         self.activate_plugins(platform);
         // The themes before the first window, whose panes take their colors.
         self.load_themes(platform);
-        self.set_menu(platform);
+        // The plugins hear of the keys before the first frame, which the
+        // tabs show; the menu bar waits for the launch's end.
+        self.tell_keys_changed();
         self.show_appearance(platform);
         self.show_performance(platform);
         self.tell_font(platform);
         self.tell_term(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
-        self.show_icon(platform);
-        // The benches leave the user's global keys to the user's Lokyr.
-        if !self.benched {
-            self.take_global_keys(platform);
-        }
         self.environment.locale =
             environment::utf8_locale(&self.preferred, &environment::system_locales());
-        if let Some(file) = &mut self.config_file {
-            if let Err(error) = crate::watch::make_directory(&file.path) {
-                eprintln!(
-                    "lokyr: the config's directory cannot be made, for {}: {error}",
-                    file.path.display()
-                );
-            }
-            file.watch(platform);
-        }
         // The windows kept as the app last quit, or a new one; none yet
         // where the system started the app to open files, folders or
         // links, whose events came before the start and follow it, which
@@ -5379,13 +5378,34 @@ impl<B: Backend> App<B> {
                 self.untitled_timer = Some(platform.start_timer(Instant::now() + UNTITLED_WAIT));
             }
         }
-        self.start_updates(platform);
         self.end_output_bench_unstarted(platform);
         self.end_startup_bench(platform);
         self.start_latency_bench(platform);
         if self.startup_bench.is_some() || self.latency_bench.is_some() {
             self.bench_deadline = Some(platform.start_timer(Instant::now() + BENCH_DEADLINE));
         }
+    }
+
+    /// The launch's end, its first windows open: what none of them needs,
+    /// each once, which the plugins' activation left to it.
+    fn end_launch(&mut self, platform: &mut dyn Platform) {
+        self.launching = false;
+        self.set_menu(platform);
+        self.show_icon(platform);
+        // The benches leave the user's global keys to the user's Lokyr.
+        if !self.benched {
+            self.take_global_keys(platform);
+        }
+        if let Some(file) = &mut self.config_file {
+            if let Err(error) = crate::watch::make_directory(&file.path) {
+                eprintln!(
+                    "lokyr: the config's directory cannot be made, for {}: {error}",
+                    file.path.display()
+                );
+            }
+            file.watch(platform);
+        }
+        self.start_updates(platform);
     }
 
     fn take_app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -5942,6 +5962,11 @@ impl<B: Backend> App<B> {
 impl<B: Backend> Handler for App<B> {
     fn started(&mut self, platform: &mut dyn Platform) {
         self.start(platform);
+        self.end_turn(platform);
+    }
+
+    fn launched(&mut self, platform: &mut dyn Platform) {
+        self.end_launch(platform);
         self.end_turn(platform);
     }
 
