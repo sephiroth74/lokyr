@@ -280,6 +280,9 @@ pub struct Fake {
     alert_sounds: usize,
     /// The notifications that the app showed, from the first.
     notifications: Vec<FakeNotification>,
+    /// The answers that the app gave the automation's requests, in their
+    /// order.
+    automation_answers: Vec<(u64, crate::automation::Answer)>,
     /// The windows that the app asked to bring forward, from the first.
     focus_requests: Vec<WindowId>,
     /// The URLs and the paths that the app opened, and those that it
@@ -396,6 +399,7 @@ impl Fake {
             badge: None,
             alert_sounds: 0,
             notifications: Vec::new(),
+            automation_answers: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
             unhandled: Vec::new(),
@@ -884,6 +888,12 @@ impl Fake {
     /// How many times the app played the alert sound.
     pub fn alert_sounds(&self) -> usize {
         self.alert_sounds
+    }
+
+    /// The answers that the app gave the automation's requests, in their
+    /// order.
+    pub fn automation_answers(&self) -> &[(u64, crate::automation::Answer)] {
+        &self.automation_answers
     }
 
     /// The notifications that the app showed, from the first.
@@ -1787,6 +1797,10 @@ impl Platform for Fake {
 
     fn play_alert_sound(&mut self) {
         self.alert_sounds += 1;
+    }
+
+    fn answer_automation(&mut self, id: u64, answer: crate::automation::Answer) {
+        self.automation_answers.push((id, answer));
     }
 
     fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {

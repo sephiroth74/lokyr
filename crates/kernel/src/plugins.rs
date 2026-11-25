@@ -34,6 +34,7 @@ use lokyr_pkg_model::manifest::{
 };
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::API_VERSION;
+pub use lokyr_plugin_sdk::automation;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::host::MOST_WRITES;
@@ -1337,6 +1338,7 @@ enum Write {
         direction: Direction,
         side: Side,
         new: PaneId,
+        directory: Option<String>,
     },
     /// A popup over the active tab of `window`, the focused one's for none,
     /// of the id that the host gave its pane.
@@ -5018,9 +5020,10 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 direction,
                 side,
                 new,
+                directory,
             } => {
                 if let Some(near) = context.workspace.pane(split) {
-                    let new = context.panes.spawn(new, Some(near), None);
+                    let new = context.panes.spawn(new, Some(near), directory.as_deref());
                     context.workspace.split(split, direction, new, side);
                 }
                 continue;
@@ -7068,7 +7071,12 @@ impl Host<'_, '_> {
                 pane,
                 direction: lying,
                 side: new_side,
+                directory,
             } => {
+                if let Some(directory) = directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 self.known_pane(*pane)?;
                 // A floating pane splits not, of no layout of its own: its
                 // shell would start and go.
@@ -7091,6 +7099,7 @@ impl Host<'_, '_> {
                     direction: direction(*lying),
                     side: side(*new_side),
                     new,
+                    directory: directory.clone(),
                 });
                 return Ok(Response::Pane(Some(new.into())));
             }

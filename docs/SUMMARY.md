@@ -35,6 +35,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
   - [Copy, paste and scrolling](plugins/core-actions.md)
   - [Settings window](plugins/settings.md)
   - [Plugin manager](plugins/plugin-manager.md)
+  - [Automation](plugins/automation.md)
 
 ## Reference
 

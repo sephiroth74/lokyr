@@ -812,6 +812,10 @@ pub enum Request {
         direction: Direction,
         /// The new pane's part.
         side: Side,
+        /// The folder of the new pane, a path absolute or from `~`, or the
+        /// folder of a file there; the split pane's otherwise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
     },
     /// Closes a tab, with its panes, whose programs are hung up; its window
     /// shows the tab after it, or before it, and closes with its last tab.

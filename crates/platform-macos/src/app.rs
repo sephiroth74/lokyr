@@ -40,6 +40,25 @@ pub fn post_app_event(event: AppEvent) -> bool {
     true
 }
 
+/// Hands the running application the automation's request `request` of
+/// the app `client`, as the system's scripts and shortcuts make them, from
+/// the main thread: `reply` takes its answer, once, as the app gives it.
+/// Whether an application ran to take it; `reply` goes unanswered without.
+pub fn post_automation(
+    client: &str,
+    request: lokyr_platform_core::automation::Request,
+    reply: impl FnOnce(lokyr_platform_core::automation::Answer) + 'static,
+) -> bool {
+    if MainThreadMarker::new().is_none() {
+        return false;
+    }
+    let Some(shared) = RUNNING.with(|running| running.borrow().upgrade()) else {
+        return false;
+    };
+    // The bridges run of the system's events, outside the app's calls.
+    shared.post_automation(client, request, Box::new(reply))
+}
+
 /// The App Intents' entry, which their declarations of Swift call on the
 /// main thread as the system runs one: hands the running application the
 /// command named `command`, a C string, as its menus do; 1 where an

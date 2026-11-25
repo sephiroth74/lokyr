@@ -143,11 +143,11 @@ pub enum AutomationEdge {
 #[serde(rename_all = "kebab-case")]
 pub enum AutomationTarget {
     /// A window.
-    AutomationWindow(WindowId),
+    Window(WindowId),
     /// A tab.
-    AutomationTab(TabId),
+    Tab(TabId),
     /// A pane.
-    AutomationPane(PaneId),
+    Pane(PaneId),
 }
 
 /// The plugin's answer to a request.

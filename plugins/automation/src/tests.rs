@@ -1,0 +1,224 @@
+//! The plugin against the SDK's fake host, which hands it the automation's
+//! requests as the app's host does and keeps its answers.
+
+use lokyr_plugin_sdk::fake::FakeHost;
+use lokyr_plugin_sdk::message::Request;
+
+use super::*;
+
+/// The plugin's name, as its calls give it.
+const NAME: &str = "lokyr/automation";
+
+/// The app that asks, in the tests.
+const CLIENT: &str = "com.acme.script";
+
+/// A host of a window of pane 1, which has the focus and shows `hello`,
+/// and the plugin, activated.
+fn host() -> (FakeHost, Automation) {
+    let mut host = FakeHost::new(NAME);
+    host.pane(PaneId(1))
+        .rows
+        .insert(0, ("hello  ".to_owned(), false));
+    host.focus(Some(PaneId(1)));
+    let mut plugin = Automation::default();
+    host.activate(&mut plugin).unwrap();
+    host.take_done();
+    (host, plugin)
+}
+
+/// Hands the plugin the request `request` of `id`, of [`CLIENT`].
+fn ask(host: &mut FakeHost, plugin: &mut Automation, id: u64, request: AutomationRequest) {
+    host.post(Event::Automation {
+        id,
+        client: CLIENT.to_owned(),
+        request,
+    });
+    host.deliver(plugin).unwrap();
+}
+
+/// The plugin's answer to `id`, if it gave one.
+fn answer(host: &FakeHost, id: u64) -> Option<AutomationAnswer> {
+    host.automation_answers()
+        .iter()
+        .find(|(answered, _)| *answered == id)
+        .map(|(_, answer)| answer.clone())
+}
+
+#[test]
+fn a_request_opens_a_tab_in_a_folder_and_its_shell_runs_its_command() {
+    let (mut host, mut plugin) = host();
+    let request = AutomationRequest::NewTab {
+        window: None,
+        folder: Some("~".to_owned()),
+        command: Some("ls -l".to_owned()),
+    };
+    ask(&mut host, &mut plugin, 1, request);
+    let Some(AutomationAnswer::Opened { window, tab, pane }) = answer(&host, 1) else {
+        panic!("{:?}", host.automation_answers());
+    };
+    assert_eq!(window, WindowId(1));
+    let done = host.take_done();
+    assert!(done.contains(&Request::NewTab {
+        window,
+        index: None,
+        directory: Some("~".to_owned()),
+    }));
+    assert!(done.contains(&Request::SendText {
+        pane,
+        text: "ls -l\r".to_owned(),
+    }));
+    assert!(done.contains(&Request::ActivateTab(tab)));
+}
+
+#[test]
+fn a_split_opens_at_its_edge_and_tells_its_tab() {
+    let (mut host, mut plugin) = host();
+    let request = AutomationRequest::Split {
+        pane: None,
+        edge: AutomationEdge::Left,
+        folder: None,
+        command: None,
+    };
+    ask(&mut host, &mut plugin, 2, request);
+    let Some(AutomationAnswer::Opened { window, tab, pane }) = answer(&host, 2) else {
+        panic!("{:?}", host.automation_answers());
+    };
+    assert_eq!((window, tab), (WindowId(1), TabId(1)));
+    assert!(host.take_done().contains(&Request::Split {
+        pane: PaneId(1),
+        direction: Direction::Horizontal,
+        side: Side::First,
+        directory: None,
+    }));
+    assert_ne!(pane, PaneId(1));
+}
+
+#[test]
+fn a_command_that_is_not_there_is_refused() {
+    let (mut host, mut plugin) = host();
+    let request = AutomationRequest::Run {
+        command: "acme.none".to_owned(),
+        args: Args::new(),
+    };
+    ask(&mut host, &mut plugin, 3, request);
+    assert!(
+        matches!(answer(&host, 3), Some(AutomationAnswer::Error { code, .. }) if code == Code::NotFound.number()),
+        "{:?}",
+        host.automation_answers()
+    );
+}
+
+#[test]
+fn the_workspace_tells_the_same_ids_from_a_request_to_the_next() {
+    let (mut host, mut plugin) = host();
+    let (tab, pane) = host.add_tab(WindowId(1));
+    host.deliver(&mut plugin).unwrap();
+    ask(&mut host, &mut plugin, 4, AutomationRequest::Workspace);
+    ask(&mut host, &mut plugin, 5, AutomationRequest::Workspace);
+    let Some(AutomationAnswer::Workspace(first)) = answer(&host, 4) else {
+        panic!("{:?}", host.automation_answers());
+    };
+    assert_eq!(
+        answer(&host, 5),
+        Some(AutomationAnswer::Workspace(first.clone()))
+    );
+    let tabs: Vec<(TabId, Vec<PaneId>)> = first[0]
+        .tabs
+        .iter()
+        .map(|shown| (shown.id, shown.panes.iter().map(|pane| pane.id).collect()))
+        .collect();
+    assert_eq!(tabs, [(TabId(1), vec![PaneId(1)]), (tab, vec![pane])]);
+}
+
+#[test]
+fn a_new_window_answers_once_it_opens_and_its_shell_runs_its_command() {
+    let (mut host, mut plugin) = host();
+    let request = AutomationRequest::NewWindow {
+        folder: None,
+        command: Some("top".to_owned()),
+    };
+    ask(&mut host, &mut plugin, 6, request);
+    assert_eq!(answer(&host, 6), None);
+    assert!(
+        host.take_done()
+            .contains(&Request::OpenWindow { directory: None })
+    );
+    host.post(Event::Workspace(WorkspaceEvent::WindowOpened {
+        window: WindowId(1),
+    }));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        answer(&host, 6),
+        Some(AutomationAnswer::Opened {
+            window: WindowId(1),
+            tab: TabId(1),
+            pane: PaneId(1),
+        })
+    );
+    assert!(host.take_done().contains(&Request::SendText {
+        pane: PaneId(1),
+        text: "top\r".to_owned(),
+    }));
+}
+
+#[test]
+fn a_pane_s_text_waits_for_its_app_s_answer_which_the_plugin_keeps() {
+    let (mut host, mut plugin) = host();
+    let read = || AutomationRequest::PaneText {
+        pane: None,
+        selection: false,
+    };
+    ask(&mut host, &mut plugin, 7, read());
+    assert_eq!(answer(&host, 7), None);
+    let question = host.question().expect("a question about the app");
+    host.post(Event::Chosen {
+        id: question,
+        button: Some(ALLOW),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        answer(&host, 7),
+        Some(AutomationAnswer::Text("hello".to_owned()))
+    );
+    let Data::Map(state) = host.state() else {
+        panic!("{:?}", host.state());
+    };
+    assert_eq!(
+        state.get(READERS),
+        Some(&Data::Map(BTreeMap::from([(
+            CLIENT.to_owned(),
+            Data::Boolean(true)
+        )])))
+    );
+    // The next read, of a plugin that starts again of its state, asks
+    // nothing.
+    let mut again = Automation::default();
+    host.activate(&mut again).unwrap();
+    ask(&mut host, &mut again, 8, read());
+    assert_eq!(host.question(), None);
+    assert_eq!(
+        answer(&host, 8),
+        Some(AutomationAnswer::Text("hello".to_owned()))
+    );
+}
+
+#[test]
+fn an_app_that_the_user_refused_reads_no_text() {
+    let (mut host, mut plugin) = host();
+    let read = || AutomationRequest::PaneText {
+        pane: Some(PaneId(1)),
+        selection: true,
+    };
+    ask(&mut host, &mut plugin, 9, read());
+    let question = host.question().unwrap();
+    host.post(Event::Chosen {
+        id: question,
+        button: Some(DENY),
+    });
+    host.deliver(&mut plugin).unwrap();
+    let refused = |host: &FakeHost, id: u64| matches!(answer(host, id), Some(AutomationAnswer::Error { code, .. }) if code == Code::Failed.number());
+    assert!(refused(&host, 9), "{:?}", host.automation_answers());
+    ask(&mut host, &mut plugin, 10, read());
+    assert_eq!(host.question(), None);
+    assert!(refused(&host, 10));
+}

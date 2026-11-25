@@ -2453,6 +2453,7 @@ impl FakeHost {
                 pane,
                 direction,
                 side,
+                ..
             } => {
                 if let Opened::Pane(new) = opened {
                     self.split(*pane, *direction, *side, new);
@@ -5923,7 +5924,13 @@ impl Calling<'_> {
                 opened = Opened::Tab(tab, pane);
                 Response::Tab { tab, pane }
             }
-            Request::Split { pane, .. } => {
+            Request::Split {
+                pane, directory, ..
+            } => {
+                if let Some(directory) = directory {
+                    crate::host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
                 self.known_pane(*pane)?;
                 let floating = self
                     .host

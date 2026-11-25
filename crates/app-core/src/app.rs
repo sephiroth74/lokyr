@@ -55,6 +55,7 @@ use crate::watch::Watcher;
 use crate::window::{Surfaces, Window};
 
 mod access;
+mod automation;
 pub(crate) use access::TreeCursor;
 mod agents;
 mod asks;
@@ -727,6 +728,8 @@ pub struct App<B: Backend> {
     /// The timer past which a start that the system made to open files,
     /// folders or links opens a new window, if what it opened opened none.
     untitled_timer: Option<TimerId>,
+    /// The automation's requests that wait for its plugin's answers.
+    automations: automation::Automations,
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
@@ -1152,6 +1155,7 @@ impl<B: Backend> App<B> {
             exit_timer: None,
             bench_deadline: None,
             untitled_timer: None,
+            automations: automation::Automations::default(),
             restart_timer: None,
             closed_timer: None,
             kept_closes: BTreeMap::new(),
@@ -4105,6 +4109,9 @@ impl<B: Backend> App<B> {
                     self.start_packages(platform, (plugin, id), &call);
                 }
                 Request::CancelPackages { plugin, id } => self.cancel_packages(&plugin, id),
+                Request::AnswerAutomation { id, answer } => {
+                    self.answer_automation(platform, id, answer);
+                }
                 // A theme copied, or one of the folder's `.itermcolors`
                 // converted, as the Theme Editor asks, of the user's answer.
                 Request::CopyTheme { plugin, id, name } => {
@@ -5542,6 +5549,15 @@ impl<B: Backend> App<B> {
                 }
                 self.after_plugins(platform);
             }
+            AppEvent::Timer(timer) if self.automations.is_timer(timer) => {
+                self.automations_late(platform, Instant::now());
+            }
+            // A script's or a shortcut's request, to the automation's plugin.
+            AppEvent::Automation {
+                id,
+                client,
+                request,
+            } => self.take_automation(platform, id, &client, request),
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;
                 if self

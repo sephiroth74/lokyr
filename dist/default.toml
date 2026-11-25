@@ -24,3 +24,5 @@ copy-mode = { path = "../plugins/copy-mode" }
 quick-tips = { path = "../plugins/quick-tips" }
 settings = { path = "../plugins/settings" }
 plugin-manager = { path = "../plugins/plugin-manager" }
+# What scripts and shortcuts of other apps ask of Lokyr.
+automation = { path = "../plugins/automation" }

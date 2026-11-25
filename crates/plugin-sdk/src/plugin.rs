@@ -1540,6 +1540,28 @@ impl<'a> Cx<'a> {
             pane,
             direction,
             side,
+            directory: None,
+        }) {
+            Response::Pane(Some(pane)) => Ok(pane),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// Splits `pane` as [`split`](Self::split) does, the new pane in
+    /// `directory`, a path absolute or from `~`, or in the folder of a file
+    /// there.
+    pub fn split_in(
+        &mut self,
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+        directory: &str,
+    ) -> Result<PaneId, Error> {
+        match self.request(Request::Split {
+            pane,
+            direction,
+            side,
+            directory: Some(directory.to_owned()),
         }) {
             Response::Pane(Some(pane)) => Ok(pane),
             other => Err(failed(other)),

@@ -45,4 +45,4 @@ mod updates;
 mod wake;
 mod window;
 
-pub use app::{post_app_event, run, run_with};
+pub use app::{post_app_event, post_automation, run, run_with};

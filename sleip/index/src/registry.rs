@@ -28,6 +28,7 @@ pub const DOWNLOADS: &str = "https://github.com/sephiroth74/sleip-registry/relea
 pub const RESERVED_NAMES: &[&str] = &[
     "alternate-screen",
     "app",
+    "automation",
     "blocks",
     "command-header",
     "command-palette",

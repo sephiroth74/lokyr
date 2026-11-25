@@ -1,0 +1,236 @@
+//! The automation's requests, of the system's scripts and shortcuts, which
+//! the platform's bridges hand the app: each goes to the plugin of the
+//! capability `automation` as its event, and the plugin's answer goes back
+//! to the platform, or an error past the answer's deadline, or at once
+//! while no such plugin runs.
+
+use std::collections::BTreeMap;
+use std::time::{Duration, Instant};
+
+use lokyr_kernel::commands::Code;
+use lokyr_kernel::commands::{Args, Value};
+use lokyr_kernel::plugins::automation::{
+    ANSWER_WITHIN_MS, AutomationAnswer, AutomationEdge, AutomationRequest, AutomationTarget,
+};
+use lokyr_kernel::plugins::host::{PaneId, TabId, WindowId};
+use lokyr_platform_core::automation as platform;
+use lokyr_platform_core::{Platform, TimerId};
+
+use super::App;
+use crate::drawing::Backend;
+
+/// What the answer of a request that no plugin takes tells.
+pub(super) const OFF: &str =
+    "Lokyr's automation is off: its plugin, lokyr/automation, is turned off in the Plugins page";
+
+/// What the answer of a request that the plugin did not answer in time
+/// tells.
+pub(super) const LATE: &str = "Lokyr's automation did not answer in time";
+
+/// The requests that wait for the plugin's answers, each of its deadline,
+/// and the timer of the first.
+#[derive(Debug, Default)]
+pub(super) struct Automations {
+    waiting: BTreeMap<u64, Instant>,
+    timer: Option<TimerId>,
+}
+
+impl Automations {
+    /// Whether `timer` is its timer.
+    pub(super) fn is_timer(&self, timer: TimerId) -> bool {
+        self.timer == Some(timer)
+    }
+}
+
+impl<B: Backend> App<B> {
+    /// Hands the automation's request `request` of `client`, of the
+    /// platform's id `id`, to the plugin of the capability `automation`;
+    /// fails it at once while no such plugin runs, or of a text too long.
+    pub(super) fn take_automation(
+        &mut self,
+        platform: &mut dyn Platform,
+        id: u64,
+        client: &str,
+        request: platform::Request,
+    ) {
+        let request = request_of(request);
+        if let Err(error) = request.check() {
+            platform.answer_automation(id, answer_of(AutomationAnswer::of_error(&error)));
+            return;
+        }
+        if !self.plugins.automation(id, client, request) {
+            platform.answer_automation(
+                id,
+                platform::Answer::Error {
+                    code: Code::Unavailable.number(),
+                    message: OFF.to_owned(),
+                },
+            );
+            return;
+        }
+        let deadline = Instant::now() + Duration::from_millis(ANSWER_WITHIN_MS);
+        self.automations.waiting.insert(id, deadline);
+        self.settle_automation_timer(platform);
+    }
+
+    /// Gives the platform the plugin's answer to the request `id`, which
+    /// waits no more.
+    pub(super) fn answer_automation(
+        &mut self,
+        platform: &mut dyn Platform,
+        id: u64,
+        answer: AutomationAnswer,
+    ) {
+        if self.automations.waiting.remove(&id).is_none() {
+            return;
+        }
+        platform.answer_automation(id, answer_of(answer));
+        self.settle_automation_timer(platform);
+    }
+
+    /// Fails the requests whose deadlines passed by `now`, of no answer of
+    /// the plugin's.
+    pub(super) fn automations_late(&mut self, platform: &mut dyn Platform, now: Instant) {
+        self.automations.timer = None;
+        let late: Vec<u64> = self
+            .automations
+            .waiting
+            .iter()
+            .filter(|(_, deadline)| **deadline <= now)
+            .map(|(&id, _)| id)
+            .collect();
+        for id in late {
+            self.automations.waiting.remove(&id);
+            platform.answer_automation(
+                id,
+                platform::Answer::Error {
+                    code: Code::Failed.number(),
+                    message: LATE.to_owned(),
+                },
+            );
+        }
+        self.settle_automation_timer(platform);
+    }
+
+    /// Has the timer fire at the first deadline of the requests that wait,
+    /// and none without one.
+    fn settle_automation_timer(&mut self, platform: &mut dyn Platform) {
+        let first = self.automations.waiting.values().min().copied();
+        if let Some(timer) = self.automations.timer.take() {
+            platform.cancel_timer(timer);
+        }
+        if let Some(at) = first {
+            self.automations.timer = Some(platform.start_timer(at));
+        }
+    }
+}
+
+/// The plugin API's request of the platform's `request`.
+fn request_of(request: platform::Request) -> AutomationRequest {
+    match request {
+        platform::Request::Workspace => AutomationRequest::Workspace,
+        platform::Request::NewWindow { folder, command } => {
+            AutomationRequest::NewWindow { folder, command }
+        }
+        platform::Request::NewTab {
+            window,
+            folder,
+            command,
+        } => AutomationRequest::NewTab {
+            window: window.map(WindowId),
+            folder,
+            command,
+        },
+        platform::Request::Split {
+            pane,
+            edge,
+            folder,
+            command,
+        } => AutomationRequest::Split {
+            pane: pane.map(PaneId),
+            edge: match edge {
+                platform::Edge::Right => AutomationEdge::Right,
+                platform::Edge::Left => AutomationEdge::Left,
+                platform::Edge::Down => AutomationEdge::Down,
+                platform::Edge::Up => AutomationEdge::Up,
+            },
+            folder,
+            command,
+        },
+        platform::Request::SendText { pane, text } => AutomationRequest::SendText {
+            pane: pane.map(PaneId),
+            text,
+        },
+        platform::Request::Focus(target) => AutomationRequest::Focus(target_of(target)),
+        platform::Request::Close(target) => AutomationRequest::Close(target_of(target)),
+        platform::Request::Run { command, args } => AutomationRequest::Run {
+            command,
+            args: args
+                .into_iter()
+                .map(|(name, arg)| {
+                    let value = match arg {
+                        platform::Arg::Text(text) => Value::String(text),
+                        platform::Arg::Integer(number) => Value::Integer(number),
+                        platform::Arg::Bool(yes) => Value::Boolean(yes),
+                    };
+                    (name, value)
+                })
+                .collect::<Args>(),
+        },
+        platform::Request::PaneText { pane, selection } => AutomationRequest::PaneText {
+            pane: pane.map(PaneId),
+            selection,
+        },
+    }
+}
+
+fn target_of(target: platform::Target) -> AutomationTarget {
+    match target {
+        platform::Target::Window(id) => AutomationTarget::Window(WindowId(id)),
+        platform::Target::Tab(id) => AutomationTarget::Tab(TabId(id)),
+        platform::Target::Pane(id) => AutomationTarget::Pane(PaneId(id)),
+    }
+}
+
+/// The platform's answer of the plugin's `answer`.
+fn answer_of(answer: AutomationAnswer) -> platform::Answer {
+    match answer {
+        AutomationAnswer::Done => platform::Answer::Done,
+        AutomationAnswer::Opened { window, tab, pane } => platform::Answer::Opened {
+            window: window.0,
+            tab: tab.0,
+            pane: pane.0,
+        },
+        AutomationAnswer::Workspace(windows) => platform::Answer::Workspace(
+            windows
+                .into_iter()
+                .map(|window| platform::Window {
+                    id: window.id.0,
+                    title: window.title,
+                    focused: window.focused,
+                    tabs: window
+                        .tabs
+                        .into_iter()
+                        .map(|tab| platform::Tab {
+                            id: tab.id.0,
+                            title: tab.title,
+                            active: tab.active,
+                            panes: tab
+                                .panes
+                                .into_iter()
+                                .map(|pane| platform::Pane {
+                                    id: pane.id.0,
+                                    title: pane.title,
+                                    folder: pane.folder,
+                                    focused: pane.focused,
+                                })
+                                .collect(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        ),
+        AutomationAnswer::Text(text) => platform::Answer::Text(text),
+        AutomationAnswer::Error { code, message } => platform::Answer::Error { code, message },
+    }
+}

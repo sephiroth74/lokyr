@@ -121,7 +121,7 @@ export type Cx = {
     groups: (window: WindowId) -> ({ GroupInfo }?, string?, number?),
     layout: (tab: TabId) -> (Layout?, string?, number?),
     new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
-    split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, string?, number?),
+    split: (pane: PaneId, direction: Direction, side: Side, directory: string?) -> (PaneId?, string?, number?),
     close_tab: (tab: TabId, ask: boolean?, keep: number?) -> (true?, string?, number?),
     reopen_tab: (window: WindowId) -> (true?, string?, number?),
     close_pane: (pane: PaneId, ask: boolean?) -> (true?, string?, number?),
@@ -506,9 +506,9 @@ export type AutomationTab = {
 }
 
 export type AutomationTarget =
-    | { automation_window: WindowId }
-    | { automation_tab: TabId }
-    | { automation_pane: PaneId }
+    | { window: WindowId }
+    | { tab: TabId }
+    | { pane: PaneId }
 
 export type AutomationWindow = {
     id: WindowId,

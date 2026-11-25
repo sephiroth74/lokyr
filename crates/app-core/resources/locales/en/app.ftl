@@ -101,6 +101,7 @@ consent-capability-pointer-read = see where the pointer is over the panes
 consent-capability-keep-awake = keep the Mac and its display awake, which keeps the screen from locking and uses the battery
 consent-capability-appearance-write = preview themes and font families, and name the ones chosen in the config file
 consent-capability-packages = install, update and remove plugins, which run code of their own
+consent-capability-automation = answer the requests of scripts and shortcuts from other apps, which run commands and read the panes' text
 consent-capability-replaces = turn off the plugin { $parameter } while it runs, as both show in the same place
 permissions-unread = The decisions on the plugins' capabilities do not read, and none applies: { $error }
 

@@ -20,6 +20,7 @@ use crate::fakes;
 mod access;
 mod agents;
 mod asks;
+mod automation;
 mod awake;
 mod broadcast;
 mod chrome;
@@ -504,7 +505,7 @@ fn the_app_s_catalogs_match_their_source() {
         .iter()
         .map(|registration| (registration.make)())
         .collect();
-    assert_eq!(builtins.len(), 15);
+    assert_eq!(builtins.len(), 16);
     for plugin in &builtins {
         let catalogs = plugin.catalogs();
         // A plugin of no commands, as the keymap's, has no titles.
