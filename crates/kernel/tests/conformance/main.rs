@@ -889,6 +889,14 @@ fn on_kernel(
                     plugins.package_line(name(scenario), *id, &plain(line));
                 }
                 Event::PackagesEnded { id, ok } => plugins.packages_ended(name(scenario), *id, *ok),
+                // An automation's request, to the plugin of its capability.
+                Event::Automation {
+                    id,
+                    client,
+                    request,
+                } => {
+                    plugins.automation(*id, client, request.clone());
+                }
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 Event::ColorPicked { color } => plugins.color_picked(name(scenario), *color),
                 Event::ColorPanelClosed => plugins.color_panel_closed(name(scenario)),
@@ -1249,11 +1257,12 @@ fn kind(request: &Request) -> usize {
         Request::OpenPopup { .. } => 161,
         Request::SendTextBroadcast { .. } => 162,
         Request::MenuBarItems => 163,
+        Request::AnswerAutomation { .. } => 164,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 164;
+const KINDS: usize = 165;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

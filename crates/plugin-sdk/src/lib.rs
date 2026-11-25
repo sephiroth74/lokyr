@@ -16,6 +16,8 @@
 /// `api` takes, and which the app tells Sleip.
 pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[cfg(feature = "unstable")]
+pub mod automation;
 pub mod command;
 #[cfg(feature = "unstable")]
 pub mod event;

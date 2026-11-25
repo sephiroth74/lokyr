@@ -20,6 +20,7 @@
 
 use std::collections::BTreeMap;
 
+use lokyr_plugin_sdk::automation;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
@@ -276,6 +277,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         notices(),
         packages(true),
         packages(false),
+        automation(true),
+        automation(false),
         pages(),
         settings_read(true),
         settings_read(false),
@@ -630,6 +633,65 @@ fn packages(allowed: bool) -> Scenario {
         ),
         capabilities: Some(if allowed {
             vec![Capability::Packages]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps,
+    }
+}
+
+/// The automation's requests: one that a script makes, to the plugin of
+/// `automation` alone, answered once, a second answer of it and one of a
+/// request that never came refused; without the capability, the plugin
+/// hears none and answers none.
+fn automation(allowed: bool) -> Scenario {
+    const ASKED: u64 = 7;
+    let request = Event::Automation {
+        id: ASKED,
+        client: "com.apple.ScriptEditor2".to_owned(),
+        request: automation::AutomationRequest::Workspace,
+    };
+    let lacks = || {
+        failed(
+            Code::MissingCapability,
+            "the plugin `acme/conformer` lacks the capability `automation`",
+        )
+    };
+    let waits = |id: u64| {
+        failed(
+            Code::NotFound,
+            &format!("there is no automation's request {id} that waits for an answer"),
+        )
+    };
+    let answer = |id: u64| Request::AnswerAutomation {
+        id,
+        answer: automation::AutomationAnswer::Text("ok".to_owned()),
+    };
+    let steps = vec![
+        Step {
+            wait: 0,
+            asks: Vec::new(),
+            posts: vec![request.clone()],
+            heard: if allowed { vec![request] } else { Vec::new() },
+        },
+        ask(if allowed {
+            vec![
+                (answer(ASKED), Response::Done),
+                (answer(ASKED), waits(ASKED)),
+                (answer(ASKED + 1), waits(ASKED + 1)),
+            ]
+        } else {
+            vec![(answer(ASKED), lacks())]
+        }),
+    ];
+    Scenario {
+        name: format!(
+            "the automation's requests, {} `automation`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::Automation]
         } else {
             Vec::new()
         }),

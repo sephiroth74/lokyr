@@ -176,6 +176,16 @@ fn every() -> Vec<Event> {
             ),
         },
         Event::PackagesEnded { id: 12, ok: true },
+        Event::Automation {
+            id: 13,
+            client: "com.apple.shortcuts".to_owned(),
+            request: lokyr_plugin_sdk::automation::AutomationRequest::Split {
+                pane: Some(PaneId(3)),
+                edge: lokyr_plugin_sdk::automation::AutomationEdge::Right,
+                folder: Some("~/src".to_owned()),
+                command: None,
+            },
+        },
         Event::PluginsChanged,
         Event::SettingsChanged,
         Event::ThemesChanged,

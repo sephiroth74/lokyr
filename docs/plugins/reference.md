@@ -38,6 +38,7 @@ A capability lets a plugin reach what belongs to the person who runs Lokyr. The 
 | `keep-awake` | Keeping the system, or the system and the display, from idle sleep | High: a display kept awake keeps the screen from locking |
 | `config` | The config in force, every key of the app's and of the plugins' sections, with their schemas, and the themes folder's files, a theme copied or made, an `.itermcolors` one converted, or a theme's colors written; Lokyr's own plugins' alone | Very high: a key written can change the program that a pane runs |
 | `packages` | The plugins themselves, through Sleip: the installed ones, the registry's search, installs, updates and removals; every plugin's state and the decisions of its capabilities, and a plugin turned on or off in the config; Lokyr's own plugins' alone | Very high: a plugin that installs another runs code of its choice |
+| `automation` | The requests of scripts and shortcuts from outside Lokyr, the `automation` event, and their answers, `answer_automation`; Lokyr's own plugins' alone · not released yet | Very high: a script's request can run any command and read a pane's text |
 | `user-commands` | Running any command as if run by hand, without declaring it, as the palette does; reading the whole registry of commands and the menu bar's items | Very high: `pane.send-text` types into the shell |
 | `appearance-write` | Previewing a theme, a monospaced font family and a face's style, and naming the ones chosen in the config's `[theme]` and `[font] family` | Medium: the config changes, visibly and reversibly |
 | `replaces:<plugin>` | Turning the plugin of that name off while this one runs, as both show in the same place, of the manifest's `[plugin] replaces` rather than of `[capabilities]`; never `lokyr/plugin-manager` · Since 1.4 | High: what the other plugin did goes while this one runs |
@@ -93,6 +94,7 @@ A plugin subscribes to the events that it hears; those that a capability guards 
 | `timer` | One of the plugin's timers fires | — |
 | `double-tapped` | The modifier that the plugin watches, `watch_double_tap`, is tapped twice, alone, from any app · Since 1.3 | `global-hotkey` |
 | `package`, `packages-ended` | A job of the packages' service tells a line, or ends | `packages` |
+| `automation` | A script or a shortcut asks something of Lokyr from outside it, of its id, the app that asks and its request, which the plugin answers by `answer_automation`; to the plugin alone · not released yet | `automation` |
 | `plugins-changed` | A plugin is installed, updated, removed, turned off or on, starts or faults, or a capability's decision changes; or the installed plugins are taken anew, whatever their list holds, as of a package that Lokyr refused | `packages` |
 | `settings-changed` | The config applies anew, of other values, or a plugin of a config schema is installed, updated or removed | `config` |
 | `themes-changed` | The themes' list read, as Lokyr reads it off its main thread, or a theme added, removed or changed | — |

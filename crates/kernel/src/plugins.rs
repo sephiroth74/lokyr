@@ -330,6 +330,14 @@ pub enum Request {
         /// The job's id.
         id: u64,
     },
+    /// Give the script or the shortcut that made the automation's request
+    /// `id` its answer.
+    AnswerAutomation {
+        /// The request's id.
+        id: u64,
+        /// The answer.
+        answer: lokyr_plugin_sdk::automation::AutomationAnswer,
+    },
     /// Ask the name of a copy of the theme `name`, write it into the user's
     /// themes folder and name it in `[theme]`, the copy's name, or none,
     /// the answer that [`Plugins::answer`] gives the plugin.
@@ -686,6 +694,8 @@ struct State {
     /// The popups that it opened, and the status of each one's command
     /// once it ended, which it hears as each closes.
     popups: BTreeMap<host::PaneId, Option<i32>>,
+    /// The automation's requests that it heard and has not answered.
+    automations: BTreeSet<u64>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1848,6 +1858,7 @@ impl Plugins {
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
                 popups: BTreeMap::new(),
+                automations: BTreeSet::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -3079,6 +3090,43 @@ impl Plugins {
                 line: data(line),
             },
         ));
+    }
+
+    /// Hands the automation's request `request` of the app `client` to the
+    /// active plugin whose manifest asks for the capability `automation`,
+    /// and that holds it, as [`Event::Automation`] of `id`, for the next
+    /// delivery, to it alone: whether one takes it, as none does while the
+    /// automation's plugin is off.
+    pub fn automation(
+        &mut self,
+        id: u64,
+        client: &str,
+        request: lokyr_plugin_sdk::automation::AutomationRequest,
+    ) -> bool {
+        let Some(entry) = self.entries.iter_mut().find(|entry| {
+            let state = &entry.state;
+            state.status == Status::Active
+                && state
+                    .manifest
+                    .as_ref()
+                    .is_some_and(|manifest| manifest.capabilities.contains(&Capability::Automation))
+                && state
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::Automation))
+        }) else {
+            return false;
+        };
+        entry.state.automations.insert(id);
+        self.out.events.push((
+            Some(entry.state.name.clone()),
+            Event::Automation {
+                id,
+                client: client.to_owned(),
+                request,
+            },
+        ));
+        true
     }
 
     /// Tells `plugin` the end of its job `id` of the packages' service,
@@ -7785,6 +7833,16 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // An automation's request that the plugin heard, answered once.
+            Asked::AnswerAutomation { id, answer } => {
+                if !self.state.automations.remove(&id) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no automation's request {id} that waits for an answer"),
+                    ));
+                }
+                Request::AnswerAutomation { id, answer }
+            }
             // A notice of its bounds, a second at least after the plugin's
             // last, of the host's time, titled of its namespace without a
             // title of its own.

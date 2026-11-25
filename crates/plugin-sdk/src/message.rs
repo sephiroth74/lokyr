@@ -408,6 +408,18 @@ pub enum Request {
     /// [`Event::PackagesEnded`] of no success; a job that ended already is
     /// left as it is.
     CancelPackages(u64),
+    /// Answers the automation's request `id`, which came as an
+    /// [`Event::Automation`] to the plugin alone, as the host gives the
+    /// answer back to the script or the shortcut that asked; a request
+    /// answers once, within
+    /// [`ANSWER_WITHIN_MS`](crate::automation::ANSWER_WITHIN_MS), past which
+    /// the host failed it. Lokyr's own plugins' alone.
+    AnswerAutomation {
+        /// The request's id.
+        id: u64,
+        /// The answer.
+        answer: crate::automation::AutomationAnswer,
+    },
     /// The window that has the focus.
     FocusedWindow,
     /// The pane that has the focus: the active one of the focused window.
@@ -1416,6 +1428,7 @@ impl Request {
             | Self::CancelPackages(_)
             | Self::Plugins
             | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
+            Self::AnswerAutomation { .. } => Some(Capability::Automation),
             // The config's keys, and the themes' files of the user's folder.
             Self::Settings
             | Self::SetSetting { .. }
@@ -1737,6 +1750,7 @@ impl Request {
             | Self::CloseColorPanel
             | Self::SaveFile { .. }
             | Self::Notify { .. }
+            | Self::AnswerAutomation { .. }
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::SetPluginEnabled { .. }
@@ -2145,6 +2159,19 @@ pub enum Event {
         /// The event.
         line: Data,
     },
+    /// A request of a script or a shortcut from outside the app, to the
+    /// plugin of the capability `automation` alone, which answers it by
+    /// [`Request::AnswerAutomation`] of its `id`: `client`, the app that
+    /// asks, by its bundle's identifier or its name, as the system tells
+    /// it, which a question about it names.
+    Automation {
+        /// The request's id.
+        id: u64,
+        /// The app that asks.
+        client: String,
+        /// What it asks.
+        request: crate::automation::AutomationRequest,
+    },
     /// A job of the packages' service ended, to its plugin alone: whether
     /// Sleip's command succeeded, as of a job cancelled or of a Sleip not
     /// found, whose `error` line came before.
@@ -2236,6 +2263,7 @@ impl Event {
             Self::PopupClosed { .. } => "popup-closed",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
+            Self::Automation { .. } => "automation",
             Self::PluginsChanged => PLUGINS_CHANGED,
             Self::SettingsChanged => SETTINGS_CHANGED,
             Self::ThemesChanged => THEMES_CHANGED,
@@ -2344,6 +2372,7 @@ impl Request {
             | Self::SetPluginEnabled { .. }
             | Self::SetSetting { .. }
             | Self::Notify { .. }
+            | Self::AnswerAutomation { .. }
             | Self::ShowPage { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }

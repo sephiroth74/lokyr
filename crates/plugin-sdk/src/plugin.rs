@@ -398,6 +398,18 @@ impl<'a> Cx<'a> {
         self.done(Request::CancelPackages(id))
     }
 
+    /// Answers the automation's request `id`, which came as an
+    /// [`Event::Automation`](crate::message::Event::Automation), as
+    /// [`Request::AnswerAutomation`] says. Of the capability `automation`,
+    /// Lokyr's own plugins' alone.
+    pub fn answer_automation(
+        &mut self,
+        id: u64,
+        answer: crate::automation::AutomationAnswer,
+    ) -> Result<(), Error> {
+        self.done(Request::AnswerAutomation { id, answer })
+    }
+
     /// The settings: the app's sections of its config's schema, in its
     /// order, then each plugin's of a config schema, each key of its kind
     /// and its value in force. Of the capability `config`, Lokyr's own

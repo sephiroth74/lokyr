@@ -65,6 +65,7 @@ export type Cx = {
     packages: (call: Packages) -> (number?, string?, number?),
     show_page: (page: string) -> (true?, string?, number?),
     cancel_packages: (job: number) -> (true?, string?, number?),
+    answer_automation: (id: number, answer: AutomationAnswer) -> (true?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
     selection_text: (pane: PaneId) -> (string?, string?, number?),
@@ -224,6 +225,7 @@ export type Event =
     | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "popup-closed", pane: PaneId, status: number? }
     | { kind: "package", id: number, line: Data }
+    | { kind: "automation", id: number, client: string, request: AutomationRequest }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
     | { kind: "settings-changed" }
@@ -464,6 +466,56 @@ export type Anchor =
     | { window_corner: { window: WindowId, corner: Corner } }
     | { view_window: { view: ViewId, corner: Corner } }
     | { view_pointer: { view: ViewId } }
+
+export type AutomationAnswer =
+    | "done"
+    | { opened: { window: WindowId, tab: TabId, pane: PaneId } }
+    | { workspace: { AutomationWindow } }
+    | { text: string }
+    | { error: { code: number, message: string } }
+
+export type AutomationEdge =
+    | "right"
+    | "left"
+    | "down"
+    | "up"
+
+export type AutomationPane = {
+    id: PaneId,
+    title: string,
+    folder: string?,
+    focused: boolean,
+}
+
+export type AutomationRequest =
+    | "workspace"
+    | { new_window: { folder: string?, command: string? } }
+    | { new_tab: { window: WindowId?, folder: string?, command: string? } }
+    | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string? } }
+    | { send_text: { pane: PaneId?, text: string } }
+    | { focus: AutomationTarget }
+    | { close: AutomationTarget }
+    | { run: { command: string, args: { [string]: Value }? } }
+    | { pane_text: { pane: PaneId?, selection: boolean? } }
+
+export type AutomationTab = {
+    id: TabId,
+    title: string,
+    active: boolean,
+    panes: { AutomationPane },
+}
+
+export type AutomationTarget =
+    | { automation_window: WindowId }
+    | { automation_tab: TabId }
+    | { automation_pane: PaneId }
+
+export type AutomationWindow = {
+    id: WindowId,
+    title: string,
+    focused: boolean,
+    tabs: { AutomationTab },
+}
 
 export type Awake =
     | "off"
