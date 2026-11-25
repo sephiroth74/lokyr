@@ -1235,6 +1235,38 @@ pub struct CommandInfo {
     pub enabled: Option<bool>,
 }
 
+/// An item that the plugins added to the menu bar, as a read of them
+/// gives it to a plugin of `user-commands`: its command of its arguments,
+/// its title and its submenu's, in the language that the app shows, its
+/// menu, its keys, and whether the menu bar enables it and ticks it now.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MenuBarItem {
+    /// The command's name, `namespace.action`.
+    pub command: String,
+    /// Its arguments.
+    #[serde(default)]
+    pub args: Args,
+    /// Its title, as the menu bar shows it: its own, or its command's.
+    pub title: String,
+    /// The title of the submenu that it goes into, if it goes into one.
+    #[serde(default)]
+    pub submenu: Option<String>,
+    /// The category of the menu that holds it.
+    pub menu: Category,
+    /// The keys bound to its command of its arguments, as the platform
+    /// writes them, as `⌘D`; `None` without a binding.
+    #[serde(default)]
+    pub keys: Option<String>,
+    /// Whether the menu bar enables it now, as its command's context and
+    /// the focused pane say.
+    pub enabled: bool,
+    /// Whether the menu bar shows it ticked.
+    #[serde(default)]
+    pub ticked: bool,
+    /// The plugin that added it, by its name.
+    pub plugin: String,
+}
+
 /// Where a plugin's menu item goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

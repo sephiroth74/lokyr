@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Fixed
+
+- The command palette lists the menu bar's items that run a command with an argument, as Split Right, Split Down and Select Pane Above, with their keys, which only the menus had.
+
 ## [1.5.0] - 2026-11-25
 
 ### Added

@@ -97,6 +97,7 @@ impl App {
             fonts: &host::Fonts::default,
             font_styles: &|_| Vec::new(),
             layouts: &Vec::new,
+            menu_bar: &Vec::new,
             plugins: &[],
             config: &self.config,
             default_bindings: &[],

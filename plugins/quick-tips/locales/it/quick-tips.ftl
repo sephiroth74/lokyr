@@ -7,7 +7,7 @@ card-dismiss = Chiudi
 card-more = Altro
 card-never = Non mostrare più
 
-tip-palette = Premi { $keys } per la palette dei comandi, che esegue qualsiasi comando dal suo nome.
+tip-palette = Premi { $keys } per la palette dei comandi, che esegue qualsiasi comando o voce di menu dal suo nome, come Dividi a destra.
 tip-search = Premi { $keys } per cercare un testo nel pannello, anche nello scrollback.
 tip-split = Premi { $keys } per dividere il pannello; trascina il divisore per ridimensionarlo, fai doppio clic per pareggiare le metà.
 tip-switch-tab = Premi { $keys } per tornare al tab che hai usato prima. Tieni premuto Control e premi di nuovo Tab per andare più indietro.

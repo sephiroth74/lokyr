@@ -1714,6 +1714,75 @@ fn a_plugin_s_menu_item_of_an_app_s_title_is_left_out_and_its_others_stand_apart
     assert_eq!(titles(unique_titles(menu)), ["Copy", "Копировать ссылку"]);
 }
 
+/// A plugin that reads the menu bar's items as its command runs.
+struct Reader(std::rc::Rc<std::cell::RefCell<Option<Vec<plugins::host::MenuBarItem>>>>);
+
+impl plugins::Plugin for Reader {
+    fn activate(&mut self, cx: &mut plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(Command {
+            name: "reader.read".to_owned(),
+            title: "Read".to_owned(),
+            category: Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(&mut self, cx: &mut plugins::Cx<'_>, _: &str, _: Args) -> Result<(), Error> {
+        *self.0.borrow_mut() = Some(cx.menu_bar_items()?);
+        Ok(())
+    }
+}
+
+#[test]
+fn a_read_of_the_menu_bar_gives_the_plugins_items_that_it_shows_of_their_keys() {
+    let read = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet())
+        .with_plugin("menuer", Box::new(Menuer))
+        .with_plugin("ticker", Box::new(Ticker::default()))
+        .with_plugin("reader", Box::new(Reader(read.clone())));
+    fake.start(&mut app);
+    fake.send_app(&mut app, AppEvent::Command("reader.read".to_owned()));
+    run_until(&mut fake, &mut app, |_, _| read.borrow().is_some());
+    let all = read.borrow().clone().expect("the items");
+    // The splits' of their directions and keys, as the Shell menu shows.
+    assert!(
+        all.iter().any(|item| item.title == "Split Right"
+            && item.command == "splits.split"
+            && item.keys.as_deref() == Some("⌘D")),
+        "{all:?}"
+    );
+    // The menu bar's alone: of the app's titles, Copy and copy…, left out
+    // as the menu leaves them out, and the context menu's Paste none.
+    let items: Vec<_> = all
+        .into_iter()
+        .filter(|item| item.plugin == "menuer" || item.plugin == "ticker")
+        .collect();
+    let titles: Vec<&str> = items.iter().map(|item| item.title.as_str()).collect();
+    assert_eq!(
+        titles,
+        ["Copy as HTML", "Copy Again", "Keep Going"],
+        "{items:?}"
+    );
+    let html = &items[0];
+    assert_eq!(html.command, "menuer.go");
+    assert_eq!(
+        html.args,
+        Args::from([(
+            "which".to_owned(),
+            lokyr_kernel::commands::Value::String("Copy as HTML".to_owned()),
+        )])
+    );
+    assert_eq!(html.menu, Category::Clipboard);
+    assert_eq!(html.plugin, "menuer");
+    assert!(html.enabled);
+    // An item's keys are those of its command of its arguments.
+    assert_eq!(items[1].keys.as_deref(), Some("⌘C"));
+    assert_eq!(items[0].keys, None);
+}
+
 /// A plugin of an item in the View menu that its command ticks and unticks
 /// in turn.
 #[derive(Default)]
