@@ -660,6 +660,9 @@ struct State {
     global_bindings: Vec<(keymap::Combo, Invocation)>,
     /// Its items of the menus, in their order.
     menu_items: Vec<host::MenuItem>,
+    /// When it opened its last panes, within the last second of the host's
+    /// time, [`host::MOST_PANES_A_SECOND`] at most.
+    opened: std::collections::VecDeque<Instant>,
     /// Its catalogs, of its commands' titles and its messages.
     catalogs: lokyr_plugin_sdk::plugin::Catalogs,
     /// Its catalogs' texts in the last language that they were asked in,
@@ -1835,6 +1838,7 @@ impl Plugins {
                 bindings: Vec::new(),
                 global_bindings: Vec::new(),
                 menu_items: Vec::new(),
+                opened: std::collections::VecDeque::new(),
                 catalogs,
                 texts: RefCell::new(None),
                 views: BTreeMap::new(),
@@ -5802,6 +5806,8 @@ pub(super) struct Tally {
     searches: Vec<u64>,
     /// How many images the call rendered.
     images: usize,
+    /// How many panes the call opened.
+    opened: usize,
     closed: Vec<PanelId>,
 }
 
@@ -6940,6 +6946,7 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let (tab, pane) = (TabId::new(), PaneId::new());
                 self.writes.push(Write::NewTab {
                     window: WindowId::of(window.0),
@@ -6997,6 +7004,7 @@ impl Host<'_, '_> {
                     }
                     None => None,
                 };
+                self.count_pane()?;
                 let pane = PaneId::new();
                 self.writes.push(Write::OpenPopup {
                     window,
@@ -7028,6 +7036,7 @@ impl Host<'_, '_> {
                         lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT,
                     ));
                 }
+                self.count_pane()?;
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),
@@ -7108,6 +7117,7 @@ impl Host<'_, '_> {
                     host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let id = SessionId::new();
                 self.writes.push(Write::NewSession {
                     id,
@@ -7271,6 +7281,42 @@ impl Host<'_, '_> {
         Ok(Response::Done)
     }
 
+    /// Counts a pane that the call opens, or fails past
+    /// [`host::MOST_PANES_A_CALL`] of the call's, or past
+    /// [`host::MOST_PANES_A_SECOND`] of the plugin's within a second of the
+    /// host's time, as each pane forks a shell.
+    fn count_pane(&mut self) -> Result<(), Error> {
+        if self.tally.opened >= host::MOST_PANES_A_CALL {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a call opens {} panes at most, each a shell of its own",
+                    host::MOST_PANES_A_CALL
+                ),
+            ));
+        }
+        let now = self.context.now;
+        let opened = &mut self.state.opened;
+        while opened
+            .front()
+            .is_some_and(|&at| now.saturating_duration_since(at) >= Duration::from_secs(1))
+        {
+            opened.pop_front();
+        }
+        if opened.len() >= host::MOST_PANES_A_SECOND {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a plugin opens {} panes a second at most, each a shell of its own",
+                    host::MOST_PANES_A_SECOND
+                ),
+            ));
+        }
+        opened.push_back(now);
+        self.tally.opened += 1;
+        Ok(())
+    }
+
     /// Whether the call may write or ask the app once more: its writes and
     /// its requests of the app's, [`MOST_WRITES`] at most, wait for its
     /// end.
@@ -7343,6 +7389,7 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let window = WindowId::new();
                 // Those that closed are forgotten.
                 let workspace = &self.context.workspace;
@@ -7386,6 +7433,7 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 Request::OpenWindow(directory)
             }
             Asked::PreviewTheme(name) => {

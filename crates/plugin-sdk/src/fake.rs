@@ -773,6 +773,9 @@ pub struct FakeHost {
     /// The host's time, in milliseconds since it started, which
     /// [`FakeHost::advance`] moves on.
     clock: u64,
+    /// When the plugin opened its last panes, of the host's time, within
+    /// its last second, [`host::MOST_PANES_A_SECOND`] at most.
+    opened: std::collections::VecDeque<u64>,
     last_id: u64,
 }
 
@@ -902,6 +905,7 @@ impl FakeHost {
             searches: BTreeMap::new(),
             timers: BTreeMap::new(),
             clock: 0,
+            opened: std::collections::VecDeque::new(),
             last_id: FIRST_ID - 1,
         }
     }
@@ -2055,6 +2059,7 @@ impl FakeHost {
             looking: !apply,
             searched: 0,
             imaged: 0,
+            opened: 0,
             saving: Vec::new(),
             jobs: Vec::new(),
             cancelled: Vec::new(),
@@ -4442,6 +4447,8 @@ struct Calling<'h> {
     searched: usize,
     /// How many images the call rendered.
     imaged: usize,
+    /// How many panes the call opened.
+    opened: usize,
     /// The saves that the call asked, which show their panels as it
     /// returns: each its id, its window, its file's name and its bytes.
     saving: Vec<(u64, WindowId, String, Vec<u8>)>,
@@ -5157,6 +5164,42 @@ impl Calling<'_> {
         })
     }
 
+    /// Counts a pane that the call opens, or fails past
+    /// [`host::MOST_PANES_A_CALL`] of the call's, or past
+    /// [`host::MOST_PANES_A_SECOND`] of the plugin's within a second of the
+    /// host's time, as the app's host does.
+    fn count_pane(&mut self) -> Result<(), Error> {
+        if self.opened >= host::MOST_PANES_A_CALL {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a call opens {} panes at most, each a shell of its own",
+                    host::MOST_PANES_A_CALL
+                ),
+            ));
+        }
+        let now = self.host.clock;
+        let opened = &mut self.host.opened;
+        while opened
+            .front()
+            .is_some_and(|&at| now.saturating_sub(at) >= 1000)
+        {
+            opened.pop_front();
+        }
+        if opened.len() >= host::MOST_PANES_A_SECOND {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a plugin opens {} panes a second at most, each a shell of its own",
+                    host::MOST_PANES_A_SECOND
+                ),
+            ));
+        }
+        opened.push_back(now);
+        self.opened += 1;
+        Ok(())
+    }
+
     /// Checks `request`, a write or a request of the app's, and queues it:
     /// one of a pane, a tab or a window that the host does not hold, nor
     /// the call's writes so far open, or of a target that does not open,
@@ -5523,11 +5566,12 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::OpenWindow {
-                directory: Some(directory),
-            } => {
-                crate::host::check_directory(directory)
-                    .map_err(|message| Error::new(Code::Failed, message))?;
+            Request::OpenWindow { directory } => {
+                if let Some(directory) = directory {
+                    crate::host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                self.count_pane()?;
                 Response::Done
             }
             Request::OpenQuickWindow { place, directory } => {
@@ -5538,6 +5582,7 @@ impl Calling<'_> {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let window = WindowId(self.host.next_id());
                 let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
                 opened = Opened::Quick(window, tab, pane);
@@ -5825,6 +5870,7 @@ impl Calling<'_> {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
                 opened = Opened::Tab(tab, pane);
                 Response::Tab { tab, pane }
@@ -5842,6 +5888,7 @@ impl Calling<'_> {
                         crate::message::FLOATING_SPLITS_NOT,
                     ));
                 }
+                self.count_pane()?;
                 let new = PaneId(self.host.next_id());
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))
@@ -5870,6 +5917,7 @@ impl Calling<'_> {
                     }
                     None => {}
                 }
+                self.count_pane()?;
                 let new = PaneId(self.host.next_id());
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))
@@ -5926,6 +5974,7 @@ impl Calling<'_> {
                     crate::host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let id = SessionId(self.host.next_id());
                 opened = Opened::Session(id);
                 Response::Session(id)

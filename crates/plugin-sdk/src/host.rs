@@ -785,6 +785,18 @@ pub const MOST_WRITES: usize = 10_000;
 /// as a window commonly shows, and more.
 pub const MOST_SEARCHES: usize = 16;
 
+/// The most panes that one call opens, by new tabs, splits, popups,
+/// windows and sessions together, past which another fails: each pane's
+/// shell is a process that the app forks, so that one call could otherwise
+/// fork thousands and freeze the app.
+pub const MOST_PANES_A_CALL: usize = 16;
+
+/// The most panes that a plugin opens within a second of the host's time,
+/// of its calls together, past which another fails: above a held key's
+/// repeat, as a held ⌘T opens a tab of each, below a burst that a plugin's
+/// timer would make.
+pub const MOST_PANES_A_SECOND: usize = 64;
+
 /// The most commands, keys and menu items that a plugin declares, past
 /// which another is refused: the default keymap's plugin declares some
 /// 130.
