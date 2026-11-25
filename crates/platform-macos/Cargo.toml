@@ -18,7 +18,7 @@ accesskit.workspace = true
 accesskit_macos.workspace = true
 block2.workspace = true
 libc.workspace = true
-objc2.workspace = true
+objc2 = { workspace = true, features = ["exception"] }
 objc2-app-kit = { workspace = true, features = [
     "std",
     "block2",

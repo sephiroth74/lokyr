@@ -294,8 +294,13 @@ fn resume_later(command: Retained<NSScriptCommand>, answer: Answer) {
         let Some((command, answer)) = pending.borrow_mut().take() else {
             return;
         };
+        // The command's reply takes a result of its own type, `any`, of
+        // which a descriptor is one, and a text is not: the text goes as
+        // its descriptor.
         let result = match answer {
-            Answer::Text(text) => Some(NSString::from_str(&text)),
+            Answer::Text(text) => Some(NSAppleEventDescriptor::descriptorWithString(
+                &NSString::from_str(&text),
+            )),
             other => {
                 let (number, message) = error_of(&other);
                 command.setScriptErrorNumber(number);
@@ -304,9 +309,16 @@ fn resume_later(command: Retained<NSScriptCommand>, answer: Answer) {
             }
         };
         let result: Option<&AnyObject> = result.as_deref().map(AsRef::as_ref);
-        // SAFETY: the result is the property's value, a text, or none of
-        // an error that the command holds.
-        unsafe { command.resumeExecutionWithResult(result) };
+        // An exception of Cocoa Scripting's as it replies, which no Rust
+        // frame may unwind through, fails this script alone.
+        let resumed = objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
+            // SAFETY: the result is the property's value, a text's
+            // descriptor, or none of an error that the command holds.
+            unsafe { command.resumeExecutionWithResult(result) };
+        }));
+        if let Err(exception) = resumed {
+            eprintln!("lokyr: a script's command did not resume: {exception:?}");
+        }
     });
     // SAFETY: the block runs once, on the main thread, as the main run
     // loop's.
