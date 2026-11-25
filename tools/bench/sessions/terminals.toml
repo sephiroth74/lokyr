@@ -68,6 +68,11 @@ app = "/tmp/lokyr/ttybench/b/Lokyr.app"
 launch = "open"
 env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/broadcast" }
 
+[terminals.lokyr-a-hidden-session]
+app = "/tmp/lokyr/ttybench/a/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/hidden-session" }
+
 [terminals.lokyr-b-hidden-session]
 app = "/tmp/lokyr/ttybench/b/Lokyr.app"
 launch = "open"

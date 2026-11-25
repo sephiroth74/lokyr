@@ -1,0 +1,17 @@
+# A hidden session's memory alone, of A and of B: a window of the session
+# that shows, and of one session more, hidden, at rest, each of both
+# copies, so that a change of what a hidden window holds compares within
+# one session. Its wakeups and its CPU are hidden-session.toml's; this
+# measures the memory in some four minutes, ten seconds after each
+# launch, so that the scenario's plugin has made and hidden its session.
+terminals = ["lokyr-a", "lokyr-a-hidden-session", "lokyr-b", "lokyr-b-hidden-session"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a-hidden-session", b = "lokyr-b-hidden-session" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/scenario-hidden-session-memory-{date}"
+
+[[run]]
+tool = "memory"
+args = ["--settle", "10"]
+rounds = 1
