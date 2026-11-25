@@ -33,7 +33,7 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.4.0 is out**, of commands as blocks, smooth scrolling, and controls as macOS 27's: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.5.0 is out**, of sessions and layouts, input broadcast to every pane, floating panes and popups, and the scrollback kept when you quit: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
