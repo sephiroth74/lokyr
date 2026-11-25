@@ -884,6 +884,8 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
             .extension()
             .is_some_and(|extension| extension == "icns")
         {
+            let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+            check_icon(&bytes).with_context(|| format!("the icon {}", path.display()))?;
             let name = path.file_name().context("an icon's name")?;
             fs::copy(&path, variants.join(name))
                 .with_context(|| format!("copying {}", path.display()))?;
@@ -896,6 +898,48 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
     }
     fs::copy(&default, resources.join("AppIcon.icns"))
         .with_context(|| format!("copying {}", default.display()))?;
+    Ok(())
+}
+
+/// The types of an `.icns`'s images that macOS reads otherwise than their
+/// writers meant: `icp4`, `icp5` and `icp6`, which tools write of PNG data
+/// at 16, 32 and 64 pixels, and which the system's small icons, as a list's
+/// at a scale of 1, read as ARGB of runs, showing colored noise; `iconutil`
+/// writes `ic04` and `ic05` there.
+const MISREAD_ICON_TYPES: [&[u8; 4]; 3] = [b"icp4", b"icp5", b"icp6"];
+
+/// Checks the `.icns` of `bytes`: its header and its images' lengths
+/// whole, and none of [`MISREAD_ICON_TYPES`].
+fn check_icon(bytes: &[u8]) -> Result<()> {
+    let header = |at: usize| -> Option<(&[u8], usize)> {
+        let kind = bytes.get(at..at + 4)?;
+        let length = u32::from_be_bytes(bytes.get(at + 4..at + 8)?.try_into().ok()?);
+        Some((kind, usize::try_from(length).ok()?))
+    };
+    match header(0) {
+        Some((b"icns", length)) if length == bytes.len() => {}
+        _ => bail!("not an .icns of its whole length"),
+    }
+    let mut at = 8;
+    while at < bytes.len() {
+        let Some((kind, length)) = header(at).filter(|(_, length)| *length >= 8) else {
+            bail!("an image's header cut at byte {at}");
+        };
+        if MISREAD_ICON_TYPES
+            .iter()
+            .any(|misread| kind == misread.as_slice())
+        {
+            bail!(
+                "an image of the type `{}`, which macOS's small icons read as ARGB of runs, \
+                 showing noise: make it with `iconutil -c icns`",
+                String::from_utf8_lossy(kind)
+            );
+        }
+        at = at
+            .checked_add(length)
+            .filter(|end| *end <= bytes.len())
+            .with_context(|| format!("an image past the file's end at byte {at}"))?;
+    }
     Ok(())
 }
 
@@ -989,6 +1033,49 @@ mod tests {
     fn catalogs() -> BTreeMap<String, Catalog> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         usage_catalogs(&root.join(LOCALES)).unwrap()
+    }
+
+    #[test]
+    fn every_icon_variant_is_of_types_that_macos_reads_as_written() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut checked = 0;
+        for entry in fs::read_dir(root.join(ICONS)).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "icns")
+            {
+                check_icon(&fs::read(&path).unwrap())
+                    .unwrap_or_else(|error| panic!("{}: {error:#}", path.display()));
+                checked += 1;
+            }
+        }
+        assert!(checked >= 4, "{checked} variants");
+    }
+
+    #[test]
+    fn an_icon_of_png_at_16_pixels_as_icp4_is_refused() {
+        // An `.icns` of one image, of the type and of the bytes given.
+        let icns = |kind: &[u8; 4], body: &[u8]| {
+            let mut bytes = b"icns".to_vec();
+            bytes.extend_from_slice(&u32::try_from(16 + body.len()).unwrap().to_be_bytes());
+            bytes.extend_from_slice(kind);
+            bytes.extend_from_slice(&u32::try_from(8 + body.len()).unwrap().to_be_bytes());
+            bytes.extend_from_slice(body);
+            bytes
+        };
+        let png = b"\x89PNG\r\n\x1a\n";
+        assert!(check_icon(&icns(b"ic11", png)).is_ok());
+        for misread in MISREAD_ICON_TYPES {
+            let error = check_icon(&icns(misread, png)).unwrap_err().to_string();
+            assert!(error.contains("iconutil"), "{error}");
+        }
+        // Cut, or of a length that is not the file's.
+        let mut cut = icns(b"ic11", png);
+        cut.truncate(cut.len() - 1);
+        assert!(check_icon(&cut).is_err());
+        assert!(check_icon(b"icns\0\0\0\x10ic11\0\0\0\x40").is_err());
+        assert!(check_icon(b"not an icon").is_err());
     }
 
     #[test]
