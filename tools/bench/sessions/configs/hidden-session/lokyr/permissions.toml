@@ -1,0 +1,6 @@
+# The scenario's plugin's capabilities, granted beforehand, so that Lokyr
+# asks nothing as it starts.
+
+[plugins."lokyr-bench/hidden-session"]
+granted = ["workspace-write", "pty-write"]
+refused = []

@@ -9,7 +9,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "appearance-write"
+    ],
     "category": "view",
     "name": "app.appearance-dark",
     "params": [],
@@ -18,7 +20,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "appearance-write"
+    ],
     "category": "view",
     "name": "app.appearance-light",
     "params": [],
@@ -27,7 +31,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "appearance-write"
+    ],
     "category": "view",
     "name": "app.appearance-system",
     "params": [],
@@ -36,7 +42,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "user-commands"
+    ],
     "category": "app",
     "name": "app.check-for-updates",
     "params": [],
@@ -45,7 +53,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "config"
+    ],
     "category": "view",
     "name": "app.import-themes",
     "params": [],
@@ -54,7 +64,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "user-commands"
+    ],
     "category": "app",
     "name": "app.install-claude-code-integration",
     "params": [],
@@ -63,7 +75,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "user-commands"
+    ],
     "category": "app",
     "name": "app.install-command-line-tools",
     "params": [],
@@ -72,7 +86,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "user-commands"
+    ],
     "category": "app",
     "name": "app.make-default-terminal",
     "params": [],
@@ -81,7 +97,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "config"
+    ],
     "category": "view",
     "name": "app.new-theme",
     "params": [
@@ -105,7 +123,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "open"
+    ],
     "category": "view",
     "name": "app.open-themes-folder",
     "params": [],
@@ -123,7 +143,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "app",
     "name": "app.quit",
     "params": [],
@@ -132,7 +154,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "open"
+    ],
     "category": "app",
     "name": "app.report-issue",
     "params": [],
@@ -141,7 +165,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "user-commands"
+    ],
     "category": "app",
     "name": "app.secure-keyboard-entry",
     "params": [],
@@ -150,7 +176,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "open"
+    ],
     "category": "app",
     "name": "app.settings",
     "params": [],
@@ -159,7 +187,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "app",
     "name": "app.settings-window",
     "params": [],
@@ -383,6 +413,15 @@
   },
   {
     "capabilities": [],
+    "category": "windows",
+    "name": "command-palette.sessions",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Switch Session…",
+    "when": null
+  },
+  {
+    "capabilities": [],
     "category": "view",
     "name": "command-palette.theme",
     "params": [],
@@ -391,7 +430,12 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "pane-view",
+      "decorate",
+      "clipboard-write"
+    ],
     "category": "edit",
     "name": "copy-mode.act",
     "params": [
@@ -406,7 +450,12 @@
     "when": "copy-mode.open && pane.focused"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "pane-view",
+      "decorate",
+      "clipboard-write"
+    ],
     "category": "edit",
     "name": "copy-mode.count",
     "params": [
@@ -421,7 +470,12 @@
     "when": "copy-mode.open && pane.focused"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "pane-view",
+      "decorate",
+      "clipboard-write"
+    ],
     "category": "edit",
     "name": "copy-mode.move",
     "params": [
@@ -436,7 +490,12 @@
     "when": "copy-mode.open && pane.focused"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "pane-view",
+      "decorate",
+      "clipboard-write"
+    ],
     "category": "edit",
     "name": "copy-mode.select",
     "params": [
@@ -451,7 +510,12 @@
     "when": "copy-mode.open && pane.focused"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "pane-view",
+      "decorate",
+      "clipboard-write"
+    ],
     "category": "edit",
     "name": "copy-mode.toggle",
     "params": [],
@@ -678,6 +742,41 @@
     "when": "pane.focused"
   },
   {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.float",
+    "params": [],
+    "plugin": null,
+    "title": "Float Pane",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.join-broadcast",
+    "params": [],
+    "plugin": null,
+    "title": "Join Broadcast",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.leave-broadcast",
+    "params": [],
+    "plugin": null,
+    "title": "Leave Broadcast",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "edit",
     "name": "pane.look-up",
@@ -687,7 +786,9 @@
     "when": "selection"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "pane.man-page",
     "params": [],
@@ -696,13 +797,37 @@
     "when": "selection"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "pane.man-search",
     "params": [],
     "plugin": null,
     "title": "Search man Page Index",
     "when": "selection"
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.move-into-splits",
+    "params": [],
+    "plugin": null,
+    "title": "Move Pane into Splits",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.new-floating",
+    "params": [],
+    "plugin": null,
+    "title": "New Floating Pane",
+    "when": null
   },
   {
     "capabilities": [
@@ -715,6 +840,45 @@
     "plugin": "lokyr/core-actions",
     "title": "Paste",
     "when": "pane.focused"
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "panes",
+    "name": "pane.popup",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "command"
+      },
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "folder"
+      },
+      {
+        "default": {
+          "number": 0.8
+        },
+        "kind": "number",
+        "name": "width"
+      },
+      {
+        "default": {
+          "number": 0.7
+        },
+        "kind": "number",
+        "name": "height"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Popup",
+    "when": null
   },
   {
     "capabilities": [],
@@ -789,7 +953,10 @@
     "when": "pane.focused"
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "open",
+      "terminal-read"
+    ],
     "category": "edit",
     "name": "pane.search-web",
     "params": [],
@@ -851,6 +1018,17 @@
   },
   {
     "capabilities": [
+      "workspace-write"
+    ],
+    "category": "panes",
+    "name": "pane.toggle-floating",
+    "params": [],
+    "plugin": null,
+    "title": "Show or Hide Floating Panes",
+    "when": null
+  },
+  {
+    "capabilities": [
       "packages"
     ],
     "category": "app",
@@ -870,7 +1048,11 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "decorate",
+      "pane-view"
+    ],
     "category": "find",
     "name": "search.next",
     "params": [],
@@ -879,7 +1061,11 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "decorate",
+      "pane-view"
+    ],
     "category": "find",
     "name": "search.open",
     "params": [],
@@ -888,7 +1074,11 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "terminal-read",
+      "decorate",
+      "pane-view"
+    ],
     "category": "find",
     "name": "search.previous",
     "params": [],
@@ -897,7 +1087,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.close",
     "params": [],
@@ -906,7 +1098,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.equalize",
     "params": [],
@@ -915,7 +1109,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.focus",
     "params": [
@@ -930,7 +1126,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.focus-next",
     "params": [],
@@ -939,7 +1137,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.focus-prev",
     "params": [],
@@ -948,7 +1148,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.move-to-tab",
     "params": [],
@@ -957,7 +1159,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.move-to-window",
     "params": [],
@@ -966,7 +1170,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.resize",
     "params": [
@@ -988,7 +1194,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.split",
     "params": [
@@ -1003,7 +1211,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.swap",
     "params": [
@@ -1018,7 +1228,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "panes",
     "name": "splits.zoom-toggle",
     "params": [],
@@ -1027,7 +1239,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.add-to-group",
     "params": [
@@ -1044,7 +1258,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.close",
     "params": [],
@@ -1053,7 +1269,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.detach",
     "params": [],
@@ -1062,7 +1280,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.fold-group",
     "params": [],
@@ -1071,7 +1291,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.goto",
     "params": [
@@ -1086,7 +1308,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.move",
     "params": [
@@ -1101,7 +1325,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.new",
     "params": [],
@@ -1110,7 +1336,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.new-group",
     "params": [],
@@ -1119,7 +1347,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.next",
     "params": [],
@@ -1128,7 +1358,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.prev",
     "params": [],
@@ -1137,7 +1369,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.remove-from-group",
     "params": [],
@@ -1146,7 +1380,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "pane-view"
+    ],
     "category": "tabs",
     "name": "tabs.rename",
     "params": [
@@ -1163,7 +1399,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.rename-group",
     "params": [
@@ -1180,7 +1418,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.reopen",
     "params": [],
@@ -1189,7 +1429,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "pane-view"
+    ],
     "category": "tabs",
     "name": "tabs.set-color",
     "params": [
@@ -1204,7 +1446,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.set-group-color",
     "params": [
@@ -1219,7 +1463,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.switch",
     "params": [],
@@ -1228,7 +1474,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.switch-back",
     "params": [],
@@ -1237,7 +1485,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.toggle-pin",
     "params": [],
@@ -1246,7 +1496,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "tabs",
     "name": "tabs.ungroup",
     "params": [],
@@ -1255,7 +1507,45 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-off",
+    "params": [],
+    "plugin": null,
+    "title": "Stop Broadcasting Input",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-to-tab",
+    "params": [],
+    "plugin": null,
+    "title": "Broadcast Input to the Tab's Panes",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "input",
+    "name": "window.broadcast-to-window",
+    "params": [],
+    "plugin": null,
+    "title": "Broadcast Input to the Window's Panes",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.close",
     "params": [],
@@ -1264,7 +1554,20 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.close-session",
+    "params": [],
+    "plugin": null,
+    "title": "Close Session",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.goto",
     "params": [
@@ -1279,7 +1582,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.new",
     "params": [],
@@ -1288,7 +1593,20 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.new-session",
+    "params": [],
+    "plugin": null,
+    "title": "New Session",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.next",
     "params": [],
@@ -1297,7 +1615,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.next-agent",
     "params": [],
@@ -1306,7 +1626,27 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write",
+      "pty-write"
+    ],
+    "category": "windows",
+    "name": "window.open-layout",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Open Layout",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.previous",
     "params": [],
@@ -1315,7 +1655,31 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.rename-session",
+    "params": [],
+    "plugin": null,
+    "title": "Rename Session…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.save-layout",
+    "params": [],
+    "plugin": null,
+    "title": "Save Session as Layout…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "pane-view"
+    ],
     "category": "windows",
     "name": "window.set-title",
     "params": [],
@@ -1324,7 +1688,37 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.switch-session",
+    "params": [
+      {
+        "default": null,
+        "kind": "string",
+        "name": "name"
+      }
+    ],
+    "plugin": null,
+    "title": "Switch to Session",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "workspace-write"
+    ],
+    "category": "windows",
+    "name": "window.switch-to-last-session",
+    "params": [],
+    "plugin": null,
+    "title": "Switch to Last Session",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "pane-view"
+    ],
     "category": "view",
     "name": "window.toggle-cursor-guide",
     "params": [],
@@ -1333,7 +1727,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "workspace-write"
+    ],
     "category": "windows",
     "name": "window.toggle-float-on-top",
     "params": [],
@@ -1342,7 +1738,9 @@
     "when": null
   },
   {
-    "capabilities": [],
+    "capabilities": [
+      "pane-view"
+    ],
     "category": "view",
     "name": "window.toggle-opacity",
     "params": [],

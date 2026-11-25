@@ -22,6 +22,7 @@ pub mod animation;
 pub mod chrome;
 pub mod cursor;
 pub mod field;
+pub mod floating;
 pub mod focus;
 pub mod font;
 pub mod image;

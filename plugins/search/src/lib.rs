@@ -17,7 +17,7 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error};
+use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error};
 use lokyr_plugin_sdk::host::{PaneId, SearchCase, SearchMatch, SearchQuery};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -660,7 +660,13 @@ impl Plugin for Search {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category: Category::Find,
-                capabilities: Vec::new(),
+                // What finding does of a plugin that runs it: it reads the
+                // terminal, draws the matches and selects the current one.
+                capabilities: vec![
+                    Capability::TerminalRead,
+                    Capability::Decorate,
+                    Capability::PaneView,
+                ],
                 params: Vec::new(),
                 when: None,
             })?;

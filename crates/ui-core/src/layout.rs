@@ -79,8 +79,8 @@ pub trait Measure {
 
     /// The size of a button or a toggle of `label` and `icon`, either
     /// empty, and of `size`, in points: its control's height, its padding
-    /// around them, side by side.
-    fn button(&mut self, label: &str, icon: &str, size: ControlSize) -> (f32, f32) {
+    /// around them, side by side; none around a `link`'s.
+    fn button(&mut self, label: &str, icon: &str, size: ControlSize, link: bool) -> (f32, f32) {
         let text = if label.is_empty() {
             (0.0, 0.0)
         } else {
@@ -91,7 +91,11 @@ pub trait Measure {
         } else {
             self.icon(icon)
         };
-        widget::size(label, icon, (text, glyph), size)
+        if link {
+            widget::link_size(label, icon, (text, glyph), size)
+        } else {
+            widget::size(label, icon, (text, glyph), size)
+        }
     }
 
     /// The size of a switch of `label`, which may be empty, and of `size`,
@@ -203,6 +207,7 @@ enum Content {
         icon: String,
         size: ControlSize,
         keycaps: bool,
+        link: bool,
     },
     Switch {
         label: String,
@@ -919,12 +924,14 @@ fn leaf(kind: &Kind, layout: &view::Layout, typeset: Typeset) -> Option<Leaf> {
             icon: button.icon.clone(),
             size: button.size,
             keycaps: button.keycaps,
+            link: button.link,
         },
         Kind::Toggle(toggle) => Content::Button {
             label: toggle.label.clone(),
             icon: toggle.icon.clone(),
             size: toggle.size,
             keycaps: false,
+            link: false,
         },
         Kind::Switch(switch) => Content::Switch {
             label: switch.label.clone(),
@@ -1021,6 +1028,7 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
             icon,
             size,
             keycaps: true,
+            ..
         } => {
             let caps = measure.keys(&widget::keycaps(label));
             let glyph = if icon.is_empty() {
@@ -1031,8 +1039,12 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
             widget::size(label, icon, (caps, glyph), *size)
         }
         Content::Button {
-            label, icon, size, ..
-        } => measure.button(label, icon, *size),
+            label,
+            icon,
+            size,
+            link,
+            ..
+        } => measure.button(label, icon, *size, *link),
         Content::Switch { label, size } => measure.switch(label, *size),
         Content::Checkbox { label, size } => measure.checkbox(label, *size),
         Content::PopUp { texts, size } => measure.pop_up(texts, *size),
@@ -1071,7 +1083,7 @@ fn measured(content: &Content, measure: &mut impl Measure) -> ((f32, f32), Vec<f
         Content::Segments(tabs, size) => {
             let sizes: Vec<(f32, f32)> = tabs
                 .iter()
-                .map(|(label, icon)| measure.button(label, icon, *size))
+                .map(|(label, icon)| measure.button(label, icon, *size, false))
                 .collect();
             let width = sizes.iter().map(|size| size.0).sum();
             let height = sizes

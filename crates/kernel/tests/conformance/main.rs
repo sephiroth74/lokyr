@@ -119,6 +119,7 @@ struct Symbols {
     panes: Vec<u64>,
     timers: Vec<u64>,
     groups: Vec<u64>,
+    sessions: Vec<u64>,
 }
 
 impl Symbols {
@@ -130,6 +131,7 @@ impl Symbols {
             panes: Vec::new(),
             timers: Vec::new(),
             groups: Vec::new(),
+            sessions: Vec::new(),
         }
     }
 
@@ -146,7 +148,8 @@ impl Symbols {
                             2 => &symbols.tabs,
                             3 => &symbols.panes,
                             4 => &symbols.timers,
-                            _ => &symbols.groups,
+                            5 => &symbols.groups,
+                            _ => &symbols.sessions,
                         };
                         let id = ids.get(k).unwrap_or_else(|| {
                             panic!(
@@ -209,6 +212,10 @@ impl Symbols {
 
     fn group(&mut self, id: host::GroupId) -> host::GroupId {
         host::GroupId(Self::symbol(&mut self.groups, id.0, 5))
+    }
+
+    fn session(&mut self, id: host::SessionId) -> host::SessionId {
+        host::SessionId(Self::symbol(&mut self.sessions, id.0, 6))
     }
 
     fn layout(&mut self, layout: Layout) -> Layout {
@@ -287,6 +294,17 @@ impl Symbols {
                     })
                     .collect(),
             ),
+            Response::Session(session) => Response::Session(self.session(session)),
+            Response::Sessions(sessions) => Response::Sessions(
+                sessions
+                    .into_iter()
+                    .map(|info| host::SessionInfo {
+                        id: self.session(info.id),
+                        windows: info.windows.into_iter().map(|id| self.window(id)).collect(),
+                        ..info
+                    })
+                    .collect(),
+            ),
             Response::Layout(layout) => Response::Layout(self.layout(layout)),
             other => other,
         }
@@ -323,6 +341,10 @@ impl Symbols {
             Event::Answered { text, .. } => Event::Answered { id: 0, text },
             Event::Chosen { button, .. } => Event::Chosen { id: 0, button },
             Event::Saved { path, error, .. } => Event::Saved { id: 0, path, error },
+            Event::PopupClosed { pane, status } => Event::PopupClosed {
+                pane: self.pane(pane),
+                status,
+            },
             Event::Package { line, .. } => Event::Package { id: 0, line },
             Event::PackagesEnded { ok, .. } => Event::PackagesEnded { id: 0, ok },
             Event::Timer { id } => Event::Timer { id: self.timer(id) },
@@ -399,6 +421,12 @@ impl Symbols {
                 },
                 W::GroupChanged { group, window } => W::GroupChanged {
                     group: self.group(group),
+                    window: self.window(window),
+                },
+                W::SessionChanged { session } => W::SessionChanged {
+                    session: self.session(session),
+                },
+                W::BroadcastChanged { window } => W::BroadcastChanged {
                     window: self.window(window),
                 },
             }),
@@ -700,6 +728,7 @@ impl Kernel {
             theme_value: &|_, _, _| Ok(()),
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
+            layouts: &Vec::new,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],
@@ -791,7 +820,10 @@ fn on_kernel(
     plugins.set_state_directory(Some(state.to_path_buf()));
     plugins.set_temporary_directory(Some(world.files.join("temporary")), |_| Ok(()));
     assert!(plugins.activate(&mut kernel.context()).is_empty());
-    let deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
+    // The quick windows that the scenario opens, as the app opens them,
+    // which close as it ends, as the fake host's go with it.
+    let mut quick: Vec<lokyr_kernel::workspace::WindowId> = Vec::new();
+    let mut deliver = |plugins: &mut Plugins, kernel: &mut Kernel| {
         let start = Instant::now();
         while plugins.waiting() {
             plugins.serve(&mut kernel.context());
@@ -817,6 +849,15 @@ fn on_kernel(
                 // hears, as the app shows it.
                 AppRequest::ShowPage { plugin, page } => {
                     plugins.page_shown(&plugin, &page, true);
+                }
+                AppRequest::OpenQuickWindow {
+                    window, directory, ..
+                } => {
+                    let pane = kernel
+                        .spawner
+                        .spawn(PaneId::new(), None, directory.as_deref());
+                    kernel.workspace.open_quick_window(pane, window);
+                    quick.push(window);
                 }
                 _ => {}
             }
@@ -859,6 +900,9 @@ fn on_kernel(
         kernel.clock += Duration::from_millis(step.wait);
         plugins.timers_due(kernel.clock);
         deliver(&mut plugins, kernel);
+    }
+    for window in quick {
+        kernel.workspace.close_window(window);
     }
     trace()
 }
@@ -1191,11 +1235,22 @@ fn kind(request: &Request) -> usize {
         Request::TempFile { .. } => 149,
         Request::GitBranch { .. } => 150,
         Request::SetStatusBarSide(_) => 151,
+        Request::Sessions => 152,
+        Request::NewSession { .. } => 153,
+        Request::SwitchSession(_) => 154,
+        Request::SessionFolders => 155,
+        Request::Broadcast(_) => 156,
+        Request::SetBroadcast { .. } => 157,
+        Request::SetPaneBroadcast { .. } => 158,
+        Request::PasteBroadcast { .. } => 159,
+        Request::FloatingPanes(_) => 160,
+        Request::OpenPopup { .. } => 161,
+        Request::SendTextBroadcast { .. } => 162,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 152;
+const KINDS: usize = 163;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

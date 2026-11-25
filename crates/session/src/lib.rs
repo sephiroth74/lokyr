@@ -9,6 +9,7 @@
 mod lock;
 mod queue;
 
+use std::fmt;
 use std::io::{self, Write};
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -55,7 +56,51 @@ pub struct Options {
     /// The size of a cell in pixels, which CSI 14 t and 16 t report, held
     /// alike from the start, if it is known.
     pub cell_size: Option<(u16, u16)>,
+    /// What the terminal shows before the program's first output, as a
+    /// pane that opens again shows what it showed as the app quit.
+    pub restored: Option<Restored>,
 }
+
+/// What a pane showed as the app quit, which it shows again as it opens,
+/// above its new program's output.
+#[derive(Clone)]
+pub struct Restored {
+    /// Gives the bytes that write its rows again, as [`Terminal::archive`]
+    /// gave them, on the output's thread, as reading them, as of a file,
+    /// may take a while; none of rows that cannot be read, which shows
+    /// nothing, not even the line.
+    pub rows: Arc<dyn Fn() -> Option<Vec<u8>> + Send + Sync>,
+    /// The line under them that tells when they were kept, which the
+    /// terminal dims.
+    pub line: String,
+}
+
+impl Restored {
+    /// What shows `rows` again, already read, then `line`.
+    pub fn of(rows: Vec<u8>, line: String) -> Self {
+        Self {
+            rows: Arc::new(move || Some(rows.clone())),
+            line,
+        }
+    }
+}
+
+impl fmt::Debug for Restored {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Restored")
+            .field("line", &self.line)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for Restored {
+    /// The same rows, of the same reader, and the same line.
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.rows, &other.rows) && self.line == other.line
+    }
+}
+
+impl Eq for Restored {}
 
 impl Options {
     /// Options for `pty`, with the terminal's defaults and a second for
@@ -67,6 +112,7 @@ impl Options {
             sync_timeout: Duration::from_secs(1),
             colors: None,
             cell_size: None,
+            restored: None,
         }
     }
 }
@@ -245,11 +291,12 @@ impl Session {
             printed_woken: AtomicBool::new(false),
         });
         let sync_timeout = options.sync_timeout;
+        let restored = options.restored.clone();
         {
             let shared = Arc::clone(&shared);
             thread::Builder::new()
                 .name("session-io".into())
-                .spawn(move || read_output(&shared, output, sync_timeout))
+                .spawn(move || read_output(&shared, output, sync_timeout, restored.as_ref()))
                 .map_err(Error::Threads)?;
         }
         {
@@ -441,12 +488,18 @@ impl Session {
 
     /// Sends what `event` sends, as the terminal's modes and keyboard flags
     /// have it, with the keyboard's `options`. A key that sends something
-    /// brings the view back to the screen, as typing does.
+    /// brings the view back to the screen, as typing does. A key with
+    /// Command held reaches the program only through the kitty protocol,
+    /// which reports Super, as xterm's sequences have no Command: of no
+    /// keyboard flags now, it sends nothing.
     pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
         let mut bytes = Vec::new();
         {
             let mut terminal = self.lock();
             let flags = terminal.keyboard_flags();
+            if event.mods.super_key && flags == lokyr_vt_core::terminal::KeyboardFlags::NONE {
+                return;
+            }
             input::encode_key(event, &terminal.input_modes(), flags, options, &mut bytes);
             typed(&mut terminal, &bytes);
         }
@@ -674,11 +727,74 @@ impl Drop for Session {
     }
 }
 
-/// The I/O thread: parses the program's output, a slice at a time, until it
-/// ends.
-fn read_output(shared: &Shared, mut output: ReadAhead, sync_timeout: Duration) {
+/// Reads `restored`'s rows and writes them in the terminal before the
+/// program's first output, a slice at a time under the lock, as output is, so that the main thread
+/// waits for a slice at most, its frames showing the rows as they come:
+/// its rows, read as though a program printed them, then its line, dimmed,
+/// from a row's start, the cursor on the row after. The archive's prompts
+/// tell their own blank rows, so that each slice reads of the blocks'
+/// spacing off, which the main thread may turn on meanwhile. What the
+/// reading told, as the commands' starts and ends, is past, and dropped.
+fn replay(shared: &Shared, parser: &mut Parser, restored: &Restored) {
+    let Some(rows) = (restored.rows)() else {
+        return;
+    };
+    let read = |parser: &mut Parser, bytes: &[u8]| {
+        let mut terminal = shared.terminal.lock_in_turn();
+        let spacing = terminal.block_spacing();
+        terminal.set_block_spacing(false);
+        parser.advance(&mut *terminal, bytes);
+        terminal.set_block_spacing(spacing);
+        terminal.take_events();
+        terminal.take_replies();
+    };
+    for part in rows.chunks(SLICE) {
+        read(parser, part);
+    }
+    let after_text = shared.terminal.lock_in_turn().cursor_cell().0 > 0;
+    let mut line = String::new();
+    if after_text {
+        line.push_str("\r\n");
+    }
+    line.push_str("\x1b[0;2m");
+    line.push_str(&restored.line);
+    line.push_str("\x1b[0m\r\n");
+    // What the rows left but the rows, as a file's bytes may: the pen and
+    // the modes of a soft reset, the mouse's, the focus's, bracketed paste,
+    // the alternate screen, the keyboard's flags, the titles; then the
+    // folder, the tab's color and the bells, which the new shell tells.
+    line.push_str(LEFT_AS_NEW);
+    read(parser, line.as_bytes());
+    shared.terminal.lock_in_turn().forget_told();
+    shared.changed(false);
+}
+
+/// The sequences that leave a terminal of the modes that a reading may set
+/// as a new one has them, its rows kept: DECSTR, the mouse's reports and
+/// encodings off, the focus's reports, bracketed paste, the primary screen,
+/// the keyboard's flags of none, and empty titles.
+const LEFT_AS_NEW: &str = concat!(
+    "\x1b[!p",
+    "\x1b[?9;1000;1001;1002;1003;1005;1006;1015;1016l",
+    "\x1b[?1004;2004l",
+    "\x1b[?1049l",
+    "\x1b[=0;1u",
+    "\x1b]0;\x1b\\",
+);
+
+fn read_output(
+    shared: &Shared,
+    mut output: ReadAhead,
+    sync_timeout: Duration,
+    restored: Option<&Restored>,
+) {
     let _ending = Ending(shared);
     let mut parser = Parser::new();
+    // What the pane showed as the app quit, before what its program
+    // writes, which waits in the reader meanwhile.
+    if let Some(restored) = restored {
+        replay(shared, &mut parser, restored);
+    }
     // The synchronized update under way, by its number, and its deadline.
     let mut update = 0;
     let mut deadline = None;

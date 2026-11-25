@@ -11,7 +11,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use super::events::Events;
 use super::gutter::GutterKind;
@@ -183,6 +183,12 @@ impl Terminal {
         self.block_spacing = on;
     }
 
+    /// Whether the terminal puts a blank row before each prompt that
+    /// follows a command, as [`Terminal::set_block_spacing`] asks.
+    pub fn block_spacing(&self) -> bool {
+        self.block_spacing
+    }
+
     /// Whether the prompt's mark that comes now has a blank row before it,
     /// as [`Terminal::set_block_spacing`] tells.
     fn spaces_prompt(&self) -> bool {
@@ -219,11 +225,17 @@ impl Terminal {
     /// change nothing, as they come of its program then, not of the shell,
     /// which marks them before the command runs. Whether the mark started
     /// a command.
-    pub(super) fn mark_command(&mut self, mark: Mark) -> bool {
+    ///
+    /// `kept_space`, of a prompt's mark that an archive writes again, tells
+    /// that the blank row before the prompt is there already, which the
+    /// terminal put as the archived prompt came: it puts none, and keeps
+    /// that the prompt has it.
+    pub(super) fn mark_command(&mut self, mark: Mark, kept_space: bool) -> bool {
         if self.alternate_active {
             return false;
         }
-        let spaced = mark == Mark::Prompt && self.spaces_prompt();
+        let kept_space = kept_space && mark == Mark::Prompt;
+        let spaced = mark == Mark::Prompt && !kept_space && self.spaces_prompt();
         if spaced {
             self.moved();
             if self.primary.cursor.x > 0 {
@@ -283,7 +295,7 @@ impl Terminal {
             commands.last += 1;
             commands.list.push_back(Marked {
                 id: commands.last,
-                spaced: spaced || carried,
+                spaced: spaced || carried || kept_space,
                 ..Marked::default()
             });
         }
@@ -656,6 +668,174 @@ impl Terminal {
             let_go(&mut self.primary.rows, &mut self.events, gone);
         }
         commands.last
+    }
+}
+
+/// A kept command's mark, as an archive writes it again: the index of its
+/// row in the primary screen's list, its column, its place among the marks
+/// of one cell, of its command's place among the kept ones and its kind's
+/// in a command, prompt, input, output and end, and its bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct ArchivedMark {
+    pub(super) index: usize,
+    pub(super) col: u16,
+    pub(super) order: (usize, u8),
+    pub(super) bytes: String,
+}
+
+impl ArchivedMark {
+    /// Whether it is its command's end's mark.
+    pub(super) fn ends(&self) -> bool {
+        self.order.1 == 3
+    }
+}
+
+/// The milliseconds of `time` since the Unix epoch, none before it.
+pub(super) fn millis(time: SystemTime) -> u128 {
+    time.duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_millis())
+}
+
+/// The time of `millis` milliseconds since the Unix epoch, as an archive
+/// tells it.
+fn of_millis(millis: &[u8]) -> Option<SystemTime> {
+    let millis: u64 = std::str::from_utf8(millis).ok()?.parse().ok()?;
+    UNIX_EPOCH.checked_add(Duration::from_millis(millis))
+}
+
+/// `text` percent-encoded, every byte but an ASCII letter, a digit, `-`,
+/// `.`, `_`, `~` and those of `kept`, so that it holds neither a field's
+/// `;` nor a byte that ends a control string.
+pub(super) fn percent_encoded(text: &str, kept: &[u8]) -> String {
+    let mut encoded = String::with_capacity(text.len());
+    for &byte in text.as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) || kept.contains(&byte) {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
+/// The OSC 7 that tells `folder`.
+fn told_folder(folder: &WorkingDirectory) -> String {
+    format!(
+        "\x1b]7;file://{}{}\x1b\\",
+        percent_encoded(&folder.host, b""),
+        percent_encoded(&folder.path, b"/")
+    )
+}
+
+impl Terminal {
+    /// The kept commands' marks whose rows the primary screen's list holds,
+    /// in the order of their rows, their columns and their places at one
+    /// cell, as OSC 133 writes them again: the prompt's of the blank row
+    /// before it that the terminal put, as `lokyr_spaced` tells; the
+    /// output's after the OSC 7 of the folder where its command started,
+    /// of the command's line and the time of its start, `lokyr_started`;
+    /// the end's of its status and the time of its end, `lokyr_ended`, the
+    /// times in milliseconds since the Unix epoch.
+    pub(super) fn archived_marks(&self) -> Vec<ArchivedMark> {
+        let rows = &self.primary.rows;
+        let place = |pin: Option<PinId>| {
+            let position = rows.pin_position(pin?)?;
+            Some((rows.row_index(position.page, position.row)?, position.col))
+        };
+        let mut marks = Vec::new();
+        for (at, marked) in self.commands.list.iter().enumerate() {
+            let kinds = [marked.prompt, marked.input, marked.output, marked.end];
+            for (kind, pin) in (0u8..).zip(kinds) {
+                let Some((index, col)) = place(pin) else {
+                    continue;
+                };
+                let bytes = match kind {
+                    0 if marked.spaced => "\x1b]133;A;lokyr_spaced\x1b\\".to_owned(),
+                    0 => "\x1b]133;A\x1b\\".to_owned(),
+                    1 => "\x1b]133;B\x1b\\".to_owned(),
+                    2 => {
+                        let mut bytes = marked
+                            .folder
+                            .as_deref()
+                            .map(told_folder)
+                            .unwrap_or_default();
+                        bytes.push_str("\x1b]133;C");
+                        if let Some(line) = &marked.line {
+                            bytes.push_str(";cmdline_url=");
+                            bytes.push_str(&percent_encoded(line, b""));
+                        }
+                        if let Some(started) = marked.started {
+                            bytes.push_str(&format!(";lokyr_started={}", millis(started)));
+                        }
+                        bytes.push_str("\x1b\\");
+                        bytes
+                    }
+                    _ => {
+                        let mut bytes = String::from("\x1b]133;D");
+                        if let Some(status) = marked.status {
+                            bytes.push_str(&format!(";{status}"));
+                        }
+                        if let Some(ended) = marked.ended {
+                            bytes.push_str(&format!(";lokyr_ended={}", millis(ended)));
+                        }
+                        bytes.push_str("\x1b\\");
+                        bytes
+                    }
+                };
+                marks.push(ArchivedMark {
+                    index,
+                    col,
+                    order: (at, kind),
+                    bytes,
+                });
+            }
+        }
+        marks.sort_by_key(|mark| (mark.index, mark.col, mark.order));
+        marks
+    }
+
+    /// The index in the primary screen's list of the row, and the column,
+    /// of the shell's prompt where the user types, which a new shell draws
+    /// again: the last command's prompt, of no output's mark yet, if its
+    /// row is in the list.
+    pub(super) fn live_prompt(&self) -> Option<(usize, u16)> {
+        let last = self.commands.list.back()?;
+        if last.output.is_some() {
+            return None;
+        }
+        let rows = &self.primary.rows;
+        let position = rows.pin_position(last.prompt?)?;
+        Some((rows.row_index(position.page, position.row)?, position.col))
+    }
+
+    /// Takes the times that an archive tells of the last command, of the
+    /// options of its output's mark, `lokyr_started`, as `started` says
+    /// that mark started it, and of its end's, `lokyr_ended`, as `ended`
+    /// says that mark ended it: a command read back keeps the times of its
+    /// own run, not of its reading.
+    pub(super) fn take_archived_times<'a>(
+        &mut self,
+        fields: impl Iterator<Item = &'a [u8]>,
+        started: bool,
+        ended: bool,
+    ) {
+        if self.alternate_active || !(started || ended) {
+            return;
+        }
+        let Some(last) = self.commands.list.back_mut() else {
+            return;
+        };
+        // An end's mark of a command that started.
+        let ended = ended && last.output.is_some() && last.end.is_some();
+        for field in fields {
+            if started && let Some(time) = field.strip_prefix(b"lokyr_started=").and_then(of_millis)
+            {
+                last.started = Some(time);
+            }
+            if ended && let Some(time) = field.strip_prefix(b"lokyr_ended=").and_then(of_millis) {
+                last.ended = Some(time);
+            }
+        }
     }
 }
 

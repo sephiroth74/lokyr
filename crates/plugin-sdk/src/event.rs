@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::host::{GroupId, PaneId, TabId, WindowId};
+use crate::host::{GroupId, PaneId, SessionId, TabId, WindowId};
 
 /// A change of the workspace.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,11 +116,23 @@ pub enum WorkspaceEvent {
         /// Its window, or the one that it was in.
         window: WindowId,
     },
+    /// A session was made, renamed, switched to or from, or went, of no
+    /// window left or closed.
+    SessionChanged {
+        /// The session.
+        session: SessionId,
+    },
+    /// A window's broadcast of the typed input changed: where it goes, or
+    /// a pane of it left out or taken back in.
+    BroadcastChanged {
+        /// The window.
+        window: WindowId,
+    },
 }
 
 impl WorkspaceEvent {
     /// The names of the workspace's events, as plugins subscribe to them.
-    pub const NAMES: [&'static str; 14] = [
+    pub const NAMES: [&'static str; 16] = [
         "window-opened",
         "window-closed",
         "tab-created",
@@ -135,6 +147,8 @@ impl WorkspaceEvent {
         "tab-changed",
         "pane-changed",
         "group-changed",
+        "session-changed",
+        "broadcast-changed",
     ];
 
     /// The event's name, as a plugin subscribes to it.
@@ -154,6 +168,8 @@ impl WorkspaceEvent {
             Self::TabChanged { .. } => "tab-changed",
             Self::PaneChanged { .. } => "pane-changed",
             Self::GroupChanged { .. } => "group-changed",
+            Self::SessionChanged { .. } => "session-changed",
+            Self::BroadcastChanged { .. } => "broadcast-changed",
         }
     }
 }

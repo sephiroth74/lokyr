@@ -159,6 +159,9 @@ done-after = 3                       # seconds, 0.5 to 60, without work before a
 notify = true                        # true | false: a notification as an agent waits for you or is done
 dock-badge = true                    # true | false: the Dock's icon counts the agents that wait for you
 
+[sessions]
+folders = ["~/src/*", "~/.config"]   # the folders that the sessions' switcher lists
+
 [theme]
 light = "Lokyr Light"                # the light appearance's theme, a file of themes/, held or built in
 dark = "Nightfall"                   # the dark appearance's theme
@@ -170,6 +173,7 @@ language = "it"                      # system | en | it
 appearance = "dark"                  # system | light | dark
 quit-after-last-window-closed = true # true | false: Lokyr quits as its last window closes
 restore-windows = "always"           # system | always | never: the windows open again as Lokyr starts
+restore-scrollback = true            # true | false: the panes show again what they showed as Lokyr quit
 
 [updates]
 check = false                        # true | false: a check for a newer version, once a day at most
@@ -760,7 +764,7 @@ What a window does when its program ends, such as the shell after `exit`.
 |---|---|
 | `"clean"`, `"always"`, `"never"` | `"clean"` |
 
-- `"clean"` closes the window when the program exits with the status 0, and otherwise keeps it open, with a line that tells how the program ended, such as `[the program exited with code 1; a key closes the window]`, until you press a key, one that types or acts: a modifier, Caps Lock, Fn or a key with Command leave it open.
+- `"clean"` closes the window when the program exits with the status 0, and otherwise keeps it open, with a line that tells how the program ended, such as `[the program exited with code 1; a key closes the pane]`, until you press a key, one that types or acts: a modifier, Caps Lock, Fn or a key with Command leave it open.
 - `"always"` closes the window.
 - `"never"` keeps it open, with the line, until you press a key.
 
@@ -789,7 +793,7 @@ The folder that the first window's shell starts in, as Lokyr starts.
 
 <sub>Platforms: macOS</sub>
 
-The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's or a split's.
+The folder that a new window's shell starts in, as ⌘N opens one, and a new tab's, a split's, a floating pane's or a popup's, of a popup that names no folder of its own · Since 1.5.
 
 | Values | Default |
 |---|---|
@@ -1402,6 +1406,26 @@ Whether the Dock's icon counts the agents that wait for you, in every window, in
 - The badge goes once none waits.
 - It applies as you save the file.
 
+## `[sessions]`
+
+The sessions' switcher, ⌃⌘S, lists the sessions open, then folders: those that `folders` names, and the folders where your panes' shells worked last. Choosing a folder opens a session there, or shows the one opened there already.
+
+### `folders`
+
+<sub>Platforms: macOS · Since 1.5</sub>
+
+The folders that the sessions' switcher lists, ⌃⌘S or Window › Sessions › Switch Session…, beside the sessions open and the folders where your panes' shells worked last.
+
+| Values | Default |
+|---|---|
+| a list of paths | `[]` |
+
+- Each is a path from `/` or `~`, as `"~/.config"`, or of a last part `*`, as `"~/src/*"`, which lists every folder in it, of one level, but those whose names start with a dot.
+- Choosing a folder opens a session there, named after the folder, its first window's shell in it; a session opened there already shows instead.
+- A path that is no folder lists nothing. The switcher lists 500 folders of them at most.
+- The recent folders are those that your shells told last, as your shell's integration tells them, the last 50, which Lokyr keeps in `~/Library/Application Support/lokyr/state/recent-folders` on macOS.
+- It applies as the switcher opens next.
+
 ## `[theme]`
 
 The colors of the terminal and of Lokyr's own interface: a theme for the light appearance and one for the dark one, which follow the system's appearance, or the one that View › Appearance chooses, and switch at once.
@@ -1573,6 +1597,23 @@ Whether the windows that were open as you quit Lokyr open again as it starts: ea
 - A file that a newer Lokyr wrote, or that cannot be read, is left aside, as a notice tells, and Lokyr opens a new window, as without it.
 - It applies as you quit, and at the next start.
 
+### `restore-scrollback`
+
+<sub>Platforms: macOS · Since 1.5</sub>
+
+Whether the panes that open again with your windows show what they showed as you quit: their text, its colors and styles, its links, and the commands that your shell marked.
+
+| Values | Default |
+|---|---|
+| `true`, `false` | `false` |
+
+- It applies while the windows open again, as [`restore-windows`](#restore-windows) says: with no window kept, there is no scrollback to show either.
+- Each pane shows its scrollback and its screen as they were, up to the prompt where you typed, then a line that tells when they were kept, then a new shell's prompt. The commands' marks in the gutter, the blocks and the jumps between prompts work on the restored commands too, of their exit status, their command line and their times.
+- Lokyr keeps all that the pane held within its [`[scrollback] limit`](#limit), in a file of each pane in `~/Library/Application Support/lokyr/state/scrollback/` on macOS, readable by your account alone. A pane full at the default limit takes some 1.4 MB on disk and 12 ms of the quit. At the next start each pane reads its file on its own thread, so that the window opens as soon as it would without them, and the rows show a few milliseconds later. As the panes share the scrollback's [`budget`](#budget), all of them together take no more than some ten full ones.
+- What a program showed on its own screen, as vim or less, is not kept: the pane shows what the shell had printed before it. Images are not kept either.
+- It is off by default, as what the panes showed may hold what you would not keep, such as a token that a command printed. Turned off again, it keeps none, and takes away at once what was kept.
+- It applies as you quit, and at the next start.
+
 ## `[updates]`
 
 Lokyr's own updates: it checks for a newer version, which it shows in a window with what is new, to install now or as Lokyr quits, or to skip.
@@ -1705,9 +1746,15 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+n` | `window.new` | Opens a window |
 | `cmd+w`, `cmd+shift+w` | `window.close` | Closes the window, of all its tabs, `cmd+w` closing the tab instead while the tabs' plugin runs; while a program other than a shell runs in it, as vim or ssh, it asks you first, as closing ends the program: a job that the shell runs counts too, stopped with Control-Z or in the background, and a program that started a shell, as vim's `:sh`. tmux and screen, whose sessions go on, do not ask, nor a shell at its prompt, nor one that a shell started |
 | `cmd+shift+i` | `window.set-title` | Asks for a title of the window's, which takes the place of the program's and of the window's own until you empty it; the grid's size stays after it, as [`title-size`](#title-size) says |
-| `` cmd+` `` | `window.next` | Brings forward your next window, in the order that they opened, the settings window too and not the quick terminal, the first after the last: the key left of 1 by its place, as macOS's, ⌘\ on the Italian layout; Window › Cycle Through Windows runs it too |
+| `` cmd+` `` | `window.next` | Brings forward your next window of the session that shows, in the order that they opened, the settings window too and not the quick terminal, the first after the last: the key left of 1 by its place, as macOS's, ⌘\ on the Italian layout; Window › Cycle Through Windows runs it too |
 | `` cmd+shift+` `` | `window.previous` | Brings forward the previous window, the last before the first |
-| `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other open window has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
+| `ctrl+cmd+s` | `command-palette.sessions` | Opens the sessions' switcher in the palette: the sessions open, the one that shows marked Current, then the folders of [`[sessions] folders`](#sessions) and those where your shells worked last; Return switches to the session, or opens one in the folder, named after it, or switches to the one opened there already; Window › Sessions › Switch Session… runs it too · Since 1.5 |
+| `ctrl+cmd+l` | `window.switch-to-last-session` | Switches to the session that you used before the one that shows: its windows show where they were, the one that you used last in front, and the others hide, their programs running; Window › Sessions › Switch to Last Session runs it too · Since 1.5 |
+| `alt+cmd+i` | `window.broadcast-to-tab` | Sends what you type into the pane with the keyboard to every pane of its tab too, each as its own program takes it, a ring round each; again, to that pane alone · Since 1.5 |
+| `shift+alt+cmd+i` | `window.broadcast-to-window` | Sends what you type into the pane with the keyboard to every pane of the window too, of all its tabs; again, to that pane alone · Since 1.5 |
+| `shift+alt+cmd+f` | `pane.new-floating` | Floats a new pane over the tab's panes, its shell in the folder of the pane with the keyboard · Since 1.5 |
+| `alt+cmd+f` | `pane.toggle-floating` | Shows the tab's floating panes, or hides them; of a tab of none, floats a new one · Since 1.5 |
+| `alt+cmd+1`, `alt+cmd+2`, `alt+cmd+3`, `alt+cmd+4`, `alt+cmd+5`, `alt+cmd+6`, `alt+cmd+7`, `alt+cmd+8`, `alt+cmd+9` | `window.goto` | Brings forward the window of that number, `index`, from 1: each window takes, as it opens, the lowest number that no other window of its session has, which its titlebar shows, as [`title-shortcut`](#title-shortcut) says; the quick terminal has none. Bound by you, as `{ command = "window.goto", args = { index = 10 } }`, it reaches past the ninth |
 | `shift+alt+cmd+a` | `command-palette.agents` | Opens the palette's list of the AI agents of every window, the most urgent first, of each one's message or tab, its state and how long it has been in it; Return brings the chosen one's pane forward; Window › Show Agents… runs it too |
 | `alt+cmd+a` | `window.next-agent` | Brings forward the next tab, in any window, whose AI agent waits for you; or, of none, whose agent is done; or, of none, at work, as [`[agents]`](#agents) tells; Window › Go to Next Agent runs it too |
 | `cmd+q` | `app.quit` | Quits Lokyr, asking you first while programs other than shells run in its windows; so does Quit in the Dock, and a logout waits for your answer |
@@ -1756,7 +1803,7 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `o`, `y`, `enter`, `shift+y`, `escape`, `q`, `ctrl+c` | `copy-mode.act` | Its `action`: `o` swaps the selection's ends, `swap`; `y` and `enter` copy the selection, or the cursor's line without one, and end the mode, the selection staying, `copy`; `shift+y` copies the cursor's line and ends, `copy-line`; `escape` takes the count away, or else the selection, or else ends, `back`; `q` and `ctrl+c` end, the selection taken away, `exit`. A line's copy leaves the blanks at its end out |
 | `cmd+t` | `tabs.new` | Opens a tab in the window, after its others, which shows it; its shell starts in the folder of the pane that has the keyboard, as [`new-directory`](#new-directory) says |
 | `cmd+shift+t` | `tabs.reopen` | Brings back the tab that you closed last, at its place, as you left it, within [`reopen-seconds`](#reopen-seconds) of its close; again, the one before · Since 1.3 |
-| `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
+| `cmd+w` | `tabs.close` | Closes the tab, or its pane while the tab has splits or floating panes, hidden ones too; while a program other than a shell runs there, it asks you first, as closing the window does; the window's last tab closes the window, which `cmd+shift+w` closes whole |
 | `cmd+shift+]` | `tabs.next` | Shows the next tab, the first after the last |
 | `cmd+shift+[` | `tabs.prev` | Shows the previous tab, the last before the first |
 | `ctrl+tab` | `tabs.switch` | Shows the tab that you used before, and, as you press Tab again with Control held, the one before that; the tab that shows as you release Control is the one used last; or the next tab, as [`control-tab`](#control-tab) says |

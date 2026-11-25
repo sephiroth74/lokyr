@@ -33,6 +33,263 @@ pub struct GroupId(pub u64);
 /// The most characters of a group's name.
 pub const MOST_GROUP_NAME: usize = 256;
 
+/// A session of windows, by the host's id, which no other session of the
+/// process has had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct SessionId(pub u64);
+
+/// The most characters of a session's name.
+pub const MOST_SESSION_NAME: usize = 256;
+
+/// Whether `name` is a session's: of [`MOST_SESSION_NAME`] characters at
+/// most and of no control character; why not otherwise.
+pub fn check_session_name(name: &str) -> Result<(), String> {
+    let length = name.chars().count();
+    if length > MOST_SESSION_NAME {
+        return Err(format!(
+            "a session's name is {MOST_SESSION_NAME} characters at most, not {length}"
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return Err("a session's name holds no control character".to_owned());
+    }
+    Ok(())
+}
+
+/// The most bytes of a session's folder.
+pub const MOST_SESSION_DIRECTORY: usize = 1024;
+
+/// Whether `directory` is a session's folder: a path absolute or from `~`,
+/// of [`MOST_SESSION_DIRECTORY`] bytes at most and no control character;
+/// why not otherwise.
+pub fn check_session_directory(directory: &str) -> Result<(), String> {
+    check_directory(directory)?;
+    if directory.len() > MOST_SESSION_DIRECTORY {
+        return Err(format!(
+            "a session's folder is {MOST_SESSION_DIRECTORY} bytes at most, not {}",
+            directory.len()
+        ));
+    }
+    if directory.chars().any(char::is_control) {
+        return Err("a session's folder holds no control character".to_owned());
+    }
+    Ok(())
+}
+
+/// The most bytes of a popup's command.
+pub const MOST_POPUP_COMMAND: usize = 4096;
+
+/// The most bytes of a popup's folder.
+pub const MOST_POPUP_FOLDER: usize = 1024;
+
+/// The share of its tab's room that a popup takes across, of a request
+/// that asks for none.
+pub const POPUP_WIDTH: f64 = 0.8;
+
+/// The share of its tab's room that a popup takes down, of a request that
+/// asks for none.
+pub const POPUP_HEIGHT: f64 = 0.7;
+
+/// Whether a popup can run `command` in `folder`, if given, of `width`
+/// and `height`, shares of its tab's room, if given: a command of
+/// something past blanks, of [`MOST_POPUP_COMMAND`] bytes at most and no
+/// NUL; a folder absolute or from `~`, of [`MOST_POPUP_FOLDER`] bytes at
+/// most and no control character; shares past 0 and 1 at most. Why not
+/// otherwise.
+pub fn check_popup(
+    command: &str,
+    folder: Option<&str>,
+    width: Option<f64>,
+    height: Option<f64>,
+) -> Result<(), String> {
+    if command.trim().is_empty() {
+        return Err("a popup's command is something past blanks".to_owned());
+    }
+    if command.len() > MOST_POPUP_COMMAND {
+        return Err(format!(
+            "a popup's command is {MOST_POPUP_COMMAND} bytes at most, not {}",
+            command.len()
+        ));
+    }
+    if command.contains('\0') {
+        return Err("a popup's command holds no NUL".to_owned());
+    }
+    if let Some(folder) = folder {
+        check_directory(folder)?;
+        if folder.len() > MOST_POPUP_FOLDER {
+            return Err(format!(
+                "a popup's folder is {MOST_POPUP_FOLDER} bytes at most, not {}",
+                folder.len()
+            ));
+        }
+        if folder.chars().any(char::is_control) {
+            return Err("a popup's folder holds no control character".to_owned());
+        }
+    }
+    for share in [width, height].into_iter().flatten() {
+        if !(share > 0.0 && share <= 1.0) {
+            return Err(format!(
+                "a popup's width and height are shares of its tab's room, past 0 and 1 at most, not {share}"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether a popup's `folder`, a path absolute or from `~`, is a folder
+/// that is there, as a popup runs its command there or not at all; why not
+/// otherwise.
+pub fn check_popup_folder(folder: &str) -> Result<(), String> {
+    if std::path::Path::new(&home_expanded(folder)).is_dir() {
+        Ok(())
+    } else {
+        Err(format!("a popup's folder `{folder}` is not there"))
+    }
+}
+
+/// The folders that the switcher lists, `configured` then `recent`, as
+/// they are named, each once and none of `sessions`, the folders that
+/// sessions were opened in, as their real paths tell, which the system
+/// resolves of their links, as `/tmp` of `/private/tmp` on macOS: a recent
+/// folder that is a configured one, or a session's, by another path, goes.
+pub fn without_sessions(
+    configured: Vec<String>,
+    recent: Vec<String>,
+    sessions: &[&str],
+) -> (Vec<String>, Vec<String>) {
+    let real = |folder: &str| {
+        std::fs::canonicalize(folder).unwrap_or_else(|_| std::path::PathBuf::from(folder))
+    };
+    let mut seen: Vec<std::path::PathBuf> = sessions.iter().map(|folder| real(folder)).collect();
+    let mut keep = |folders: Vec<String>| -> Vec<String> {
+        folders
+            .into_iter()
+            .filter(|folder| {
+                let path = real(folder);
+                let fresh = !seen.contains(&path);
+                if fresh {
+                    seen.push(path);
+                }
+                fresh
+            })
+            .collect()
+    };
+    let configured = keep(configured);
+    let recent = keep(recent);
+    (configured, recent)
+}
+
+/// `path`, a path absolute or from `~`, of the home directory for `~`, as
+/// a session opened in a folder keeps it; as it is without a home
+/// directory.
+pub fn home_expanded(path: &str) -> String {
+    let rest = match path.strip_prefix('~') {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => rest,
+        _ => return path.to_owned(),
+    };
+    match std::env::home_dir() {
+        Some(home) => format!("{}{rest}", home.to_string_lossy()),
+        None => path.to_owned(),
+    }
+}
+
+/// Where a window's typed input goes beside the pane that has its
+/// keyboard: the keys, the input method's text and the user's pastes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BroadcastTo {
+    /// To that pane alone.
+    #[default]
+    Off,
+    /// To every pane of its tab.
+    Tab,
+    /// To every pane of the window, of all its tabs.
+    Window,
+}
+
+/// A pane that floats over its tab's split panes, as a read of the tab's
+/// floating panes gives it: its frame's top left corner and its size, each
+/// a share of the tab's room, from 0 to 1.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPane {
+    /// The pane.
+    pub pane: PaneId,
+    /// Its corner's share across the room.
+    pub x: f64,
+    /// Its corner's share down the room.
+    pub y: f64,
+    /// Its share across.
+    pub width: f64,
+    /// Its share down.
+    pub height: f64,
+}
+
+/// A tab's floating panes, as a read of them gives them: whether they
+/// show, which they do or not together, and each, from the one at the back
+/// to the one in front.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct FloatingPanes {
+    /// Whether they show.
+    pub shown: bool,
+    /// The panes, from the back to the front.
+    #[serde(default)]
+    pub panes: Vec<FloatingPane>,
+}
+
+/// A window's broadcast of the typed input, as a read of it gives it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Broadcast {
+    /// Where the input goes.
+    pub to: BroadcastTo,
+    /// The window's panes left out of it, which take their own input alone,
+    /// in the order of their ids.
+    #[serde(default)]
+    pub left_out: Vec<PaneId>,
+}
+
+/// A session, as a read of the sessions gives it: a group of windows, of
+/// which the active session's show and the others' are hidden, their
+/// programs running.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionInfo {
+    /// The session.
+    pub id: SessionId,
+    /// Its name, empty for none.
+    pub name: String,
+    /// Whether it is the active one, whose windows show.
+    #[serde(default)]
+    pub active: bool,
+    /// Its windows, in the order they opened; none of a session whose
+    /// first window has yet to open.
+    pub windows: Vec<WindowId>,
+    /// The folder that it was opened in, an absolute path, as the
+    /// sessions' switcher opens one of a folder, to a plugin that reads the
+    /// processes (`process-read`); none of another.
+    #[serde(default)]
+    pub folder: Option<String>,
+}
+
+/// The folders that the sessions' switcher lists, each an absolute path:
+/// those of the config's `[sessions] folders`, in their order, and those
+/// that the panes' shells told last, the latest first, of this machine and
+/// there still; each once, and none that a session was opened in, as
+/// their real paths tell, whatever the path that names them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionFolders {
+    /// The config's.
+    pub configured: Vec<String>,
+    /// The recent ones.
+    pub recent: Vec<String>,
+    /// The home directory, which a switcher shows the folders under as of
+    /// `~`, if there is one.
+    #[serde(default)]
+    pub home: Option<String>,
+    /// The names of the layouts, sessions saved to files, each opening as
+    /// a new session of the app's command `window.open-layout`.
+    #[serde(default)]
+    pub layouts: Vec<String>,
+}
+
 /// Whether a group's `name` and `color` are a group's: a name of
 /// [`MOST_GROUP_NAME`] characters at most and of no control character, and
 /// an RGB color; why not otherwise.
@@ -326,6 +583,11 @@ pub struct TabInfo {
     /// The group that it is in, if it is in one.
     #[serde(default)]
     pub group: Option<GroupId>,
+    /// Whether its panes take its window's broadcast of the typed input:
+    /// every tab's of a broadcast to the window's panes, the active one's
+    /// of a broadcast to the tab's.
+    #[serde(default)]
+    pub broadcast: bool,
 }
 
 /// The status that a program tells of its session, as iTerm2's OSC 21337

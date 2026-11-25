@@ -26,7 +26,7 @@ fn started_bars(config: Config) -> (Fake, App, WindowId) {
 
 /// The app of `config`, which draws its frames, its window running
 /// `program`.
-fn drawn(config: Config, program: Program) -> (Fake, App, WindowId) {
+pub(super) fn drawn(config: Config, program: Program) -> (Fake, App, WindowId) {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();
     let mut app = App::new(Some(drawing), config, None).with_program(program);
@@ -539,4 +539,97 @@ fn a_search_s_matches_mark_the_bar_and_keep_it_shown() {
     let shown = bar(&app, window).unwrap();
     assert!(shown.marks.is_empty());
     assert_eq!(shown.look.opacity, 0.0);
+}
+
+#[test]
+fn what_lies_under_a_floating_pane_takes_none_of_its_presses() {
+    let mut config = Config::parse(
+        "[window]\nscrollbar = \"always\"\n[plugins.splits]\npane-titles = true\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    (config.window.padding_x, config.window.padding_y) =
+        (unpadded().window.padding_x, unpadded().window.padding_y);
+    let (mut fake, mut app, window) = started_bars(config);
+    // Two panes side by side, then a floating pane over the divider, from
+    // the room's top, over the panes' titles.
+    let mut args = Args::new();
+    args.insert("direction".to_owned(), Value::String("right".to_owned()));
+    app.run(&mut fake, "splits.split", args);
+    fake.send_app(&mut app, AppEvent::Command(NEW_FLOATING.to_owned()));
+    let floating = app.focused(window).unwrap();
+    assert!(app.workspace.move_floating(
+        floating,
+        lokyr_kernel::workspace::FloatingFrame::new(0.2, 0.0, 0.6, 0.9)
+    ));
+    // Each split pane of a scrollback, whose bar shows.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while app.windows[&window].bars.len() < 2 {
+        assert!(Instant::now() < deadline, "the bars");
+        fake.deliver_wake(&mut app);
+        frames(&mut fake, &mut app, window);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let scale = fake.window(window).unwrap().size.scale;
+    let points = |pixels: i32| f64::from(pixels) / scale;
+    let state = &app.windows[&window];
+    let (_, room) = state.floating_rooms[0];
+    let divider = state.dividers[0].area;
+    let middle_y = points(room.grid.y) + f64::from(room.grid.height) / scale / 2.0;
+    // The divider under the box: a press there drags none, and gives the
+    // floating pane the keyboard.
+    let over_divider = Point {
+        x: points(divider.x) + f64::from(divider.width) / scale / 2.0,
+        y: middle_y,
+    };
+    fake.send(
+        &mut app,
+        window,
+        click(true, over_divider, Modifiers::NONE, 1),
+    );
+    fake.send(
+        &mut app,
+        window,
+        click(false, over_divider, Modifiers::NONE, 1),
+    );
+    assert!(app.windows[&window].divider_drag.is_none());
+    assert_eq!(app.focused(window), Some(floating));
+    // A scroll bar under the box: none of its drags.
+    let bar = app.windows[&window]
+        .bars
+        .iter()
+        .map(|bar| bar.area)
+        .find(|area| {
+            let x = points(area.x);
+            x > points(room.outer.x) && x < points(room.outer.x + room.outer.width as i32)
+        })
+        .expect("a bar under the box");
+    let over_bar = Point {
+        x: points(bar.x) + f64::from(bar.width) / scale / 2.0,
+        y: middle_y,
+    };
+    fake.send(&mut app, window, click(true, over_bar, Modifiers::NONE, 1));
+    assert!(app.windows[&window].bar_drag.is_none());
+    fake.send(&mut app, window, click(false, over_bar, Modifiers::NONE, 1));
+    // A split pane's title under the box's header: the press moves the
+    // floating pane, not the title's.
+    let header = Point {
+        x: points(room.header.x) + 20.0,
+        y: points(room.header.y) + f64::from(room.header.height) / scale / 2.0,
+    };
+    let state = &app.windows[&window];
+    let titled = state.chrome.iter().any(|view| {
+        view.view.slot() == Some(lokyr_kernel::plugins::ui::Slot::PaneHeader)
+            && view.frame.is_some_and(|frame| {
+                let (x, y) = ((header.x * scale) as f32, (header.y * scale) as f32);
+                x >= frame.x
+                    && x < frame.x + frame.width
+                    && y >= frame.y
+                    && y < frame.y + frame.height
+            })
+    });
+    assert!(titled, "a split pane's title under the box's header");
+    fake.send(&mut app, window, click(true, header, Modifiers::NONE, 1));
+    assert!(app.windows[&window].floating_drag.is_some());
+    fake.send(&mut app, window, click(false, header, Modifiers::NONE, 1));
 }

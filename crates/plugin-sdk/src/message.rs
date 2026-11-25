@@ -28,8 +28,8 @@ use crate::event::WorkspaceEvent;
 use crate::host::{
     BarPlace, Binding, Bytes, Color, CommandInfo, Current, DecorationLook, Direction, Edge, Found,
     GroupId, GroupInfo, Layout, Line, LineText, PaneId, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, ShellCommand, Side, StyleRun, TabId, TabInfo, Viewport, WindowId,
-    WindowInfo,
+    SearchQuery, SelectionKind, SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId,
+    TabInfo, Viewport, WindowId, WindowInfo,
 };
 use crate::ui::{PanelId, PanelOptions, ViewId};
 use crate::view::Key;
@@ -43,6 +43,14 @@ pub struct Call {
     /// What it asks.
     pub request: Request,
 }
+
+/// The message of the error of a request that splits a floating pane,
+/// which floats over its tab's layout of no layout of its own.
+pub const FLOATING_SPLITS_NOT: &str = "a floating pane splits not";
+
+/// The message of the error of a request that moves a popup out of its
+/// tab, as a popup stays over the tab that it opened in.
+pub const POPUP_STAYS: &str = "a popup stays over its tab";
 
 /// The error of a request of a tab's panes, title or color, of the settings
 /// tab, which has none of them.
@@ -255,6 +263,9 @@ pub enum Request {
     /// windows', tabs' and panes' order, of `process-read`, as they tell
     /// the programs that run.
     Agents,
+    /// The folders that the sessions' switcher lists, of `process-read`, as
+    /// the panes' shells told them.
+    SessionFolders,
     /// The plugins, built in and installed, in the order of their
     /// activation: each one's state and its capabilities' decisions. Of
     /// the capability `packages`, Lokyr's own plugins' alone.
@@ -809,8 +820,9 @@ pub enum Request {
         keep: u32,
     },
     /// Gives back the tab closed last that the host keeps, at its place in
-    /// its window, or in `window` once its own closed, which shows it, as a
-    /// tab opened anew, of its panes, tells; nothing of none kept.
+    /// its window, or in `window` once its own closed or hides with its
+    /// session, which shows it, as a tab opened anew, of its panes, tells;
+    /// nothing of none kept.
     ReopenTab(WindowId),
     /// Closes a pane, whose program is hung up: its room goes to its
     /// sibling, and its tab closes with its last pane. With `ask`, the
@@ -901,6 +913,99 @@ pub enum Request {
     },
     /// Takes a group apart, its tabs staying where they are.
     Ungroup(GroupId),
+    /// The sessions, in the order of their use, the active one first and
+    /// the one before it second.
+    Sessions,
+    /// Makes a session of `name` and switches to it, the windows of the
+    /// session left hidden, their programs running, then opens its first
+    /// window, its pane in `directory`, a path absolute or from `~`, if
+    /// given: the session's id, given at once, which the call's later
+    /// writes take. A session that a switch leaves of no window goes, as
+    /// a second one made in the same call leaves the first, whose window
+    /// opens not.
+    NewSession {
+        /// Its name, empty for none,
+        /// [`MOST_SESSION_NAME`](crate::host::MOST_SESSION_NAME) characters
+        /// at most.
+        #[serde(default)]
+        name: String,
+        /// The folder of its first window's pane.
+        #[serde(default)]
+        directory: Option<String>,
+    },
+    /// Switches to a session: the active one's windows hidden, their
+    /// programs running, and this one's shown.
+    SwitchSession(SessionId),
+    /// A window's broadcast of the typed input: where the keys, the input
+    /// method's text and the user's pastes go beside the pane that has its
+    /// keyboard, and its panes left out.
+    Broadcast(WindowId),
+    /// A tab's panes that float over its split panes, and whether they
+    /// show.
+    FloatingPanes(TabId),
+    /// Opens a popup over the active tab of `window`, of the window that
+    /// has the focus for none: a floating pane in the tab's middle, of
+    /// `width` and `height`, shares of its room,
+    /// [`POPUP_WIDTH`](crate::host::POPUP_WIDTH) and
+    /// [`POPUP_HEIGHT`](crate::host::POPUP_HEIGHT) by default, whose
+    /// program is the user's login shell running `command`, in `folder`, a
+    /// path absolute or from `~`, the focused pane's for none. It shows of
+    /// its own, whether the tab's floating panes do, and closes as the
+    /// command exits with 0 or an interrupt ends it, keeping its screen
+    /// otherwise until a key; [`Event::PopupClosed`] tells its close to the
+    /// plugin alone. The popup's pane, of an id given at once, which the
+    /// call's later writes take.
+    OpenPopup {
+        /// The window, the one that has the focus for none.
+        #[serde(default)]
+        window: Option<WindowId>,
+        /// The command, which the login shell runs as its `-c` takes one.
+        command: String,
+        /// The folder that it runs in.
+        #[serde(default)]
+        folder: Option<String>,
+        /// Its share of the tab's room across.
+        #[serde(default)]
+        width: Option<f64>,
+        /// Its share of the tab's room down.
+        #[serde(default)]
+        height: Option<f64>,
+    },
+    /// Sends a window's typed input to `to`, beside the pane that has its
+    /// keyboard, or to that pane alone, of [`BroadcastTo::Off`]: each key
+    /// encoded of each pane's own terminal's modes.
+    SetBroadcast {
+        /// The window.
+        window: WindowId,
+        /// Where its input goes.
+        to: crate::host::BroadcastTo,
+    },
+    /// Leaves a pane out of its window's broadcast, of `left_out`, which
+    /// takes its own input alone then, or takes it back in.
+    SetPaneBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// Whether it is left out.
+        left_out: bool,
+    },
+    /// Pastes text as the user pastes into a pane: into it, and into the
+    /// other panes that its window broadcasts the input to, each bracketed
+    /// as its program asks, of one question for all where one is asked.
+    PasteBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// The text.
+        text: String,
+    },
+    /// Sends text as the user's keys reach a pane: to it, and to the other
+    /// panes that its window broadcasts the input to, as it is, its
+    /// control characters too, as [`Request::SendText`] sends it to one.
+    SendTextBroadcast {
+        /// The pane.
+        pane: PaneId,
+        /// The text.
+        text: String,
+    },
     /// Puts the plugin's view of the status bar on `side`, in place of its
     /// manifest's side, or of the one asked before, until the plugin stops;
     /// no capability, as it moves the plugin's own view within the bar.
@@ -1263,6 +1368,12 @@ impl Request {
                 }
                 needed
             }
+            // The workspace's state, of where the typed input goes, to the
+            // programs of other panes; and a popup, a pane of a command that
+            // the shell runs.
+            Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } | Self::OpenPopup { .. } => {
+                vec![Capability::WorkspaceWrite, Capability::PtyWrite]
+            }
             _ => self.capability().into_iter().collect(),
         }
     }
@@ -1318,9 +1429,10 @@ impl Request {
             | Self::ScreenCells(_)
             | Self::RowCells { .. }
             | Self::EditedLine(_) => Some(Capability::TerminalRead),
-            Self::WorkingDirectory(_) | Self::Agents | Self::GitBranch { .. } => {
-                Some(Capability::ProcessRead)
-            }
+            Self::WorkingDirectory(_)
+            | Self::Agents
+            | Self::SessionFolders
+            | Self::GitBranch { .. } => Some(Capability::ProcessRead),
             // The commands that the shell ran, as their marks tell them.
             Self::ShellCommands { .. }
             | Self::CommandLine { .. }
@@ -1342,9 +1454,11 @@ impl Request {
                 Some(Capability::GlobalHotkey)
             }
             Self::Open(_) | Self::OpenAt { .. } | Self::Opens(_) => Some(Capability::Open),
-            Self::Paste { .. } | Self::SendText { .. } | Self::RunLine { .. } => {
-                Some(Capability::PtyWrite)
-            }
+            Self::Paste { .. }
+            | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
+            | Self::SendText { .. }
+            | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
             | Self::CloseWindow(_)
@@ -1373,7 +1487,11 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
-            | Self::ReopenTab(_) => Some(Capability::WorkspaceWrite),
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
+            | Self::ReopenTab(_)
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. } => Some(Capability::WorkspaceWrite),
             // What the panes show and how, and the tabs' looks.
             Self::SelectCells { .. }
             | Self::Deselect(_)
@@ -1413,6 +1531,7 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1452,7 +1571,10 @@ impl Request {
             | Self::AddMenuItem(_)
             | Self::StartTimer { .. }
             | Self::CancelTimer(_)
-            | Self::ShowPage(_) => None,
+            | Self::ShowPage(_)
+            | Self::Broadcast(_)
+            | Self::FloatingPanes(_)
+            | Self::OpenPopup { .. } => None,
             Self::WatchDoubleTap(_) => Some(Capability::GlobalHotkey),
         }
     }
@@ -1488,6 +1610,9 @@ impl Request {
             | Self::Tabs(_)
             | Self::RecentTabs(_)
             | Self::Groups(_)
+            | Self::Sessions
+            | Self::Broadcast(_)
+            | Self::FloatingPanes(_)
             | Self::Layout(_)
             | Self::PaneGrid(_)
             | Self::PaneTitle(_)
@@ -1507,6 +1632,7 @@ impl Request {
             | Self::TempFile { .. }
             | Self::GitBranch { .. }
             | Self::Agents
+            | Self::SessionFolders
             | Self::Plugins
             | Self::Settings
             | Self::FontStyles(_)
@@ -1536,6 +1662,7 @@ impl Request {
             | Self::Emit { .. }
             | Self::NewTab { .. }
             | Self::Split { .. }
+            | Self::OpenPopup { .. }
             | Self::CloseTab { .. }
             | Self::ClosePane { .. }
             | Self::SetTabTitle { .. }
@@ -1548,6 +1675,12 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup(_)
+            | Self::NewSession { .. }
+            | Self::SwitchSession(_)
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. }
+            | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide(_)
             | Self::SetTabBarPlace(_)
@@ -1660,6 +1793,8 @@ pub enum Response {
     Now(crate::host::LocalTime),
     /// The AI agents that run in the panes.
     Agents(Vec<crate::host::AgentInfo>),
+    /// The folders that the sessions' switcher lists.
+    SessionFolders(crate::host::SessionFolders),
     /// The plugins, built in and installed.
     Plugins(Vec<crate::host::PluginInfo>),
     /// The settings, of their sections and keys.
@@ -1713,6 +1848,14 @@ pub enum Response {
     Group(GroupId),
     /// A window's groups of tabs.
     Groups(Vec<GroupInfo>),
+    /// A session that is made as the call returns.
+    Session(SessionId),
+    /// The sessions.
+    Sessions(Vec<SessionInfo>),
+    /// A window's broadcast of the typed input.
+    Broadcast(crate::host::Broadcast),
+    /// A tab's floating panes.
+    FloatingPanes(crate::host::FloatingPanes),
     /// The request failed, and did nothing.
     Failed(Error),
 }
@@ -1973,6 +2116,16 @@ pub enum Event {
         /// What failed, if the write did.
         error: Option<String>,
     },
+    /// A popup that the plugin opened closed, to it alone: as its command
+    /// ended, a key after it failed, or the user or a plugin closed it, its
+    /// tab or its window. The status of its command, of 128 and a signal's
+    /// number for a signal, as shells give it; none while it ran still.
+    PopupClosed {
+        /// The popup's pane.
+        pane: PaneId,
+        /// Its command's status.
+        status: Option<i32>,
+    },
     /// A line of a job of the packages' service, to its plugin alone:
     /// Sleip's event, an object of its `event`, as `installed`, and its
     /// fields, as Sleip's guide writes them down of each command.
@@ -2070,6 +2223,7 @@ impl Event {
             Self::ColorPicked { .. } => "color-picked",
             Self::ColorPanelClosed => "color-panel-closed",
             Self::Saved { .. } => "saved",
+            Self::PopupClosed { .. } => "popup-closed",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
             Self::PluginsChanged => PLUGINS_CHANGED,
@@ -2214,6 +2368,11 @@ impl Request {
             | Self::SetGroupColor { .. }
             | Self::FoldGroup { .. }
             | Self::Ungroup { .. }
+            | Self::SwitchSession { .. }
+            | Self::SetBroadcast { .. }
+            | Self::SetPaneBroadcast { .. }
+            | Self::PasteBroadcast { .. }
+            | Self::SendTextBroadcast { .. }
             | Self::ReopenTab(_)
             | Self::SetStatusBarSide { .. }
             | Self::SetTabBarPlace { .. }
@@ -2251,6 +2410,7 @@ impl Request {
             Self::Day { .. } => "day",
             Self::Now { .. } => "now",
             Self::Agents { .. } => "agents",
+            Self::SessionFolders => "session-folders",
             Self::Plugins { .. } => "plugins",
             Self::Settings { .. } => "settings",
             Self::ClipboardText { .. }
@@ -2265,7 +2425,7 @@ impl Request {
             | Self::TempFile { .. }
             | Self::GitBranch { .. } => "text",
             Self::FocusedWindow { .. } | Self::OpenQuickWindow { .. } => "window",
-            Self::FocusedPane { .. } | Self::Split { .. } => "pane",
+            Self::FocusedPane { .. } | Self::Split { .. } | Self::OpenPopup { .. } => "pane",
             Self::LineText { .. } => "line",
             Self::ReadLines { .. } => "reading",
             Self::Search { .. } => "searching",
@@ -2289,6 +2449,10 @@ impl Request {
             Self::Tabs { .. } | Self::RecentTabs { .. } => "tabs",
             Self::Groups { .. } => "groups",
             Self::NewGroup { .. } => "group",
+            Self::Sessions => "sessions",
+            Self::Broadcast(_) => "broadcast",
+            Self::FloatingPanes(_) => "floating-panes",
+            Self::NewSession { .. } => "session",
             Self::Layout { .. } => "layout",
             Self::NewTab { .. } => "tab",
             Self::TabBarPlace { .. } => "tab-bar-place",
@@ -2351,6 +2515,9 @@ impl Request {
             Self::SetFontSize(Some(size)) => vec![f64::from(*size)],
             Self::SetInactiveDim(dim) => vec![f64::from(*dim)],
             Self::RenderImage(image) => image.numbers(),
+            Self::OpenPopup { width, height, .. } => {
+                [*width, *height].into_iter().flatten().collect()
+            }
             _ => Vec::new(),
         }
     }

@@ -135,7 +135,7 @@ struct Curated {
 
 /// The curated tips, the most useful first: a new action, feature or
 /// shortcut of the app adds its own, its message in every catalog.
-const CURATED: [Curated; 55] = [
+const CURATED: [Curated; 63] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     plain("agents", "tip-agents"),
     plain("agent-status", "tip-agent-status"),
@@ -200,6 +200,29 @@ const CURATED: [Curated; 55] = [
     plain("tab-menu", "tip-tab-menu"),
     plain("pin-tab", "tip-pin-tab"),
     plain("tab-groups", "tip-tab-groups"),
+    plain("restore-scrollback", "tip-restore-scrollback"),
+    plain("sessions", "tip-sessions"),
+    plain("layouts", "tip-layouts"),
+    command(
+        "session-switcher",
+        "tip-session-switcher",
+        "command-palette.sessions",
+        Arg::None,
+    ),
+    command(
+        "last-session",
+        "tip-last-session",
+        "window.switch-to-last-session",
+        Arg::None,
+    ),
+    command(
+        "broadcast",
+        "tip-broadcast",
+        "window.broadcast-to-tab",
+        Arg::None,
+    ),
+    command("floating", "tip-floating", "pane.new-floating", Arg::None),
+    plain("popup", "tip-popup"),
     command("hints", "tip-hints", "links.hints", Arg::None),
     command(
         "goto-tab",

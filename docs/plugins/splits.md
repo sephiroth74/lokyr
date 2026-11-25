@@ -10,6 +10,7 @@ A tab of several panes, side by side and one above another: the commands that sp
 - **The pane that has the keyboard** stands out: the others fade a little toward their background, as `dim-inactive` says.
 - **A new pane** starts its shell in the folder of the pane that it splits, as the shell tells it.
 - **A tab dragged onto a pane** splits that pane, the tab's panes taking the half where it fell, as the [`tabs`](tabs.md) plugin's drag does.
+- **What you type can go to every pane** of the tab or of the window at once, with Shell › Broadcast Input, as [Windows and tabs](../windows-and-tabs.md#type-into-several-panes-at-once) describes. · Since 1.5
 
 ## Commands
 
@@ -17,16 +18,16 @@ A tab of several panes, side by side and one above another: the commands that sp
 
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
-| `splits.split` | Shell › Split Right, Split Left, Split Down, Split Up | ⌘D, ⇧⌘D | Splits the pane, `direction` `right`, `left`, `down` or `up`: the new pane, on that side, takes the keyboard |
-| `splits.focus` | Shell › Select Pane Left, Select Pane Right, Select Pane Above, Select Pane Below | ⌥⌘←, ⌥⌘→, ⌥⌘↑, ⌥⌘↓ | Gives the keyboard to the pane beside, `direction` `left`, `right`, `up` or `down` |
-| `splits.focus-next`, `splits.focus-prev` | Shell › Select Next Pane, Select Previous Pane | ⌘], ⌘[ | Gives the keyboard to the tab's next or previous pane, around the ends |
+| `splits.split` | Shell › Split › Split Right, Split Left, Split Down, Split Up | ⌘D, ⇧⌘D | Splits the pane, `direction` `right`, `left`, `down` or `up`: the new pane, on that side, takes the keyboard |
+| `splits.focus` | Shell › Pane › Select Pane Left, Select Pane Right, Select Pane Above, Select Pane Below | ⌥⌘←, ⌥⌘→, ⌥⌘↑, ⌥⌘↓ | Gives the keyboard to the pane beside, `direction` `left`, `right`, `up` or `down` |
+| `splits.focus-next`, `splits.focus-prev` | Shell › Pane › Select Next Pane, Select Previous Pane | ⌘], ⌘[ | Gives the keyboard to the tab's next or previous pane, around the ends |
 | `splits.resize` | | ⌃⌘←, ⌃⌘→, ⌃⌘↑, ⌃⌘↓ | Moves a divider of the pane `cells`, 1 by default, towards `direction` |
-| `splits.zoom-toggle` | Shell › Zoom Pane | ⇧⌘Return | Has the pane take the tab's whole room, or gives the others theirs back |
-| `splits.equalize` | Shell › Equalize Panes | | Shares every split of the tab half and half again |
+| `splits.zoom-toggle` | Shell › Pane › Zoom Pane | ⇧⌘Return | Has the pane take the tab's whole room, or gives the others theirs back |
+| `splits.equalize` | Shell › Pane › Equalize Panes | | Shares every split of the tab half and half again |
 | `splits.swap` | | | Swaps the pane with the one beside it, `direction` `left`, `right`, `up` or `down` |
-| `splits.move-to-tab` | Shell › Move Pane to New Tab | | Moves the pane out to a tab of its own |
-| `splits.move-to-window` | Shell › Move Pane to New Window | | Moves the pane out to a window of its own |
-| `splits.close` | Shell › Close Pane | | Closes the pane of a tab of more than one, asking first while a program other than the shell runs in it; ⌘W closes it too, as the tab's close does while the tab has splits |
+| `splits.move-to-tab` | Shell › Pane › Move Pane to New Tab | | Moves the pane out to a tab of its own |
+| `splits.move-to-window` | Shell › Pane › Move Pane to New Window | | Moves the pane out to a window of its own |
+| `splits.close` | Shell › Pane › Close Pane | | Closes the pane of a tab of more than one, asking first while a program other than the shell runs in it; ⌘W closes it too, as the tab's close does while the tab has splits |
 
 <!-- commands end -->
 

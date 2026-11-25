@@ -803,20 +803,15 @@ fn set_paper(name: &str, value: Option<&str>) -> Request {
 fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
     let (mut host, mut plugin) = editing("accent");
     let tree = page(&mut host, &mut plugin);
-    // Reset of each color, dimmed while it has its value as the Editor
-    // showed the theme.
-    let dimmed = |tree: &Node, name: &str| match find(tree, &format!("{RESET}{name}"))
-        .map(|node| &node.kind)
-    {
-        Some(Kind::Button(button)) => button.disabled,
-        other => panic!("{name}: {other:?}"),
-    };
+    // No Reset of a color while it has its value as the Editor showed the
+    // theme.
+    let reset_shows = |tree: &Node, name: &str| find(tree, &format!("{RESET}{name}")).is_some();
     // Its value as the file writes it.
     match find(&tree, &format!("{VALUE}accent")).map(|node| &node.kind) {
         Some(Kind::Field(field)) => assert_eq!(field.text.as_deref(), Some("#4c9bff")),
         other => panic!("{other:?}"),
     }
-    assert!(dimmed(&tree, "accent"));
+    assert!(!reset_shows(&tree, "accent"));
     // A token of its rule: an empty field of the rule's text.
     host.ui_event(&mut plugin, &click(&format!("{ROW}focus.ring")))
         .unwrap();
@@ -829,14 +824,14 @@ fn a_chosen_row_of_a_theme_of_the_folder_holds_its_value_s_field_and_reset() {
         }
         other => panic!("{other:?}"),
     }
-    assert!(dimmed(&tree, "focus.ring"));
+    assert!(!reset_shows(&tree, "focus.ring"));
     // The background and a palette's color too.
     for name in ["background", "bright-blue"] {
         host.ui_event(&mut plugin, &click(&format!("{ROW}{name}")))
             .unwrap();
         let tree = page(&mut host, &mut plugin);
         assert!(find(&tree, &format!("{VALUE}{name}")).is_some());
-        assert!(dimmed(&tree, name), "{name}");
+        assert!(!reset_shows(&tree, name), "{name}");
     }
     // A read-only theme's row: no field.
     choose(&mut host, &mut plugin, "Lokyr Dark");

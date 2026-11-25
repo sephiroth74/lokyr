@@ -64,6 +64,7 @@
 //! appearance = "system"     # system | light | dark
 //! quit-after-last-window-closed = false  # stays open without windows
 //! restore-windows = "system"  # system | always | never
+//! restore-scrollback = false  # true: the panes show again what they showed
 //!
 //! [keys]
 //! "cmd+shift+]" = "tabs.next"                    # a command
@@ -159,6 +160,8 @@ pub struct Config {
     pub notifications: NotificationsConfig,
     /// The `[agents]` section.
     pub agents: AgentsConfig,
+    /// The `[sessions]` section.
+    pub sessions: SessionsConfig,
     /// The `[theme]` section.
     pub theme: ThemeConfig,
     /// The `[app]` section.
@@ -275,6 +278,10 @@ pub struct AppConfig {
     /// Whether the windows open again as the app starts, as they were as
     /// it quit: their frames, tabs, splits and directories.
     pub restore_windows: RestoreWindows,
+    /// Whether the panes that open again show what they showed as the app
+    /// quit, their scrollback kept within `[scrollback] limit`, while the
+    /// windows open again.
+    pub restore_scrollback: bool,
 }
 
 /// Whether the windows that were open as the app quit open again as it
@@ -341,6 +348,7 @@ impl Default for AppConfig {
             appearance: AppearanceMode::System,
             quit_after_last_window_closed: false,
             restore_windows: RestoreWindows::System,
+            restore_scrollback: false,
         }
     }
 }
@@ -1077,6 +1085,17 @@ impl Default for AgentsConfig {
             dock_badge: true,
         }
     }
+}
+
+/// The `[sessions]` section: the folders that the sessions' switcher lists,
+/// beside the sessions open and the recent folders, each starting a
+/// session there.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default, deny_unknown_fields, rename_all = "kebab-case")]
+pub struct SessionsConfig {
+    /// The folders, each a path from `/` or `~`, or of a last part `*`, the
+    /// folders in it.
+    pub folders: Vec<String>,
 }
 
 /// How long after its last sign of work an agent is done, in seconds, from
@@ -2506,7 +2525,7 @@ impl Position {
 }
 
 /// The sections of the file, with the keys of each.
-fn sections() -> [(&'static str, &'static [&'static str]); 18] {
+fn sections() -> [(&'static str, &'static [&'static str]); 19] {
     [
         ("font", keys::<FontConfig>()),
         ("text", keys::<TextConfig>()),
@@ -2522,6 +2541,7 @@ fn sections() -> [(&'static str, &'static [&'static str]); 18] {
         ("bell", keys::<BellConfig>()),
         ("notifications", keys::<NotificationsConfig>()),
         ("agents", keys::<AgentsConfig>()),
+        ("sessions", keys::<SessionsConfig>()),
         ("theme", keys::<ThemeConfig>()),
         ("app", keys::<AppConfig>()),
         ("updates", keys::<UpdatesConfig>()),
@@ -3780,6 +3800,7 @@ long-command = 0
                 "bell",
                 "notifications",
                 "agents",
+                "sessions",
                 "theme",
                 "app",
                 "updates",
@@ -3829,7 +3850,8 @@ long-command = 0
                 "language",
                 "appearance",
                 "quit-after-last-window-closed",
-                "restore-windows"
+                "restore-windows",
+                "restore-scrollback"
             ]
         );
         assert_eq!(OptionAsMeta::default().sides(), (false, false));

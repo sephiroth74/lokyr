@@ -1,8 +1,10 @@
 //! The windows that were open as the app quit, which it opens again as it
 //! starts: their frames, their tabs, each tab's title and color of its own,
 //! its splits and their ratios, the pane that has its keyboard and the one
-//! zoomed, and each pane's directory; and the groups of their tabs. Their programs start anew, of the
-//! app's program; what the panes held is not kept.
+//! zoomed, and each pane's directory and the file of its scrollback, which
+//! [`super::scrollback`] keeps; the groups of their tabs; and the sessions
+//! that they are of, in the order of their use, the active one first.
+//! Their programs start anew, of the app's program.
 //!
 //! A file of its own in the state's directory, of JSON, of a format's
 //! version, which a file of a newer version, as a later Lokyr writes, or
@@ -37,7 +39,7 @@ pub const MOST_PANES: usize = 256;
 pub const MOST_WINDOWS: usize = 100;
 
 /// The windows that the app keeps, as it quits, to open again.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Kept {
     /// The format's version, [`VERSION`].
     pub version: u32,
@@ -46,6 +48,59 @@ pub struct Kept {
     /// The index of the window in front, which takes the focus.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub front: Option<usize>,
+    /// The sessions of the windows, in the order of their use, the active
+    /// one first, which each window names by its index; none of the one
+    /// session of no name nor folder, which an earlier Lokyr reads past,
+    /// opening every window in one session.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sessions: Vec<Session>,
+    /// The windows and the panes left out, past [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`], which the next start tells.
+    #[serde(default, skip_serializing_if = "Left::is_none")]
+    pub left: Left,
+    /// The session of each window, as the workspace has it, which the
+    /// windows appended after take theirs beside.
+    #[serde(skip)]
+    of_sessions: Vec<Option<workspace::SessionId>>,
+}
+
+impl PartialEq for Kept {
+    /// The same windows, front and sessions, as the file holds them.
+    fn eq(&self, other: &Self) -> bool {
+        self.version == other.version
+            && self.windows == other.windows
+            && self.front == other.front
+            && self.sessions == other.sessions
+            && self.left == other.left
+    }
+}
+
+/// The windows and the panes that were not kept, past the most that a file
+/// opens.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Left {
+    /// The windows left out.
+    pub windows: usize,
+    /// The panes of the windows left out.
+    pub panes: usize,
+}
+
+impl Left {
+    /// Whether nothing was left out.
+    pub fn is_none(&self) -> bool {
+        self.windows == 0
+    }
+}
+
+/// A session of windows that the app keeps.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Session {
+    /// Its name, empty for none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The folder that it was opened in, if it was opened in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folder: Option<String>,
 }
 
 /// A window that the app keeps.
@@ -65,6 +120,9 @@ pub struct Window {
     /// names by its index.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<Group>,
+    /// The index of its session among the kept ones; none of the first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<usize>,
 }
 
 /// A group of a window's tabs that the app keeps.
@@ -121,6 +179,51 @@ pub struct Tab {
     /// The index of its group among its window's, if it is in one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group: Option<usize>,
+    /// Its panes that float over its layout, from the back to the front,
+    /// which an earlier Lokyr reads past.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub floating: Vec<Floating>,
+    /// Whether its floating panes show.
+    #[serde(default = "shown", skip_serializing_if = "is_shown")]
+    pub floating_shown: bool,
+}
+
+/// Floating panes show, unless a tab keeps them hidden.
+fn shown() -> bool {
+    true
+}
+
+/// Whether floating panes show, which a file writes not.
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's `skip_serializing_if` passes a reference"
+)]
+fn is_shown(shown: &bool) -> bool {
+    *shown
+}
+
+/// A pane that floats over its tab's layout, that the app keeps: the pane,
+/// as a layout of it alone, and its frame's corner and size, shares of the
+/// tab's room.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Floating {
+    /// The pane.
+    pub pane: Layout,
+    /// Its corner's share across.
+    pub x: f64,
+    /// Its corner's share down.
+    pub y: f64,
+    /// Its share across.
+    pub width: f64,
+    /// Its share down.
+    pub height: f64,
+}
+
+impl Tab {
+    /// The number of its panes, its layout's and its floating ones.
+    pub fn panes(&self) -> usize {
+        self.layout.panes() + self.floating.len()
+    }
 }
 
 /// A tab's layout that the app keeps: a tree of splits whose leaves are
@@ -134,6 +237,16 @@ pub enum Layout {
         /// directory, where the app starts it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// The name of the file of its scrollback in the state's folder of
+        /// the panes' scrollback, if it kept one, which an earlier Lokyr
+        /// reads past.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scrollback: Option<String>,
+        /// The command line that its shell runs as it starts, of a layout's
+        /// pane, which the file of the windows neither writes nor reads, so
+        /// that no command comes of it.
+        #[serde(skip)]
+        command: Option<String>,
     },
     /// Two parts that share the room.
     Split {
@@ -148,6 +261,21 @@ pub enum Layout {
         /// The right or bottom part.
         second: Box<Layout>,
     },
+}
+
+/// A pane of a kept layout, as its spawn takes it: the directory that its
+/// program worked in, and the name of its scrollback's file.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeptPane<'a> {
+    /// The directory that its program worked in; none for the home
+    /// directory.
+    pub directory: Option<&'a Path>,
+    /// The name of its scrollback's file in the state's folder of the
+    /// panes' scrollback, if it kept one.
+    pub scrollback: Option<&'a str>,
+    /// The command line that its shell runs as it starts, of a layout's
+    /// pane.
+    pub command: Option<&'a str>,
 }
 
 /// How a kept split lays its two parts out.
@@ -205,7 +333,7 @@ pub fn read(state: &Path) -> Result<Option<Kept>, Unread> {
         .windows
         .iter()
         .flat_map(|window| &window.tabs)
-        .map(|tab| tab.layout.panes())
+        .map(Tab::panes)
         .sum();
     if kept.windows.len() > MOST_WINDOWS {
         return Err(Unread::Invalid(format!(
@@ -216,6 +344,13 @@ pub fn read(state: &Path) -> Result<Option<Kept>, Unread> {
     if panes > MOST_PANES {
         return Err(Unread::Invalid(format!(
             "it holds {panes} panes, past the {MOST_PANES} that it may open"
+        )));
+    }
+    // Each session of a window at least.
+    if kept.sessions.len() > MOST_WINDOWS {
+        return Err(Unread::Invalid(format!(
+            "it holds {} sessions, past the {MOST_WINDOWS} windows that it may open",
+            kept.sessions.len()
         )));
     }
     Ok(Some(kept))
@@ -236,20 +371,81 @@ pub fn forget(state: &Path) -> io::Result<()> {
     }
 }
 
+/// Of `shown`, the windows that a file keeps within [`MOST_WINDOWS`] and
+/// [`MOST_PANES`], in their order, and what is left out: the active
+/// session's first, then the others' in the order of their use, each
+/// session's in their order, a window whose panes are past the room left
+/// giving way to the next ones that fit. Each window counts the panes of
+/// its tabs that are kept, the settings tab of none.
+fn within_bounds(
+    workspace: &Workspace,
+    shown: &[(workspace::WindowId, Option<Frame>)],
+) -> (Vec<(workspace::WindowId, Option<Frame>)>, Left) {
+    let order: Vec<workspace::SessionId> = workspace
+        .sessions()
+        .iter()
+        .map(|session| session.id())
+        .collect();
+    let mut ranked: Vec<(usize, usize, usize)> = shown
+        .iter()
+        .enumerate()
+        .filter_map(|(at, &(id, _))| {
+            let window = workspace.window(id)?;
+            let rank = window
+                .session()
+                .and_then(|session| order.iter().position(|&of| of == session))
+                .unwrap_or(usize::MAX);
+            let panes = window
+                .tabs()
+                .iter()
+                .filter_map(|&tab| workspace.tab(tab))
+                .map(|tab| tab.panes().len())
+                .sum();
+            Some((rank, at, panes))
+        })
+        .collect();
+    ranked.sort_unstable();
+    let (mut chosen, mut panes, mut left) = (Vec::new(), 0, Left::default());
+    for (_, at, more) in ranked {
+        if chosen.len() >= MOST_WINDOWS || panes + more > MOST_PANES {
+            left.windows += 1;
+            left.panes += more;
+            continue;
+        }
+        panes += more;
+        chosen.push(at);
+    }
+    chosen.sort_unstable();
+    (chosen.into_iter().map(|at| shown[at]).collect(), left)
+}
+
 impl Kept {
     /// The windows `shown` of `workspace`, in their order, each of its
     /// frame, of `front` the one in front, and of each pane's directory,
-    /// as `directory` finds it. A window that the workspace does not hold
-    /// is left out.
+    /// as `directory` finds it, and the name of its scrollback's file, as
+    /// `scrollback` keeps it, of the pane and its index among the panes
+    /// kept, in their order. A window that the workspace does not hold is
+    /// left out, and so are the windows past [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`], which the next start would not open: the active
+    /// session's kept first, then the others' in the order of their use,
+    /// each session's in their order.
     pub fn of(
         workspace: &Workspace,
         shown: &[(workspace::WindowId, Option<Frame>)],
         front: Option<workspace::WindowId>,
         directory: impl Fn(&Pane) -> Option<PathBuf>,
+        mut scrollback: impl FnMut(&Pane, usize) -> Option<String>,
     ) -> Self {
+        let mut index = 0;
+        let mut scrollback = |pane: &Pane| {
+            index += 1;
+            scrollback(pane, index - 1)
+        };
         let mut windows = Vec::new();
+        let mut of_sessions: Vec<Option<workspace::SessionId>> = Vec::new();
         let mut front_index = None;
-        for &(id, frame) in shown {
+        let (shown, left) = within_bounds(workspace, shown);
+        for (id, frame) in shown {
             let Some(window) = workspace.window(id) else {
                 continue;
             };
@@ -262,7 +458,7 @@ impl Kept {
                     group: tab
                         .group()
                         .and_then(|group| groups.iter().position(|kept| kept.id() == group)),
-                    ..Tab::of(workspace, tab, &directory)
+                    ..Tab::of(workspace, tab, &directory, &mut scrollback)
                 })
                 .collect();
             if tabs.is_empty() {
@@ -298,12 +494,139 @@ impl Kept {
                 tabs,
                 active,
                 groups,
+                session: None,
             });
+            of_sessions.push(window.session());
         }
-        Self {
+        let mut kept = Self {
             version: VERSION,
             windows,
             front: front_index,
+            sessions: Vec::new(),
+            left,
+            of_sessions,
+        };
+        kept.keep_sessions(workspace);
+        kept
+    }
+
+    /// The windows `windows`, of `front` the one in front, of their one
+    /// session, of the format's version.
+    pub fn new(windows: Vec<Window>, front: Option<usize>) -> Self {
+        Self {
+            version: VERSION,
+            windows,
+            front,
+            sessions: Vec::new(),
+            left: Left::default(),
+            of_sessions: Vec::new(),
+        }
+    }
+
+    /// Appends `windows`, each of its session, which the workspace holds of
+    /// no window yet, as a session that never showed since the app
+    /// started keeps its windows as they were kept, after the others, in
+    /// their order, while they fit within [`MOST_WINDOWS`] and
+    /// [`MOST_PANES`]; each appended as `kept` takes it first, as the names
+    /// of its panes' files are its new place's.
+    pub fn append(
+        &mut self,
+        workspace: &Workspace,
+        windows: Vec<(workspace::SessionId, Window)>,
+        mut kept: impl FnMut(&mut Window),
+    ) {
+        let mut panes = self.panes();
+        for (session, mut window) in windows {
+            let more = window.tabs.iter().map(Tab::panes).sum::<usize>();
+            if self.windows.len() >= MOST_WINDOWS || panes + more > MOST_PANES {
+                self.left.windows += 1;
+                self.left.panes += more;
+                continue;
+            }
+            panes += more;
+            kept(&mut window);
+            self.windows.push(window);
+            self.of_sessions.push(Some(session));
+        }
+        self.keep_sessions(workspace);
+    }
+
+    /// The panes that its windows hold, of all their tabs.
+    pub fn panes(&self) -> usize {
+        self.windows
+            .iter()
+            .flat_map(|window| &window.tabs)
+            .map(Tab::panes)
+            .sum()
+    }
+
+    /// Names each window's session, of `of_sessions`, each window's in
+    /// their order, among the sessions that the windows are of, in the
+    /// order of their use, the active one first; none of the one session
+    /// of no name nor folder, as a run of no sessions of its own keeps.
+    fn keep_sessions(&mut self, workspace: &Workspace) {
+        let of_sessions = &self.of_sessions;
+        let used: Vec<&workspace::Session> = workspace
+            .sessions()
+            .into_iter()
+            .filter(|session| of_sessions.contains(&Some(session.id())))
+            .collect();
+        let plain =
+            |session: &workspace::Session| session.name().is_empty() && session.folder().is_none();
+        if used.len() < 2 && used.iter().all(|session| plain(session)) {
+            self.sessions.clear();
+            for window in &mut self.windows {
+                window.session = None;
+            }
+            return;
+        }
+        self.sessions = used
+            .iter()
+            .map(|session| Session {
+                name: session.name().to_owned(),
+                folder: session.folder().map(str::to_owned),
+            })
+            .collect();
+        for (window, of) in self.windows.iter_mut().zip(&self.of_sessions) {
+            window.session = of
+                .and_then(|of| used.iter().position(|session| session.id() == of))
+                .filter(|&index| index > 0);
+        }
+    }
+
+    /// The sessions as they open: the kept ones, the first one's of none
+    /// kept, each name that the file holds as no plugin could write it
+    /// emptied.
+    pub fn sessions_to_open(&self) -> Vec<Session> {
+        let mut sessions = self.sessions.clone();
+        if sessions.is_empty() {
+            sessions.push(Session::default());
+        }
+        for session in &mut sessions {
+            if lokyr_plugin_sdk::host::check_session_name(&session.name).is_err() {
+                session.name.clear();
+            }
+        }
+        sessions
+    }
+}
+
+impl Window {
+    /// The index of its session among those that open, of `count`: the
+    /// first's of none, or of an index past them.
+    pub fn session_index(&self, count: usize) -> usize {
+        self.session.filter(|&index| index < count).unwrap_or(0)
+    }
+
+    /// Gives each of its panes the name of its scrollback's file that
+    /// `rename` gives of the one that it had, in the layouts' order, as a
+    /// window kept anew takes the files' new names.
+    pub fn rename_scrollbacks(&mut self, mut rename: impl FnMut(Option<String>) -> Option<String>) {
+        for tab in &mut self.tabs {
+            tab.layout.rename_scrollbacks(&mut rename);
+            for floating in &mut tab.floating {
+                floating.pane.rename_scrollbacks(&mut rename);
+            }
         }
     }
 }
@@ -311,19 +634,20 @@ impl Kept {
 impl Window {
     /// Opens the window in `workspace`, of its tabs, the one that it showed
     /// shown, each pane of `spawn`, of the id that the workspace gives it,
-    /// in the directory that it kept; `None` for a window of no tab.
+    /// of the directory and the scrollback that it kept; `None` for a
+    /// window of no tab.
     pub fn open(
         &self,
         workspace: &mut Workspace,
-        mut spawn: impl FnMut(Option<&Path>) -> Pane,
+        mut spawn: impl FnMut(KeptPane<'_>) -> Pane,
     ) -> Option<workspace::WindowId> {
         let (first, rest) = self.tabs.split_first()?;
-        let window = workspace.open_window(spawn(first.layout.first_directory()));
+        let window = workspace.open_window(spawn(first.layout.first_pane()));
         let tab = workspace.window(window)?.active_tab();
         first.lay_out(workspace, tab, &mut spawn);
         let mut tabs = vec![(tab, first.group)];
         for (index, kept) in rest.iter().enumerate() {
-            let pane = spawn(kept.layout.first_directory());
+            let pane = spawn(kept.layout.first_pane());
             if let Some(tab) = workspace.open_tab(window, pane, index + 1) {
                 kept.lay_out(workspace, tab, &mut spawn);
                 tabs.push((tab, kept.group));
@@ -364,17 +688,48 @@ impl Tab {
         workspace: &Workspace,
         tab: &workspace::Tab,
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
+        scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
-        let panes = tab.layout().panes();
+        // Its layout's panes, then its floating ones but its popups, which
+        // no quit keeps, as the keyboard's index counts them and their
+        // files are named: the keyboard of a popup the layout's pane's that
+        // had it last.
+        let panes: Vec<_> = tab
+            .panes()
+            .into_iter()
+            .filter(|&pane| !tab.is_popup(pane))
+            .collect();
         let index = |pane| panes.iter().position(|&id| id == pane);
+        let layout = Layout::of(workspace, tab.layout(), directory, scrollback);
+        let floating = tab
+            .floating()
+            .iter()
+            .filter(|floating| !floating.popup)
+            .map(|floating| Floating {
+                pane: Layout::of(
+                    workspace,
+                    &workspace::Layout::Leaf(floating.pane),
+                    directory,
+                    scrollback,
+                ),
+                x: floating.frame.x(),
+                y: floating.frame.y(),
+                width: floating.frame.width(),
+                height: floating.frame.height(),
+            })
+            .collect();
         Self {
             title: tab.own_title().map(str::to_owned),
             color: tab.own_color().map(hex),
-            layout: Layout::of(workspace, tab.layout(), directory),
-            active: index(tab.active_pane()).unwrap_or(0),
+            layout,
+            active: index(tab.active_pane())
+                .or_else(|| index(tab.split_active()))
+                .unwrap_or(0),
             zoomed: tab.zoomed().and_then(index),
             pinned: tab.marks().pinned,
             group: None,
+            floating,
+            floating_shown: tab.floating_shown(),
         }
     }
 
@@ -386,16 +741,31 @@ impl Tab {
         &self,
         workspace: &mut Workspace,
         tab: workspace::TabId,
-        spawn: &mut impl FnMut(Option<&Path>) -> Pane,
+        spawn: &mut impl FnMut(KeptPane<'_>) -> Pane,
     ) {
         let Some(first) = workspace.tab(tab).map(workspace::Tab::active_pane) else {
             return;
         };
         self.layout
             .grow(workspace, tab, first, &mut Vec::new(), spawn);
+        // Its floating panes, over the layout, from the back to the front,
+        // shown or hidden as they were.
+        for floating in &self.floating {
+            let pane = spawn(floating.pane.first_pane());
+            let frame = workspace::FloatingFrame::new(
+                floating.x,
+                floating.y,
+                floating.width,
+                floating.height,
+            );
+            workspace.float_pane(tab, pane, frame);
+        }
+        if !self.floating.is_empty() {
+            workspace.set_floating_shown(tab, self.floating_shown);
+        }
         let panes = workspace
             .tab(tab)
-            .map(|tab| tab.layout().panes())
+            .map(workspace::Tab::panes)
             .unwrap_or_default();
         if let Some(&active) = panes.get(self.active) {
             workspace.focus_pane(active);
@@ -417,11 +787,13 @@ impl Tab {
 
 impl Layout {
     /// The layout `layout` of `workspace`, of each pane's directory as
-    /// `directory` finds it.
+    /// `directory` finds it and its scrollback's file as `scrollback`
+    /// keeps it.
     fn of(
         workspace: &Workspace,
         layout: &workspace::Layout,
         directory: &impl Fn(&Pane) -> Option<PathBuf>,
+        scrollback: &mut impl FnMut(&Pane) -> Option<String>,
     ) -> Self {
         match layout {
             workspace::Layout::Leaf(pane) => Self::Pane {
@@ -432,6 +804,8 @@ impl Layout {
                     .pane(*pane)
                     .and_then(directory)
                     .map(|path| path.to_string_lossy().into_owned()),
+                scrollback: workspace.pane(*pane).and_then(&mut *scrollback),
+                command: None,
             },
             workspace::Layout::Split {
                 direction,
@@ -444,9 +818,21 @@ impl Layout {
                     workspace::Direction::Vertical => Direction::Vertical,
                 },
                 ratio: ratio.map(Ratio::get),
-                first: Box::new(Self::of(workspace, first, directory)),
-                second: Box::new(Self::of(workspace, second, directory)),
+                first: Box::new(Self::of(workspace, first, directory, scrollback)),
+                second: Box::new(Self::of(workspace, second, directory, scrollback)),
             },
+        }
+    }
+
+    /// Gives each of its panes, in their order, the scrollback's file's
+    /// name that `rename` gives of the one that it had.
+    fn rename_scrollbacks(&mut self, rename: &mut impl FnMut(Option<String>) -> Option<String>) {
+        match self {
+            Self::Pane { scrollback, .. } => *scrollback = rename(scrollback.take()),
+            Self::Split { first, second, .. } => {
+                first.rename_scrollbacks(rename);
+                second.rename_scrollbacks(rename);
+            }
         }
     }
 
@@ -458,11 +844,19 @@ impl Layout {
         }
     }
 
-    /// The directory of its first pane, the left or top one.
-    pub fn first_directory(&self) -> Option<&Path> {
+    /// Its first pane, the left or top one.
+    pub fn first_pane(&self) -> KeptPane<'_> {
         match self {
-            Self::Pane { directory } => directory.as_deref().map(Path::new),
-            Self::Split { first, .. } => first.first_directory(),
+            Self::Pane {
+                directory,
+                scrollback,
+                command,
+            } => KeptPane {
+                directory: directory.as_deref().map(Path::new),
+                scrollback: scrollback.as_deref(),
+                command: command.as_deref(),
+            },
+            Self::Split { first, .. } => first.first_pane(),
         }
     }
 
@@ -476,7 +870,7 @@ impl Layout {
         tab: workspace::TabId,
         pane: workspace::PaneId,
         path: &mut Vec<Side>,
-        spawn: &mut impl FnMut(Option<&Path>) -> Pane,
+        spawn: &mut impl FnMut(KeptPane<'_>) -> Pane,
     ) {
         let Self::Split {
             direction,
@@ -491,7 +885,7 @@ impl Layout {
             Direction::Horizontal => workspace::Direction::Horizontal,
             Direction::Vertical => workspace::Direction::Vertical,
         };
-        let new = spawn(second.first_directory());
+        let new = spawn(second.first_pane());
         let Some(new) = workspace.split(pane, direction, new, Side::Second) else {
             return;
         };

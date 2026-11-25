@@ -18,6 +18,7 @@ Every page belongs to one of the summary's groups:
 A Help group, for troubleshooting and common questions, joins them between Reference and Internals with its first page.
 
 - **List a new page in [`docs/SUMMARY.md`](SUMMARY.md)**, in its group, where a reader would look for it. The site's build fails when a public page is missing from the summary. The measurements in `docs/bench/` and the release notes in `docs/releases/` are the exception: the page of their folder that the summary lists links each of them, which the build checks too.
+- **Give a page a title for the search results where its heading says too little**, such as "Tabs: a tab bar on any side, or vertical tabs" for `tabs`: the words that people search, in `TITLES` of `tools/xtask/src/site.rs`, 60 characters at most with " — Lokyr". The page keeps its heading.
 - **Name a new page in lowercase**, with hyphens, such as `shell-integration.md`. The older pages in uppercase keep their names, because links from elsewhere point to them.
 - **Update a feature's page in the same commit** as the change to the feature. When a feature has no page yet, say so in the pull request.
 
@@ -172,7 +173,7 @@ The heading is the symptom, as the reader sees it, quoting an error message exac
 - **Use one format for markers**: `<sub>Platforms: macOS · Since 1.3</sub>` under a key, a command or an entry, and the marker line under a topic page's title. A section newer than its page carries its own marker. Don't write "Added in", "New in" or "Available since" in the text.
 - **Mark what no release has yet** with `· not released yet`: in the marker line of its page or section, or at the end of its list item or table row, so that readers of the last release know what they don't have yet. Never put the mark in a heading: the heading's link would change with it.
 - **Mark a new key of the config** with `"x-since": "next"` in its schema, beside `x-platforms`: the configuration guide shows it as `· not released yet` in the key's line of platforms. Mark a new theme token in the comment above its rule in `crates/plugin-sdk/src/theme/rules.toml`, which the tokens' table shows.
-- **The release turns every mark into its own**: in the commit that prepares it, `cargo xtask since X.Y.Z` writes `· Since X.Y`, or `· Since X.Y.Z` for a patch, and `"x-since": "X.Y"`. A mark in code, such as the ones on this page, is left alone. The release refuses to go out while a mark is left: one in another form, such as `(not released yet)`, one in a heading, or one in HTML.
+- **The release turns every mark into its own**: in the commit that prepares it, `cargo xtask since X.Y.Z` writes `· Since X.Y`, or `· Since X.Y.Z` for a patch, and `"x-since": "X.Y"`. A mark in a code block's comment, such as a Luau type's `-- … · not released yet` in the plugin reference, becomes the release's too, for the languages whose comments it knows (Luau's `--`, a shell's or TOML's `#`, Rust's `//`). A mark in inline code, such as the ones on this page, is left alone, and so is one in a code block whose info string says `example`, such as ```` ```luau example ````, for a block that shows the mark. The release refuses any other mark in code, and a comment's mark wrapped over two lines: keep the mark whole on one line. The release refuses to go out while a mark is left: one in another form, such as `(not released yet)`, one in a heading, or one in HTML.
 
 ## Callouts
 
@@ -208,4 +209,4 @@ Some pages, or parts of them, are made from their sources, so that they can't dr
 ## Check your page
 
 - `just check-links` checks that every internal link and anchor resolves.
-- `just site-serve` builds the site and serves it on `http://127.0.0.1:8124`, so that you can read your page as lokyr.dev will show it, with its sidebar and its callouts. The build fails when a link breaks or a page is missing from the summary.
+- `just site-serve` builds the site and serves it on `http://127.0.0.1:8124`, so that you can read your page as lokyr.dev will show it, with its sidebar and its callouts. The build fails when a link breaks, a page is missing from the summary, a page has no title (a `# ` heading first), or an image has no alt text that says what it shows.

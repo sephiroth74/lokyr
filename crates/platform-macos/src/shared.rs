@@ -44,6 +44,10 @@ pub(crate) enum Pending {
     AlertResponse(AlertId, NSModalResponse),
     /// A timer fired.
     Timer(TimerId),
+    /// A window that left full screen to hide hid, as its session does.
+    LeftFullScreen(WindowId),
+    /// The windows that leave full screen may be overdue.
+    FullScreenOverdue,
 }
 
 /// The state of a running application, on the main thread.
@@ -321,6 +325,8 @@ impl Shared {
                     handler.app_event(backend, AppEvent::Timer(timer));
                 }
             }
+            Pending::LeftFullScreen(window) => backend.left_full_screen(window),
+            Pending::FullScreenOverdue => backend.full_screen_overdue(),
             Pending::Modal(_) | Pending::ContextMenu => {}
         }));
         if let Err(payload) = outcome {

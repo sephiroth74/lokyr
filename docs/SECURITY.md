@@ -87,7 +87,7 @@ The MCP server lets AI agents drive the terminal.
   - An out-of-process crash handler (e.g. `crash-handler` + `minidumper`) writes a minidump, later.
   - dSYMs are archived for every release, for symbolication.
   - Nothing is uploaded automatically: whoever reports a problem decides whether to attach a minidump to the report.
-- **Sessions**: windows, tabs, layouts and cwds are saved as Lokyr quits, in the state directory, so that they open again after an update or a restart of the Mac, as `[app] restore-windows` says; a crash or a force quit restores those of the quit before. A file of a newer format's version, or that does not read, is left aside with a notice.
+- **Sessions**: windows, tabs, layouts and cwds are saved as Lokyr quits, in the state directory, so that they open again after an update or a restart of the Mac, as `[app] restore-windows` says; a crash or a force quit restores those of the quit before. A file of a newer format's version, or that does not read, is left aside with a notice. Each pane's scrollback is saved beside them, as `[app] restore-scrollback` says, off by default, within its `[scrollback] limit`: what the pane showed, which may hold a secret that a command printed, in a file of each pane, in a folder of the state's, `scrollback/`, both of their owner alone (`0700` and `0600`), each removed once its pane reads it, and all of them as the app saves anew or as the key is off; the input that a program hides, as a password, never reaches the grid, and is not saved · Since 1.5.
 - **Config**: reloads are all-or-nothing. If the new config has errors, the previous one stays active and a notice shows the file, line and column.
 
 ## macOS environment

@@ -42,6 +42,7 @@ tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o s
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
 tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.
 tip-tab-groups = Fai clic destro su un tab e scegli Nuovo gruppo con il tab per raccogliere i tab sotto un nome e un colore. Fai clic sulla pillola del gruppo per comprimerlo, o trascina un tab subito dopo per metterlo dentro.
+tip-restore-scrollback = Imposta restore-windows = "always" e restore-scrollback = true nella sezione [app] della config: le finestre si riaprono come le hai lasciate, e ogni pane mostra ciò che mostrava quando sei uscito, comandi compresi.
 tip-hints = Premi { $keys } per etichettare link, percorsi e hash sullo schermo, poi scrivi un'etichetta per aprirlo; in maiuscolo lo copi.
 tip-themes = Vista › Scegli tema… mostra in anteprima ogni tema mentre scorri l'elenco.
 tip-themes-folder = Metti un tema .toml o .itermcolors nella cartella che Vista › Apri la cartella dei temi mostra nel Finder, e Scegli tema… lo elenca.
@@ -52,6 +53,13 @@ tip-look-up = Fai clic destro su una parola per cercarla nel dizionario, sul web
 tip-services = Nel Finder, fai clic destro su una cartella e scegli Servizi › Nuovo tab Lokyr qui per un terminale lì.
 tip-itermcolors = Fai doppio clic su un file .itermcolors, o trascinalo sull'icona di Lokyr nel Dock, per installarne il tema.
 tip-float = Finestra › Sempre in primo piano tiene la finestra sopra quelle di ogni altra app.
+tip-sessions = Finestra › Sessioni › Nuova sessione apre una sessione a sé, una finestra con una nuova shell, e nasconde le altre finestre, con i loro programmi in esecuzione, finché non torni indietro.
+tip-layouts = Finestra › Sessioni › Salva sessione come layout… salva finestre, tab e split in un file; aggiungi un comando a un pane lì, e il selettore apre il layout come nuova sessione che lo esegue.
+tip-session-switcher = Premi { $keys } per passare a una sessione o aprirne una nella cartella di un progetto: aggiungi folders = ["~/src/*"] a una sezione [sessions] della config per elencare i tuoi progetti.
+tip-last-session = Premi { $keys } per passare alla sessione che usavi prima, con le sue finestre dove le avevi lasciate.
+tip-floating = Premi { $keys } per un pannello che fluttua sopra il tab, per esempio una shell di appoggio; trascinane il titolo per spostarlo, e premi ⌥⌘F per nasconderlo e mostrarlo di nuovo.
+tip-popup = Associa un tasto a `pane.popup` con un comando, per esempio lazygit, per eseguirlo in un popup sopra il tab che si chiude quando il comando finisce.
+tip-broadcast = Premi { $keys } per scrivere in tutti i pannelli del tab insieme, per esempio lo stesso comando su più server; un anello rosso segna ogni pannello, e gli stessi tasti la fermano.
 tip-smooth-scroll = Imposta smooth-scroll = true in [window] nella config, e il trackpad scorre il testo a pixel, continuando a scivolare quando alzi le dita; anche lo scatto della rotella del mouse scivola.
 tip-cursor-guide = Premi { $keys }, o Vista › Mostra la guida del cursore, per una banda sulla riga del cursore che mostra dov'è.
 tip-transparency = Premi { $keys }, o Vista › Usa la trasparenza, per mostrare opaca una finestra traslucida mentre leggi, e di nuovo per vederci attraverso; la config resta com'è.

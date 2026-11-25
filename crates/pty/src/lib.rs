@@ -69,6 +69,13 @@ impl Exit {
     pub fn success(self) -> bool {
         self == Self::Code(0)
     }
+
+    /// Whether an interrupt ended it, as Control-C does: the signal
+    /// `SIGINT`, or the status of 128 and its number that a program which
+    /// takes the signal exits with, as fzf does of Escape too.
+    pub fn interrupted(self) -> bool {
+        self == Self::Signal(libc::SIGINT) || self == Self::Code(128 + libc::SIGINT)
+    }
 }
 
 /// What a PTY runs.

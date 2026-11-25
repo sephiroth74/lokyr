@@ -1,0 +1,18 @@
+== startup, warm, first frame, 10 runs after 2, of notarized DMGs
+round 1: v140 270.6 (p90 272.9, spread 7.5%); v150 272.1 (p90 273.5, spread 2.1%); floor 212.1
+round 2: v140 268.4 (p90 270.4, spread 6.0%); v150 269.2 (p90 287.0, spread 12.4%); floor 212.9
+round 3: v140 269.0 (p90 272.7, spread 7.5%); v150 255.1 (p90 273.2, spread 8.0%); floor 214.6
+round 4: v140 262.9 (p90 273.0, spread 7.3%); v150 269.9 (p90 273.4, spread 7.0%); floor 212.7
+round 5: v140 269.4 (p90 270.4, spread 6.2%); v150 272.0 (p90 273.1, spread 7.1%); floor 208.9
+round 6: v140 264.4 (p90 285.8, spread 9.3%); v150 269.9 (p90 287.3, spread 14.1%); floor 215.6
+round 7: v140 274.5 (p90 290.0, spread 9.9%); v150 269.6 (p90 279.0, spread 5.8%); floor 214.0
+round 8: v140 274.1 (p90 288.8, spread 12.0%); v150 267.4 (p90 279.5, spread 5.8%); floor 215.2
+round 9: v140 270.6 (p90 283.1, spread 6.9%); v150 268.4 (p90 272.4, spread 3.4%); floor 213.4
+round 10: v140 266.1 (p90 288.8, spread 9.6%); v150 271.1 (p90 289.1, spread 9.1%); floor 213.8
+round 11: v140 264.4 (p90 271.7, spread 7.5%); v150 264.4 (p90 281.5, spread 9.9%); floor 213.1
+round 12: v140 259.4 (p90 273.6, spread 7.5%); v150 269.9 (p90 289.2, spread 9.2%); floor 212.5
+
+floor: median 213.3, mean 213.2 (sd 1.7), from 208.9 to 215.6
+v140: median of rounds 268.7, mean 267.8 (sd 4.3); gap median 54.9, mean 54.6 (sd 4.5)
+v150: median of rounds 269.7, mean 268.2 (sd 4.4); gap median 55.9, mean 55.0 (sd 5.3)
+v150 − v140 by round: +1.5, +0.8, -13.9, +7.0, +2.6, +5.5, -4.9, -6.7, -2.2, +5.0, +0.0, +10.5; mean +0.4 (sd 6.4), median +1.1; v150 longer in 7 of 12

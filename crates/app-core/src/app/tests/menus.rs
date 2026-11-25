@@ -72,6 +72,7 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Move Tab to New Window",
             "Pin Tab",
             "Reopen Closed Tab shift+cmd+t",
+            "-",
             "New Group with Tab",
             "Add Tab to Group",
             "Remove Tab from Group",
@@ -79,22 +80,13 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Fold Group",
             "Ungroup",
             "-",
-            "Select Next Pane cmd+]",
-            "Select Previous Pane cmd+[",
-            "Zoom Pane shift+cmd+Enter",
-            "Equalize Panes",
-            "Move Pane to New Tab",
-            "Move Pane to New Window",
-            "Close Pane",
+            "New Floating Pane alt+shift+cmd+f",
+            "Show or Hide Floating Panes alt+cmd+f",
             "-",
-            "Split Right cmd+d",
-            "Split Left",
-            "Split Down shift+cmd+d",
-            "Split Up",
-            "Select Pane Left alt+cmd+ArrowLeft",
-            "Select Pane Right alt+cmd+ArrowRight",
-            "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown"
+            "Split",
+            "Pane",
+            "-",
+            "Broadcast Input"
         ]
     );
     assert_eq!(
@@ -168,6 +160,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Zoom",
             "Cycle Through Windows cmd+`",
             "-",
+            "Sessions",
+            "-",
             "Float on Top",
             "Go to Next Agent alt+cmd+a",
             "Show Agents… alt+shift+cmd+a",
@@ -208,6 +202,7 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Move Tab to New Window",
             "Pin Tab",
             "Reopen Closed Tab shift+cmd+t",
+            "-",
             "New Group with Tab",
             "Add Tab to Group",
             "Remove Tab from Group",
@@ -215,22 +210,13 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Fold Group",
             "Ungroup",
             "-",
-            "Select Next Pane cmd+]",
-            "Select Previous Pane cmd+[",
-            "Zoom Pane shift+cmd+Enter",
-            "Equalize Panes",
-            "Move Pane to New Tab",
-            "Move Pane to New Window",
-            "Close Pane",
+            "New Floating Pane alt+shift+cmd+f",
+            "Show or Hide Floating Panes alt+cmd+f",
             "-",
-            "Split Right cmd+d",
-            "Split Left",
-            "Split Down shift+cmd+d",
-            "Split Up",
-            "Select Pane Left alt+cmd+ArrowLeft",
-            "Select Pane Right alt+cmd+ArrowRight",
-            "Select Pane Above alt+cmd+ArrowUp",
-            "Select Pane Below alt+cmd+ArrowDown"
+            "Split",
+            "Pane",
+            "-",
+            "Broadcast Input"
         ]
     );
     assert_eq!(
@@ -339,7 +325,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 139);
+    assert_eq!(app.keymap.bindings().len(), 145);
 }
 
 #[test]
@@ -357,6 +343,62 @@ fn copy_s_item_is_enabled_with_a_selection_alone() {
     fake.send(&mut app, window, click(false, cell(2, 1), none, 1));
     fake.send(&mut app, window, WindowEvent::Frame);
     assert!(!fake.command_enabled("pane.copy"));
+}
+
+#[test]
+fn the_app_s_commands_take_the_capabilities_of_what_they_do_of_a_plugin() {
+    use lokyr_kernel::commands::{Capability, Uses};
+    let registry = commands(&Texts::new("en", &CATALOGS), &Plugins::new());
+    let uses = Uses::new([
+        "app.quit",
+        "window.new",
+        "window.close",
+        "window.set-title",
+        "app.make-default-terminal",
+        "app.install-command-line-tools",
+        "pane.search-web",
+        "app.about",
+    ]);
+    let run = |name: &str, granted: &[Capability]| {
+        registry.check_for_plugin(name, Args::new(), &[], &uses, granted)
+    };
+    // A plugin of no capabilities neither quits, nor opens or closes a
+    // window, nor titles one, nor changes the system; About opens.
+    for name in [
+        "app.quit",
+        "window.new",
+        "window.close",
+        "window.set-title",
+        "app.make-default-terminal",
+        "app.install-command-line-tools",
+        "pane.search-web",
+    ] {
+        let refused = run(name, &[]).unwrap_err();
+        assert_eq!(refused.code, Code::MissingCapability, "{name}: {refused:?}");
+    }
+    assert!(run("app.about", &[]).is_ok());
+    // Of the workspace's writes, the quit and the windows; of a view's,
+    // the title; of what opens and reads the terminal, the web's search.
+    for name in ["app.quit", "window.new", "window.close"] {
+        assert!(run(name, &[Capability::WorkspaceWrite]).is_ok(), "{name}");
+    }
+    assert!(run("window.set-title", &[Capability::PaneView]).is_ok());
+    assert!(
+        run(
+            "pane.search-web",
+            &[Capability::Open, Capability::TerminalRead]
+        )
+        .is_ok()
+    );
+    // The system's and the integrations', the user's alone.
+    let all = [
+        Capability::WorkspaceWrite,
+        Capability::PaneView,
+        Capability::Open,
+        Capability::Config,
+    ];
+    assert!(run("app.make-default-terminal", &all).is_err());
+    assert!(run("app.make-default-terminal", &[Capability::UserCommands]).is_ok());
 }
 
 #[test]
@@ -416,6 +458,9 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             ),
             ("app.settings", "Settings…", Category::App),
             ("app.settings-window", "Open Settings Window", Category::App),
+            ("pane.float", "Float Pane", Category::Panes),
+            ("pane.join-broadcast", "Join Broadcast", Category::Panes),
+            ("pane.leave-broadcast", "Leave Broadcast", Category::Panes),
             ("pane.look-up", "Look Up", Category::Edit),
             ("pane.man-page", "Open man Page", Category::Windows),
             (
@@ -423,18 +468,68 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
                 "Search man Page Index",
                 Category::Windows
             ),
+            (
+                "pane.move-into-splits",
+                "Move Pane into Splits",
+                Category::Panes
+            ),
+            ("pane.new-floating", "New Floating Pane", Category::Panes),
+            ("pane.popup", "Open Popup", Category::Panes),
             ("pane.search-web", "Search the Web", Category::Edit),
+            (
+                "pane.toggle-floating",
+                "Show or Hide Floating Panes",
+                Category::Panes
+            ),
+            (
+                "window.broadcast-off",
+                "Stop Broadcasting Input",
+                Category::Input
+            ),
+            (
+                "window.broadcast-to-tab",
+                "Broadcast Input to the Tab's Panes",
+                Category::Input
+            ),
+            (
+                "window.broadcast-to-window",
+                "Broadcast Input to the Window's Panes",
+                Category::Input
+            ),
             ("window.close", "Close Window", Category::Windows),
+            ("window.close-session", "Close Session", Category::Windows),
             ("window.goto", "Go to Window", Category::Windows),
             ("window.new", "New Window", Category::Windows),
+            ("window.new-session", "New Session", Category::Windows),
             ("window.next", "Cycle Through Windows", Category::Windows),
             ("window.next-agent", "Go to Next Agent", Category::Windows),
+            ("window.open-layout", "Open Layout", Category::Windows),
             (
                 "window.previous",
                 "Cycle Back Through Windows",
                 Category::Windows
             ),
+            (
+                "window.rename-session",
+                "Rename Session…",
+                Category::Windows
+            ),
+            (
+                "window.save-layout",
+                "Save Session as Layout…",
+                Category::Windows
+            ),
             ("window.set-title", "Set Title…", Category::Windows),
+            (
+                "window.switch-session",
+                "Switch to Session",
+                Category::Windows
+            ),
+            (
+                "window.switch-to-last-session",
+                "Switch to Last Session",
+                Category::Windows
+            ),
             (
                 "window.toggle-cursor-guide",
                 "Show Cursor Guide",
@@ -458,7 +553,16 @@ fn the_app_s_commands_register_with_their_categories_and_titles() {
             _ => None,
         })
         .collect();
-    assert_eq!(titles, ["New Window", "Close Window", "Set Title…"]);
+    assert_eq!(
+        titles,
+        [
+            "New Window",
+            "Close Window",
+            "Set Title…",
+            "New Floating Pane",
+            "Show or Hide Floating Panes"
+        ]
+    );
     // A command that takes no argument rejects one, and does nothing.
     let mut args = Args::new();
     args.insert(
@@ -1220,19 +1324,11 @@ fn context_item(fake: &Fake, window: WindowId, title: &str) -> String {
         .unwrap_or_else(|| panic!("no item “{title}”"))
 }
 
-/// The id of the item of `title` of the menu bar's menu at `index`.
+/// The id of the item of `title` of the menu bar's menu at `index`, or of
+/// one of its submenus.
 fn bar_item(fake: &Fake, index: usize, title: &str) -> String {
-    fake.main_menu().unwrap().menus[index]
-        .items
-        .iter()
-        .find_map(|item| match item {
-            MenuItem::Command {
-                title: shown,
-                command,
-                ..
-            } if shown == title => Some(command.clone()),
-            _ => None,
-        })
+    commands_of(&fake.main_menu().unwrap().menus[index].items)
+        .find_map(|(shown, command)| (shown == title).then(|| command.clone()))
         .unwrap_or_else(|| panic!("no item “{title}”"))
 }
 
@@ -1881,4 +1977,59 @@ fn a_block_s_submenu_acts_on_the_block_under_the_click() {
             fake.clipboard_text().as_deref() == Some(copied)
         });
     }
+}
+
+#[test]
+fn the_shell_menu_s_splits_and_panes_go_into_their_submenus_of_their_keys() {
+    let (fake, _, _) = bound("", reader(""));
+    let submenu = |title: &str| -> Vec<(String, bool)> {
+        fake.main_menu().unwrap().menus[1]
+            .items
+            .iter()
+            .find_map(|item| match item {
+                MenuItem::Submenu(menu) if menu.title == title => Some(menu),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no submenu “{title}”"))
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                MenuItem::Command {
+                    title, shortcut, ..
+                } => Some((title.clone(), shortcut.is_some())),
+                _ => None,
+            })
+            .collect()
+    };
+    let titled = |items: &[(&str, bool)]| -> Vec<(String, bool)> {
+        items
+            .iter()
+            .map(|&(title, keys)| (title.to_owned(), keys))
+            .collect()
+    };
+    assert_eq!(
+        submenu("Split"),
+        titled(&[
+            ("Split Right", true),
+            ("Split Left", false),
+            ("Split Down", true),
+            ("Split Up", false),
+        ])
+    );
+    assert_eq!(
+        submenu("Pane"),
+        titled(&[
+            ("Select Next Pane", true),
+            ("Select Previous Pane", true),
+            ("Select Pane Left", true),
+            ("Select Pane Right", true),
+            ("Select Pane Above", true),
+            ("Select Pane Below", true),
+            ("Zoom Pane", true),
+            ("Equalize Panes", false),
+            ("Move Pane to New Tab", false),
+            ("Move Pane to New Window", false),
+            ("Close Pane", false),
+        ])
+    );
 }

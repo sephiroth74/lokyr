@@ -14,7 +14,9 @@
 
 mod motion;
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
+};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{LineText, PaneId, Scroll, SelectionKind, TabId, Viewport};
 use lokyr_plugin_sdk::message::{Event, VIEWPORT_CHANGED};
@@ -215,7 +217,15 @@ impl Plugin for CopyMode {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category: Category::Edit,
-                capabilities: Vec::new(),
+                // What the mode does of a plugin that runs it: it reads the
+                // terminal, selects, holds a cursor of its own over the pane
+                // and copies.
+                capabilities: vec![
+                    Capability::TerminalRead,
+                    Capability::PaneView,
+                    Capability::Decorate,
+                    Capability::ClipboardWrite,
+                ],
                 when: param.is_some().then(|| WHEN.to_owned()),
                 params: param.into_iter().collect(),
             })?;

@@ -1,0 +1,102 @@
+00:21:25 v140: 1.4.0 (202611220721), stapled
+00:21:25 v150: 1.5.0 (202611242301), stapled
+00:28:03 session
+--- start
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+ 0:28  up 2 days,  8:26, 126 users, load averages: 4.26 3.35 2.99
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+15717  iTerm2           9.3 
+47728  top              9.1 
+93005  wdavdaemon_unpri 8.4 
+429    WindowServer     6.9 
+0      kernel_task      6.3 
+3558   DisplaysExt      4.7 
+685    wdavdaemon_enter 3.7 
+534    backgroundtaskma 3.1 
+625    wdavdaemon       2.9 
+1822   Creative Cloud U 2.8 
+861    com.apple.quickl 2.5 
+763    lsd              2.4 
+00:28:05 40 starts of v140
+00:28:16 40 starts of v150
+00:28:29 startup v140 1
+00:28:46 startup v150 1
+00:29:04 startup floor 1
+00:29:19 load { 4.81 3.82 3.21 }
+00:29:21 startup v150 2
+00:29:39 startup v140 2
+00:29:56 startup floor 2
+00:30:11 load { 3.89 3.73 3.21 }
+00:30:13 startup v150 3
+00:30:31 startup v140 3
+00:30:48 startup floor 3
+00:31:03 load { 2.54 3.39 3.11 }
+00:31:05 startup v140 4
+00:31:23 startup v150 4
+00:31:41 startup floor 4
+00:31:56 load { 2.05 3.15 3.04 }
+00:31:58 startup v140 5
+00:32:15 startup v150 5
+00:32:33 startup floor 5
+00:32:48 load { 2.50 3.10 3.03 }
+00:32:50 startup v150 6
+00:33:07 startup v140 6
+00:33:25 startup floor 6
+00:33:40 load { 2.42 3.02 3.00 }
+00:33:42 startup v150 7
+00:34:00 startup v140 7
+00:34:18 startup floor 7
+00:34:33 load { 1.95 2.76 2.90 }
+00:34:35 startup v140 8
+00:34:53 startup v150 8
+00:35:10 startup floor 8
+00:35:25 load { 1.83 2.61 2.84 }
+00:35:27 startup v140 9
+00:35:45 startup v150 9
+00:36:03 startup floor 9
+00:36:18 load { 2.20 2.60 2.82 }
+00:36:20 startup v150 10
+00:36:38 startup v140 10
+00:36:55 startup floor 10
+00:37:10 load { 2.34 2.60 2.81 }
+00:37:12 startup v150 11
+00:37:30 startup v140 11
+00:37:48 startup floor 11
+00:38:03 load { 2.50 2.62 2.80 }
+00:38:05 startup v140 12
+00:38:22 startup v150 12
+00:38:40 startup floor 12
+00:38:55 load { 5.45 3.40 3.08 }
+--- end
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	100%; charged; 0:00 remaining present: true
+ 0:38  up 2 days,  8:37, 126 users, load averages: 5.45 3.40 3.08
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL P2721Q:
+          Resolution: 5120 x 2880 (5K/UHD+ - Ultra High Definition Plus)
+          UI Looks like: 2560 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+15717  iTerm2           10.6
+56229  top              10.3
+429    WindowServer     9.1 
+93005  wdavdaemon_unpri 6.8 
+0      kernel_task      4.7 
+827    duetexpertd      2.2 
+625    wdavdaemon       2.2 
+1822   Creative Cloud U 1.9 
+633    dlpdaemon        1.8 
+626    JamfDaemon       1.6 
+534    backgroundtaskma 1.2 
+1379   trustd           1.1 
+00:38:57 session done

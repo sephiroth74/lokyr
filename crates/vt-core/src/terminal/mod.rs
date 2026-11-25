@@ -1,6 +1,7 @@
 //! The terminal state: the screens with their cursor, the modes, and what
 //! the parser's actions do to them.
 
+mod archive;
 mod charsets;
 mod clipboard;
 mod colors;
@@ -1211,6 +1212,15 @@ impl Terminal {
     /// The working directory that OSC 7 gave last.
     pub fn working_directory(&self) -> Option<&WorkingDirectory> {
         self.working_directory.as_deref()
+    }
+
+    /// Forgets what a reading told of the shell rather than of its rows, as
+    /// a pane's restored rows did: the working directory, the tab's color
+    /// and the bells counted, which the new shell tells anew.
+    pub fn forget_told(&mut self) {
+        self.working_directory = None;
+        self.tab_color = None;
+        self.bells = 0;
     }
 
     /// The tab's color, from OSC 6;1.

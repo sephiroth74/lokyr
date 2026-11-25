@@ -44,6 +44,7 @@ export type Cx = {
     temp_file: (name: string, bytes: string | buffer) -> (string?, string?, number?),
     git_branch: (folder: string) -> (string?, string?, number?),
     agents: () -> ({ AgentInfo }?, string?, number?),
+    session_folders: () -> (SessionFolders?, string?, number?),
     plugins: () -> ({ PluginInfo }?, string?, number?),
     settings: () -> (Settings?, string?, number?),
     font_styles: (text: string) -> ({ string }?, string?, number?),
@@ -132,6 +133,16 @@ export type Cx = {
     set_group_color: (group: GroupId, color: Color?) -> (true?, string?, number?),
     fold_group: (group: GroupId, folded: boolean) -> (true?, string?, number?),
     ungroup: (group: GroupId) -> (true?, string?, number?),
+    sessions: () -> ({ SessionInfo }?, string?, number?),
+    new_session: (name: string?, directory: string?) -> (SessionId?, string?, number?),
+    switch_session: (session: SessionId) -> (true?, string?, number?),
+    broadcast: (window: WindowId) -> (Broadcast?, string?, number?),
+    floating_panes: (tab: TabId) -> (FloatingPanes?, string?, number?),
+    open_popup: (window: WindowId?, command: string, folder: string?, width: number?, height: number?) -> (PaneId?, string?, number?),
+    set_broadcast: (window: WindowId, to: BroadcastTo) -> (true?, string?, number?),
+    set_pane_broadcast: (pane: PaneId, left_out: boolean) -> (true?, string?, number?),
+    paste_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
+    send_text_broadcast: (pane: PaneId, text: string) -> (true?, string?, number?),
     set_status_bar_side: (side: StatusBarSide) -> (true?, string?, number?),
     set_tab_bar_place: (place: BarPlace) -> (true?, string?, number?),
     set_inactive_dim: (dim: number) -> (true?, string?, number?),
@@ -189,6 +200,8 @@ export type Event =
     | { kind: "tab-changed", tab: TabId }
     | { kind: "pane-changed", pane: PaneId, tab: TabId }
     | { kind: "group-changed", group: GroupId, window: WindowId }
+    | { kind: "session-changed", session: SessionId }
+    | { kind: "broadcast-changed", window: WindowId }
     | { kind: "pointer", pane: PaneId, at: { number }?, mods: Mods }
     | { kind: "click", pane: PaneId, at: { number } }
     | { kind: "prompt-rows-menu", pane: PaneId, window: WindowId, command: number }
@@ -208,6 +221,7 @@ export type Event =
     | { kind: "color-picked", color: string }
     | { kind: "color-panel-closed" }
     | { kind: "saved", id: number, path: string?, error: string? }
+    | { kind: "popup-closed", pane: PaneId, status: number? }
     | { kind: "package", id: number, line: Data }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
@@ -390,6 +404,14 @@ export type TestHost = {
     -- The notices that the plugin showed, in their order, the last the one
     -- that shows, each of its title or the plugin's namespace.
     notices: () -> { { level: NoticeLevel, title: string, text: string } },
+    -- The popups that the plugin opened and that are open, in the order of
+    -- their panes' ids.
+    popups: () -> { { pane: PaneId, tab: TabId, command: string, folder: string?, width: number,
+        height: number } },
+    -- Ends the command of the popup `pane` of `status`, of 128 and a
+    -- signal's number for a signal, or none, and closes the popup, as the
+    -- app does; the plugin hears `popup-closed`.
+    close_popup: (pane: PaneId, status: number?) -> (),
     -- The focused window, and the tab that it shows.
     window: () -> WindowId,
     tab: () -> TabId,
@@ -475,6 +497,16 @@ export type Border = {
     color: Token,
     width: number,
 }
+
+export type Broadcast = {
+    to: BroadcastTo,
+    left_out: { PaneId }?,
+}
+
+export type BroadcastTo =
+    | "off"
+    | "tab"
+    | "window"
 
 export type ButtonVariant =
     | "plain"
@@ -593,6 +625,19 @@ export type Edges = {
     left: number?,
 }
 
+export type FloatingPane = {
+    pane: PaneId,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+}
+
+export type FloatingPanes = {
+    shown: boolean,
+    panes: { FloatingPane }?,
+}
+
 export type FontFace =
     | "regular"
     | "bold"
@@ -700,6 +745,7 @@ export type LineText = {
 
 export type ListItem = {
     texts: { string }?,
+    divider: boolean?,
 }
 
 export type LocalTime = {
@@ -918,6 +964,23 @@ export type SelectionKind =
     | "lines"
     | "block"
 
+export type SessionFolders = {
+    configured: { string },
+    recent: { string },
+    home: string?,
+    layouts: { string }?,
+}
+
+export type SessionId = number
+
+export type SessionInfo = {
+    id: SessionId,
+    name: string,
+    active: boolean?,
+    windows: { WindowId },
+    folder: string?,
+}
+
 export type SettingBinding = {
     keys: string,
     command: string?,
@@ -1060,6 +1123,7 @@ export type TabInfo = {
     status: TabStatus?,
     pinned: boolean?,
     group: GroupId?,
+    broadcast: boolean?,
 }
 
 export type TabKind =

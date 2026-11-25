@@ -2,6 +2,7 @@
 //! that the pane with it takes, and the ends that close a pane, then the
 //! window with its last.
 
+use lokyr_kernel::plugins::host::BroadcastTo;
 use lokyr_kernel::workspace::{Direction, Environment, Side};
 
 use super::*;
@@ -937,4 +938,335 @@ fn a_click_on_an_older_notification_brings_its_own_pane_forward() {
         fake.send_app(&mut app, AppEvent::NotificationClicked(window, id));
         assert_eq!(app.workspace.focused(shown).map(Pane::id), Some(pane));
     }
+}
+
+/// A program that reads the keys raw and shows them as `cat -v` does, after
+/// `ready-` and its `name`, asking for bracketed paste where `bracketed`.
+fn raw_reader(name: &str, bracketed: bool) -> Program {
+    let modes = if bracketed { "\\033[?2004h" } else { "" };
+    shell(&format!(
+        "stty raw -echo; printf '{modes}'; echo ready-{name}; cat -v"
+    ))
+}
+
+/// The text of `pane`'s first rows, read from its terminal, as a pane of a
+/// tab that does not show copies no screen.
+fn read_of(app: &App, pane: PaneId) -> String {
+    let pane = app.workspace.pane(pane).unwrap();
+    (0..8)
+        .filter_map(|row| pane.line_text(row, 8).map(|(text, _)| text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_binding_of_send_text_reaches_every_pane_that_takes_the_broadcast() {
+    let mut config = Config::parse(
+        "[keys]\n\"cmd+j\" = { command = \"pane.send-text\", args = { text = \"Z\" } }\n",
+        std::path::Path::new("config.toml"),
+    )
+    .unwrap();
+    config.window = unpadded().window;
+    let (mut fake, mut app, window, a, b) = two_panes_of(
+        config,
+        raw_reader("a", false),
+        &raw_reader("b", false),
+        false,
+    );
+    let shown = app.windows[&window].window;
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ready-a") && read_of(app, b).contains("ready-b")
+    });
+    // Alone, the pane with the keyboard; broadcast, both.
+    fake.send(&mut app, window, command_key(KeyCode::KeyJ, "j"));
+    run_until(&mut fake, &mut app, |_, app| read_of(app, a).contains('Z'));
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(!read_of(&app, b).contains('Z'), "{}", read_of(&app, b));
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    fake.send(&mut app, window, command_key(KeyCode::KeyJ, "j"));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ZZ") && read_of(app, b).contains('Z')
+    });
+}
+
+#[test]
+fn a_popup_s_keys_reach_it_alone_under_a_broadcast_which_it_takes_none_of() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes(raw_reader("a", false), &raw_reader("b", false));
+    app.popup_shell = Some(std::path::PathBuf::from("/bin/sh"));
+    let shown = app.windows[&window].window;
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("ready-a") && read_of(app, b).contains("ready-b")
+    });
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    let mut args = Args::new();
+    args.insert(
+        "command".to_owned(),
+        Value::String("stty raw -echo; echo ready-p; cat -v".to_owned()),
+    );
+    app.run(&mut fake, POPUP, args);
+    let popup = app.focused(window).unwrap();
+    assert!(app.workspace.is_popup(popup));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, popup).contains("ready-p")
+    });
+    // Typed into the popup: it alone.
+    fake.send(&mut app, window, typed(KeyCode::KeyZ, "z", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, popup).contains('z')
+    });
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(!read_of(&app, a).contains('z') && !read_of(&app, b).contains('z'));
+    // Typed into a split pane: the tab's split panes, not the popup.
+    app.focus_pane(&mut fake, window, a);
+    fake.send(&mut app, window, typed(KeyCode::KeyK, "k", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains('k') && read_of(app, b).contains('k')
+    });
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(
+        !read_of(&app, popup).contains('k'),
+        "{}",
+        read_of(&app, popup)
+    );
+}
+
+#[test]
+fn a_broadcast_s_keys_text_and_pastes_reach_each_pane_that_takes_them_of_its_own_modes() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes(raw_reader("a", true), &raw_reader("b", false));
+    // A third pane, of another tab of the window, which shows the first.
+    let shown = app.windows[&window].window;
+    let first = app.workspace.window(shown).unwrap().active_tab();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        &fake,
+        &raw_reader("c", false),
+        &Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let tab = app.workspace.open_tab(shown, pane, 1).unwrap();
+    let c = app.workspace.tab(tab).unwrap().active_pane();
+    app.workspace.activate_tab(first);
+    fake.send(&mut app, window, WindowEvent::Frame);
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, c).contains("ready-c")
+    });
+    assert_eq!(app.focused(window), Some(a));
+    let settle = |fake: &mut Fake, app: &mut App| {
+        let pause = Instant::now() + Duration::from_millis(200);
+        run_until(fake, app, |_, _| Instant::now() > pause);
+    };
+    // To the tab's panes: a key, and the input method's text.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    fake.send(&mut app, window, typed(KeyCode::KeyK, "k", false));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("q".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("kq") && read_of(app, b).contains("kq")
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, c).contains('k'), "{}", read_of(&app, c));
+    // A paste, bracketed where its program asks alone.
+    fake.set_clipboard_text("p1");
+    fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("^[[200~p1^[[201~") && read_of(app, b).contains("kqp1")
+    });
+    assert!(fake.alerts().is_empty());
+    // To the window's panes, of every tab, but one left out.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Window));
+    assert!(app.workspace.set_pane_broadcast(b, true));
+    fake.send(&mut app, window, typed(KeyCode::KeyW, "w", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("~w") && read_of(app, c).contains('w')
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, b).contains('w'), "{}", read_of(&app, b));
+    // Lines into a program that takes them as Return ask once for all,
+    // then reach each pane of its own modes.
+    fake.set_clipboard_text("m1\nm2");
+    fake.send(&mut app, window, command_key(KeyCode::KeyV, "v"));
+    assert_eq!(fake.alerts().len(), 1);
+    let id = fake.alerts()[0].id;
+    fake.answer_alert(&mut app, id, 0);
+    // Bracketed, the line break as it is, which the program shows as one.
+    run_until(&mut fake, &mut app, |_, app| {
+        read_of(app, a).contains("^[[200~m1")
+            && read_of(app, a).contains("m2^[[201~")
+            && read_of(app, c).contains("wm1^Mm2")
+    });
+    settle(&mut fake, &mut app);
+    assert!(!read_of(&app, b).contains("m1"), "{}", read_of(&app, b));
+}
+
+/// The rectangles of `window`'s last frame of the color of the theme's
+/// `token`.
+fn rects_of(app: &App, window: WindowId, token: &str) -> Vec<lokyr_render_core::Rect> {
+    let state = &app.windows[&window];
+    let color = state
+        .chrome_tokens
+        .as_ref()
+        .and_then(|(_, tokens)| tokens.get(token))
+        .expect("the token's color");
+    let surface = state.surface.as_ref().expect("a surface");
+    let last = surface.last.lock().unwrap();
+    last.as_ref()
+        .expect("a frame")
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            lokyr_render_core::Item::Rect { rect, color: of } if *of == color => Some(*rect),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn each_pane_that_takes_the_broadcast_shows_a_ring_of_its_color() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
+    let shown = app.windows[&window].window;
+    let frame = |fake: &mut Fake, app: &mut App| {
+        fake.send(app, window, WindowEvent::Frame);
+        rects_of(app, window, "broadcast.ring")
+    };
+    // Off: no ring.
+    assert!(frame(&mut fake, &mut app).is_empty());
+    // To the tab's panes: four sides round each, within its room.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Tab));
+    let rings = frame(&mut fake, &mut app);
+    assert_eq!(rings.len(), 8, "{rings:?}");
+    let rooms: Vec<lokyr_render_core::Rect> = app.windows[&window]
+        .views
+        .iter()
+        .map(|view| view.rect)
+        .collect();
+    for room in &rooms {
+        let within = |rect: &lokyr_render_core::Rect| {
+            rect.x >= room.x
+                && rect.y >= room.y
+                && rect.x + rect.width as i32 <= room.x + room.width as i32
+                && rect.y + rect.height as i32 <= room.y + room.height as i32
+        };
+        assert_eq!(rings.iter().filter(|rect| within(rect)).count(), 4);
+    }
+    // A pane left out: the other's ring alone.
+    assert!(app.workspace.set_pane_broadcast(b, true));
+    assert_eq!(frame(&mut fake, &mut app).len(), 4);
+    let _ = a;
+    // Off again: none.
+    assert!(app.workspace.set_broadcast(shown, BroadcastTo::Off));
+    assert!(frame(&mut fake, &mut app).is_empty());
+}
+
+/// Floats a pane of `program` over `window`'s active tab, in `frame`, once
+/// it shows `ready-` and its `name`, of the keyboard: its id.
+fn float_in(
+    fake: &mut Fake,
+    app: &mut App,
+    window: WindowId,
+    program: &Program,
+    frame: lokyr_kernel::workspace::FloatingFrame,
+    name: &str,
+) -> PaneId {
+    let shown = app.windows[&window].window;
+    let tab = app.workspace.window(shown).unwrap().active_tab();
+    let grid = app.pane(window).grid();
+    let pane = app.spawn_pane(
+        fake,
+        program,
+        &Environment::default(),
+        grid,
+        &lokyr_vt_core::terminal::Colors::default(),
+    );
+    let floating = app.workspace.float_pane(tab, pane, frame).unwrap();
+    fake.send(app, window, WindowEvent::Frame);
+    let ready = format!("ready-{name}");
+    run_until(fake, app, |_, app| {
+        screen_of(app, floating).contains(&ready)
+    });
+    floating
+}
+
+#[test]
+fn a_floating_pane_over_the_splits_takes_the_clicks_and_the_keys_of_its_box_and_rests() {
+    let (mut fake, mut app, window, a, b) =
+        two_panes_of(unpadded(), echoing("a"), &echoing("b"), true);
+    let frame = lokyr_kernel::workspace::FloatingFrame::new(0.55, 0.55, 0.4, 0.4);
+    let floating = float_in(&mut fake, &mut app, window, &echoing("f"), frame, "f");
+    // Its grid is its box's, below its header, which its program learns.
+    let state = &app.windows[&window];
+    let (_, room) = state.floating_rooms[0];
+    let view = state
+        .views
+        .iter()
+        .find(|view| view.pane == floating)
+        .copied()
+        .unwrap();
+    assert_eq!(view.rect, room.grid);
+    assert!(room.grid.y > room.outer.y && room.grid.width < room.outer.width);
+    assert_eq!(app.workspace.pane(floating).unwrap().grid(), view.grid);
+    assert_eq!(app.focused(window), Some(floating));
+    // A click on the first pane, beside the box: its keyboard.
+    click_in(&mut fake, &mut app, window, a);
+    assert_eq!(app.focused(window), Some(a));
+    // A click on the box's header, over the second pane: the floating
+    // pane's.
+    let scale = fake.window(window).unwrap().size.scale;
+    let header = Point {
+        x: (f64::from(room.header.x) + f64::from(room.header.width) / 2.0) / scale,
+        y: (f64::from(room.header.y) + f64::from(room.header.height) / 2.0) / scale,
+    };
+    fake.send(&mut app, window, click(true, header, Modifiers::NONE, 1));
+    fake.send(&mut app, window, click(false, header, Modifiers::NONE, 1));
+    assert_eq!(app.focused(window), Some(floating));
+    // Its keys reach its program alone.
+    fake.send(&mut app, window, typed(KeyCode::KeyX, "x", false));
+    fake.send(&mut app, window, typed(KeyCode::Enter, "\r", false));
+    run_until(&mut fake, &mut app, |_, app| {
+        screen_of(app, floating).contains("f:x")
+    });
+    assert!(!screen_of(&app, b).contains('x'));
+    // Once still, it draws no frame of its own.
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.window(window).unwrap().frame_requested
+    });
+    for _ in 0..3 {
+        fake.send(&mut app, window, WindowEvent::Frame);
+    }
+    assert!(!fake.window(window).unwrap().frame_requested);
+    // Its frame drew over the panes, after their cells: its box, of the
+    // shadow.
+    let surface = app.windows[&window].surface.as_ref().unwrap();
+    let last = surface.last.lock().unwrap();
+    let items = &last.as_ref().unwrap().items;
+    let boxed = items.iter().position(|item| {
+        matches!(item, lokyr_render_core::Item::Shapes(shapes)
+            if shapes.iter().any(|shape| shape.rect == room.outer && shape.shadow.is_some()))
+    });
+    let first_cells = items
+        .iter()
+        .position(|item| matches!(item, lokyr_render_core::Item::Cells(_)));
+    assert!(
+        boxed.is_some() && first_cells < boxed,
+        "{boxed:?} {first_cells:?}"
+    );
+    drop(last);
+    // Accessibility finds it beside the others, a terminal each.
+    assert!(fake.ask_accessibility(&mut app, window));
+    let tree = fake.window(window).unwrap().accessibility.last().unwrap();
+    let terminals = tree
+        .nodes
+        .iter()
+        .filter(|(_, node)| node.role() == accesskit::Role::Terminal)
+        .count();
+    assert_eq!(terminals, 3);
 }

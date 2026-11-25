@@ -6,6 +6,7 @@ command-command-palette-open = Command Palette…
 command-command-palette-theme = Choose Theme…
 command-command-palette-move = Move in the Command Palette
 command-command-palette-agents = Show Agents…
+command-command-palette-sessions = Switch Session…
 
 # The palette: its field's placeholder, the line of no command, and what
 # an accessibility client calls its list.
@@ -29,3 +30,13 @@ palette-agent-error = Failed
 palette-agent-done = Done
 palette-agent-working = Working
 palette-agent-idle = Idle
+
+# The sessions' switcher: its field's placeholder, the line of no session
+# nor folder, what an accessibility client calls its list, a session of
+# no name, and the mark of a recent folder.
+palette-sessions-placeholder = Switch to a Session or a Folder…
+palette-sessions-none = No sessions nor folders
+palette-sessions = Sessions
+palette-session-untitled = Untitled Session
+palette-folder-recent = Recent
+palette-layout = Layout

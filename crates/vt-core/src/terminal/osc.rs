@@ -244,9 +244,17 @@ impl Terminal {
     /// line; `0`, nothing. `P;k=r` starts a right prompt, of the prompt's
     /// zone, which the `B` after it ends without marking the input again;
     /// `P`'s other kinds change nothing.
+    ///
+    /// Lokyr's archive of a pane, [`Terminal::archive`], tells three options
+    /// of its own: `A`'s `lokyr_spaced`, that the blank row before the
+    /// prompt is there already; `C`'s `lokyr_started=` and `D`'s
+    /// `lokyr_ended=`, the times of the command's start and end in
+    /// milliseconds since the Unix epoch, in place of the times of their
+    /// reading.
     fn mark_prompt(&mut self, fields: &[u8]) {
         let mut fields = fields.split(|&byte| byte == b';');
         let kind = fields.next().unwrap_or_default();
+        let options = fields.clone();
         if kind == b"P" {
             if fields.any(|field| field == b"k=r") {
                 self.start_right_prompt();
@@ -289,7 +297,9 @@ impl Terminal {
             b"D" => Some(Mark::End(status)),
             _ => None,
         };
-        let started = mark.is_some_and(|mark| self.mark_command(mark));
+        let kept_space = kind == b"A" && options.clone().any(|option| option == b"lokyr_spaced");
+        let started = mark.is_some_and(|mark| self.mark_command(mark, kept_space));
+        self.take_archived_times(options, kind == b"C" && started, kind == b"D");
         // The line that the mark that starts the command tells alone, as a
         // program that the command runs may print the mark too.
         if started && let Some(line) = line {

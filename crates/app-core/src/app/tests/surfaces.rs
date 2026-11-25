@@ -149,6 +149,7 @@ impl plugins::Plugin for Widgets {
                         (0..30)
                             .map(|index| ListItem {
                                 texts: vec![format!("{index}")],
+                                ..ListItem::default()
                             })
                             .collect(),
                     ),

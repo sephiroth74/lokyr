@@ -1,0 +1,23 @@
+# The terminals compared, step 1 of 4: the startup, each terminal launched
+# 30 times first, the memory, and 20 seconds of a window at rest, 20
+# seconds after its launch. Six terminals take six cycles to balance their
+# orders. Alacritty joins where installed.
+terminals = ["lokyr", "ghostty", "kitty", "iterm2", "terminal", "warp"]
+terminals-file = "../terminals.toml"
+pause = 2
+cycles = 6
+season = 30
+folder = "/tmp/lokyr/ttybench/sessions/compare-1-start-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 5
+
+[[run]]
+tool = "memory"
+rounds = 1
+
+[[run]]
+tool = "idle"
+args = ["--settle", "20", "--duration", "20", "--interval", "1"]
+rounds = 1

@@ -1,0 +1,14 @@
+[plugin]
+name = "lokyr-bench/broadcast"
+version = "0.1.0"
+kind = "luau"
+api = "^0.1"
+license = "MIT"
+description = "Builds the broadcast's scenario of Lokyr's benchmarks as Lokyr starts: seven panes beside the first, which take the keys and draw nothing, the typed input broadcast to the tab."
+
+[activation]
+on = ["startup"]
+
+[capabilities]
+workspace-write = true
+pty-write = true

@@ -15,7 +15,9 @@
 
 mod geometry;
 
-use lokyr_plugin_sdk::command::{Args, Category, Code, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind, Param, Value,
+};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{Direction as Lie, Edge, MenuItem, MenuPlace, PaneId, Side, TabInfo};
 use lokyr_plugin_sdk::message::{Data, Event};
@@ -87,32 +89,116 @@ const COMMANDS: [Spec; 11] = [
     (CLOSE, "Close Pane", &[]),
 ];
 
+/// A menu's item: its menu, its command, its direction, its title's
+/// message and its submenu's title's message.
+type Item = (
+    MenuPlace,
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+    &'static str,
+);
+
 /// The menus' items: each one's menu, its command, its direction, if it
-/// takes one, and the message of its title, if not the command's.
-const ITEMS: [(MenuPlace, &str, Option<&str>, Option<&str>); 15] = [
-    (BAR, SPLIT, Some("right"), Some("menu-split-right")),
-    (BAR, SPLIT, Some("left"), Some("menu-split-left")),
-    (BAR, SPLIT, Some("down"), Some("menu-split-down")),
-    (BAR, SPLIT, Some("up"), Some("menu-split-up")),
-    (BAR, FOCUS, Some("left"), Some("menu-select-left")),
-    (BAR, FOCUS, Some("right"), Some("menu-select-right")),
-    (BAR, FOCUS, Some("up"), Some("menu-select-up")),
-    (BAR, FOCUS, Some("down"), Some("menu-select-down")),
-    (CONTEXT, SPLIT, Some("right"), Some("menu-split-right")),
-    (CONTEXT, SPLIT, Some("left"), Some("menu-split-left")),
-    (CONTEXT, SPLIT, Some("down"), Some("menu-split-down")),
-    (CONTEXT, SPLIT, Some("up"), Some("menu-split-up")),
-    (CONTEXT, MOVE_TO_TAB, None, None),
-    (CONTEXT, MOVE_TO_WINDOW, None, None),
-    (CONTEXT, CLOSE, None, None),
+/// takes one, the message of its title, if not the command's, and the
+/// message of the title of the submenu that it goes into. The Shell menu's
+/// splits in a submenu of their own, and the other panes' commands in
+/// another, whose items of the commands of no direction take the place of
+/// their own items; the context menu's in one.
+const ITEMS: [Item; 22] = [
+    (
+        BAR,
+        SPLIT,
+        Some("right"),
+        Some("menu-split-right"),
+        SPLIT_SUBMENU,
+    ),
+    (
+        BAR,
+        SPLIT,
+        Some("left"),
+        Some("menu-split-left"),
+        SPLIT_SUBMENU,
+    ),
+    (
+        BAR,
+        SPLIT,
+        Some("down"),
+        Some("menu-split-down"),
+        SPLIT_SUBMENU,
+    ),
+    (BAR, SPLIT, Some("up"), Some("menu-split-up"), SPLIT_SUBMENU),
+    (BAR, FOCUS_NEXT, None, None, PANE_SUBMENU),
+    (BAR, FOCUS_PREV, None, None, PANE_SUBMENU),
+    (
+        BAR,
+        FOCUS,
+        Some("left"),
+        Some("menu-select-left"),
+        PANE_SUBMENU,
+    ),
+    (
+        BAR,
+        FOCUS,
+        Some("right"),
+        Some("menu-select-right"),
+        PANE_SUBMENU,
+    ),
+    (BAR, FOCUS, Some("up"), Some("menu-select-up"), PANE_SUBMENU),
+    (
+        BAR,
+        FOCUS,
+        Some("down"),
+        Some("menu-select-down"),
+        PANE_SUBMENU,
+    ),
+    (BAR, ZOOM, None, None, PANE_SUBMENU),
+    (BAR, EQUALIZE, None, None, PANE_SUBMENU),
+    (BAR, MOVE_TO_TAB, None, None, PANE_SUBMENU),
+    (BAR, MOVE_TO_WINDOW, None, None, PANE_SUBMENU),
+    (BAR, CLOSE, None, None, PANE_SUBMENU),
+    (
+        CONTEXT,
+        SPLIT,
+        Some("right"),
+        Some("menu-split-right"),
+        PANE_SUBMENU,
+    ),
+    (
+        CONTEXT,
+        SPLIT,
+        Some("left"),
+        Some("menu-split-left"),
+        PANE_SUBMENU,
+    ),
+    (
+        CONTEXT,
+        SPLIT,
+        Some("down"),
+        Some("menu-split-down"),
+        PANE_SUBMENU,
+    ),
+    (
+        CONTEXT,
+        SPLIT,
+        Some("up"),
+        Some("menu-split-up"),
+        PANE_SUBMENU,
+    ),
+    (CONTEXT, MOVE_TO_TAB, None, None, PANE_SUBMENU),
+    (CONTEXT, MOVE_TO_WINDOW, None, None, PANE_SUBMENU),
+    (CONTEXT, CLOSE, None, None, PANE_SUBMENU),
 ];
 
 /// The panes' menu of the menu bar, and the pane's context menu.
 const BAR: MenuPlace = MenuPlace::Bar(Category::Panes);
 const CONTEXT: MenuPlace = MenuPlace::PaneContext;
 
-/// The message of the title of the context menu's submenu of the items.
+/// The message of the title of the submenus of the panes' items, the
+/// context menu's and the Shell menu's, and of the Shell menu's of the
+/// splits.
 const PANE_SUBMENU: &str = "menu-pane";
+const SPLIT_SUBMENU: &str = "menu-split";
 
 /// The plugin of the splits: its config, and the panes' headers that it
 /// rendered, each of its last tree, which it renders again as their trees
@@ -174,7 +260,10 @@ impl Plugin for Splits {
                 name: name.to_owned(),
                 title: title.to_owned(),
                 category: Category::Panes,
-                capabilities: Vec::new(),
+                // Each splits, closes, moves or focuses the tab's panes,
+                // which a plugin that runs it takes the workspace's writes
+                // of.
+                capabilities: vec![Capability::WorkspaceWrite],
                 params: params
                     .iter()
                     .map(|&(name, kind, default)| Param {
@@ -186,14 +275,13 @@ impl Plugin for Splits {
                 when: None,
             })?;
         }
-        for (place, command, direction, title) in ITEMS {
+        for (place, command, direction, title, submenu) in ITEMS {
             cx.add_menu_item(MenuItem {
                 place,
                 command: command.to_owned(),
                 args: direction.map(towards).unwrap_or_default(),
                 title: title.map(str::to_owned),
-                // The context menu's in a submenu of their own.
-                submenu: (place == CONTEXT).then(|| PANE_SUBMENU.to_owned()),
+                submenu: Some(submenu.to_owned()),
                 ticked: false,
             })?;
         }

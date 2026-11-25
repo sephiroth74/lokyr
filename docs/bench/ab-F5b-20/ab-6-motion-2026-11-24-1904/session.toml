@@ -1,0 +1,26 @@
+# A release's A/B, step 6 of 6, about 8 minutes, of Instruments' traces:
+# the window dragged, then resized, 10 seconds each, and each frame of a
+# smooth scroll. Leave the mouse and the trackpad alone; each trace goes
+# once read.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 2
+folder = "/tmp/lokyr/ttybench/sessions/ab-6-motion-{date}"
+
+[[run]]
+tool = "motion"
+args = ["--kind", "drag", "--seconds", "10"]
+rounds = 1
+
+[[run]]
+tool = "motion"
+args = ["--kind", "resize", "--seconds", "10"]
+rounds = 1
+
+[[run]]
+tool = "frames"
+args = ["--workload", "scroll", "--seconds", "10"]
+rounds = 1
+feature = "smooth-scroll"

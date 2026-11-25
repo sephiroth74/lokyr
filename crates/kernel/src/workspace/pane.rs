@@ -6,14 +6,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use lokyr_pty::{Exit, Program, Size};
+pub use lokyr_session::Restored;
 use lokyr_session::{Options, Reader, Session};
 use lokyr_vt_core::input::{KeyEvent, KeyOptions, MouseEvent};
 use lokyr_vt_core::page::Style;
 use lokyr_vt_core::page::{Rgb, Scrollback};
 use lokyr_vt_core::parser::Parser;
 use lokyr_vt_core::terminal::{
-    self, ClipboardRequest, Colors, FoldMark, InputModes, KeyboardFlags, Look, Origin, RowCells,
-    Scroll, Selected, SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
+    self, ClipboardRequest, Colors, FoldMark, InputModes, Look, Origin, RowCells, Scroll, Selected,
+    SelectionShape, SelectionUnit, Snapshot, Terminal, WORD_SEPARATORS,
 };
 use lokyr_vt_core::unicode::{Normalization, Tables, Widths};
 
@@ -110,6 +111,10 @@ pub struct Environment {
     /// The directory of the shells' integration, which the user's shell
     /// loads, if the config has it.
     pub shell_integration: Option<PathBuf>,
+    /// What the pane shows before its program's first output, as a pane
+    /// that opens again shows what it showed as the app quit; none of a
+    /// new pane.
+    pub restored: Option<Restored>,
 }
 
 impl Default for Environment {
@@ -122,6 +127,7 @@ impl Default for Environment {
             directory: None,
             version: env!("CARGO_PKG_VERSION").to_owned(),
             shell_integration: None,
+            restored: None,
         }
     }
 }
@@ -186,6 +192,8 @@ pub struct Pane {
     changed: bool,
     /// When the program's output ended, while the pane waits for its status.
     ended: Option<Instant>,
+    /// The program's status, once it ended and the pane read it.
+    exit: Option<Exit>,
     /// Whether the pane keeps the screen of a program that ended, or that
     /// could not start.
     kept: bool,
@@ -249,6 +257,9 @@ pub struct Pane {
     pub(super) agent: Option<Agent>,
     /// The status that its program told of its session, OSC 21337's.
     pub(super) session_status: Option<terminal::SessionStatus>,
+    /// Whether it is left out of its window's broadcast of the typed input,
+    /// taking its own alone.
+    pub(super) broadcast_left: bool,
 }
 
 impl std::fmt::Debug for Pane {
@@ -387,6 +398,7 @@ impl Pane {
             answer: None,
             changed: false,
             ended: None,
+            exit: None,
             kept: false,
             through_login: through_login(program),
             bells: 0,
@@ -409,6 +421,7 @@ impl Pane {
             commands_told: false,
             agent: None,
             session_status: None,
+            broadcast_left: false,
         };
         let mut options = Options::new(pty);
         // The wheel scrolls programs of the alternate screen, as `less`, by
@@ -427,6 +440,7 @@ impl Pane {
         // the color scheme on at once would be told of, is the user's.
         options.colors = Some(colors.clone());
         options.cell_size = Some((grid.cell_width, grid.cell_height));
+        options.restored.clone_from(&environment.restored);
         match Session::spawn(&options, wake) {
             Ok(session) => {
                 pane.session = Some(session);
@@ -441,7 +455,7 @@ impl Pane {
                 let line = format!("\x1b[2m[{why}]\x1b[0m");
                 Parser::new().advance(&mut terminal, line.as_bytes());
                 terminal.snapshot(&mut pane.snapshot);
-                // A key closes the window, as after a program that ended.
+                // A key closes the pane, as after a program that ended.
                 pane.kept = true;
             }
         }
@@ -779,15 +793,12 @@ impl Pane {
     /// Sends `event` to the program, with `options`. A key with Command
     /// held, which the menus did not take, is the app's: it reaches the
     /// program only through the kitty protocol, which reports Super, as
-    /// xterm's sequences have no Command.
+    /// xterm's sequences have no Command, of the terminal's flags as they
+    /// are now, whether a frame showed the pane since or not.
     pub fn key(&self, event: &KeyEvent<'_>, options: KeyOptions) {
-        let Some(session) = &self.session else {
-            return;
-        };
-        if event.mods.super_key && self.snapshot.keyboard_flags() == KeyboardFlags::NONE {
-            return;
+        if let Some(session) = &self.session {
+            session.key(event, options);
         }
-        session.key(event, options);
     }
 
     /// Sends `text`, which an input method committed.
@@ -1464,6 +1475,37 @@ impl Pane {
     /// status is still to come, for [`EXIT_WAIT`] after its output ended.
     /// The line that a kept screen shows is in `texts`.
     pub fn exited(&mut self, close: CloseOnExit, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| match close {
+                CloseOnExit::Always => true,
+                CloseOnExit::Never => false,
+                CloseOnExit::Clean => exit.is_some_and(Exit::success),
+            },
+            now,
+            texts,
+        )
+    }
+
+    /// What a popup does once its command has ended, as
+    /// [`Pane::exited`] tells it: it closes as the command exits with 0 or
+    /// an interrupt ends it, as Control-C, and keeps its screen otherwise,
+    /// with the line of how the command ended, until a key closes it.
+    pub fn popup_exited(&mut self, now: Instant, texts: &Texts) -> Option<Exited> {
+        self.ended_as(
+            |exit| exit.is_some_and(|exit| exit.success() || exit.interrupted()),
+            now,
+            texts,
+        )
+    }
+
+    /// What the window does once the program has ended, `closes` of its
+    /// status telling whether it closes, as [`Pane::exited`] tells it.
+    fn ended_as(
+        &mut self,
+        closes: impl FnOnce(Option<Exit>) -> bool,
+        now: Instant,
+        texts: &Texts,
+    ) -> Option<Exited> {
         if self.kept {
             return None;
         }
@@ -1483,12 +1525,8 @@ impl Pane {
         };
         let told = session.lock().command_status();
         let exit = status(exit, told, self.through_login);
-        let closes = match close {
-            CloseOnExit::Always => true,
-            CloseOnExit::Never => false,
-            CloseOnExit::Clean => exit.is_some_and(Exit::success),
-        };
-        if closes {
+        self.exit = exit;
+        if closes(exit) {
             return Some(Exited::Close);
         }
         self.kept = true;
@@ -1508,6 +1546,12 @@ impl Pane {
         let line = format!("\x1b(B\x1b)B\x0f\x1b[4l\x1b[?7h\r\n\x1b[0;2m[{ended}]\x1b[0m");
         Parser::new().advance(&mut *session.lock(), line.as_bytes());
         Some(Exited::Keep)
+    }
+
+    /// The program's status, once it ended and [`Pane::exited`] read it:
+    /// none while it runs, or of a status that it cannot tell.
+    pub fn exit_status(&self) -> Option<Exit> {
+        self.exit
     }
 
     /// Whether the pane waits for the status of a program whose output
@@ -1563,6 +1607,11 @@ impl Pane {
     /// Whether the pane keeps the screen of a program that ended.
     pub fn is_kept(&self) -> bool {
         self.kept
+    }
+
+    /// Whether it is left out of its window's broadcast of the typed input.
+    pub fn broadcast_left(&self) -> bool {
+        self.broadcast_left
     }
 
     /// The status that its program tells of its session, OSC 21337's, if
@@ -1732,6 +1781,7 @@ mod tests {
             shell_integration: Some(
                 "/Applications/Lokyr.app/Contents/Resources/shell-integration".into(),
             ),
+            restored: None,
         };
         let grid = Grid {
             columns: 80,

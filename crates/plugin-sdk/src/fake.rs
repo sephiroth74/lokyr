@@ -45,8 +45,8 @@ use crate::command::{Args, Capability, Code, Command, Error, Uses, is_name};
 use crate::event::WorkspaceEvent;
 use crate::host::{
     self, BarPlace, Binding, Color, DecorationLook, Direction, Edge, GroupId, GroupInfo, Layout,
-    LineText, MOST_STATE, PaneId, ScreenPoint, Side, StyleRun, TabId, TabInfo, WindowId,
-    WindowInfo,
+    LineText, MOST_STATE, PaneId, ScreenPoint, SessionFolders, SessionId, SessionInfo, Side,
+    StyleRun, TabId, TabInfo, WindowId, WindowInfo,
 };
 use crate::keys::{When, parse_keys};
 use crate::message::{
@@ -393,6 +393,34 @@ pub struct FakeDecoration {
     pub look: DecorationLook,
 }
 
+/// A popup that the plugin opened: its pane, its tab, its command, its
+/// folder and its shares of the tab's room.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FakePopup {
+    /// Its pane.
+    pub pane: PaneId,
+    /// Its tab.
+    pub tab: TabId,
+    /// The command that it runs.
+    pub command: String,
+    /// The folder that it runs in, if the plugin gave one.
+    pub folder: Option<String>,
+    /// Its share of the tab's room across.
+    pub width: f64,
+    /// Its share of the tab's room down.
+    pub height: f64,
+}
+
+/// A popup that the fake host keeps: what the plugin opened, the pane that
+/// had its tab's keyboard before it, and its command's status, once the
+/// test ended it.
+#[derive(Clone, Debug, PartialEq)]
+struct KeptPopup {
+    popup: FakePopup,
+    back: PaneId,
+    status: Option<i32>,
+}
+
 /// A mark that the plugin laid in a pane's gutter: its pane, its row and
 /// its color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -438,6 +466,21 @@ struct FakeGroup {
     color: Option<Color>,
     folded: bool,
 }
+
+/// A session of windows that the fake host keeps, as the app does.
+#[derive(Clone, Debug)]
+struct FakeSession {
+    id: SessionId,
+    name: String,
+    /// The folder that it was opened in, `~` expanded.
+    folder: Option<String>,
+    /// The count of the sessions' uses as it last became active.
+    used: u64,
+}
+
+/// The session that the fake host starts in, as the app starts in one of
+/// no name, of an id that no other of the host's takes.
+const FIRST_SESSION: SessionId = SessionId(0);
 
 /// What a tab bar shows of a tab, whose change `tab-changed` tells: its
 /// title, its color and its marks.
@@ -495,6 +538,8 @@ enum Opened {
     Pane(PaneId),
     /// A group of tabs.
     Group(GroupId),
+    /// A session.
+    Session(SessionId),
     /// A quick window, of its tab and its pane.
     Quick(WindowId, TabId, PaneId),
 }
@@ -557,6 +602,26 @@ pub struct FakeHost {
     titles: BTreeMap<WindowId, String>,
     /// The quick windows that the plugin opened, each whether it is hidden.
     quick: BTreeMap<WindowId, bool>,
+    /// The sessions, in the order they were made.
+    sessions: Vec<FakeSession>,
+    /// The active session, whose windows show.
+    active_session: SessionId,
+    /// The count of the sessions' uses, the active one's.
+    session_uses: u64,
+    /// The session of each window but the quick ones.
+    window_sessions: BTreeMap<WindowId, SessionId>,
+    /// Where each window's typed input goes, of those that broadcast it.
+    broadcasts: BTreeMap<WindowId, crate::host::BroadcastTo>,
+    /// The floating panes of each tab that has some, as the test gave them.
+    floating: BTreeMap<TabId, crate::host::FloatingPanes>,
+    /// The popups that the plugin opened, which close as the test ends
+    /// them or a close of their pane.
+    popups: BTreeMap<PaneId, KeptPopup>,
+    /// The panes left out of their windows' broadcasts.
+    broadcast_left: std::collections::BTreeSet<PaneId>,
+    /// The folders that the sessions' switcher lists, as the test gave
+    /// them.
+    session_folders: SessionFolders,
     /// The keys of commands of their arguments, as the test gave them.
     keys: Vec<(String, Args, String)>,
     /// The registry's commands of the app's and of other plugins', before
@@ -729,6 +794,24 @@ impl FakeHost {
             numbers: BTreeMap::new(),
             titles: BTreeMap::new(),
             quick: BTreeMap::new(),
+            sessions: vec![FakeSession {
+                id: FIRST_SESSION,
+                name: String::new(),
+                folder: None,
+                used: 0,
+            }],
+            // The home directory, as the app's.
+            session_folders: SessionFolders {
+                home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
+                ..SessionFolders::default()
+            },
+            active_session: FIRST_SESSION,
+            session_uses: 0,
+            window_sessions: BTreeMap::new(),
+            broadcasts: BTreeMap::new(),
+            floating: BTreeMap::new(),
+            popups: BTreeMap::new(),
+            broadcast_left: std::collections::BTreeSet::new(),
             places: BTreeMap::new(),
             keys: Vec::new(),
             registry: Vec::new(),
@@ -1233,6 +1316,58 @@ impl FakeHost {
         self.temporary_bytes.get(name).map(Vec::as_slice)
     }
 
+    /// Gives the folders that the sessions' switcher lists, which a read of
+    /// them tells.
+    pub fn set_session_folders(&mut self, folders: SessionFolders) -> &mut Self {
+        self.session_folders = folders;
+        self
+    }
+
+    /// Gives `tab` its floating panes, which a read of them tells, as the
+    /// app's floating panes would float over its split panes.
+    pub fn set_floating_panes(
+        &mut self,
+        tab: TabId,
+        floating: crate::host::FloatingPanes,
+    ) -> &mut Self {
+        self.floating.insert(tab, floating);
+        self
+    }
+
+    /// The popups that the plugin opened and that are open, in the order of
+    /// their panes' ids.
+    pub fn popups(&self) -> Vec<FakePopup> {
+        self.popups
+            .values()
+            .map(|kept| kept.popup.clone())
+            .collect()
+    }
+
+    /// Ends the command of the popup `pane` of `status`, of 128 and a
+    /// signal's number for a signal, or none, and closes the popup, as the
+    /// app does as its command exits with 0, or a key after it failed: its
+    /// plugin hears that it closed, of the status, owed.
+    pub fn close_popup(&mut self, pane: PaneId, status: Option<i32>) -> &mut Self {
+        if let Some(kept) = self.popups.get_mut(&pane) {
+            kept.status = status;
+            self.close_pane(pane);
+        }
+        self
+    }
+
+    /// Sends `window`'s typed input to `to`, as the user's menu does, which
+    /// a read of the window's broadcast and of its tabs tells, the change
+    /// owed.
+    pub fn set_broadcast(&mut self, window: WindowId, to: crate::host::BroadcastTo) -> &mut Self {
+        if to == crate::host::BroadcastTo::Off {
+            self.broadcasts.remove(&window);
+        } else {
+            self.broadcasts.insert(window, to);
+        }
+        self.changed(WorkspaceEvent::BroadcastChanged { window });
+        self
+    }
+
     /// Makes the folder of the absolute path `folder` a git repository's
     /// of the branch `branch`, or no repository's of none, which a read of
     /// the branch of a folder within it gives.
@@ -1319,8 +1454,10 @@ impl FakeHost {
     /// ended or the user closed it, which the plugin is owed.
     pub fn close_window(&mut self, window: WindowId) -> &mut Self {
         // Its tabs go first, each of its panes' closings, its own and its
-        // group's change, then the window, as the app's.
+        // group's change, then the window, as the app's, then its session,
+        // of no window left.
         self.settle();
+        let session = self.window_sessions.get(&window).copied();
         let tabs = self
             .windows
             .get(&window)
@@ -1336,6 +1473,8 @@ impl FakeHost {
         }
         self.settle();
         self.changed(WorkspaceEvent::WindowClosed { window });
+        self.window_sessions.remove(&window);
+        self.session_lost_window(session);
         self
     }
 
@@ -1793,6 +1932,7 @@ impl FakeHost {
                     | Event::ColorPicked { .. }
                     | Event::ColorPanelClosed
                     | Event::Saved { .. }
+                    | Event::PopupClosed { .. }
                     | Event::Package { .. }
                     | Event::PackagesEnded { .. }
                     | Event::TabBarResized { .. }
@@ -2187,6 +2327,18 @@ impl FakeHost {
         for tab in shown {
             self.shown(tab);
         }
+        // A window opens in the active session, as the app's; a window gone
+        // leaves it.
+        for window in opened {
+            if self.windows.contains_key(&window) && !self.quick.contains_key(&window) {
+                self.window_sessions
+                    .entry(window)
+                    .or_insert(self.active_session);
+            }
+        }
+        let windows = &self.windows;
+        self.window_sessions
+            .retain(|window, _| windows.contains_key(window));
         match self.given_focus.take() {
             Some(Some(pane)) => {
                 if let Some(&FakePane { window, tab, .. }) = self.panes.get(&pane) {
@@ -2257,6 +2409,26 @@ impl FakeHost {
                     self.split(*pane, *direction, *side, new);
                 }
             }
+            Request::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                if let Opened::Pane(new) = opened {
+                    let window = window.or_else(|| self.focused_window());
+                    self.open_popup(
+                        window,
+                        new,
+                        (command.clone(), folder.clone()),
+                        (
+                            width.unwrap_or(crate::host::POPUP_WIDTH),
+                            height.unwrap_or(crate::host::POPUP_HEIGHT),
+                        ),
+                    );
+                }
+            }
             // A close that asks closes as the user's confirmation would,
             // which a test reads among the requests done.
             Request::CloseTab { tab, keep: 0, .. } => self.close_tab(*tab),
@@ -2302,6 +2474,33 @@ impl FakeHost {
             Request::NewGroup { tabs, name, color } => {
                 if let Opened::Group(id) = opened {
                     self.new_group(id, tabs, name, *color);
+                }
+            }
+            Request::NewSession { name, directory } => {
+                if let Opened::Session(id) = opened {
+                    self.new_session(id, name, directory.as_deref());
+                }
+            }
+            Request::SwitchSession(session) => self.switch_session(*session),
+            Request::SetBroadcast { window, to } => {
+                let before = self.broadcasts.get(window).copied().unwrap_or_default();
+                if before != *to {
+                    if *to == crate::host::BroadcastTo::Off {
+                        self.broadcasts.remove(window);
+                    } else {
+                        self.broadcasts.insert(*window, *to);
+                    }
+                    self.changed(WorkspaceEvent::BroadcastChanged { window: *window });
+                }
+            }
+            Request::SetPaneBroadcast { pane, left_out } => {
+                let changed = if *left_out {
+                    self.broadcast_left.insert(*pane)
+                } else {
+                    self.broadcast_left.remove(pane)
+                };
+                if changed && let Some(window) = self.panes.get(pane).map(|shown| shown.window) {
+                    self.changed(WorkspaceEvent::BroadcastChanged { window });
                 }
             }
             Request::AddToGroup { tab, group } => self.add_to_group(*tab, *group),
@@ -2507,6 +2706,11 @@ impl FakeHost {
             status: marks.status.clone().filter(|_| reads),
             pinned: marks.pinned,
             group: tab.group,
+            broadcast: match self.broadcasts.get(&tab.window) {
+                Some(crate::host::BroadcastTo::Window) => true,
+                Some(crate::host::BroadcastTo::Tab) => window.active == id,
+                _ => false,
+            },
         })
     }
 
@@ -2604,6 +2808,53 @@ impl FakeHost {
 
     /// Splits `pane`'s part along `direction`, `new` on `side`, which ends
     /// its tab's zoom; the tab's keyboard stays where it was.
+    /// Opens the popup `pane` of `command` and `folder` over the active tab
+    /// of `window`, of `shares` of its room, with the tab's keyboard, as the
+    /// app floats it over the tab's layout.
+    fn open_popup(
+        &mut self,
+        window: Option<WindowId>,
+        pane: PaneId,
+        (command, folder): (String, Option<String>),
+        (width, height): (f64, f64),
+    ) {
+        let Some(window) = window else {
+            return;
+        };
+        let Some(tab) = self.windows.get(&window).map(|shown| shown.active) else {
+            return;
+        };
+        let Some(back) = self.tabs.get(&tab).map(|shown| shown.active) else {
+            return;
+        };
+        self.panes.insert(
+            pane,
+            FakePane {
+                window,
+                tab,
+                ..FakePane::default()
+            },
+        );
+        self.popups.insert(
+            pane,
+            KeptPopup {
+                popup: FakePopup {
+                    pane,
+                    tab,
+                    command,
+                    folder,
+                    width,
+                    height,
+                },
+                back,
+                status: None,
+            },
+        );
+        self.changed(WorkspaceEvent::PaneCreated { pane, tab });
+        self.changed(WorkspaceEvent::LayoutChanged { tab });
+        self.focus_pane(pane);
+    }
+
     fn split(&mut self, pane: PaneId, direction: Direction, side: Side, new: PaneId) {
         let Some(id) = self.panes.get(&pane).map(|pane| pane.tab) else {
             return;
@@ -2689,8 +2940,96 @@ impl FakeHost {
                 self.changed(WorkspaceEvent::TabActivated { tab, window });
                 self.tab_shown(tab);
             }
-            Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed { window }),
+            Left::Closed(window) => {
+                self.changed(WorkspaceEvent::WindowClosed { window });
+                let session = self.window_sessions.remove(&window);
+                self.session_lost_window(session);
+            }
         }
+    }
+
+    /// The sessions, in the order of their use, the active one first, as a
+    /// read of them tells.
+    fn session_infos(&self) -> Vec<SessionInfo> {
+        let mut sessions: Vec<&FakeSession> = self.sessions.iter().collect();
+        sessions.sort_by_key(|session| std::cmp::Reverse(session.used));
+        sessions
+            .into_iter()
+            .map(|session| SessionInfo {
+                id: session.id,
+                name: session.name.clone(),
+                active: session.id == self.active_session,
+                folder: session.folder.clone(),
+                windows: self
+                    .windows
+                    .keys()
+                    .copied()
+                    .filter(|window| self.window_sessions.get(window) == Some(&session.id))
+                    .collect(),
+            })
+            .collect()
+    }
+
+    /// Makes the session `id` of `name`, of no window, and switches to it,
+    /// as the app does, which opens its first window then: the fake host
+    /// opens none, as of a request to open a window.
+    fn new_session(&mut self, id: SessionId, name: &str, folder: Option<&str>) {
+        if self.sessions.iter().any(|session| session.id == id) {
+            return;
+        }
+        self.sessions.push(FakeSession {
+            id,
+            name: name.to_owned(),
+            folder: folder.map(crate::host::home_expanded),
+            used: 0,
+        });
+        self.switch_session(id);
+    }
+
+    /// Switches to the session `id`, as the app does, each session's change
+    /// owed: the one left, then this one.
+    fn switch_session(&mut self, id: SessionId) {
+        if self.active_session == id || !self.sessions.iter().any(|session| session.id == id) {
+            return;
+        }
+        let before = std::mem::replace(&mut self.active_session, id);
+        self.session_uses += 1;
+        let uses = self.session_uses;
+        if let Some(session) = self.sessions.iter_mut().find(|session| session.id == id) {
+            session.used = uses;
+        }
+        self.changed(WorkspaceEvent::SessionChanged { session: before });
+        self.changed(WorkspaceEvent::SessionChanged { session: id });
+        // The session left goes of no window, as the app's.
+        self.session_lost_window(Some(before));
+    }
+
+    /// Takes `session`, which lost a window, away, if it has none left and
+    /// is not the only one, as the app does: the active one that goes
+    /// leaves the one used before it active.
+    fn session_lost_window(&mut self, session: Option<SessionId>) {
+        let Some(id) = session else {
+            return;
+        };
+        if self.sessions.len() < 2 || self.window_sessions.values().any(|&of| of == id) {
+            return;
+        }
+        if self.active_session == id {
+            let last = self.session_infos().get(1).map(|session| session.id);
+            if let Some(last) = last {
+                self.switch_session(last);
+            }
+        }
+        // Once, as the switch from it may have taken it.
+        if self.holds_session(id) {
+            self.sessions.retain(|session| session.id != id);
+            self.changed(WorkspaceEvent::SessionChanged { session: id });
+        }
+    }
+
+    /// Whether `session` is held.
+    fn holds_session(&self, session: SessionId) -> bool {
+        self.sessions.iter().any(|held| held.id == session)
     }
 
     /// Closes `tab` as [`FakeHost::close_tab`] does, but keeps it to give
@@ -2825,6 +3164,24 @@ impl FakeHost {
             return;
         };
         self.changed(WorkspaceEvent::PaneClosed { pane, tab });
+        // A popup, over its tab's layout, gives the keyboard back to the
+        // pane that had it before it, and its plugin hears its close.
+        if let Some(kept) = self.popups.remove(&pane) {
+            self.panes.remove(&pane);
+            self.changed(WorkspaceEvent::LayoutChanged { tab });
+            if self
+                .tabs
+                .get(&tab)
+                .is_some_and(|shown| shown.active == pane)
+            {
+                self.focus_pane(kept.back);
+            }
+            self.owed.push(Event::PopupClosed {
+                pane,
+                status: kept.status,
+            });
+            return;
+        }
         let left = self.detach_pane(pane, tab);
         self.panes.remove(&pane);
         if let Some(left) = left {
@@ -3443,6 +3800,11 @@ impl FakeHost {
     /// it.
     fn window_for(&mut self, tab: TabId) -> WindowId {
         let window = WindowId(self.next_id());
+        let from = self.tabs.get(&tab).map(|shown| shown.window);
+        let session = from
+            .and_then(|from| self.window_sessions.get(&from).copied())
+            .unwrap_or(self.active_session);
+        self.window_sessions.insert(window, session);
         self.windows.insert(
             window,
             FakeWindow {
@@ -3489,10 +3851,13 @@ impl FakeHost {
     /// opens, and owes its opening and the pane's move from `from`.
     fn new_tab_of(&mut self, pane: PaneId, from: TabId, place: Option<(WindowId, usize)>) {
         let tab = TabId(self.next_id());
+        // Of the window that it left, for a window of its own to be of that
+        // window's session, as the app's.
+        let left = self.tabs.get(&from).map_or(WindowId(0), |from| from.window);
         self.tabs.insert(
             tab,
             FakeTab {
-                window: WindowId(0),
+                window: left,
                 layout: Layout::Pane(pane),
                 active: pane,
                 zoomed: None,
@@ -4101,7 +4466,7 @@ impl Calling<'_> {
             Opened::Tab(_, opened) | Opened::Pane(opened) => *opened == pane,
             // A quick window's pane opens with the window, as the app opens
             // it after the call.
-            Opened::Nothing | Opened::Quick(..) | Opened::Group(_) => false,
+            Opened::Nothing | Opened::Quick(..) | Opened::Group(_) | Opened::Session(_) => false,
         })
     }
 
@@ -4118,6 +4483,12 @@ impl Calling<'_> {
                         .get(split)
                         .map(|split| split.tab)
                         .or_else(|| self.opened_tab_of(*split))
+                }
+                (Request::OpenPopup { window, .. }, Opened::Pane(opened)) if *opened == pane => {
+                    window
+                        .or_else(|| self.host.focused_window())
+                        .and_then(|window| self.host.windows.get(&window))
+                        .map(|shown| shown.active)
                 }
                 _ => None,
             })
@@ -4184,6 +4555,19 @@ impl Calling<'_> {
             return Ok(());
         }
         self.host.held(pane).map(|_| ())
+    }
+
+    /// That `pane` is no popup, held or that the call's writes so far
+    /// open, as a popup stays over its tab; `failed` otherwise.
+    fn not_popup(&self, pane: PaneId) -> Result<(), Error> {
+        let opened = self.writes.iter().any(|(request, opened)| {
+            matches!(request, Request::OpenPopup { .. })
+                && matches!(opened, Opened::Pane(new) if *new == pane)
+        });
+        if opened || self.host.popups.contains_key(&pane) {
+            return Err(Error::new(Code::Failed, crate::message::POPUP_STAYS));
+        }
+        Ok(())
     }
 
     /// Whether `tab` is held, or the call's writes so far open it;
@@ -4486,6 +4870,25 @@ impl Calling<'_> {
                 Response::Text(branch.cloned())
             }
             Request::Agents => Response::Agents(host.agents.clone()),
+            // Of no folder that a session was opened in, as the app's.
+            Request::SessionFolders => {
+                let folders = &host.session_folders;
+                let sessions: Vec<&str> = host
+                    .sessions
+                    .iter()
+                    .filter_map(|session| session.folder.as_deref())
+                    .collect();
+                let (configured, recent) = host::without_sessions(
+                    folders.configured.clone(),
+                    folders.recent.clone(),
+                    &sessions,
+                );
+                Response::SessionFolders(SessionFolders {
+                    configured,
+                    recent,
+                    ..folders.clone()
+                })
+            }
             Request::Plugins => Response::Plugins(host.plugins.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),
@@ -4568,6 +4971,55 @@ impl Calling<'_> {
                     }
                 }
                 Response::Tabs(infos)
+            }
+            Request::FloatingPanes(tab) => {
+                if !host.tabs.contains_key(tab) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no tab {}", tab.0),
+                    ));
+                }
+                Response::FloatingPanes(host.floating.get(tab).cloned().unwrap_or(
+                    crate::host::FloatingPanes {
+                        shown: true,
+                        panes: Vec::new(),
+                    },
+                ))
+            }
+            Request::Broadcast(window) => {
+                if !host.windows.contains_key(window) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no window {}", window.0),
+                    ));
+                }
+                let mut left_out: Vec<PaneId> = host
+                    .broadcast_left
+                    .iter()
+                    .copied()
+                    .filter(|pane| {
+                        host.panes
+                            .get(pane)
+                            .is_some_and(|shown| shown.window == *window)
+                    })
+                    .collect();
+                left_out.sort_unstable();
+                Response::Broadcast(crate::host::Broadcast {
+                    to: host.broadcasts.get(window).copied().unwrap_or_default(),
+                    left_out,
+                })
+            }
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
+            Request::Sessions => {
+                let reads = host.reads_processes();
+                let mut sessions = host.session_infos();
+                if !reads {
+                    for session in &mut sessions {
+                        session.folder = None;
+                    }
+                }
+                Response::Sessions(sessions)
             }
             Request::Groups(window) => {
                 if !host.windows.contains_key(window) {
@@ -4716,12 +5168,23 @@ impl Calling<'_> {
             | Request::ClearScrollback(pane)
             | Request::Clear(pane)
             | Request::Paste { pane, .. }
+            | Request::PasteBroadcast { pane, .. }
+            | Request::SendTextBroadcast { pane, .. }
+            | Request::SetPaneBroadcast { pane, .. }
             | Request::SendText { pane, .. }
             | Request::Scroll { pane, .. }
             | Request::FocusPane(pane)
-            | Request::ClosePane { pane, .. }
-            | Request::PaneToNewWindow(pane) => {
+            | Request::ClosePane { pane, .. } => {
                 self.known_pane(*pane)?;
+                Response::Done
+            }
+            Request::PaneToNewWindow(pane) => {
+                self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
+                Response::Done
+            }
+            Request::SetBroadcast { window, .. } => {
+                self.known_window(*window)?;
                 Response::Done
             }
             Request::SetTabTitle { tab, .. } => {
@@ -5228,6 +5691,7 @@ impl Calling<'_> {
             }
             Request::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 self.known_window(*window)?;
                 Response::Done
             }
@@ -5355,6 +5819,45 @@ impl Calling<'_> {
             }
             Request::Split { pane, .. } => {
                 self.known_pane(*pane)?;
+                let floating = self
+                    .host
+                    .floating
+                    .values()
+                    .any(|held| held.panes.iter().any(|floating| floating.pane == *pane));
+                if floating || self.not_popup(*pane).is_err() {
+                    return Err(Error::new(
+                        Code::Failed,
+                        crate::message::FLOATING_SPLITS_NOT,
+                    ));
+                }
+                let new = PaneId(self.host.next_id());
+                opened = Opened::Pane(new);
+                Response::Pane(Some(new))
+            }
+            Request::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                crate::host::check_popup(command, folder.as_deref(), *width, *height)
+                    .and_then(|()| {
+                        folder
+                            .as_deref()
+                            .map_or(Ok(()), crate::host::check_popup_folder)
+                    })
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                match window {
+                    Some(window) => self.known_window(*window)?,
+                    None if self.host.focused_window().is_none() => {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            "no window has the focus, which a popup opens in",
+                        ));
+                    }
+                    None => {}
+                }
                 let new = PaneId(self.host.next_id());
                 opened = Opened::Pane(new);
                 Response::Pane(Some(new))
@@ -5402,6 +5905,30 @@ impl Calling<'_> {
             }
             Request::FoldGroup { group, .. } | Request::Ungroup(group) => {
                 self.known_group(*group)?;
+                Response::Done
+            }
+            Request::NewSession { name, directory } => {
+                crate::host::check_session_name(name)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = directory {
+                    crate::host::check_session_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let id = SessionId(self.host.next_id());
+                opened = Opened::Session(id);
+                Response::Session(id)
+            }
+            Request::SwitchSession(session) => {
+                let made = self
+                    .writes
+                    .iter()
+                    .any(|(_, opened)| *opened == Opened::Session(*session));
+                if !made && !self.host.holds_session(*session) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no session {}", session.0),
+                    ));
+                }
                 Response::Done
             }
             Request::OpenPanel { id, options } => {

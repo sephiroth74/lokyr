@@ -96,6 +96,7 @@ impl App {
             theme_value: &|_, _, _| Ok(()),
             fonts: &host::Fonts::default,
             font_styles: &|_| Vec::new(),
+            layouts: &Vec::new,
             plugins: &[],
             config: &self.config,
             default_bindings: &[],

@@ -21,11 +21,13 @@ use lokyr_vt_core::terminal as vt;
 use lokyr_vt_core::terminal::{SelectionShape, SelectionUnit};
 
 use super::{
-    ABOUT, APPEARANCES, App, CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL,
-    FLOAT_ON_TOP, IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, LOOK_UP, LOOK_UP_TITLE,
-    MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME, NEXT_AGENT,
-    NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE, SEARCH_WEB,
-    SECURE_INPUT, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection, shown_number,
+    ABOUT, APPEARANCES, App, BROADCAST_OFF, BROADCAST_TAB, BROADCAST_WINDOW, BROADCASTS,
+    CHECK_UPDATES, CLOSE_TAB, CONTEXT_ONLY, DEFAULT_TERMINAL, DOCK_PANE, FLOAT_ON_TOP, FLOAT_PANE,
+    IMPORT_THEMES, INSTALL_CLAUDE_CODE, INSTALL_TOOLS, JOIN_BROADCAST, LEAVE_BROADCAST, LOOK_UP,
+    LOOK_UP_TITLE, MAN_KEYWORDS, MAN_PAGE, MAN_PAGE_NAME, MAN_SEARCH, MAN_SECTION, NEW_THEME,
+    NEXT_AGENT, NEXT_WINDOW, OPEN_THEMES, PERFORMANCE, PLUGINS, PREVIOUS_WINDOW, REPORT_ISSUE,
+    SEARCH_WEB, SECURE_INPUT, SESSIONS, SETTINGS, SETTINGS_TAB, SHOW_TIP, context, show_selection,
+    shown_number,
 };
 use crate::drawing::Backend;
 use crate::mouse;
@@ -139,6 +141,39 @@ impl<B: Backend> App<B> {
             edits(Category::Clipboard),
             edits(Category::Edit),
         ];
+        // Of a window that broadcasts, the pane leaves it, or joins it again.
+        let shown = self.windows.get(&window).map(|state| state.window);
+        if let Some(shown) = shown
+            && self.workspace.broadcast(shown) != lokyr_kernel::plugins::host::BroadcastTo::Off
+        {
+            let left = self
+                .workspace
+                .focused(shown)
+                .is_some_and(lokyr_kernel::workspace::Pane::broadcast_left);
+            let name = if left {
+                JOIN_BROADCAST
+            } else {
+                LEAVE_BROADCAST
+            };
+            groups.push(self.commands.get(name).map(of).into_iter().collect());
+        }
+        // A pane of the splits floats, of a tab of more than one, and a
+        // floating one goes into the splits, but a popup, which stays over
+        // its tab.
+        let placed = shown.and_then(|shown| {
+            let pane = self.workspace.focused(shown)?.id();
+            let tab = self.workspace.tab(self.workspace.tab_of(pane)?)?;
+            if tab.is_popup(pane) {
+                None
+            } else if tab.is_floating(pane) {
+                Some(DOCK_PANE)
+            } else {
+                (tab.layout().panes().len() > 1).then_some(FLOAT_PANE)
+            }
+        });
+        if let Some(name) = placed {
+            groups.push(self.commands.get(name).map(of).into_iter().collect());
+        }
         let mut last = None;
         for (at, entry) in self.menu_items.iter().enumerate() {
             let Some(command) = self
@@ -496,6 +531,7 @@ impl<B: Backend> App<B> {
         platform.set_command_checked(super::CURSOR_GUIDE, self.cursor_guide);
         let front = platform.focused_window();
         self.show_opacity(platform, front);
+        self.show_broadcast(platform, front);
         self.menu_contexts = menu_contexts(&self.commands, &self.menu_items);
         // The plugins' items of the menu bar ticked as their plugins say,
         // each, as the items' places change with the menu.
@@ -535,6 +571,10 @@ impl<B: Backend> App<B> {
 /// The palette's list of the agents, which the windows' menu holds beside
 /// the next agent.
 const SHOW_AGENTS: &str = "command-palette.agents";
+
+/// The palette's sessions' switcher, which the Window menu's Sessions
+/// shows first.
+const SWITCH_SESSION: &str = "command-palette.sessions";
 /// The arguments of `man` for the page that `text` names: its name, and
 /// its section before it when `text` ends with one in brackets, as
 /// `ls(1)`, after `--`; `None` for a text that is no page's name, which
@@ -667,13 +707,20 @@ pub(super) fn main_menu(
                     && command.name != super::OPACITY
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
+                    && command.name != SWITCH_SESSION
                     && command.name != NEXT_WINDOW
                     && command.name != PREVIOUS_WINDOW
+                    && !SESSIONS.contains(&command.name.as_str())
+                    && !BROADCASTS.contains(&command.name.as_str())
+                    && command.name != LEAVE_BROADCAST
+                    && command.name != JOIN_BROADCAST
+                    && command.name != FLOAT_PANE
+                    && command.name != DOCK_PANE
                     && !CONTEXT_ONLY.contains(&command.name.as_str())
                     && !taken.contains(&command.name.as_str())
             })
             .map(|command| Shown {
-                group: (command.category, namespace(&command.name), false),
+                group: (command.category, family(&command.name), false),
                 title: command.title.clone(),
                 id: command.name.clone(),
                 shortcut: keymap.shortcut(&command.name).and_then(shortcut),
@@ -915,6 +962,58 @@ pub(super) fn main_menu(
         application.push(MenuItem::Separator);
         application.extend(app_commands);
     }
+    // The Window menu's Sessions, of the sessions' commands, then a line.
+    let session_items: Vec<MenuItem> = std::iter::once(SWITCH_SESSION)
+        .chain(SESSIONS)
+        .filter_map(|name| {
+            commands.get(name).map(|command| MenuItem::Command {
+                title: command.title.clone(),
+                command: name.to_owned(),
+                shortcut: keymap.shortcut(name).and_then(shortcut),
+            })
+        })
+        .collect();
+    let sessions: Vec<MenuItem> = if session_items.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            MenuItem::Submenu(Menu {
+                title: texts.text("menu-sessions"),
+                items: session_items,
+                role: None,
+            }),
+            MenuItem::Separator,
+        ]
+    };
+    // The Shell menu's Broadcast Input, of where the typed input goes, by
+    // short titles, after a line.
+    let broadcast_items: Vec<MenuItem> = [
+        (BROADCAST_OFF, "menu-broadcast-off"),
+        (BROADCAST_TAB, "menu-broadcast-tab"),
+        (BROADCAST_WINDOW, "menu-broadcast-window"),
+    ]
+    .into_iter()
+    .filter(|(name, _)| commands.get(name).is_some())
+    .map(|(name, title)| MenuItem::Command {
+        title: texts.text(title),
+        command: name.to_owned(),
+        shortcut: keymap.shortcut(name).and_then(shortcut),
+    })
+    .collect();
+    let mut shell = items(&[
+        Category::Windows,
+        Category::Tabs,
+        Category::Panes,
+        Category::Input,
+    ]);
+    if !broadcast_items.is_empty() {
+        shell.push(MenuItem::Separator);
+        shell.push(MenuItem::Submenu(Menu {
+            title: texts.text("menu-broadcast"),
+            items: broadcast_items,
+            role: None,
+        }));
+    }
     let mut main = MainMenu {
         menus: vec![
             Menu {
@@ -922,16 +1021,7 @@ pub(super) fn main_menu(
                 items: application,
                 role: None,
             },
-            menu(
-                "menu-shell",
-                items(&[
-                    Category::Windows,
-                    Category::Tabs,
-                    Category::Panes,
-                    Category::Input,
-                ]),
-                None,
-            ),
+            menu("menu-shell", shell, None),
             menu("menu-edit", edit, None),
             menu("menu-view", view, None),
             menu(
@@ -952,6 +1042,8 @@ pub(super) fn main_menu(
                     shortcut: keymap.shortcut(NEXT_WINDOW).and_then(shortcut),
                 }))
                 .chain([MenuItem::Separator])
+                // The sessions, in a menu of their own.
+                .chain(sessions)
                 // Float on Top, and the agents, in the windows' menu.
                 .chain(
                     [FLOAT_ON_TOP, NEXT_AGENT, SHOW_AGENTS]
@@ -1186,6 +1278,29 @@ fn taken(items: &[MenuEntry], of: impl Fn(MenuPlace) -> bool) -> Vec<&str> {
 /// The namespace of the command `name`, before its `.`.
 fn namespace(name: &str) -> String {
     name.split('.').next().unwrap_or_default().to_owned()
+}
+
+/// The `tabs` plugin's commands of the tabs' groups, which the menus part
+/// from its commands of the tabs.
+const TAB_GROUPS: [&str; 7] = [
+    "tabs.new-group",
+    "tabs.add-to-group",
+    "tabs.remove-from-group",
+    "tabs.rename-group",
+    "tabs.set-group-color",
+    "tabs.fold-group",
+    "tabs.ungroup",
+];
+
+/// The family of the command `name` in the menus, a line between one and
+/// the next: its namespace, or the tabs' groups of their own, a name of a
+/// `.` that no namespace has.
+fn family(name: &str) -> String {
+    if TAB_GROUPS.contains(&name) {
+        "tabs.groups".to_owned()
+    } else {
+        namespace(name)
+    }
 }
 
 /// The prefix of the ids of the plugins' items of the menus, which no

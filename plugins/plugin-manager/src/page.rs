@@ -113,6 +113,7 @@ fn sidebar(cx: &mut Cx<'_>) -> Node {
             };
             ListItem {
                 texts: vec![icon.to_owned(), message(cx, title, &[])],
+                ..ListItem::default()
             }
         })
         .collect();

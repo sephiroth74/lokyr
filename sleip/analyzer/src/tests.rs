@@ -125,3 +125,32 @@ return {}
         "{problems:#?}"
     );
 }
+
+#[test]
+fn a_popup_s_call_and_its_close_s_event_are_checked_of_their_types() {
+    let good = r#"
+--!strict
+local Plugin: Plugin = {}
+function Plugin.on_command(cx: Cx, name: string, args: Args): ()
+    local pane: PaneId? = cx.open_popup(nil, "lazygit", "~/src", 0.8, nil)
+    assert(pane)
+end
+function Plugin.on_event(cx: Cx, events: { Event }): ()
+    for _, event in events do
+        if event.kind == "popup-closed" then
+            local status: number? = event.status
+            local pane: PaneId = event.pane
+            assert(cx.notify(`{pane}: {status}`))
+        end
+    end
+end
+return Plugin
+"#;
+    let sources = |text: &str| vec![("src/init.luau".to_owned(), text.to_owned())];
+    assert_eq!(check(&sources(good), DEFINITIONS), []);
+    // A command that is not text, told of its line.
+    let wrong = good.replace(r#""lazygit""#, "3");
+    let problems = check(&sources(&wrong), DEFINITIONS);
+    assert_eq!(problems.len(), 1, "{problems:#?}");
+    assert_eq!(problems[0].line, 5, "{problems:#?}");
+}

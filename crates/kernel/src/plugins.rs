@@ -60,7 +60,8 @@ use crate::keymap::{self, Binding, Invocation, When};
 use crate::l10n::{Arg, Texts};
 use crate::paste::{self, Paste};
 use crate::workspace::{
-    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, Side, TabId, WindowId, Workspace,
+    Direction, Edge, GroupId, Layout, Pane, PaneId, Ratio, SessionId, Side, TabId, WindowId,
+    Workspace,
 };
 
 mod search;
@@ -98,6 +99,15 @@ pub enum Request {
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given.
     OpenWindow(Option<String>),
+    /// Open the first window of the session `session`, which a plugin made,
+    /// as [`Request::OpenWindow`] opens one, in that session, which shows:
+    /// none of a session that a later write of the call took away.
+    OpenSessionWindow {
+        /// The session.
+        session: crate::workspace::SessionId,
+        /// The folder of its pane.
+        directory: Option<String>,
+    },
     /// Open a quick window of the id `window`, which the plugin's request
     /// gave, shown at `place`, its pane in `directory`, if given.
     OpenQuickWindow {
@@ -183,11 +193,12 @@ pub enum Request {
         /// Its column, from 1, if one is known.
         column: Option<u32>,
     },
-    /// Ask the user to confirm a paste of `text` into `pane`, whose
-    /// program takes its line breaks as Return.
+    /// Ask the user to confirm a paste of `text` into `panes`, of which
+    /// one's program at least takes its line breaks as Return: one question
+    /// for all, the first pane's window showing it.
     ConfirmPaste {
-        /// The pane.
-        pane: PaneId,
+        /// The panes, the one pasted into first.
+        panes: Vec<PaneId>,
         /// What to paste.
         text: String,
     },
@@ -486,6 +497,20 @@ pub trait Panes {
     /// its size as a new pane's beside it; its directory `directory`, if
     /// given, a path absolute or from `~`, or the folder of a file there.
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
+
+    /// A popup's pane, as [`Panes::spawn`] gives a pane, whose program is
+    /// the user's login shell running `command`: a new pane's of a factory
+    /// that runs no command of its own.
+    fn spawn_popup(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        command: &str,
+    ) -> Pane {
+        let _ = command;
+        self.spawn(id, near, directory)
+    }
 }
 
 /// Whether the color of a name of a theme of a name can take a value, or
@@ -531,6 +556,9 @@ pub struct Context<'a> {
     pub fonts: &'a dyn Fn() -> host::Fonts,
     /// The styles of a font family, by its name, from the lightest.
     pub font_styles: &'a dyn Fn(&str) -> Vec<String>,
+    /// The names of the layouts of the config's folder, which the sessions'
+    /// switcher lists, in their order.
+    pub layouts: &'a dyn Fn() -> Vec<String>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -649,6 +677,9 @@ struct State {
     held_cursors: BTreeSet<host::PaneId>,
     /// What it keeps from idle sleep, which the app holds as it is active.
     awake: host::Awake,
+    /// The popups that it opened, and the status of each one's command
+    /// once it ended, which it hears as each closes.
+    popups: BTreeMap<host::PaneId, Option<i32>>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1291,12 +1322,29 @@ enum Write {
         side: Side,
         new: PaneId,
     },
+    /// A popup over the active tab of `window`, the focused one's for none,
+    /// of the id that the host gave its pane.
+    OpenPopup {
+        window: Option<WindowId>,
+        pane: PaneId,
+        command: String,
+        folder: Option<String>,
+        width: f64,
+        height: f64,
+    },
     /// A group of tabs, of the id that the host gave it.
     NewGroup {
         id: GroupId,
         tabs: Vec<TabId>,
         name: String,
         color: Option<Rgb>,
+    },
+    /// A session, of the id that the host gave it, and the folder of its
+    /// first window's pane.
+    NewSession {
+        id: SessionId,
+        name: String,
+        directory: Option<String>,
     },
     /// A render of one of the call's plugin's views.
     Render(ViewId),
@@ -1792,6 +1840,7 @@ impl Plugins {
                 gutter_marks: BTreeMap::new(),
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
+                popups: BTreeMap::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -2991,6 +3040,19 @@ impl Plugins {
             .push((Some(plugin.to_owned()), Event::Answered { id, text }));
     }
 
+    /// Notes the status of the command of the popup `pane`, which ended,
+    /// of 128 and a signal's number for a signal, as shells give it, or
+    /// none of one that it cannot tell: its plugin hears it as the popup
+    /// closes.
+    pub fn popup_ended(&mut self, pane: PaneId, status: Option<i32>) {
+        let pane = host::PaneId(pane.get());
+        for entry in &mut self.entries {
+            if let Some(kept) = entry.state.popups.get_mut(&pane) {
+                *kept = status;
+            }
+        }
+    }
+
     /// Tells `plugin` the end of its save `id`: the file's path, none as
     /// the user cancelled, or the error of a write that failed, for the
     /// next delivery, to it alone.
@@ -3139,13 +3201,22 @@ impl Plugins {
                 }
             }
             // A pane's header goes with it, and its searches stop, its
-            // terminal gone.
+            // terminal gone; a popup's plugin hears that it closed.
             Event::Workspace(WorkspaceEvent::PaneClosed { pane, .. }) => {
                 for entry in &mut self.entries {
                     entry.state.views.remove(&ViewId::PaneHeader(*pane));
                     entry.state.searches.retain(|search| search.pane != *pane);
                     entry.state.lingering.retain(|search| search.pane != *pane);
                     entry.state.replaced.retain(|search| search.pane != *pane);
+                    if let Some(status) = entry.state.popups.remove(pane) {
+                        self.out.events.push((
+                            Some(entry.state.name.clone()),
+                            Event::PopupClosed {
+                                pane: *pane,
+                                status,
+                            },
+                        ));
+                    }
                 }
             }
             _ => {}
@@ -4851,6 +4922,23 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 context.workspace.new_group_as(id, &tabs, &name, color);
                 continue;
             }
+            // The session, active as it is made, then its first window,
+            // which the app opens in it.
+            Write::NewSession {
+                id,
+                name,
+                directory,
+            } => {
+                if context.workspace.new_session_as(id, &name).is_some() {
+                    let folder = directory.as_deref().map(host::home_expanded);
+                    context.workspace.set_session_folder(id, folder);
+                    requests.push(Request::OpenSessionWindow {
+                        session: id,
+                        directory,
+                    });
+                }
+                continue;
+            }
             // A tab or a split of a window or a pane that an earlier write
             // of the call closed starts no program.
             Write::NewTab {
@@ -4879,6 +4967,39 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 if let Some(near) = context.workspace.pane(split) {
                     let new = context.panes.spawn(new, Some(near), None);
                     context.workspace.split(split, direction, new, side);
+                }
+                continue;
+            }
+            // The popup, over the active tab of its window, beside the
+            // pane with its keyboard; none of a window that closed.
+            Write::OpenPopup {
+                window,
+                pane,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                // The tab that takes it, the settings' none, before the
+                // command starts.
+                let tab = window
+                    .or(context.focused)
+                    .and_then(|window| context.workspace.window(window))
+                    .map(crate::workspace::Window::active_tab)
+                    .filter(|&tab| context.workspace.tab(tab).is_some());
+                if let Some(tab) = tab {
+                    let near = context
+                        .workspace
+                        .tab(tab)
+                        .map(crate::workspace::Tab::active_pane)
+                        .and_then(|near| context.workspace.pane(near));
+                    let new = context
+                        .panes
+                        .spawn_popup(pane, near, folder.as_deref(), &command);
+                    let frame = crate::workspace::FloatingFrame::centered(width, height);
+                    if context.workspace.open_popup(tab, new, frame).is_some() {
+                        state.popups.insert(host::PaneId(pane.get()), None);
+                    }
                 }
                 continue;
             }
@@ -4980,14 +5101,57 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 match paste::decide(&text, bracketed, context.confirm_paste) {
                     Paste::Now(text) => found.paste(&text),
                     Paste::Ask => requests.push(Request::ConfirmPaste {
-                        pane: PaneId::of(id.0),
+                        panes: vec![PaneId::of(id.0)],
                         text,
                     }),
                 }
             }
+            // As the user pastes: into the pane and those that its window
+            // broadcasts to, each bracketed as its program asks, of one
+            // question for all.
+            Asked::PasteBroadcast { pane: id, text } => {
+                let panes = context.workspace.broadcast_panes(PaneId::of(id.0));
+                let bracketed: Vec<bool> = panes
+                    .iter()
+                    .map(|&target| {
+                        context
+                            .workspace
+                            .pane(target)
+                            .and_then(Pane::input_modes)
+                            .is_some_and(|modes| modes.bracketed_paste)
+                    })
+                    .collect();
+                match paste::decide_all(&text, &bracketed, context.confirm_paste) {
+                    Some(texts) => {
+                        for (&target, text) in panes.iter().zip(&texts) {
+                            if let Some(found) = context.workspace.pane(target) {
+                                found.paste(text);
+                            }
+                        }
+                    }
+                    None => requests.push(Request::ConfirmPaste { panes, text }),
+                }
+            }
+            Asked::SetBroadcast { window, to } => {
+                context.workspace.set_broadcast(WindowId::of(window.0), to);
+            }
+            Asked::SetPaneBroadcast { pane, left_out } => {
+                context
+                    .workspace
+                    .set_pane_broadcast(PaneId::of(pane.0), left_out);
+            }
             Asked::SendText { pane: id, text } => {
                 if let Some(pane) = pane(id) {
                     pane.send_text(&text);
+                }
+            }
+            // As the user's keys: to the pane and those that its window
+            // broadcasts to.
+            Asked::SendTextBroadcast { pane: id, text } => {
+                for target in context.workspace.broadcast_panes(PaneId::of(id.0)) {
+                    if let Some(found) = context.workspace.pane_mut(target) {
+                        found.send_text(&text);
+                    }
                 }
             }
             // The line, as a paste, bracketed as the program asks, then
@@ -5123,6 +5287,9 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             }
             Asked::Ungroup(group) => {
                 context.workspace.ungroup(GroupId::of(group.0));
+            }
+            Asked::SwitchSession(session) => {
+                context.workspace.switch_session(SessionId::of(session.0));
             }
             Asked::ActivateTab(tab) => {
                 context.workspace.activate_tab(TabId::of(tab.0));
@@ -5738,13 +5905,28 @@ impl Host<'_, '_> {
         })
     }
 
+    /// That `pane` is no popup, of the workspace's or of the call's writes
+    /// so far, as a popup stays over its tab; `failed` otherwise.
+    fn not_popup(&self, pane: host::PaneId) -> Result<(), Error> {
+        let opened = self.writes.iter().any(
+            |write| matches!(write, Write::OpenPopup { pane: opened, .. } if opened.get() == pane.0),
+        );
+        if opened || self.context.workspace.is_popup(PaneId::of(pane.0)) {
+            return Err(Error::new(
+                Code::Failed,
+                lokyr_plugin_sdk::message::POPUP_STAYS,
+            ));
+        }
+        Ok(())
+    }
+
     /// Whether the call's writes so far open the pane `pane`, of a new tab
     /// or of a split.
     fn opens_pane(&self, pane: host::PaneId) -> bool {
         self.writes.iter().any(|write| match write {
-            Write::NewTab { pane: opened, .. } | Write::Split { new: opened, .. } => {
-                opened.get() == pane.0
-            }
+            Write::NewTab { pane: opened, .. }
+            | Write::Split { new: opened, .. }
+            | Write::OpenPopup { pane: opened, .. } => opened.get() == pane.0,
             _ => false,
         })
     }
@@ -5761,6 +5943,12 @@ impl Host<'_, '_> {
                 .workspace
                 .tab_of(*of)
                 .or_else(|| self.opened_tab_of(host::PaneId(of.get()))),
+            Write::OpenPopup {
+                window, pane: new, ..
+            } if new.get() == pane.0 => window
+                .or(self.context.focused)
+                .and_then(|window| self.context.workspace.window(window))
+                .map(crate::workspace::Window::active_tab),
             _ => None,
         })
     }
@@ -5825,6 +6013,28 @@ impl Host<'_, '_> {
             ));
         }
         Ok(shown.window().into())
+    }
+
+    /// Whether the session `session` is there, or the call's writes so far
+    /// make it; `not-found` otherwise.
+    fn known_session(&self, session: host::SessionId) -> Result<(), Error> {
+        let made = self
+            .writes
+            .iter()
+            .any(|write| matches!(write, Write::NewSession { id, .. } if id.get() == session.0));
+        if made
+            || self
+                .context
+                .workspace
+                .session(SessionId::of(session.0))
+                .is_some()
+        {
+            return Ok(());
+        }
+        Err(Error::new(
+            Code::NotFound,
+            format!("there is no session {}", session.0),
+        ))
     }
 
     /// Whether the group `group` is there, or the call's writes so far make
@@ -6275,6 +6485,59 @@ impl Host<'_, '_> {
                         .collect(),
                 )
             }
+            Asked::FloatingPanes(tab) => {
+                let shown = self.tab(tab)?;
+                Response::FloatingPanes(host::FloatingPanes {
+                    shown: shown.floating_shown(),
+                    panes: shown
+                        .floating()
+                        .iter()
+                        .map(|floating| host::FloatingPane {
+                            pane: floating.pane.into(),
+                            x: floating.frame.x(),
+                            y: floating.frame.y(),
+                            width: floating.frame.width(),
+                            height: floating.frame.height(),
+                        })
+                        .collect(),
+                })
+            }
+            Asked::Broadcast(window) => {
+                let id = self.window(window)?.id();
+                let workspace = &*self.context.workspace;
+                Response::Broadcast(host::Broadcast {
+                    to: workspace.broadcast(id),
+                    left_out: workspace
+                        .broadcast_left_out(id)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                })
+            }
+            // Their folders, the shells', to a plugin that reads the
+            // processes alone.
+            Asked::Sessions => {
+                let reads = self.state.reads_processes();
+                let workspace = &*self.context.workspace;
+                let active = workspace.active_session();
+                Response::Sessions(
+                    workspace
+                        .sessions()
+                        .into_iter()
+                        .map(|session| host::SessionInfo {
+                            id: session.id().into(),
+                            name: session.name().to_owned(),
+                            active: session.id() == active,
+                            folder: session.folder().filter(|_| reads).map(str::to_owned),
+                            windows: workspace
+                                .session_windows(session.id())
+                                .into_iter()
+                                .map(Into::into)
+                                .collect(),
+                        })
+                        .collect(),
+                )
+            }
             Asked::Layout(tab) => Response::Layout(layout(self.tab(tab)?.layout())),
             Asked::CommandLine { pane, command } => {
                 Response::Text(self.pane(pane)?.command_line(command))
@@ -6395,6 +6658,37 @@ impl Host<'_, '_> {
                     sections,
                     keys,
                     error: self.context.config_error.cloned(),
+                })
+            }
+            // The config's folders, and the recent ones that are there still.
+            Asked::SessionFolders => {
+                let home = std::env::home_dir();
+                let configured = crate::session_folders::listed(
+                    &self.context.config.sessions.folders,
+                    home.as_deref(),
+                )
+                .into_iter()
+                .map(|folder| folder.to_string_lossy().into_owned())
+                .collect();
+                let workspace = &self.context.workspace;
+                let recent = workspace
+                    .recent_folders()
+                    .iter()
+                    .filter(|folder| std::path::Path::new(folder).is_dir())
+                    .cloned()
+                    .collect();
+                let sessions: Vec<&str> = workspace
+                    .sessions()
+                    .into_iter()
+                    .filter_map(crate::workspace::Session::folder)
+                    .collect();
+                let (configured, recent) =
+                    crate::session_folders::without_sessions(configured, recent, &sessions);
+                Response::SessionFolders(host::SessionFolders {
+                    configured,
+                    recent,
+                    layouts: (self.context.layouts)(),
+                    home: home.map(|home| home.to_string_lossy().into_owned()),
                 })
             }
             Asked::Agents => {
@@ -6538,9 +6832,15 @@ impl Host<'_, '_> {
             | Asked::ClearScrollback(pane)
             | Asked::Clear(pane)
             | Asked::Paste { pane, .. }
+            | Asked::PasteBroadcast { pane, .. }
+            | Asked::SendTextBroadcast { pane, .. }
+            | Asked::SetPaneBroadcast { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SetBroadcast { window, .. } => {
+                self.window(*window)?;
             }
             Asked::SelectBlock { pane, command } => {
                 let found = self.pane(*pane)?;
@@ -6649,12 +6949,81 @@ impl Host<'_, '_> {
                     pane: pane.into(),
                 });
             }
+            Asked::OpenPopup {
+                window,
+                command,
+                folder,
+                width,
+                height,
+            } => {
+                host::check_popup(command, folder.as_deref(), *width, *height)
+                    .and_then(|()| folder.as_deref().map_or(Ok(()), host::check_popup_folder))
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                let window = match window {
+                    Some(window) => {
+                        self.window(*window)?;
+                        self.takes_tabs(*window)?;
+                        // A window that shows, of the active session, as a
+                        // popup shows to the user.
+                        let workspace = &self.context.workspace;
+                        let shows = workspace
+                            .window(WindowId::of(window.0))
+                            .is_some_and(|held| {
+                                !held.hidden()
+                                    && held
+                                        .session()
+                                        .is_none_or(|session| session == workspace.active_session())
+                            });
+                        if !shows {
+                            return Err(Error::new(
+                                Code::Failed,
+                                format!(
+                                    "the window {} is hidden, which a popup opens not in",
+                                    window.0
+                                ),
+                            ));
+                        }
+                        Some(WindowId::of(window.0))
+                    }
+                    None if self.context.focused.is_none() => {
+                        return Err(Error::new(
+                            Code::NotFound,
+                            "no window has the focus, which a popup opens in",
+                        ));
+                    }
+                    None => None,
+                };
+                let pane = PaneId::new();
+                self.writes.push(Write::OpenPopup {
+                    window,
+                    pane,
+                    command: command.clone(),
+                    folder: folder.clone(),
+                    width: width.unwrap_or(host::POPUP_WIDTH),
+                    height: height.unwrap_or(host::POPUP_HEIGHT),
+                });
+                return Ok(Response::Pane(Some(pane.into())));
+            }
             Asked::Split {
                 pane,
                 direction: lying,
                 side: new_side,
             } => {
                 self.known_pane(*pane)?;
+                // A floating pane splits not, of no layout of its own: its
+                // shell would start and go.
+                let floating = self
+                    .context
+                    .workspace
+                    .tab_of(PaneId::of(pane.0))
+                    .and_then(|tab| self.context.workspace.tab(tab))
+                    .is_some_and(|tab| tab.is_floating(PaneId::of(pane.0)));
+                if floating || self.not_popup(*pane).is_err() {
+                    return Err(Error::new(
+                        Code::Failed,
+                        lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT,
+                    ));
+                }
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),
@@ -6728,6 +7097,22 @@ impl Host<'_, '_> {
                 self.known_group(*group)?;
             }
             Asked::FoldGroup { group, .. } | Asked::Ungroup(group) => self.known_group(*group)?,
+            Asked::NewSession { name, directory } => {
+                host::check_session_name(name)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                if let Some(directory) = directory {
+                    host::check_session_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                let id = SessionId::new();
+                self.writes.push(Write::NewSession {
+                    id,
+                    name: name.clone(),
+                    directory: directory.clone(),
+                });
+                return Ok(Response::Session(id.into()));
+            }
+            Asked::SwitchSession(session) => self.known_session(*session)?,
             Asked::SetTabColor { tab, color } => {
                 self.known_tab(*tab)?;
                 if matches!(color, Some(host::Color::Palette(_))) {
@@ -6755,10 +7140,12 @@ impl Host<'_, '_> {
             Asked::SetTabTitle { tab, .. } | Asked::Equalize(tab) => {
                 self.known_tab(*tab)?;
             }
-            Asked::ClosePane { pane, .. }
-            | Asked::FocusPane(pane)
-            | Asked::PaneToNewWindow(pane) => {
+            Asked::ClosePane { pane, .. } | Asked::FocusPane(pane) => {
                 self.known_pane(*pane)?;
+            }
+            Asked::PaneToNewWindow(pane) => {
+                self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
             }
             Asked::SwapPanes { pane, with } => {
                 self.known_pane(*pane)?;
@@ -6783,6 +7170,7 @@ impl Host<'_, '_> {
             }
             Asked::PaneToNewTab { pane, window, .. } => {
                 self.known_pane(*pane)?;
+                self.not_popup(*pane)?;
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
             }
@@ -7820,7 +8208,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         title: title.to_owned(),
         color: host_color(tab.color()),
         active,
-        panes: tab.layout().panes().into_iter().map(Into::into).collect(),
+        panes: tab.shown_panes().into_iter().map(Into::into).collect(),
         focused: tab.active_pane().into(),
         zoomed: tab.zoomed().map(Into::into),
         activity: marks.activity,
@@ -7834,6 +8222,7 @@ fn tab_info(workspace: &Workspace, tab: &crate::workspace::Tab, reads: bool) -> 
         agent_message: marks.agent_message.filter(|_| reads),
         pinned: marks.pinned,
         group: tab.group().map(Into::into),
+        broadcast: workspace.broadcasts_tab(tab.id()),
         status: marks
             .status
             .filter(|_| reads)
@@ -7903,6 +8292,7 @@ fn any_tab_info(workspace: &Workspace, tab: TabId, reads: bool) -> Option<host::
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     })
 }
 

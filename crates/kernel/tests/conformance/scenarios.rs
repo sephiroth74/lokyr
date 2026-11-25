@@ -23,11 +23,12 @@ use std::collections::BTreeMap;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
-    Awake, BarPlace, Binding, Bytes, CapabilityDecision, Color, CommandInfo, Decision,
-    DecorationLook, Direction, Edge, GroupId, GroupInfo, LEAST_DELAY, Layout, Line, LineText,
-    MOST_DELAY, MOST_SEARCHES, MOST_STATE, MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES,
-    MenuItem, MenuPlace, Modifier, Packages, PaneId, PluginInfo, PluginState, QuickLength,
-    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, ShellCommand, Side,
+    Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
+    CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
+    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE,
+    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages,
+    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
+    SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side,
     StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
     check_file_name,
 };
@@ -135,6 +136,13 @@ pub const fn group(k: u64) -> GroupId {
     GroupId(5 * SYMBOL + k)
 }
 
+/// The session that the trace meets as the `k`th of those that the
+/// scenario reads or makes, the session that the host starts in among
+/// them.
+pub const fn session(k: u64) -> SessionId {
+    SessionId(6 * SYMBOL + k)
+}
+
 /// The world of the scenarios, as the kernel's host made it: its window,
 /// its tab and its pane, and the pane's row of [`LINE`], with the line's
 /// text and cells as the pane reads them, the commands of [`COMMAND`], the
@@ -231,6 +239,9 @@ pub fn all(world: &World) -> Vec<Scenario> {
         workspace(world),
         tabs(world),
         groups(world),
+        sessions(world),
+        broadcast(world),
+        popups(world),
         tab_changes(world, true),
         tab_changes(world, false),
         window_titles(world, true),
@@ -980,6 +991,7 @@ fn tabs(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let other = |id, active, pane| TabInfo {
         id,
@@ -1352,6 +1364,462 @@ fn tabs(world: &World) -> Scenario {
 /// A group that no host holds.
 const NO_GROUP: GroupId = GroupId(999_999);
 
+/// A session that no host holds.
+const NO_SESSION: SessionId = SessionId(999_999);
+
+/// The sessions: the one that the host starts in, of the world's window; a
+/// session made, active as it is made, of its first window to come, which
+/// a later write of the same call switches to; what is refused; and a
+/// switch back, each session's change told, the one left first.
+fn sessions(world: &World) -> Scenario {
+    let w = world.window;
+    let changed = |k| {
+        Event::Workspace(WorkspaceEvent::SessionChanged {
+            session: session(k),
+        })
+    };
+    let info = |k, name: &str, active, windows| SessionInfo {
+        id: session(k),
+        name: name.to_owned(),
+        active,
+        windows,
+        folder: None,
+    };
+    // The folder of the session made, `~` expanded.
+    let src = format!(
+        "{}/src",
+        std::env::home_dir().unwrap_or_default().to_string_lossy()
+    );
+    let new = |name: &str, directory: Option<&str>| Request::NewSession {
+        name: name.to_owned(),
+        directory: directory.map(str::to_owned),
+    };
+    Scenario {
+        name: "the sessions".to_owned(),
+        capabilities: None,
+        subscriptions: vec!["session-changed".to_owned()],
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![info(0, "", true, vec![w])]),
+                    ),
+                    (new("work", Some("~/src")), Response::Session(session(1))),
+                    (Request::SwitchSession(session(1)), Response::Done),
+                    (
+                        new(&"x".repeat(257), None),
+                        failed(
+                            Code::Failed,
+                            "a session's name is 256 characters at most, not 257",
+                        ),
+                    ),
+                    (
+                        new("a\nb", None),
+                        failed(Code::Failed, "a session's name holds no control character"),
+                    ),
+                    (
+                        new("", Some("src")),
+                        failed(
+                            Code::Failed,
+                            "`src` is not a path that is absolute or from `~`",
+                        ),
+                    ),
+                    (
+                        Request::SwitchSession(NO_SESSION),
+                        failed(Code::NotFound, "there is no session 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(1)],
+            },
+            // The session made first, of no window yet, and a quick window,
+            // of no session, opened in it.
+            ask(vec![
+                (
+                    Request::Sessions,
+                    Response::Sessions(vec![
+                        SessionInfo {
+                            folder: Some(src.clone()),
+                            ..info(1, "work", true, Vec::new())
+                        },
+                        info(0, "", false, vec![w]),
+                    ]),
+                ),
+                (
+                    Request::OpenQuickWindow {
+                        place: QuickPlace::default(),
+                        directory: None,
+                    },
+                    Response::Window(Some(window(0))),
+                ),
+            ]),
+            // A tab of it split, then a pane and a tab out of it, each in a
+            // window of the session that shows.
+            ask(vec![
+                (
+                    Request::NewTab {
+                        window: window(0),
+                        index: None,
+                        directory: None,
+                    },
+                    Response::Tab {
+                        tab: tab(0),
+                        pane: pane(0),
+                    },
+                ),
+                (
+                    Request::Split {
+                        pane: pane(0),
+                        direction: Direction::Vertical,
+                        side: Side::Second,
+                    },
+                    Response::Pane(Some(pane(1))),
+                ),
+                (Request::PaneToNewWindow(pane(1)), Response::Done),
+                (
+                    Request::TabToNewWindow {
+                        tab: tab(0),
+                        at: None,
+                    },
+                    Response::Done,
+                ),
+            ]),
+            // Back to the first, the second hidden of its two windows.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![
+                            SessionInfo {
+                                folder: Some(src.clone()),
+                                ..info(1, "work", true, vec![window(1), window(2)])
+                            },
+                            info(0, "", false, vec![w]),
+                        ]),
+                    ),
+                    (Request::SwitchSession(session(0)), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(1), changed(0)],
+            },
+            ask(vec![
+                (
+                    Request::Sessions,
+                    Response::Sessions(vec![
+                        info(0, "", true, vec![w]),
+                        SessionInfo {
+                            folder: Some(src.clone()),
+                            ..info(1, "work", false, vec![window(1), window(2)])
+                        },
+                    ]),
+                ),
+                // Of the config's folders, none, and no shell told one.
+                (
+                    Request::SessionFolders,
+                    Response::SessionFolders(SessionFolders {
+                        home: std::env::home_dir().map(|home| home.to_string_lossy().into_owned()),
+                        ..SessionFolders::default()
+                    }),
+                ),
+            ]),
+            // The hidden session's last window closed: it goes, the one that
+            // shows staying.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::ClosePane {
+                            pane: pane(1),
+                            ask: false,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::CloseTab {
+                            tab: tab(0),
+                            ask: false,
+                            keep: 0,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(1)],
+            },
+            // A session of a window out of the quick one, whose last window
+            // closes as it shows: it goes, the first one shown again.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![info(0, "", true, vec![w])]),
+                    ),
+                    (new("again", None), Response::Session(session(2))),
+                    (
+                        Request::NewTab {
+                            window: window(0),
+                            index: None,
+                            directory: None,
+                        },
+                        Response::Tab {
+                            tab: tab(1),
+                            pane: pane(2),
+                        },
+                    ),
+                    (
+                        Request::TabToNewWindow {
+                            tab: tab(1),
+                            at: None,
+                        },
+                        Response::Done,
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(2)],
+            },
+            Step {
+                wait: 0,
+                asks: vec![(
+                    Request::CloseTab {
+                        tab: tab(1),
+                        ask: false,
+                        keep: 0,
+                    },
+                    Response::Done,
+                )],
+                posts: Vec::new(),
+                heard: vec![changed(2), changed(0), changed(2)],
+            },
+            // Two sessions made in one call: the first, of no window, goes
+            // as the second takes its place, which goes in turn as the
+            // switch back leaves it of none.
+            Step {
+                wait: 0,
+                asks: vec![
+                    (new("one", None), Response::Session(session(3))),
+                    (new("two", None), Response::Session(session(4))),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(0), changed(3), changed(3), changed(4), changed(3)],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Sessions,
+                        Response::Sessions(vec![
+                            info(4, "two", true, Vec::new()),
+                            info(0, "", false, vec![w]),
+                        ]),
+                    ),
+                    (Request::SwitchSession(session(0)), Response::Done),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed(4), changed(0), changed(4)],
+            },
+            ask(vec![(
+                Request::Sessions,
+                Response::Sessions(vec![info(0, "", true, vec![w])]),
+            )]),
+        ],
+    }
+}
+
+/// A window's broadcast of the typed input: to its tab's panes, the world's
+/// pane left out, read back, then off again, each change told; a paste as
+/// the user's into a pane not there, and a window not there, refused. And
+/// the world's tab's floating panes, none, which show.
+fn broadcast(world: &World) -> Scenario {
+    let (w, p) = (world.window, world.pane);
+    let changed = Event::Workspace(WorkspaceEvent::BroadcastChanged { window: w });
+    Scenario {
+        name: "the broadcast".to_owned(),
+        capabilities: None,
+        subscriptions: vec!["broadcast-changed".to_owned()],
+        steps: vec![
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Broadcast(w),
+                        Response::Broadcast(Broadcast::default()),
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: w,
+                            to: BroadcastTo::Tab,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetPaneBroadcast {
+                            pane: p,
+                            left_out: true,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::PasteBroadcast {
+                            pane: NO_PANE,
+                            text: "ls".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: p,
+                            text: "\u{15}".to_owned(),
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SendTextBroadcast {
+                            pane: NO_PANE,
+                            text: "\u{15}".to_owned(),
+                        },
+                        failed(Code::NotFound, "there is no pane 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed.clone()],
+            },
+            Step {
+                wait: 0,
+                asks: vec![
+                    (
+                        Request::Broadcast(w),
+                        Response::Broadcast(Broadcast {
+                            to: BroadcastTo::Tab,
+                            left_out: vec![p],
+                        }),
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: w,
+                            to: BroadcastTo::Off,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetPaneBroadcast {
+                            pane: p,
+                            left_out: false,
+                        },
+                        Response::Done,
+                    ),
+                    (
+                        Request::SetBroadcast {
+                            window: NO_WINDOW,
+                            to: BroadcastTo::Window,
+                        },
+                        failed(Code::NotFound, "there is no window 999999"),
+                    ),
+                ],
+                posts: Vec::new(),
+                heard: vec![changed.clone(), changed],
+            },
+            ask(vec![
+                (
+                    Request::Broadcast(w),
+                    Response::Broadcast(Broadcast::default()),
+                ),
+                (
+                    Request::FloatingPanes(world.tab),
+                    Response::FloatingPanes(FloatingPanes {
+                        shown: true,
+                        panes: Vec::new(),
+                    }),
+                ),
+                (
+                    Request::FloatingPanes(NO_TAB),
+                    failed(Code::NotFound, "there is no tab 999999"),
+                ),
+            ]),
+        ],
+    }
+}
+
+/// A plugin's popups: one over the focused window's active tab, which a
+/// later write of the call closes, its close heard of no status, as its
+/// command ran still; one of a window, a folder and shares, which moves
+/// to no window, closed too; and what is refused: a blank command, a share
+/// past the room, a window that is not there.
+fn popups(world: &World) -> Scenario {
+    let open = |window, command: &str, folder: Option<&str>, width, height| Request::OpenPopup {
+        window,
+        command: command.to_owned(),
+        folder: folder.map(str::to_owned),
+        width,
+        height,
+    };
+    Scenario {
+        name: "the popups".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![Step {
+            wait: 0,
+            asks: vec![
+                (
+                    open(None, "lazygit", None, None, None),
+                    Response::Pane(Some(pane(0))),
+                ),
+                (
+                    Request::ClosePane {
+                        pane: pane(0),
+                        ask: false,
+                    },
+                    Response::Done,
+                ),
+                (
+                    open(Some(world.window), "fzf", Some("~"), Some(0.5), Some(0.4)),
+                    Response::Pane(Some(pane(1))),
+                ),
+                (
+                    Request::PaneToNewWindow(pane(1)),
+                    failed(Code::Failed, "a popup stays over its tab"),
+                ),
+                (
+                    open(None, "  ", None, None, None),
+                    failed(Code::Failed, "a popup's command is something past blanks"),
+                ),
+                (
+                    open(None, "ls", None, Some(1.5), None),
+                    failed(
+                        Code::Failed,
+                        "a popup's width and height are shares of its tab's room, past 0 and 1 at most, not 1.5",
+                    ),
+                ),
+                (
+                    open(Some(NO_WINDOW), "ls", None, None, None),
+                    failed(Code::NotFound, "there is no window 999999"),
+                ),
+                (
+                    Request::ClosePane {
+                        pane: pane(1),
+                        ask: false,
+                    },
+                    Response::Done,
+                ),
+            ],
+            posts: Vec::new(),
+            heard: vec![
+                Event::PopupClosed {
+                    pane: pane(0),
+                    status: None,
+                },
+                Event::PopupClosed {
+                    pane: pane(1),
+                    status: None,
+                },
+            ],
+        }],
+    }
+}
+
 /// A window's groups of tabs: one made of two tabs apart, which come next
 /// to one another, renamed by a later write of the same call; a tab added
 /// and taken out, its color taken away; folded, as the window shows a tab
@@ -1390,6 +1858,7 @@ fn groups(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group,
+        broadcast: false,
     };
     let shown = |name: &str, color, folded, tabs| GroupInfo {
         id: group(0),
@@ -2194,6 +2663,16 @@ fn capabilities(world: &World) -> Scenario {
                 lacks("pty-write"),
             ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
+            (
+                Request::OpenPopup {
+                    window: None,
+                    command: "lazygit".to_owned(),
+                    folder: None,
+                    width: None,
+                    height: None,
+                },
+                lacks("workspace-write"),
+            ),
             (
                 Request::SetClipboardText("x".to_owned()),
                 lacks("clipboard-write"),
@@ -3732,6 +4211,7 @@ fn workspace(world: &World) -> Scenario {
         status: None,
         pinned: false,
         group: None,
+        broadcast: false,
     };
     let split = |ratio| Layout::Split {
         direction: Direction::Vertical,

@@ -723,6 +723,7 @@ mod tests {
                 } else {
                     format!("row {index}")
                 }],
+                ..ListItem::default()
             })
             .collect()
     }

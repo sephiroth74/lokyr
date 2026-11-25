@@ -127,6 +127,9 @@ pub struct FakeWindow {
     pub origin: ScreenPoint,
     /// Whether it floats above the other applications' windows.
     pub floating: bool,
+    /// Whether the app hid it, as the windows of a session that is not
+    /// active hide.
+    pub hidden: bool,
 }
 
 impl FakeWindow {
@@ -1188,6 +1191,7 @@ impl Platform for Fake {
                 accessibility: Vec::new(),
                 origin,
                 floating: false,
+                hidden: false,
             },
         );
         self.order.insert(0, id);
@@ -1233,6 +1237,7 @@ impl Platform for Fake {
                 accessibility: Vec::new(),
                 origin: ScreenPoint::default(),
                 floating: false,
+                hidden: false,
             },
         );
         self.order.push(id);
@@ -1406,7 +1411,34 @@ impl Platform for Fake {
             .get(&window)
             .is_some_and(|state| state.quick == Some(None));
         if !hidden_quick {
+            // A window that the app hid shows again, as the system's.
+            if self.windows.get(&window).is_some_and(|state| state.hidden) {
+                self.set_window_hidden(window, false);
+            }
             self.focus_requests.push(window);
+            self.raise(window);
+        }
+    }
+
+    fn set_window_hidden(&mut self, window: WindowId, hidden: bool) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        if state.quick.is_some() || state.hidden == hidden {
+            return;
+        }
+        // Hidden, it does not show, as the backend tells at once; shown, it
+        // shows again, with the frame that it asked for meanwhile, its other
+        // events following as a test sends them.
+        state.hidden = hidden;
+        state.occluded = hidden;
+        if hidden && std::mem::take(&mut state.frame_requested) {
+            state.frame_held = true;
+        }
+        if !hidden && std::mem::take(&mut state.frame_held) {
+            state.frame_requested = true;
+        }
+        if !hidden {
             self.raise(window);
         }
     }

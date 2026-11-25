@@ -2,8 +2,8 @@
 //! the panes with their sessions.
 //!
 //! ```text
-//! Workspace
-//! └── Window (its tabs, in their order, and the one that it shows)
+//! Workspace (its sessions, and the active one, whose windows show)
+//! └── Window (its session, its tabs, in their order, and the one that it shows)
 //!     └── Tab (title, color, active pane, zoomed pane)
 //!         └── Layout: Split { direction, ratio, first, second } | Leaf
 //!             └── Pane ──▶ Session
@@ -19,9 +19,12 @@
 //! embedder takes them.
 
 pub mod agent;
+mod broadcast;
+mod floating;
 mod groups;
 mod layout;
 mod pane;
+mod sessions;
 #[cfg(test)]
 mod tests;
 
@@ -31,17 +34,20 @@ use std::time::{Duration, Instant};
 
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host as sdk;
+use lokyr_plugin_sdk::host::BroadcastTo;
 use lokyr_vt_core::page::Rgb;
 use lokyr_vt_core::terminal::{self, ClipboardTarget, StatusState, Terminal};
 
 pub use agent::{Agent, AgentSettings, Hooked};
 use agent::{HOOKED, Told};
+pub use floating::{Floating, FloatingFrame, LEAST_SHARE as LEAST_FLOATING_SHARE};
 pub use groups::Group;
 pub use layout::{Direction, Edge, Layout, Ratio, Side};
 pub use pane::{
-    ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Settings, TITLE_DASH,
-    TOLD_PACE, directory_name, is_shell, place_label,
+    ANSWER_WAIT, Environment, Exited, Grid, PRINTING, Pane, RESIZE_PACE, Restored, Settings,
+    TITLE_DASH, TOLD_PACE, directory_name, is_shell, place_label,
 };
+pub use sessions::Session;
 
 /// The last id that the process gave, to a window, a tab or a pane.
 static LAST_ID: AtomicU64 = AtomicU64::new(0);
@@ -90,6 +96,24 @@ id!(
     /// A group of a window's tabs.
     GroupId
 );
+id!(
+    /// A session of windows.
+    SessionId
+);
+
+impl SessionId {
+    /// The id of the number `id`, as a plugin's handle gives it, which may
+    /// be no session's.
+    pub fn of(id: u64) -> Self {
+        Self(id)
+    }
+}
+
+impl From<SessionId> for sdk::SessionId {
+    fn from(id: SessionId) -> Self {
+        Self(id.0)
+    }
+}
 
 impl WindowId {
     /// The id of the number `id`, as a plugin's handle gives it, which may
@@ -160,6 +184,11 @@ pub struct Window {
     title: String,
     quick: bool,
     hidden: bool,
+    /// Its session; none of a quick window or the settings', which show
+    /// whichever session is active.
+    session: Option<SessionId>,
+    /// Where its typed input goes beside the pane that has its keyboard.
+    broadcast: BroadcastTo,
 }
 
 impl Window {
@@ -210,6 +239,12 @@ impl Window {
     pub fn hidden(&self) -> bool {
         self.hidden
     }
+
+    /// Its session; none of a quick window or the settings', which show
+    /// whichever session is active.
+    pub fn session(&self) -> Option<SessionId> {
+        self.session
+    }
 }
 
 /// A tab: its title, its color, the layout of its panes, the pane that has
@@ -230,6 +265,14 @@ pub struct Tab {
     layout: Layout,
     active: PaneId,
     zoomed: Option<PaneId>,
+    /// Its panes that float over its layout's, from the one at the back to
+    /// the one in front.
+    floating: Vec<Floating>,
+    /// Whether its floating panes show, which show or hide together.
+    floating_shown: bool,
+    /// The pane of its layout that had the keyboard last, which takes it
+    /// back as the floating panes hide.
+    split_active: PaneId,
     /// What a tab bar marks it of.
     marks: Marks,
     /// When it last showed, of the workspace's count of uses, which orders
@@ -355,6 +398,65 @@ impl Tab {
     pub fn zoomed(&self) -> Option<PaneId> {
         self.zoomed
     }
+
+    /// Its panes: its layout's, in their order, then those that float over
+    /// them, from the back to the front.
+    pub fn panes(&self) -> Vec<PaneId> {
+        let mut panes = self.layout.panes();
+        panes.extend(self.floating.iter().map(|floating| floating.pane));
+        panes
+    }
+
+    /// Its panes that show: its layout's, then its floating panes that
+    /// show, from the back to the front.
+    pub fn shown_panes(&self) -> Vec<PaneId> {
+        let mut panes = self.layout.panes();
+        panes.extend(self.shown_floating().map(|floating| floating.pane));
+        panes
+    }
+
+    /// Its floating panes that show, from the back to the front: its
+    /// popups, which show of their own, and the others while they show.
+    pub fn shown_floating(&self) -> impl Iterator<Item = &Floating> {
+        self.floating
+            .iter()
+            .filter(|floating| floating.popup || self.floating_shown)
+    }
+
+    /// Its panes that float over its layout's, from the back to the front.
+    pub fn floating(&self) -> &[Floating] {
+        &self.floating
+    }
+
+    /// The layout's pane that had the keyboard last.
+    pub fn split_active(&self) -> PaneId {
+        self.split_active
+    }
+
+    /// Whether `pane` is one of its popups.
+    pub fn is_popup(&self, pane: PaneId) -> bool {
+        self.floating
+            .iter()
+            .any(|floating| floating.pane == pane && floating.popup)
+    }
+
+    /// Whether its floating panes show, but its popups, which show of their
+    /// own.
+    pub fn floating_shown(&self) -> bool {
+        self.floating_shown
+    }
+
+    /// Whether `pane` floats over its layout.
+    pub fn is_floating(&self, pane: PaneId) -> bool {
+        self.floating.iter().any(|floating| floating.pane == pane)
+    }
+
+    /// Whether `pane` is the tab's one pane, of its layout and of no other
+    /// floating but popups, as a pane that moves out alone takes its tab
+    /// along, its popups with it.
+    fn alone(&self, pane: PaneId) -> bool {
+        self.layout == Layout::Leaf(pane) && self.floating.iter().all(|floating| floating.popup)
+    }
 }
 
 /// What a tab bar shows of a tab: its label, its color and its marks.
@@ -367,8 +469,9 @@ enum Left {
     Kept,
     /// The window shows this tab, as it showed the one that left.
     Shows(WindowId, TabId),
-    /// The window closed, as it has no tab left.
-    Closed(WindowId),
+    /// The window closed, as it has no tab left, and the session that it
+    /// was of.
+    Closed(WindowId, Option<SessionId>),
 }
 
 /// What happened in the workspace, for the embedder to act on.
@@ -471,7 +574,15 @@ pub struct Workspace {
     closed: Vec<Closed>,
     /// The groups of the windows' tabs, each of one tab at least.
     groups: BTreeMap<GroupId, Group>,
+    /// The sessions, and the active one.
+    sessions: sessions::Sessions,
+    /// The folders that the panes' shells told last, by OSC 7, of this
+    /// machine, the latest first, [`MOST_RECENT_FOLDERS`] at most.
+    recent_folders: Vec<String>,
 }
+
+/// The most recent folders that the workspace keeps.
+pub const MOST_RECENT_FOLDERS: usize = 50;
 
 /// A tab closed that the workspace keeps, out of every window, its panes'
 /// programs running and their output read, until its time is up.
@@ -513,6 +624,7 @@ impl Workspace {
         let window = self.window_of_id(tab, window);
         if let Some(shown) = self.windows.get_mut(&window) {
             shown.quick = true;
+            shown.session = None;
         }
         self.created(tab, &[id]);
         window
@@ -540,6 +652,7 @@ impl Workspace {
         self.changed(WorkspaceEvent::WindowClosed {
             window: window.into(),
         });
+        self.session_lost_window(closed.session);
         true
     }
 
@@ -561,7 +674,7 @@ impl Workspace {
             return;
         };
         let group = dropped.group;
-        for pane in dropped.layout.panes() {
+        for pane in dropped.panes() {
             self.tab_of.remove(&pane);
             let gone = self.panes.remove(&pane);
             self.agent_gone(pane, gone);
@@ -586,6 +699,35 @@ impl Workspace {
         {
             self.group_changed(group, window);
         }
+    }
+
+    /// The folders that the panes' shells told last, the latest first.
+    pub fn recent_folders(&self) -> &[String] {
+        &self.recent_folders
+    }
+
+    /// Gives the workspace the recent folders that a run before kept, the
+    /// latest first, each once, [`MOST_RECENT_FOLDERS`] at most, before
+    /// those of this run.
+    pub fn set_recent_folders(&mut self, folders: Vec<String>) {
+        let mut kept: Vec<String> = Vec::new();
+        for folder in self.recent_folders.drain(..).chain(folders) {
+            if !folder.is_empty() && !kept.contains(&folder) {
+                kept.push(folder);
+            }
+        }
+        kept.truncate(MOST_RECENT_FOLDERS);
+        self.recent_folders = kept;
+    }
+
+    /// Puts `folder` first among the recent folders.
+    fn saw_folder(&mut self, folder: String) {
+        if folder.is_empty() || self.recent_folders.first() == Some(&folder) {
+            return;
+        }
+        self.recent_folders.retain(|kept| *kept != folder);
+        self.recent_folders.insert(0, folder);
+        self.recent_folders.truncate(MOST_RECENT_FOLDERS);
     }
 
     /// Records `event`, for the embedder.
@@ -721,6 +863,9 @@ impl Workspace {
         self.settings = Some((tab, window));
         self.settings_window = true;
         self.window_of_id(tab, window);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.session = None;
+        }
         self.changed(WorkspaceEvent::TabCreated {
             tab: tab.into(),
             window: window.into(),
@@ -813,7 +958,7 @@ impl Workspace {
                 .tabs
                 .iter()
                 .filter_map(|tab| self.tabs.get(tab))
-                .flat_map(|tab| tab.layout.panes())
+                .flat_map(Tab::panes)
                 .collect()
         })
     }
@@ -967,6 +1112,7 @@ impl Workspace {
             let before = active.and_then(|tab| self.tabs.get(&tab)).map(Tab::look);
             let mut tab = active.and_then(|tab| self.tabs.get_mut(&tab));
             let mut retitled = false;
+            let mut recent: Vec<String> = Vec::new();
             for event in happened.events {
                 let event = match event {
                     terminal::Event::TitleChanged => {
@@ -1012,6 +1158,16 @@ impl Workspace {
                     terminal::Event::StatusChanged | terminal::Event::SessionStatusChanged => {
                         continue;
                     }
+                    // The folder that the shell told, among the recent ones.
+                    terminal::Event::WorkingDirectory(told) => {
+                        if sdk::is_local_host(&told.host, &lokyr_pty::host_name()) {
+                            recent.push(told.path.clone());
+                        }
+                        Event::Terminal {
+                            pane: id,
+                            event: terminal::Event::WorkingDirectory(told),
+                        }
+                    }
                     event => Event::Terminal { pane: id, event },
                 };
                 self.events.push(event);
@@ -1022,6 +1178,9 @@ impl Workspace {
                 }
                 retitled = true;
                 self.events.push(Event::TitleChanged(id));
+            }
+            for folder in recent {
+                self.saw_folder(folder);
             }
             if let (Some(tab), Some(before)) = (active, before) {
                 self.tab_looked(tab, &before);
@@ -1286,6 +1445,9 @@ impl Workspace {
                 layout: Layout::Leaf(pane),
                 active: pane,
                 zoomed: None,
+                floating: Vec::new(),
+                floating_shown: true,
+                split_active: pane,
                 marks: Marks::default(),
                 used: 0,
                 group: None,
@@ -1329,6 +1491,7 @@ impl Workspace {
     /// A window of the id `window`, of `tab` alone, as [`Workspace::window_for`]
     /// opens one.
     fn window_of_id(&mut self, tab: TabId, window: WindowId) -> WindowId {
+        let session = self.session_for(self.window_of_tab(tab));
         if let Some(moved) = self.tabs.get_mut(&tab) {
             moved.window = window;
         }
@@ -1349,6 +1512,8 @@ impl Workspace {
                 title: String::new(),
                 quick: false,
                 hidden: false,
+                session,
+                broadcast: BroadcastTo::Off,
             },
         );
         self.changed(WorkspaceEvent::WindowOpened {
@@ -1387,8 +1552,9 @@ impl Workspace {
         };
         window.tabs.remove(index);
         if window.tabs.is_empty() {
+            let session = window.session;
             self.windows.remove(&window_id);
-            return Left::Closed(window_id);
+            return Left::Closed(window_id, session);
         }
         if window.active != tab {
             return Left::Kept;
@@ -1409,9 +1575,12 @@ impl Workspace {
                 });
                 self.tab_shown(tab);
             }
-            Left::Closed(window) => self.changed(WorkspaceEvent::WindowClosed {
-                window: window.into(),
-            }),
+            Left::Closed(window, session) => {
+                self.changed(WorkspaceEvent::WindowClosed {
+                    window: window.into(),
+                });
+                self.session_lost_window(session);
+            }
         }
     }
 
@@ -1535,7 +1704,7 @@ impl Workspace {
             return false;
         };
         let mut panes = Vec::new();
-        for pane in kept.layout.panes() {
+        for pane in kept.panes() {
             self.tab_of.remove(&pane);
             self.waiting.remove(&pane);
             if let Some(gone) = self.panes.remove(&pane) {
@@ -1580,12 +1749,17 @@ impl Workspace {
     }
 
     /// Gives back the tab closed last that it keeps, at its place in its
-    /// window, or of `fallback` once its window closed, which shows it, as
-    /// a tab opened anew, of its panes, tells; none of none kept.
+    /// window, or of `fallback` once its window closed or is of a hidden
+    /// session, which shows it, as a tab opened anew, of its panes, tells;
+    /// none of none kept.
     pub fn reopen_tab(&mut self, fallback: WindowId) -> Option<TabId> {
         let closed = self.closed.pop()?;
+        // A window that shows: not of a hidden session, which nothing would
+        // show it in.
         let open = |window: &WindowId| {
-            self.windows.contains_key(window) && self.settings_window() != Some(*window)
+            self.windows.contains_key(window)
+                && self.settings_window() != Some(*window)
+                && self.in_active_session(*window)
         };
         let window = if open(&closed.window) {
             closed.window
@@ -1744,7 +1918,7 @@ impl Workspace {
     fn tab_progress(&self, tab: TabId) -> Option<terminal::Progress> {
         let tab = self.tabs.get(&tab)?;
         let of = |pane: PaneId| self.panes.get(&pane).and_then(Pane::progress);
-        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+        of(tab.active).or_else(|| tab.panes().into_iter().find_map(of))
     }
 
     /// The status that `tab`'s panes tell of their sessions: its active
@@ -1752,7 +1926,7 @@ impl Workspace {
     fn tab_status(&self, tab: TabId) -> Option<terminal::SessionStatus> {
         let tab = self.tabs.get(&tab)?;
         let of = |pane: PaneId| self.panes.get(&pane)?.session_status().cloned();
-        of(tab.active).or_else(|| tab.layout.panes().into_iter().find_map(of))
+        of(tab.active).or_else(|| tab.panes().into_iter().find_map(of))
     }
 
     /// Whether the program of `tab`'s active pane prints of its own, while
@@ -1809,11 +1983,7 @@ impl Workspace {
             self.used(tab);
         }
         self.unfold_group_of(tab);
-        let panes = self
-            .tabs
-            .get(&tab)
-            .map(|shown| shown.layout.panes())
-            .unwrap_or_default();
+        let panes = self.tabs.get(&tab).map(Tab::panes).unwrap_or_default();
         for pane in panes {
             self.change_agent(pane, false, Agent::seen);
         }
@@ -2178,8 +2348,44 @@ impl Workspace {
     fn detach_pane(&mut self, pane: PaneId) -> Option<(TabId, Option<Left>)> {
         let tab_id = self.tab_of.remove(&pane)?;
         let tab = self.tabs.get_mut(&tab_id)?;
-        let Some(nearest) = tab.layout.remove(pane) else {
-            // Its one pane.
+        let nearest = if let Some(at) = tab.floating.iter().position(|of| of.pane == pane) {
+            // A floating pane: the keyboard to the one in front of those
+            // left, or to the layout's pane that had it last.
+            tab.floating.remove(at);
+            tab.shown_floating()
+                .last()
+                .map_or(tab.split_active, |front| front.pane)
+        } else if let Some(nearest) = tab.layout.remove(pane) {
+            if tab.split_active == pane {
+                tab.split_active = nearest;
+            }
+            nearest
+        } else if let Some(at) = tab.floating.iter().rposition(|floating| !floating.popup) {
+            // Its layout's one pane, whose place the floating pane in front
+            // takes, so that the tab stays; a popup, which runs a command of
+            // its own, never takes it.
+            let front = tab.floating.remove(at);
+            tab.layout = Layout::Leaf(front.pane);
+            tab.split_active = front.pane;
+            front.pane
+        } else {
+            // Its one pane, of no floating pane but popups, which close with
+            // the tab.
+            let popups: Vec<PaneId> = tab
+                .floating
+                .drain(..)
+                .map(|floating| floating.pane)
+                .collect();
+            for popup in popups {
+                self.tab_of.remove(&popup);
+                let gone = self.panes.remove(&popup);
+                self.agent_gone(popup, gone);
+                self.waiting.remove(&popup);
+                self.changed(WorkspaceEvent::PaneClosed {
+                    pane: popup.into(),
+                    tab: tab_id.into(),
+                });
+            }
             return Some((tab_id, Some(self.detach_tab(tab_id))));
         };
         let refocused = tab.active == pane;
@@ -2242,7 +2448,28 @@ impl Workspace {
         let Some(tab) = self.tabs.get_mut(&tab_id) else {
             return false;
         };
-        let unzoomed = tab.zoomed.is_some_and(|zoomed| zoomed != pane);
+        // A floating pane comes in front of the others, which show, over a
+        // zoomed pane too; a pane of the layout is the one that takes the
+        // keyboard back as they hide.
+        let floating = tab.is_floating(pane);
+        let mut moved = false;
+        if floating {
+            if tab.floating.last().is_some_and(|front| front.pane != pane)
+                && let Some(at) = tab.floating.iter().position(|of| of.pane == pane)
+            {
+                let raised = tab.floating.remove(at);
+                tab.floating.push(raised);
+                moved = true;
+            }
+            // A popup shows of its own, the others hidden still.
+            if !tab.floating_shown && !tab.is_popup(pane) {
+                tab.floating_shown = true;
+                moved = true;
+            }
+        } else {
+            tab.split_active = pane;
+        }
+        let unzoomed = !floating && tab.zoomed.is_some_and(|zoomed| zoomed != pane);
         if unzoomed {
             tab.zoomed = None;
         }
@@ -2254,7 +2481,7 @@ impl Workspace {
                 tab: tab_id.into(),
             });
         }
-        if unzoomed {
+        if unzoomed || moved {
             self.changed(WorkspaceEvent::LayoutChanged { tab: tab_id.into() });
         }
         true
@@ -2354,13 +2581,18 @@ impl Workspace {
         let Some(moved) = self.tabs.remove(&tab) else {
             return false;
         };
-        let panes = moved.layout.panes();
+        let panes = moved.panes();
         let Some(target) = self.tabs.get_mut(&into) else {
             return false;
         };
         target.layout = grafted;
         target.zoomed = None;
         target.active = moved.active;
+        // Its floating panes float over the tab that takes it.
+        target.floating.extend(moved.floating);
+        if moved.layout.contains(moved.active) {
+            target.split_active = moved.active;
+        }
         for &moved_pane in &panes {
             self.tab_of.insert(moved_pane, into);
         }
@@ -2389,7 +2621,8 @@ impl Workspace {
 
     /// Moves `pane` out of its tab into a tab of its own in `window`, at
     /// `index` of its tabs, or at their end past them, and returns that
-    /// tab; a pane alone in its tab moves with it.
+    /// tab; a pane alone in its tab moves with it, and a popup, which stays
+    /// over its tab, not at all.
     pub fn pane_to_new_tab(
         &mut self,
         pane: PaneId,
@@ -2397,10 +2630,13 @@ impl Workspace {
         index: usize,
     ) -> Option<TabId> {
         let tab = *self.tab_of.get(&pane)?;
-        if !self.windows.contains_key(&window) || self.settings_window() == Some(window) {
+        if !self.windows.contains_key(&window)
+            || self.settings_window() == Some(window)
+            || self.is_popup(pane)
+        {
             return None;
         }
-        if self.tabs.get(&tab)?.layout.panes().len() == 1 {
+        if self.tabs.get(&tab)?.alone(pane) {
             return self.move_tab(tab, window, index).then_some(tab);
         }
         self.detach_pane(pane);
@@ -2416,15 +2652,23 @@ impl Workspace {
 
     /// Moves `pane` out of its tab into a window of its own, and returns
     /// that window; a pane alone in its tab moves with it, as
-    /// [`Workspace::tab_to_new_window`] moves a tab.
+    /// [`Workspace::tab_to_new_window`] moves a tab, and a popup not at
+    /// all.
     pub fn pane_to_new_window(&mut self, pane: PaneId) -> Option<WindowId> {
         let tab = *self.tab_of.get(&pane)?;
-        if self.tabs.get(&tab)?.layout.panes().len() == 1 {
+        if self.is_popup(pane) {
+            return None;
+        }
+        if self.tabs.get(&tab)?.alone(pane) {
             return self.tab_to_new_window(tab);
         }
+        let session = self.session_for(self.window_of_tab(tab));
         self.detach_pane(pane);
         let created = self.new_tab(pane);
         let window = self.window_for(created);
+        if let Some(shown) = self.windows.get_mut(&window) {
+            shown.session = session;
+        }
         self.created(created, &[]);
         self.changed(WorkspaceEvent::PaneMoved {
             pane: pane.into(),

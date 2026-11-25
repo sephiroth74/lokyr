@@ -447,7 +447,7 @@ mod tests {
         let texts = Texts::new("it", &KERNEL);
         assert_eq!(
             texts.text_with("program-exited", &[("code", Arg::Number(3))]),
-            "il programma è uscito con codice 3; un tasto chiude la finestra"
+            "il programma è uscito con codice 3; un tasto chiude il pannello"
         );
     }
 }

@@ -1,0 +1,19 @@
+# The terminals compared, step 4 of 4: 10 seconds of a trackpad's scroll of
+# each terminal, then of smooth scrolling, of the terminals that have it,
+# the others told skipped. Leave the mouse and the trackpad alone.
+terminals = ["lokyr", "ghostty", "kitty", "iterm2", "terminal", "warp"]
+terminals-file = "../terminals.toml"
+pause = 2
+cycles = 6
+folder = "/tmp/lokyr/ttybench/sessions/compare-4-scroll-{date}"
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 1
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 1
+feature = "smooth-scroll"

@@ -1,0 +1,6 @@
+# The scenario's plugin's capabilities, granted beforehand, so that Lokyr
+# asks nothing as it starts.
+
+[plugins."lokyr-bench/floating"]
+granted = ["workspace-write", "pty-write"]
+refused = []

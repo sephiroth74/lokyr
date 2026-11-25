@@ -76,6 +76,7 @@ fn every() -> Node {
         first: 10,
         items: vec![ListItem {
             texts: vec!["a".to_owned()],
+            ..ListItem::default()
         }],
         row_height: Some(22.0),
         menu: true,

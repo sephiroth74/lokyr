@@ -199,16 +199,17 @@ Of no version, planned for 1.4 before: `ssh` in your shell installing Lokyr's te
 ### F5b — Sessions and iTerm2 power features
 
 **1.5, sessions**:
-- **The scrollback restored** with the windows, which F3 restores: each pane's rows, their styles, wrapping and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, a bound of rows a pane, the rows of the protected input left out, `[app] restore-scrollback` on by default, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon.
-- **Named sessions**: a session of windows, tabs and splits, a fuzzy switcher in the palette, the last two toggled, and saved layouts of windows, tabs, splits, folders and commands.
-- **Input broadcast** to the panes of a tab or a window, the host's, the input method's text and pastes too, of a mark on the panes that take it.
-- **Floating panes**, and popups that run a command and close, as fzf's or lazygit's, which plugins may open.
+- **The scrollback restored** with the windows, which F3 restores: each pane's rows, their styles, wrapping, links and the commands' marks, saved at the quit beside `windows.json` in files readable by their owner alone, within `[scrollback] limit`, the rows of the protected input left out, `[app] restore-scrollback`, off by default, as what the panes showed may hold a secret, shown above the new shell's prompt under a line of the session's date; the processes themselves new, as their survival is F7's mux daemon.
+- **Named sessions**: a session of windows, tabs and splits, the others' windows hidden, their programs running; a switcher in the palette of the open sessions, the layouts, the folders of `[sessions] folders` and the recent ones, a folder opening a session there; the last two toggled; every session back after a quit; and saved layouts of windows, tabs, splits, folders and commands.
+- **Input broadcast** to the panes of a tab or a window, the host's, the input method's text and pastes too, of a ring on the panes that take it, a pane left out from its context menu.
+- **Floating panes** over a tab's splits, moved and resized by the mouse, shown and hidden together, a pane of the splits floated and a floating one put back from the context menu, kept with their tab; and popups that run a command and close, as fzf's or lazygit's, of a binding's `pane.popup`.
+- **The plugin API 0.1.7**: the sessions, the broadcast's state, a tab's floating panes, and popups that plugins open of `workspace-write` and `pty-write` together.
 
 **1.6, iTerm2's power features**:
 - **tmux -CC**: tmux windows and panes become native tabs and splits.
 - **Automation**: triggers, of the output's patterns that highlight, notify, mark or run a command, off unless configured; profiles with automatic switching (by host or directory), and a tab's or a pane's colors; Shortcuts (App Intents) and AppleScript, of the commands' registry and their capabilities.
 - **Search**: filter mode, and a search of every tab.
-- **The context menu**: broadcast, locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)).
+- **The context menu**: locked panes, annotations, triggers and snippets ([UI-AND-FEATURES](UI-AND-FEATURES.md#the-panes-context-menu)), the broadcast's items having come in 1.5.
 - **Encodings**: the encodings other than UTF-8, per profile, as a conversion in the session ([VT-CORE](VT-CORE.md#session-session)).
 
 ### F5c — Graphics and feel

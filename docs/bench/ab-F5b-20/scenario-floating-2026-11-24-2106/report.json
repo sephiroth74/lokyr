@@ -1,0 +1,2032 @@
+{
+  "session": "scenario-floating-2026-11-24-2106",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795550805,
+    1795552042
+  ],
+  "runs": {
+    "done": 24,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-b",
+      "version": "1.4.0 (202611241345)"
+    },
+    {
+      "name": "lokyr-b-floating",
+      "version": "1.4.0 (202611241345)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-b",
+    "b": "lokyr-b-floating"
+  },
+  "groups": [
+    {
+      "tool": "idle",
+      "metric": "cpu_percent",
+      "unit": "%",
+      "title": "Its CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.01842137333093979,
+            "median": 0.05407791683955751,
+            "p95": 0.0686704852256654,
+            "p99": 0.0759800916336968,
+            "max": 0.2102301649100639,
+            "mean": 0.05011343320618481,
+            "stddev": 0.02035209105594509,
+            "median_interval": [
+              0.05032779209686864,
+              0.055512727153245595
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.05498881920973042
+            },
+            {
+              "cycle": 2,
+              "median": 0.054211603433521736
+            },
+            {
+              "cycle": 3,
+              "median": 0.05330891395618631
+            },
+            {
+              "cycle": 4,
+              "median": 0.046380883136974776
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 120,
+            "min": 0.025113953721260796,
+            "median": 0.05365734660868507,
+            "p95": 0.061961782146237515,
+            "p99": 0.0735290320747718,
+            "max": 0.07550738638205719,
+            "mean": 0.04968769386738638,
+            "stddev": 0.011888369866082814,
+            "median_interval": [
+              0.05190200682671288,
+              0.05453127471435272
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.05385974105704938
+            },
+            {
+              "cycle": 2,
+              "median": 0.05397050181246676
+            },
+            {
+              "cycle": 3,
+              "median": 0.05307822312837657
+            },
+            {
+              "cycle": 4,
+              "median": 0.05119359706705891
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.05407791683955751,
+        "b": 0.05365734660868507,
+        "change": -0.0004205702308724413,
+        "percent": -0.7777115973609359,
+        "interval": [
+          -0.0027330729587736707,
+          0.0034733629790388225
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "package_idle_wakeups_per_s",
+      "unit": "/s",
+      "title": "Package idle wakeups a second",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "interrupt_wakeups_per_s",
+      "unit": "/s",
+      "title": "Interrupt wakeups a second",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.9947264120491043,
+            "p99": 0.9969512180565171,
+            "max": 1.9901092406585152,
+            "mean": 0.33899736650258705,
+            "stddev": 0.48983018514215615,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 120,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.9952422589194714,
+            "p99": 0.997031916675475,
+            "max": 0.9976353966018908,
+            "mean": 0.3307354588949271,
+            "stddev": 0.46969522644713474,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "idle",
+      "metric": "power_mw",
+      "unit": "mW",
+      "title": "The power that the kernel bills it",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "duration_s": 30.0,
+        "interval_s": 1.0,
+        "rounds": 1,
+        "settle_s": 20.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 120,
+            "min": 0.02682758122845431,
+            "median": 0.060449922058027544,
+            "p95": 0.10261262098510411,
+            "p99": 0.12317708582395577,
+            "max": 0.2883389674420496,
+            "mean": 0.061242410175516744,
+            "stddev": 0.028565795327837627,
+            "median_interval": [
+              0.05902617961699932,
+              0.06219231801480878
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.060355966309043815
+            },
+            {
+              "cycle": 2,
+              "median": 0.059705057166683284
+            },
+            {
+              "cycle": 3,
+              "median": 0.05948739699086486
+            },
+            {
+              "cycle": 4,
+              "median": 0.06170718733114606
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 120,
+            "min": 0.02820794832804141,
+            "median": 0.059610969924976207,
+            "p95": 0.07870889720253443,
+            "p99": 0.08373748269985325,
+            "max": 0.08554361139045087,
+            "mean": 0.056947514402522506,
+            "stddev": 0.0142971828593111,
+            "median_interval": [
+              0.05890464239970866,
+              0.061464504796950904
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.05925412202348111
+            },
+            {
+              "cycle": 2,
+              "median": 0.06293848264691689
+            },
+            {
+              "cycle": 3,
+              "median": 0.059322437791337404
+            },
+            {
+              "cycle": 4,
+              "median": 0.05966252398493639
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.060449922058027544,
+        "b": 0.059610969924976207,
+        "change": -0.0008389521330513378,
+        "percent": -1.3878465091253627,
+        "interval": [
+          -0.0026447079855242348,
+          0.0015114230894091852
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "memory",
+      "metric": "footprint_mib",
+      "unit": "MiB",
+      "title": "Its memory's footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 1,
+        "settle_s": 3.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 55.048797607421875,
+            "median": 55.25971221923828,
+            "p95": 55.48783721923828,
+            "p99": 55.499087219238284,
+            "max": 55.50189971923828,
+            "mean": 55.26753044128418,
+            "stddev": 0.22133130751777183,
+            "median_interval": [
+              55.048797607421875,
+              55.50189971923828
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 55.50189971923828
+            },
+            {
+              "cycle": 2,
+              "median": 55.11127471923828
+            },
+            {
+              "cycle": 3,
+              "median": 55.40814971923828
+            },
+            {
+              "cycle": 4,
+              "median": 55.048797607421875
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 72.58078002929688,
+            "median": 72.83079147338867,
+            "p95": 72.84642448425294,
+            "p99": 72.84642723083496,
+            "max": 72.84642791748047,
+            "mean": 72.77219772338867,
+            "stddev": 0.1284586530894263,
+            "median_interval": [
+              72.58078002929688,
+              72.84642791748047
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 72.84640502929688
+            },
+            {
+              "cycle": 2,
+              "median": 72.58078002929688
+            },
+            {
+              "cycle": 3,
+              "median": 72.84642791748047
+            },
+            {
+              "cycle": 4,
+              "median": 72.81517791748047
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 55.25971221923828,
+        "b": 72.83079147338867,
+        "change": 17.57107925415039,
+        "percent": 31.79726883925599,
+        "interval": [
+          17.24295425415039,
+          17.781993865966797
+        ],
+        "verdict": "worse"
+      }
+    },
+    {
+      "tool": "memory",
+      "metric": "peak_mib",
+      "unit": "MiB",
+      "title": "Its memory's peak footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 1,
+        "settle_s": 3.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 211.86129760742188,
+            "median": 212.05658721923828,
+            "p95": 212.3003372192383,
+            "p99": 212.31158721923828,
+            "max": 212.31439971923828,
+            "mean": 212.07221794128418,
+            "stddev": 0.2291004492687637,
+            "median_interval": [
+              211.86129760742188,
+              212.31439971923828
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 212.31439971923828
+            },
+            {
+              "cycle": 2,
+              "median": 211.89252471923828
+            },
+            {
+              "cycle": 3,
+              "median": 212.22064971923828
+            },
+            {
+              "cycle": 4,
+              "median": 211.86129760742188
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 229.39328002929688,
+            "median": 229.64329147338867,
+            "p95": 229.65892448425294,
+            "p99": 229.65892723083496,
+            "max": 229.65892791748047,
+            "mean": 229.58469772338867,
+            "stddev": 0.1284586530894263,
+            "median_interval": [
+              229.39328002929688,
+              229.65892791748047
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 229.65890502929688
+            },
+            {
+              "cycle": 2,
+              "median": 229.39328002929688
+            },
+            {
+              "cycle": 3,
+              "median": 229.65892791748047
+            },
+            {
+              "cycle": 4,
+              "median": 229.62767791748047
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 212.05658721923828,
+        "b": 229.64329147338867,
+        "change": 17.58670425415039,
+        "percent": 8.293401532473066,
+        "interval": [
+          17.24295425415039,
+          17.78201675415039
+        ],
+        "verdict": "worse"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_per_s",
+      "unit": "frames/s",
+      "title": "Frames a second on the GPU",
+      "better": null,
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "refreshes_with_frame",
+      "unit": "%",
+      "title": "Refreshes of a new frame",
+      "better": null,
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_shown_per_s",
+      "unit": "frames/s",
+      "title": "Frames shown a second",
+      "better": null,
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_dropped",
+      "unit": "frames",
+      "title": "Frames dropped",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "awake": true,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-floating",
+          "summary": {
+            "count": 4,
+            "min": 0.0,
+            "median": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "max": 0.0,
+            "mean": 0.0,
+            "stddev": 0.0,
+            "median_interval": [
+              0.0,
+              0.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            },
+            {
+              "cycle": 3,
+              "median": 0.0
+            },
+            {
+              "cycle": 4,
+              "median": 0.0
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 0.0,
+        "b": 0.0,
+        "change": 0.0,
+        "percent": null,
+        "interval": [
+          0.0,
+          0.0
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [
+    {
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "at-most": 0.5,
+      "change-at-most": 0.1
+    },
+    {
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "at-most": 0.0
+    }
+  ],
+  "judgements": [
+    {
+      "budget": 1,
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "group": 2,
+      "terminal": "lokyr-b",
+      "limit": "≤ 0.5 /s",
+      "value": 0.33899736650258705,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 1,
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "group": 2,
+      "terminal": "lokyr-b-floating",
+      "limit": "≤ 0.5 /s",
+      "value": 0.3307354588949271,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 1,
+      "metric": "interrupt_wakeups_per_s",
+      "stat": "mean",
+      "group": 2,
+      "terminal": null,
+      "limit": "≤ +0.1 /s",
+      "value": -0.008261907607659935,
+      "percent": -2.4371598201182145,
+      "interval": [
+        -0.14003673852903606,
+        0.11545241020795967
+      ],
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "group": 1,
+      "terminal": "lokyr-b",
+      "limit": "≤ 0 /s",
+      "value": 0.0,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    },
+    {
+      "budget": 2,
+      "metric": "package_idle_wakeups_per_s",
+      "stat": "mean",
+      "group": 1,
+      "terminal": "lokyr-b-floating",
+      "limit": "≤ 0 /s",
+      "value": 0.0,
+      "percent": null,
+      "interval": null,
+      "held": true,
+      "note": null
+    }
+  ],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-idle-lokyr-b",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "idle",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795550805,
+      "seconds": 51.089655375,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.5693359375,
+        "after": 2.10302734375,
+        "busiest": [
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 24.2
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.4
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 19.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-idle-lokyr-b-floating",
+      "cycle": 1,
+      "run": 1,
+      "position": 2,
+      "tool": "idle",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795550858,
+      "seconds": 51.142428583,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.10302734375,
+        "after": 1.91259765625,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 20.1
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 16.3
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 14.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r2-memory-lokyr-b",
+      "cycle": 1,
+      "run": 2,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795550911,
+      "seconds": 4.010131875,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.91259765625,
+        "after": 1.83935546875,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 20.7
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 20.0
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 17.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r2-memory-lokyr-b-floating",
+      "cycle": 1,
+      "run": 2,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795550917,
+      "seconds": 3.942872209,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.83935546875,
+        "after": 2.01220703125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 20.5
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 15.7
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 12.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-idle-lokyr-b-floating",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "idle",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795550997,
+      "seconds": 51.142321792,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 30.79736328125,
+        "after": 14.49072265625,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 64.1
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 21.7
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 20.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-idle-lokyr-b",
+      "cycle": 2,
+      "run": 1,
+      "position": 2,
+      "tool": "idle",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551051,
+      "seconds": 51.12029175,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 13.41015625,
+        "after": 6.21630859375,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 119.0
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 20.2
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 20.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r2-memory-lokyr-b-floating",
+      "cycle": 2,
+      "run": 2,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551104,
+      "seconds": 3.951163291,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 6.21630859375,
+        "after": 5.79833984375,
+        "busiest": [
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 28.6
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.5
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 19.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r2-memory-lokyr-b",
+      "cycle": 2,
+      "run": 2,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551110,
+      "seconds": 3.958202666,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.79833984375,
+        "after": 5.4140625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 26.6
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.0
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 20.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-idle-lokyr-b",
+      "cycle": 3,
+      "run": 1,
+      "position": 1,
+      "tool": "idle",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551178,
+      "seconds": 51.224727208,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.97509765625,
+        "after": 2.16259765625,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.2
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 20.7
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 20.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-idle-lokyr-b-floating",
+      "cycle": 3,
+      "run": 1,
+      "position": 2,
+      "tool": "idle",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551231,
+      "seconds": 51.514934875,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.1494140625,
+        "after": 1.517578125,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.4
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 20.9
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 19.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r2-memory-lokyr-b",
+      "cycle": 3,
+      "run": 2,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551284,
+      "seconds": 3.806426417,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.517578125,
+        "after": 1.47607421875,
+        "busiest": [
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 17.7
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 16.1
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 13.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r2-memory-lokyr-b-floating",
+      "cycle": 3,
+      "run": 2,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551290,
+      "seconds": 3.932197916,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.47607421875,
+        "after": 1.59765625,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 18.8
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 18.5
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 14.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-idle-lokyr-b-floating",
+      "cycle": 4,
+      "run": 1,
+      "position": 1,
+      "tool": "idle",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551358,
+      "seconds": 51.787308125,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.70263671875,
+        "after": 1.71435546875,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 21.9
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 19.2
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 18.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-idle-lokyr-b",
+      "cycle": 4,
+      "run": 1,
+      "position": 2,
+      "tool": "idle",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "20",
+        "--duration",
+        "30",
+        "--interval",
+        "1",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551412,
+      "seconds": 51.223197042,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.71435546875,
+        "after": 2.76123046875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 18.3
+          },
+          {
+            "name": "BiomeAgent",
+            "cpu_percent": 16.8
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 12.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r2-memory-lokyr-b-floating",
+      "cycle": 4,
+      "run": 2,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551465,
+      "seconds": 3.956595125,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.76123046875,
+        "after": 2.7802734375,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 17.4
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 16.8
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 15.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r2-memory-lokyr-b",
+      "cycle": 4,
+      "run": 2,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551471,
+      "seconds": 3.948605834,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.7802734375,
+        "after": 2.6376953125,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 19.1
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 19.1
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 18.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r3-frames-lokyr-b",
+      "cycle": 1,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551784,
+      "seconds": 30.7690205,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.6181640625,
+        "after": 3.40771484375,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 47.7
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 26.9
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 22.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r3-frames-lokyr-b-floating",
+      "cycle": 1,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551816,
+      "seconds": 30.255116792,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.40771484375,
+        "after": 3.95166015625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 54.8
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 31.2
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 26.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r3-frames-lokyr-b-floating",
+      "cycle": 2,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551849,
+      "seconds": 30.937449459,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.1953125,
+        "after": 4.26953125,
+        "busiest": [
+          {
+            "name": "duetexpertd",
+            "cpu_percent": 94.6
+          },
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 56.5
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 31.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r3-frames-lokyr-b",
+      "cycle": 2,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551882,
+      "seconds": 30.269763833,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.26953125,
+        "after": 3.80712890625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 60.0
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 26.2
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 22.1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r3-frames-lokyr-b",
+      "cycle": 3,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551914,
+      "seconds": 30.407453416,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.7421875,
+        "after": 4.45654296875,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 37.4
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 22.6
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 21.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r3-frames-lokyr-b-floating",
+      "cycle": 3,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551947,
+      "seconds": 30.14917375,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.45654296875,
+        "after": 4.18017578125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 55.1
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 30.5
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 25.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r3-frames-lokyr-b-floating",
+      "cycle": 4,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-b-floating",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795551979,
+      "seconds": 30.199597917,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.48583984375,
+        "after": 4.65576171875,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 49.1
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 28.5
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 24.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r3-frames-lokyr-b",
+      "cycle": 4,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "rest",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795552011,
+      "seconds": 30.29609,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.65576171875,
+        "after": 4.18701171875,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 39.8
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 23.7
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 21.7
+          }
+        ]
+      }
+    }
+  ]
+}

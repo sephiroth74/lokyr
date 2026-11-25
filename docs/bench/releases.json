@@ -1,5 +1,5 @@
 {
-  "about": "The last eight releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line. `table` holds RELEASES.md's table of every measure, which releases.py writes: its groups of rows, each row's name of its unit, its budget's text, the measure whose verdicts mark its cells and the limit that marks a cell past its budget, and each release's cell, its value as the table shows it, or its value and a note, which the table numbers under it.",
+  "about": "The last eight releases' measures, which tools/bench/releases.py draws into RELEASES.md's summary and charts. `values` holds each release's value, as RELEASES.md's table gives it, the mean of its rounds where the table tells two; `baseline` the release before it, `against`, as the release's own session measured it, which the summary compares the release with. `sessions` names the session of a release's value and its baseline where it is not the release's own, as a measure taken again at rest. `tolerance` is the change, in the measure's unit, or `tolerance_pct` in percent, that its rounds' and sessions' spread holds, as the reports found it: a smaller one is no change. `reference` is the best of the other terminals, of the report `source`, and Lokyr's own value there, `lokyr`, where the conditions differ from the releases' sessions; `budget_label` tells a budget's line. `table` holds RELEASES.md's table of every measure, which releases.py writes: its groups of rows, each row's name of its unit, its budget's text, the measure whose verdicts mark its cells and the limit that marks a cell past its budget, and each release's cell, its value as the table shows it, or its value and a note, which the table numbers under it. `ttybench` names the record of a ttybench session's report that gives a measure, its tool, metric, statistic of the report's summary, and the conditions that its group holds, of no feature; `releases.py --from` takes a release's value and its baseline of the A/B's B and A there.",
   "releases": [
     {
       "id": "0.7.0",
@@ -56,6 +56,13 @@
       "title": "1.4.0",
       "report": "ab-F5a-78.md",
       "against": "1.3.0"
+    },
+    {
+      "id": "1.5.0",
+      "label": "1.5.0",
+      "title": "1.5.0",
+      "report": "ab-F5b-20.md",
+      "against": "1.4.0"
     }
   ],
   "measures": [
@@ -73,7 +80,8 @@
         "0.9.0": 25.35,
         "1.0.0": 26.72,
         "1.3.0": 27.15,
-        "1.4.0": 20.8
+        "1.4.0": 20.8,
+        "1.5.0": 55.0
       },
       "baseline": {
         "0.7.0": 15.1,
@@ -81,7 +89,8 @@
         "0.9.0": 23.81,
         "1.0.0": 28.86,
         "1.3.0": 28.6,
-        "1.4.0": 21.7
+        "1.4.0": 21.7,
+        "1.5.0": 54.6
       },
       "sessions": {
         "0.7.0": {
@@ -91,6 +100,10 @@
         "1.4.0": {
           "title": "the startup of the releases' notarized DMGs",
           "report": "startup-F5a-79.md"
+        },
+        "1.5.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-21.md"
         }
       }
     },
@@ -108,7 +121,8 @@
         "1.0.0": 19.22,
         "1.2.0": 16.61,
         "1.3.0": 17.276,
-        "1.4.0": 13.59
+        "1.4.0": 13.59,
+        "1.5.0": 16.339
       },
       "baseline": {
         "0.7.0": 19.59,
@@ -117,7 +131,8 @@
         "1.0.0": 19.19,
         "1.2.0": 17.68,
         "1.3.0": 17.261,
-        "1.4.0": 14.5
+        "1.4.0": 14.5,
+        "1.5.0": 16.812
       },
       "budget": 33.3,
       "budget_label": "2 refreshes, 33.3",
@@ -127,6 +142,15 @@
         "lokyr": 22.4,
         "source": "compare-F5a-78.md",
         "how": "Typometer"
+      },
+      "ttybench": {
+        "tool": "latency",
+        "metric": "latency_ms",
+        "conditions": {
+          "beside": "rest",
+          "phase": "random"
+        },
+        "stat": "median"
       }
     },
     {
@@ -143,7 +167,8 @@
         "1.0.0": 48.73,
         "1.2.0": 31.47,
         "1.3.0": 31.485,
-        "1.4.0": 27.45
+        "1.4.0": 27.45,
+        "1.5.0": 27.969
       },
       "baseline": {
         "0.7.0": 38.45,
@@ -152,7 +177,8 @@
         "1.0.0": 47.63,
         "1.2.0": 31.15,
         "1.3.0": 32.358,
-        "1.4.0": 29.76
+        "1.4.0": 29.76,
+        "1.5.0": 31.157
       },
       "budget": 75,
       "budget_label": "4.5 refreshes, 75",
@@ -162,6 +188,15 @@
         "lokyr": 29.5,
         "source": "compare-F5a-78.md",
         "how": "Typometer"
+      },
+      "ttybench": {
+        "tool": "latency",
+        "metric": "latency_ms",
+        "conditions": {
+          "beside": "rest",
+          "phase": "random"
+        },
+        "stat": "p99"
       }
     },
     {
@@ -180,7 +215,8 @@
         "1.1.0": 28.25,
         "1.2.0": 28.4,
         "1.3.0": 27.592,
-        "1.4.0": 28.7
+        "1.4.0": 28.7,
+        "1.5.0": 29.0
       },
       "baseline": {
         "0.7.0": 28.05,
@@ -190,7 +226,8 @@
         "1.1.0": 27.85,
         "1.2.0": 27.95,
         "1.3.0": 27.403,
-        "1.4.0": 28.7
+        "1.4.0": 28.7,
+        "1.5.0": 28.95
       },
       "reference": {
         "name": "Alacritty",
@@ -215,7 +252,8 @@
         "1.1.0": 0.35,
         "1.2.0": 0.342,
         "1.3.0": 0.3583,
-        "1.4.0": 0.35
+        "1.4.0": 0.35,
+        "1.5.0": 0.3309
       },
       "baseline": {
         "0.7.0": 0.35,
@@ -225,13 +263,19 @@
         "1.1.0": 0.35,
         "1.2.0": 0.35,
         "1.3.0": 0.3583,
-        "1.4.0": 0.346
+        "1.4.0": 0.346,
+        "1.5.0": 0.3476
       },
       "reference": {
         "name": "Alacritty",
         "value": 0.33,
         "lokyr": 0.35,
         "source": "compare-F5a-78.md"
+      },
+      "ttybench": {
+        "tool": "idle",
+        "metric": "interrupt_wakeups_per_s",
+        "stat": "mean"
       }
     },
     {
@@ -250,7 +294,8 @@
         "1.1.0": 0,
         "1.2.0": 0,
         "1.3.0": 0,
-        "1.4.0": 0
+        "1.4.0": 0,
+        "1.5.0": 0.0
       },
       "baseline": {
         "0.7.0": 0,
@@ -260,7 +305,13 @@
         "1.1.0": 0,
         "1.2.0": 0,
         "1.3.0": 0,
-        "1.4.0": 0
+        "1.4.0": 0,
+        "1.5.0": 0.0
+      },
+      "ttybench": {
+        "tool": "idle",
+        "metric": "package_idle_wakeups_per_s",
+        "stat": "mean"
       }
     },
     {
@@ -277,7 +328,8 @@
         "1.0.0": 310.9,
         "1.2.0": 314.9,
         "1.3.0": 308.6,
-        "1.4.0": 304.4
+        "1.4.0": 304.4,
+        "1.5.0": 313.938
       },
       "baseline": {
         "0.7.0": 309.6,
@@ -286,7 +338,8 @@
         "1.0.0": 311.6,
         "1.2.0": 315.6,
         "1.3.0": 298.6,
-        "1.4.0": 303.7
+        "1.4.0": 303.7,
+        "1.5.0": 313.032
       },
       "budget": 275.0,
       "budget_label": "Ghostty's less 10 %, 275",
@@ -300,6 +353,14 @@
         "1.4.0": {
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
+        }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "plain"
         }
       }
     },
@@ -349,7 +410,8 @@
         "1.0.0": 284.7,
         "1.2.0": 286.3,
         "1.3.0": 285.15,
-        "1.4.0": 281.1
+        "1.4.0": 281.1,
+        "1.5.0": 282.011
       },
       "baseline": {
         "0.7.0": 285.3,
@@ -358,12 +420,21 @@
         "1.0.0": 287.2,
         "1.2.0": 286.4,
         "1.3.0": 278.95,
-        "1.4.0": 271.8
+        "1.4.0": 271.8,
+        "1.5.0": 282.52
       },
       "sessions": {
         "1.4.0": {
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
+        }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "colors"
         }
       }
     },
@@ -381,7 +452,8 @@
         "1.0.0": 214.9,
         "1.2.0": 214.9,
         "1.3.0": 213.15,
-        "1.4.0": 216.1
+        "1.4.0": 216.1,
+        "1.5.0": 330.261
       },
       "baseline": {
         "0.7.0": 214.5,
@@ -390,12 +462,21 @@
         "1.0.0": 213.6,
         "1.2.0": 214.6,
         "1.3.0": 217.2,
-        "1.4.0": 217.2
+        "1.4.0": 217.2,
+        "1.5.0": 330.343
       },
       "sessions": {
         "1.4.0": {
           "title": "the output at rest",
           "report": "rest-F5a-123.md"
+        }
+      },
+      "ttybench": {
+        "tool": "throughput",
+        "metric": "quiet_mib_s",
+        "stat": "median",
+        "conditions": {
+          "text": "wide"
         }
       }
     },
@@ -413,7 +494,8 @@
         "1.0.0": 0.282,
         "1.2.0": 0.298,
         "1.3.0": 0.27675,
-        "1.4.0": 0.3225
+        "1.4.0": 0.3225,
+        "1.5.0": 0.3595
       },
       "baseline": {
         "0.7.0": 0.2755,
@@ -422,7 +504,8 @@
         "1.0.0": 0.2785,
         "1.2.0": 0.2945,
         "1.3.0": 0.28125,
-        "1.4.0": 0.31875
+        "1.4.0": 0.31875,
+        "1.5.0": 0.3605
       }
     },
     {
@@ -440,7 +523,8 @@
         "1.0.0": 0.4025,
         "1.2.0": 0.4225,
         "1.3.0": 0.41775,
-        "1.4.0": 0.44525
+        "1.4.0": 0.44525,
+        "1.5.0": 0.453
       },
       "baseline": {
         "0.7.0": 0.479,
@@ -449,7 +533,8 @@
         "1.0.0": 0.3955,
         "1.2.0": 0.439,
         "1.3.0": 0.42925,
-        "1.4.0": 0.42525
+        "1.4.0": 0.42525,
+        "1.5.0": 0.4505
       }
     },
     {
@@ -466,7 +551,8 @@
         "1.0.0": 0.726,
         "1.2.0": 0.783,
         "1.3.0": 0.7272,
-        "1.4.0": 0.67875
+        "1.4.0": 0.67875,
+        "1.5.0": 0.7765
       },
       "baseline": {
         "0.7.0": 0.7005,
@@ -475,7 +561,8 @@
         "1.0.0": 0.72,
         "1.2.0": 0.758,
         "1.3.0": 0.7318,
-        "1.4.0": 0.68475
+        "1.4.0": 0.68475,
+        "1.5.0": 0.793
       }
     },
     {
@@ -489,18 +576,28 @@
         "0.7.0": 58.0,
         "1.2.0": 57.1,
         "1.3.0": 58.3,
-        "1.4.0": 58.4
+        "1.4.0": 58.4,
+        "1.5.0": 58.132
       },
       "baseline": {
         "0.7.0": 57.2,
         "1.2.0": 57.7,
         "1.3.0": 58.1,
-        "1.4.0": 57.5
+        "1.4.0": 57.5,
+        "1.5.0": 57.868
       },
       "reference": {
         "name": "Ghostty",
         "value": 58.3,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "frames_per_s",
+        "stat": "median",
+        "conditions": {
+          "kind": "drag"
+        }
       }
     },
     {
@@ -539,18 +636,28 @@
         "0.7.0": 56.3,
         "1.2.0": 55.7,
         "1.3.0": 57.4,
-        "1.4.0": 55.5
+        "1.4.0": 55.5,
+        "1.5.0": 58.819
       },
       "baseline": {
         "0.7.0": 55.2,
         "1.2.0": 56.2,
         "1.3.0": 57.4,
-        "1.4.0": 56.4
+        "1.4.0": 56.4,
+        "1.5.0": 58.823
       },
       "reference": {
         "name": "Ghostty",
         "value": 57.0,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "frames_per_s",
+        "stat": "median",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {
@@ -589,18 +696,28 @@
         "0.7.0": 33.5,
         "1.2.0": 33.0,
         "1.3.0": 15,
-        "1.4.0": 36.0
+        "1.4.0": 36.0,
+        "1.5.0": 11.0
       },
       "baseline": {
         "0.7.0": 42.0,
         "1.2.0": 31.5,
         "1.3.0": 20,
-        "1.4.0": 26.0
+        "1.4.0": 26.0,
+        "1.5.0": 11.0
       },
       "reference": {
         "name": "Ghostty",
         "value": 25.0,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "missed_frames",
+        "stat": "median",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {
@@ -639,18 +756,28 @@
         "0.7.0": 20.2,
         "1.2.0": 28.3,
         "1.3.0": 21.02,
-        "1.4.0": 13.38
+        "1.4.0": 13.38,
+        "1.5.0": 27.918
       },
       "baseline": {
         "0.7.0": 12.4,
         "1.2.0": 20.6,
         "1.3.0": 13.18,
-        "1.4.0": 21.02
+        "1.4.0": 21.02,
+        "1.5.0": 26.483
       },
       "reference": {
         "name": "Ghostty",
         "value": 27.7,
         "source": "motion-F3-152.md"
+      },
+      "ttybench": {
+        "tool": "motion",
+        "metric": "compositor_delay_ms",
+        "stat": "p95",
+        "conditions": {
+          "kind": "resize"
+        }
       }
     },
     {
@@ -859,6 +986,10 @@
               "1.4.0": [
                 "249.2",
                 "the mean of twelve rounds of the release's DMG, notarized, 1.3.0's DMG 250.1 in the same session, [startup-F5a-79](startup-F5a-79.md#results); 240.5 in the A/B and 267.2 at rest, of a bundle not notarized"
+              ],
+              "1.5.0": [
+                "268.2",
+                "the mean of twelve rounds of the release's DMG, notarized, 1.4.0's DMG 267.8 in the same session, [startup-F5b-21](startup-F5b-21.md#results); 253.1 of bundles not notarized in the A/B, 1.4.0's tag 250.2, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
               ]
             }
           },
@@ -902,6 +1033,10 @@
               "1.4.0": [
                 "20.8",
                 "of twelve rounds of the releases' notarized DMGs, 1.3.0's 21.7, of a minimal app of 222 to 243 ms, [startup-F5a-79](startup-F5a-79.md#results); 60.9 in the A/B and 43.5 at rest, of a bundle not notarized"
+              ],
+              "1.5.0": [
+                "55.0",
+                "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
               ]
             }
           }
@@ -932,7 +1067,11 @@
               ],
               "1.2.0": "16.6",
               "1.3.0": "17.3",
-              "1.4.0": "13.6"
+              "1.4.0": "13.6",
+              "1.5.0": [
+                "16.3",
+                "of ttybench, its capture of the window and its keys at every phase of the refresh, eight runs of 100 keys, on a 5K display at 60 Hz; 1.4.0's 16.8 in the same session"
+              ]
             }
           },
           {
@@ -957,7 +1096,11 @@
               ],
               "1.2.0": "31.5",
               "1.3.0": "31.5",
-              "1.4.0": "27.5"
+              "1.4.0": "27.5",
+              "1.5.0": [
+                "28.0",
+                "of ttybench; 1.4.0's 31.2 in the same session"
+              ]
             }
           },
           {
@@ -1000,7 +1143,11 @@
                 "0",
                 "over 240 s, two rounds; 0.017 in two of four rounds of 60 s, of the same interrupt wakeups as 1.2.0's, [ab-F5a-17](ab-F5a-17.md#results)"
               ],
-              "1.4.0": "0"
+              "1.4.0": "0",
+              "1.5.0": [
+                "0",
+                "of ttybench, 30 s of each copy 20 s after its launch, in four cycles; 1.4.0's 0"
+              ]
             }
           },
           {
@@ -1019,7 +1166,11 @@
               "1.1.0": "0.35",
               "1.2.0": "0.34",
               "1.3.0": "0.36",
-              "1.4.0": "0.35"
+              "1.4.0": "0.35",
+              "1.5.0": [
+                "0.33",
+                "of ttybench, the mean of its intervals of a second; 1.4.0's 0.35 in the same session"
+              ]
             }
           },
           {
@@ -1050,6 +1201,10 @@
               "1.4.0": [
                 "28.7",
                 "the median of four rounds"
+              ],
+              "1.5.0": [
+                "29.0",
+                "the median of four rounds of `lokyr-bench`, 1.4.0's 28.9 in the same session"
               ]
             }
           },
@@ -1069,6 +1224,10 @@
               "1.4.0": [
                 "30.6",
                 "of a display at a scale of 2, as 1.3.0's in the same session"
+              ],
+              "1.5.0": [
+                "30.6",
+                "of a display at a scale of 2, as 1.4.0's in the same session"
               ]
             }
           }
@@ -1102,6 +1261,10 @@
               "1.4.0": [
                 "304.4",
                 "at rest, 1.3.0's 303.7 in the same session, [rest-F5a-123](rest-F5a-123.md#results); 269.5 in the A/B, of a session's slower output for both"
+              ],
+              "1.5.0": [
+                "313.9",
+                "of ttybench, to the quiet, a window of 120 × 40 cells, 1.4.0's 313.0 in the same session; 270.4 against 277.1 of `lokyr-bench` in a window of 1920 × 1080"
               ]
             }
           },
@@ -1122,6 +1285,10 @@
               "1.4.0": [
                 "216.8",
                 "at rest, 1.3.0's 218.4, [rest-F5a-123](rest-F5a-123.md#results); 185.9 in the A/B"
+              ],
+              "1.5.0": [
+                "208.9",
+                "of `lokyr-bench`, of runs of 147 to 231, 1.4.0's 185.8 in the same session"
               ]
             }
           },
@@ -1142,6 +1309,10 @@
               "1.4.0": [
                 "281.1",
                 "at rest, 1.3.0's 271.8, [rest-F5a-123](rest-F5a-123.md#results); 191.9 in the A/B"
+              ],
+              "1.5.0": [
+                "282.0",
+                "of ttybench's colored text, 1.4.0's 282.5 in the same session"
               ]
             }
           },
@@ -1162,6 +1333,10 @@
               "1.4.0": [
                 "216.1",
                 "at rest, 1.3.0's 217.2, [rest-F5a-123](rest-F5a-123.md#results); 204.6 in the A/B"
+              ],
+              "1.5.0": [
+                "330.3",
+                "of ttybench's wide characters, two cells each, 1.4.0's 330.3 in the same session"
               ]
             }
           }
@@ -1184,7 +1359,11 @@
               ],
               "1.2.0": "0.298",
               "1.3.0": "0.277",
-              "1.4.0": "0.323"
+              "1.4.0": "0.323",
+              "1.5.0": [
+                "0.360",
+                "the mean of two rounds of `lokyr-bench`, 1.4.0's 0.361"
+              ]
             }
           },
           {
@@ -1206,7 +1385,11 @@
               ],
               "1.2.0": "0.423",
               "1.3.0": "0.418",
-              "1.4.0": "0.445"
+              "1.4.0": "0.445",
+              "1.5.0": [
+                "0.453",
+                "1.4.0's 0.451"
+              ]
             }
           },
           {
@@ -1223,7 +1406,11 @@
               ],
               "1.2.0": "0.78",
               "1.3.0": "0.73",
-              "1.4.0": "0.68"
+              "1.4.0": "0.68",
+              "1.5.0": [
+                "0.777",
+                "1.4.0's 0.793"
+              ]
             }
           }
         ]
@@ -1260,6 +1447,10 @@
               "1.4.0": [
                 "58.4",
                 "of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look"
+              ],
+              "1.5.0": [
+                "58.1",
+                "of ttybench, a window of 120 × 40 cells of Menlo at 13 points on a 5K display at 60 Hz and a scale of 2, four cycles of the drag alone; 1.4.0's 57.9 in the same session"
               ]
             }
           },
@@ -1287,7 +1478,11 @@
               "1.1.0": "16.0",
               "1.2.0": "23.0",
               "1.3.0": "7.5",
-              "1.4.0": "11.5"
+              "1.4.0": "11.5",
+              "1.5.0": [
+                "17.5",
+                "1.4.0's 20 in the same session"
+              ]
             }
           },
           {
@@ -1314,7 +1509,11 @@
               "1.1.0": "56.2",
               "1.2.0": "55.7",
               "1.3.0": "57.4",
-              "1.4.0": "55.5"
+              "1.4.0": "55.5",
+              "1.5.0": [
+                "58.8",
+                "of ttybench, two cycles; 1.4.0's 58.8"
+              ]
             }
           },
           {
@@ -1348,6 +1547,10 @@
               "1.4.0": [
                 "36.0",
                 "1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2"
+              ],
+              "1.5.0": [
+                "11",
+                "1.4.0's 11"
               ]
             }
           },
@@ -1375,7 +1578,11 @@
               "1.1.0": "35",
               "1.2.0": "34",
               "1.3.0": "35",
-              "1.4.0": "35"
+              "1.4.0": "35",
+              "1.5.0": [
+                "44",
+                "1.4.0's 44"
+              ]
             }
           },
           {
@@ -1388,7 +1595,11 @@
               "1.1.0": "16",
               "1.2.0": "16",
               "1.3.0": "15",
-              "1.4.0": "17"
+              "1.4.0": "17",
+              "1.5.0": [
+                "31",
+                "of ttybench, of the app's processes, 1.4.0's 32"
+              ]
             }
           },
           {
@@ -1434,7 +1645,11 @@
                 "21.0",
                 "of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion)"
               ],
-              "1.4.0": "13.4"
+              "1.4.0": "13.4",
+              "1.5.0": [
+                "27.9",
+                "of ttybench, of runs of 13 and of 28 ms; 1.4.0's 26.5 in the same session"
+              ]
             }
           },
           {
@@ -1465,13 +1680,21 @@
               "1.4.0": [
                 "60.8",
                 "of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels)"
+              ],
+              "1.5.0": [
+                "60.7",
+                "of ttybench, the frames that moved the text, smooth scrolling on, four cycles; 1.4.0's 60.7 in the same session; by rows 15.9 for both"
               ]
             }
           },
           {
             "name": "Its refreshes with a frame, %",
             "cells": {
-              "1.4.0": "99"
+              "1.4.0": "99",
+              "1.5.0": [
+                "99.2",
+                "of Instruments' trace of the display, 1.4.0's 98.6 in the same session"
+              ]
             }
           },
           {

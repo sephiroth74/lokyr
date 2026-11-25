@@ -48,6 +48,7 @@ fn view(count: usize, (first, end): (usize, usize)) -> Node {
                 format!("Row {index}"),
                 format!("{:08x}", (index as u64).wrapping_mul(2_654_435_761)),
             ],
+            ..ListItem::default()
         })
         .collect();
     let mut list = Node::list(row, count, (first, items))

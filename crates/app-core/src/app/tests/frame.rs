@@ -737,12 +737,14 @@ fn a_frame_and_a_key_lock_the_pane_once_each() {
         window,
         key_event(KeyCode::SuperLeft, "", CMD, true),
     );
+    // Its key, which the program takes of the kitty keyboard's flags
+    // alone, locks once to read them as they are now.
     let before = locks(&app);
     fake.send(&mut app, window, typed(KeyCode::KeyX, "x", true));
     assert_eq!(
         locks(&app) - before,
-        0,
-        "Command's key, which the program does not take"
+        1,
+        "Command's key, which reads the terminal's keyboard flags"
     );
 }
 

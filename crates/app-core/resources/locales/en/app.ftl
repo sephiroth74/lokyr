@@ -11,6 +11,23 @@ command-window-previous = Cycle Back Through Windows
 command-window-toggle-float-on-top = Float on Top
 command-window-toggle-cursor-guide = Show Cursor Guide
 command-window-toggle-opacity = Use Transparency
+command-window-new-session = New Session
+command-window-switch-to-last-session = Switch to Last Session
+command-window-rename-session = Rename Session…
+command-window-close-session = Close Session
+command-window-switch-session = Switch to Session
+command-window-save-layout = Save Session as Layout…
+command-window-open-layout = Open Layout
+command-window-broadcast-off = Stop Broadcasting Input
+command-window-broadcast-to-tab = Broadcast Input to the Tab's Panes
+command-window-broadcast-to-window = Broadcast Input to the Window's Panes
+command-pane-leave-broadcast = Leave Broadcast
+command-pane-join-broadcast = Join Broadcast
+command-pane-new-floating = New Floating Pane
+command-pane-toggle-floating = Show or Hide Floating Panes
+command-pane-float = Float Pane
+command-pane-move-into-splits = Move Pane into Splits
+command-pane-popup = Open Popup
 command-app-about = About Lokyr
 command-app-quit = Quit Lokyr
 command-app-check-for-updates = Check for Updates…
@@ -109,6 +126,12 @@ menu-zoom = Zoom
 menu-bring-all-to-front = Bring All to Front
 menu-emoji-symbols = Emoji & Symbols
 menu-appearance = Appearance
+menu-sessions = Sessions
+# The Shell menu's submenu of where the typed input goes, and its items.
+menu-broadcast = Broadcast Input
+menu-broadcast-off = Off
+menu-broadcast-tab = To the Tab's Panes
+menu-broadcast-window = To the Window's Panes
 menu-appearance-system = Automatic
 menu-appearance-light = Light
 menu-appearance-dark = Dark
@@ -171,6 +194,22 @@ set-title-message = The window's title
 set-title-detail = Leave it empty for the window's own: the program's title, or its folder, then the program that runs.
 set-title-set = Set
 set-title-cancel = Cancel
+rename-session-message = The session's name
+rename-session-detail = It shows in the titlebar of the session's windows, beside their numbers. Leave it empty for none.
+rename-session-rename = Rename
+rename-session-cancel = Cancel
+close-session-message = Close this session?
+close-session-detail = Its windows close, and { $program }, which runs in one of them, ends.
+close-session-close = Close
+close-session-cancel = Cancel
+save-layout-message = Save the session as a layout
+save-layout-detail = Its windows, tabs, splits and folders go to a file of this name in the layouts' folder, which the sessions' switcher lists.
+save-layout-save = Save
+save-layout-cancel = Cancel
+replace-layout-message = Replace the layout “{ $name }”?
+replace-layout-detail = A layout of this name exists already, and saving replaces it, the commands that you added to it too.
+replace-layout-replace = Replace
+replace-layout-cancel = Cancel
 ask-text-ok = OK
 ask-text-cancel = Cancel
 ask-plugin = Asked by the plugin { $plugin }.
@@ -233,8 +272,10 @@ notice-copy = Copy the details
 notice-plugin-titled = { $title } — { $plugin }
 notice-close = Close
 
-# What an accessibility client, as VoiceOver, calls a pane.
+# What an accessibility client, as VoiceOver, calls a pane, and one that
+# takes its window's broadcast of the typed input.
 access-pane = Terminal
+access-pane-broadcast = Terminal, Broadcasting Input
 
 # The question of a theme's file that the Finder opens with Lokyr, or that
 # is dropped on its icon, and its buttons, the default one first; and the

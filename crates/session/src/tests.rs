@@ -916,3 +916,125 @@ fn a_session_holds_the_theme_s_colors_before_its_program_writes() {
         shows(terminal, "got:E[?997;1n")
     });
 }
+
+#[test]
+fn a_restored_scrollback_shows_above_the_program_s_output_of_no_event() {
+    // A command that ran and ended, kept as an archive writes it.
+    let mut kept = Terminal::new(40, 10, terminal::Options::default());
+    Parser::new().advance(
+        &mut kept,
+        b"\x1b]133;A\x1b\\$ \x1b]133;B\x1b\\make\x1b]133;C;cmdline_url=make\x1b\\\r\nbuilt\r\n\x1b]133;D;0\x1b\\",
+    );
+    // A program that writes at once, whose output waits for the rows.
+    let mut options = sh("printf 'the new shell'; exec sleep 30");
+    options.pty.size = Size {
+        cols: 40,
+        rows: 10,
+        ..options.pty.size
+    };
+    options.restored = Some(Restored::of(
+        kept.archive(usize::MAX),
+        "── Restored ──".to_owned(),
+    ));
+    let woken = Arc::new(AtomicBool::new(false));
+    let session = {
+        let woken = Arc::clone(&woken);
+        Session::spawn(&options, move || woken.store(true, Ordering::SeqCst)).unwrap()
+    };
+    // Read on the output's thread: the rows, then the line, then what the
+    // program wrote, on the row after.
+    wait_for(&session, "the program's output", |terminal| {
+        terminal.row_text(3) == "the new shell"
+    });
+    let mut terminal = session.lock();
+    assert_eq!(terminal.row_text(0), "$ make");
+    assert_eq!(terminal.row_text(1), "built");
+    assert_eq!(terminal.row_text(2), "── Restored ──");
+    // Nothing told of the command that the rows hold, which is past.
+    assert!(
+        !terminal
+            .take_events()
+            .iter()
+            .any(|event| matches!(event, terminal::Event::CommandEnded { .. }))
+    );
+    assert_eq!(terminal.commands().len(), 1);
+    assert_eq!(terminal.commands()[0].status, Some(0));
+    assert!(woken.load(Ordering::SeqCst));
+}
+
+#[test]
+fn a_replay_leaves_its_rows_alone() {
+    // A file's bytes of modes, a folder, a bell and a title, past the rows
+    // that an archive writes.
+    let rows = concat!(
+        "\x1b[?1000h\x1b[?1006h\x1b[?2004h\x1b[?1004h",
+        "\x1b]7;file://localhost/tmp/elsewhere\x1b\\",
+        "\x1b]2;a title\x1b\\\x07",
+        "\x1b[1;31mred\r\nkept\r\n",
+    );
+    let mut options = sh("exec sleep 30");
+    options.restored = Some(Restored::of(
+        rows.as_bytes().to_vec(),
+        "── Restored ──".to_owned(),
+    ));
+    let session = Session::spawn(&options, || {}).unwrap();
+    wait_for(&session, "the restored line", |terminal| {
+        shows(terminal, "── Restored ──")
+    });
+    let terminal = session.lock();
+    assert!(shows(&terminal, "kept"));
+    let modes = terminal.input_modes();
+    assert_eq!(modes.mouse_tracking, terminal::MouseTracking::default());
+    assert!(!modes.bracketed_paste && !modes.focus_events);
+    assert!(terminal.working_directory().is_none());
+    assert_eq!(terminal.title(), "");
+    assert_eq!(terminal.bells(), 0);
+}
+
+#[test]
+fn a_command_key_reaches_the_program_of_its_keyboard_flags_as_they_are_now() {
+    // A program that prints each byte that it reads, then turns the kitty
+    // keyboard protocol on once it reads `k`.
+    let script = r#"stty raw -echo; echo ready; while :; do c=$(dd bs=1 count=1 2>/dev/null); printf 'got:%s;' "$(printf %s "$c" | od -An -tx1 | tr -d ' ')"; [ "$c" = k ] && printf '\033[>1u'; done"#;
+    let session = Session::spawn(&sh(script), || {}).unwrap();
+    wait_for(&session, "ready", |terminal| shows(terminal, "ready"));
+    let key = |c, mods| KeyEvent {
+        key: Key::Char(c),
+        action: KeyAction::Press,
+        mods,
+        text: "",
+        unmodified: "",
+        base_layout: None,
+    };
+    let command = Mods {
+        super_key: true,
+        ..Mods::NONE
+    };
+    // Of no flags, ⌘J sends nothing: `x` comes alone.
+    session.key(&key('j', command), KeyOptions::default());
+    session.key(
+        &KeyEvent {
+            text: "x",
+            unmodified: "x",
+            ..key('x', Mods::NONE)
+        },
+        KeyOptions::default(),
+    );
+    wait_for(&session, "x", |terminal| shows(terminal, "got:78;"));
+    assert!(!shows(&session.lock(), "got:6a;"));
+    // Once the program turns the protocol on, of no snapshot taken since,
+    // ⌘J reaches it, of the protocol's sequence.
+    session.key(
+        &KeyEvent {
+            text: "k",
+            unmodified: "k",
+            ..key('k', Mods::NONE)
+        },
+        KeyOptions::default(),
+    );
+    wait_for(&session, "the flags", |terminal| {
+        terminal.keyboard_flags() != lokyr_vt_core::terminal::KeyboardFlags::NONE
+    });
+    session.key(&key('j', command), KeyOptions::default());
+    wait_for(&session, "⌘J", |terminal| shows(terminal, "got:1b;"));
+}

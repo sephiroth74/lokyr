@@ -13,7 +13,12 @@
 //! the AI agents of every window, the most urgent first, those that wait
 //! for the user, then those done, then those at work, each of its program,
 //! its message or its tab's title, its state and how long it has been in
-//! it; Return brings the agent's pane, its tab and its window forward.
+//! it; Return brings the agent's pane, its tab and its window forward. Its
+//! sessions' switcher lists the sessions open, in the order of their use,
+//! then the layouts, then the folders of the config's `[sessions] folders`
+//! and the recent ones, those of no session; Return switches to the
+//! session, opens the layout as a new session, or opens one in the folder,
+//! named after it.
 //! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
@@ -21,7 +26,7 @@
 mod rank;
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Value};
-use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo};
+use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo, SessionId};
 use lokyr_plugin_sdk::message::{Data, Event, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::ThemeVariant;
@@ -45,6 +50,18 @@ const THEME: &str = "command-palette.theme";
 
 /// Opens the palette's list of the AI agents of every window.
 const AGENTS: &str = "command-palette.agents";
+
+/// Opens the sessions' switcher.
+const SESSIONS: &str = "command-palette.sessions";
+
+/// The starts of the names of a switcher's entries: a session's, of its
+/// id, a layout's, of its name, and a folder's, of its path.
+const SESSION: &str = "session:";
+const LAYOUT: &str = "layout:";
+const FOLDER: &str = "folder:";
+
+/// The app's command that opens a layout as a new session.
+const OPEN_LAYOUT: &str = "window.open-layout";
 
 /// The app's command that brings a window forward by its number.
 const GOTO_WINDOW: &str = "window.goto";
@@ -78,7 +95,7 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The palette's texts, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 14] = [
+const ENGLISH: [(&str, &str); 20] = [
     ("palette-placeholder", "Execute Command…"),
     ("palette-none", "No commands"),
     ("palette-commands", "Commands"),
@@ -93,6 +110,15 @@ const ENGLISH: [(&str, &str); 14] = [
     ("palette-agent-done", "Done"),
     ("palette-agent-working", "Working"),
     ("palette-agent-idle", "Idle"),
+    (
+        "palette-sessions-placeholder",
+        "Switch to a Session or a Folder…",
+    ),
+    ("palette-sessions-none", "No sessions nor folders"),
+    ("palette-sessions", "Sessions"),
+    ("palette-session-untitled", "Untitled Session"),
+    ("palette-folder-recent", "Recent"),
+    ("palette-layout", "Layout"),
 ];
 
 /// The text of the message `id`, in the language shown, or English's where
@@ -156,6 +182,7 @@ enum Mode {
     Commands,
     Themes(ThemeVariant),
     Agents,
+    Sessions,
 }
 
 /// An open palette: its commands, as the registry gave them as it opened,
@@ -176,15 +203,28 @@ impl Open {
     /// The palette of `mode`, of `commands`, of no text, of the recent ones
     /// `recent`.
     fn new(mode: Mode, commands: Vec<Entry>, recent: &[String]) -> Self {
-        let ranked = rank::rank(&commands, "", recent);
-        Self {
+        let mut open = Self {
             mode,
             commands,
             agents: Vec::new(),
             query: String::new(),
-            ranked,
+            ranked: Vec::new(),
             selected: 0,
-        }
+        };
+        open.rank(recent);
+        open
+    }
+
+    /// Ranks the entries for the field's text, of the recent commands'
+    /// names `recent`: of the sessions' switcher, its sessions, layouts and
+    /// folders together, by how well each matches, a tie of the groups in
+    /// that order.
+    fn rank(&mut self, recent: &[String]) {
+        self.ranked = if self.mode == Mode::Sessions {
+            rank::rank_switcher(&self.commands, &self.query)
+        } else {
+            rank::rank(&self.commands, &self.query, recent)
+        };
     }
 
     /// The selected command, if one is.
@@ -243,6 +283,14 @@ impl Plugin for Palette {
             when: None,
         })?;
         cx.register_command(Command {
+            name: SESSIONS.to_owned(),
+            title: "Switch Session…".to_owned(),
+            category: Category::Windows,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
             name: MOVE.to_owned(),
             title: "Move in the Command Palette".to_owned(),
             category: Category::View,
@@ -266,6 +314,7 @@ impl Plugin for Palette {
             OPEN => self.open(cx),
             THEME => self.open_themes(cx),
             AGENTS => self.open_agents(cx),
+            SESSIONS => self.open_sessions(cx),
             MOVE => {
                 let delta = match args.get("delta") {
                     Some(Value::Integer(delta)) => *delta,
@@ -298,6 +347,11 @@ impl Plugin for Palette {
                 none: message(cx, "palette-agents-none"),
                 commands: message(cx, "palette-agents"),
             },
+            Mode::Sessions => Texts {
+                placeholder: message(cx, "palette-sessions-placeholder"),
+                none: message(cx, "palette-sessions-none"),
+                commands: message(cx, "palette-sessions"),
+            },
         };
         Some(palette(open, &texts))
     }
@@ -317,9 +371,9 @@ impl Plugin for Palette {
                 open.query.clone_from(text);
                 let recent: &[String] = match open.mode {
                     Mode::Commands => &self.recent,
-                    Mode::Themes(_) | Mode::Agents => &[],
+                    Mode::Themes(_) | Mode::Agents | Mode::Sessions => &[],
                 };
-                open.ranked = rank::rank(&open.commands, text, recent);
+                open.rank(recent);
                 open.selected = 0;
                 cx.request_render(panel())?;
                 if !open.ranked.is_empty() {
@@ -461,6 +515,83 @@ impl Palette {
         Ok(())
     }
 
+    /// Opens the sessions' switcher: the sessions open, in the order of
+    /// their use, the active one marked, then the folders of the config's
+    /// `[sessions] folders` and the recent ones, those of no session, each
+    /// of its parent folder; open, its field takes the keys again.
+    fn open_sessions(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.open.is_some() {
+            return cx.focus_node(panel(), FIELD);
+        }
+        let sessions = cx.sessions()?;
+        let folders = cx.session_folders()?;
+        let untitled = message(cx, "palette-session-untitled");
+        let current = message(cx, "palette-current");
+        let recent_mark = message(cx, "palette-folder-recent");
+        let home = folders.home.clone();
+        // The sessions of no name, numbered in the order they were made, as
+        // their ids follow it: the first of none, then 2 and on.
+        let mut unnamed: Vec<u64> = sessions
+            .iter()
+            .filter(|session| session.name.is_empty())
+            .map(|session| session.id.0)
+            .collect();
+        unnamed.sort_unstable();
+        let mut entries: Vec<Entry> = sessions
+            .iter()
+            .map(|session| Entry {
+                name: format!("{SESSION}{}", session.id.0),
+                title: if session.name.is_empty() {
+                    match unnamed.iter().position(|&id| id == session.id.0) {
+                        Some(0) | None => untitled.clone(),
+                        Some(at) => format!("{untitled} {}", at + 1),
+                    }
+                } else {
+                    session.name.clone()
+                },
+                keys: session.active.then(|| current.clone()),
+                plugin: session.folder.clone(),
+            })
+            .collect();
+        let layout_mark = message(cx, "palette-layout");
+        entries.extend(folders.layouts.iter().map(|name| Entry {
+            name: format!("{LAYOUT}{name}"),
+            title: name.clone(),
+            keys: Some(layout_mark.clone()),
+            plugin: None,
+        }));
+        let taken: Vec<&str> = sessions
+            .iter()
+            .filter_map(|session| session.folder.as_deref())
+            .collect();
+        let mut seen: Vec<String> = Vec::new();
+        let listed = folders
+            .configured
+            .iter()
+            .map(|folder| (folder, false))
+            .chain(folders.recent.iter().map(|folder| (folder, true)));
+        for (folder, recent) in listed {
+            if taken.contains(&folder.as_str()) || seen.contains(folder) {
+                continue;
+            }
+            seen.push(folder.clone());
+            let (parent, name) = parts(folder, home.as_deref());
+            let keys = match (recent, parent.is_empty()) {
+                (true, true) => Some(recent_mark.clone()),
+                (true, false) => Some(format!("{recent_mark} · {parent}")),
+                (false, true) => None,
+                (false, false) => Some(parent),
+            };
+            entries.push(Entry {
+                name: format!("{FOLDER}{folder}"),
+                title: name,
+                keys,
+                plugin: Some(folder.clone()),
+            });
+        }
+        self.show(cx, Mode::Sessions, entries)
+    }
+
     /// Opens the palette's panel in the focused window, of `mode` and
     /// `entries`.
     fn show(&mut self, cx: &mut Cx<'_>, mode: Mode, entries: Vec<Entry>) -> Result<(), Error> {
@@ -483,7 +614,7 @@ impl Palette {
         )?;
         let recent: &[String] = match mode {
             Mode::Commands => &self.recent,
-            Mode::Themes(_) | Mode::Agents => &[],
+            Mode::Themes(_) | Mode::Agents | Mode::Sessions => &[],
         };
         self.open = Some(Open::new(mode, entries, recent));
         Ok(())
@@ -543,6 +674,10 @@ impl Palette {
         if let Mode::Themes(variant) = mode {
             return cx.set_theme(variant, &name);
         }
+        // Of the sessions' switcher, the session, or one of the folder.
+        if mode == Mode::Sessions {
+            return switch_to(cx, &name);
+        }
         self.recent.retain(|kept| *kept != name);
         self.recent.insert(0, name.clone());
         self.recent.truncate(MOST_RECENT);
@@ -598,6 +733,73 @@ fn bring_forward(cx: &mut Cx<'_>, agent: &AgentInfo) -> Result<(), Error> {
     Ok(())
 }
 
+/// Switches to the session of the switcher's entry `name`, or, of a
+/// folder's, to the session opened there, or to one that it opens there,
+/// named after the folder.
+fn switch_to(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+    if let Some(layout) = name.strip_prefix(LAYOUT) {
+        let mut args = Args::new();
+        args.insert("name".to_owned(), Value::String(layout.to_owned()));
+        return cx.run_command(OPEN_LAYOUT, args);
+    }
+    if let Some(id) = name.strip_prefix(SESSION) {
+        let Ok(id) = id.parse::<u64>() else {
+            return Ok(());
+        };
+        return cx.switch_session(SessionId(id));
+    }
+    let Some(folder) = name.strip_prefix(FOLDER) else {
+        return Ok(());
+    };
+    let opened = cx
+        .sessions()?
+        .into_iter()
+        .find(|session| session.folder.as_deref() == Some(folder));
+    if let Some(session) = opened {
+        return cx.switch_session(session.id);
+    }
+    let (_, title) = parts(folder, None);
+    cx.new_session(&title, Some(folder)).map(|_| ())
+}
+
+/// The folder that holds `folder`, an absolute path, of `~` for `home`,
+/// and its own name: `~/src` and `api` of `/Users/me/src/api`; none and
+/// `~` of the home folder itself, and none and `/` of the root.
+fn parts(folder: &str, home: Option<&str>) -> (String, String) {
+    let trimmed = folder.trim_end_matches('/');
+    // A home of a last `/`, as `HOME` may be written, the same.
+    let home = home
+        .map(|home| home.trim_end_matches('/'))
+        .filter(|home| !home.is_empty());
+    if home == Some(trimmed) {
+        return (String::new(), "~".to_owned());
+    }
+    let (parent, name) = match trimmed.rsplit_once('/') {
+        Some(("", name)) => ("/".to_owned(), name.to_owned()),
+        Some((parent, name)) => (parent.to_owned(), name.to_owned()),
+        None => (String::new(), trimmed.to_owned()),
+    };
+    let parent = match home {
+        Some(home) if parent == home => "~".to_owned(),
+        Some(home) => match parent
+            .strip_prefix(home)
+            .filter(|rest| rest.starts_with('/'))
+        {
+            Some(rest) => format!("~{rest}"),
+            None => parent,
+        },
+        None => parent,
+    };
+    (
+        parent,
+        if name.is_empty() {
+            "/".to_owned()
+        } else {
+            name
+        },
+    )
+}
+
 /// The palette's texts, in the language shown.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct Texts {
@@ -649,7 +851,7 @@ fn palette(open: &Open, texts: &Texts) -> Node {
             text_size: Some(TextSize::Small),
             ..Style::default()
         }),
-        Mode::Themes(_) | Mode::Agents => secondary(""),
+        Mode::Themes(_) | Mode::Agents | Mode::Sessions => secondary(""),
     };
     let row = Node::container(vec![Node::text(""), Node::spacer(), end]).layout(Layout {
         gap: 8.0,
@@ -670,6 +872,7 @@ fn palette(open: &Open, texts: &Texts) -> Node {
                 open.commands[at].title.clone(),
                 open.commands[at].keys.clone().unwrap_or_default(),
             ],
+            ..ListItem::default()
         })
         .collect();
     let shown = open.ranked.len().min(MOST_ROWS);

@@ -418,6 +418,30 @@ pub enum PointerShape {
     /// A row's resize, up and down, as over a divider between two panes
     /// one over the other.
     ResizeRow,
+    /// A frame's resize from one of its edges or corners, as over a
+    /// floating pane's.
+    ResizeFrame(FrameEdge),
+}
+
+/// An edge or a corner of a rectangular frame, which a resize drags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FrameEdge {
+    /// The top edge.
+    Top,
+    /// The left edge.
+    Left,
+    /// The bottom edge.
+    Bottom,
+    /// The right edge.
+    Right,
+    /// The top left corner.
+    TopLeft,
+    /// The top right corner.
+    TopRight,
+    /// The bottom left corner.
+    BottomLeft,
+    /// The bottom right corner.
+    BottomRight,
 }
 
 /// An area of a window's content whose pointer is its own, over the shape

@@ -158,6 +158,29 @@ fn a_close_asks_first_of_the_tab_or_of_its_pane_while_it_has_splits() {
             ask: true
         }]
     );
+    // A tab of one split pane and a floating pane hidden: the pane closes,
+    // not the tab with the floating pane.
+    let (mut host, mut plugin) = self::host(&[1, 2], 1);
+    host.set_floating_panes(
+        TabId(1),
+        lokyr_plugin_sdk::host::FloatingPanes {
+            shown: false,
+            panes: vec![lokyr_plugin_sdk::host::FloatingPane {
+                pane: PaneId(9),
+                x: 0.2,
+                y: 0.2,
+                width: 0.6,
+                height: 0.6,
+            }],
+        },
+    );
+    assert_eq!(
+        run(&mut host, &mut plugin, CLOSE, Args::new()),
+        [Request::ClosePane {
+            pane: PaneId(1),
+            ask: true
+        }]
+    );
 }
 
 #[test]
@@ -1557,4 +1580,28 @@ fn the_menus_and_the_commands_of_groups_make_change_and_take_them_apart() {
         run(&mut host, &mut plugin, UNGROUP, Args::new()),
         [Request::Ungroup(group)]
     );
+}
+
+#[test]
+fn every_command_declares_the_capabilities_of_the_requests_that_it_makes() {
+    for (name, _, param) in crate::commands() {
+        // A tab of two panes and another, so that each command acts.
+        let (mut host, mut plugin) = host(&[2, 1], 1);
+        let args = match param {
+            Some(("index", ..)) => number("index", 2),
+            Some(("delta", ..)) => number("delta", 1),
+            Some(("color", ..)) => text("color", "#ff8800"),
+            Some(("title", ..)) => text("title", "work"),
+            _ => Args::new(),
+        };
+        host.take_done();
+        let _ = host.command(&mut plugin, name, args);
+        let declared = crate::capabilities(name);
+        for request in host.take_done() {
+            assert!(
+                request.lacking(&declared).is_none(),
+                "`{name}` declares {declared:?} and makes {request:?}"
+            );
+        }
+    }
 }

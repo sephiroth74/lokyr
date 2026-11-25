@@ -369,6 +369,38 @@ bench: vtebench
 release-charts:
     python3 tools/bench/releases.py
 
+# Put a release's A/B's two copies, the sessions' configs and the scenarios' plugins in /tmp/lokyr/ttybench, as tools/bench/sessions/terminals.toml names them: `a`, the release before, and `b`, the one measured, each a DMG or an app, copied of their signatures as they are.
+bench-prepare a b:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    place=/tmp/lokyr/ttybench
+    mkdir -p "$place"
+    rm -rf "$place/configs" && cp -R tools/bench/sessions/configs "$place/configs"
+    rm -rf "$place/plugins" && cp -R tools/bench/sessions/scenarios/plugins "$place/plugins"
+    copy() {
+        local from=$1 to=$place/$2
+        rm -rf "$to" && mkdir -p "$to"
+        if [[ $from == *.dmg ]]; then
+            local mount
+            mount=$(hdiutil attach -nobrowse -readonly -noautoopen "$from" | awk -F'\t' '/\/Volumes\// { print $NF }' | tail -1)
+            ditto "$mount/Lokyr.app" "$to/Lokyr.app"
+            hdiutil detach -quiet "$mount"
+        else
+            ditto "$from" "$to/Lokyr.app"
+        fi
+        echo "$2: $(plutil -extract CFBundleShortVersionString raw "$to/Lokyr.app/Contents/Info.plist") ($(plutil -extract CFBundleVersion raw "$to/Lokyr.app/Contents/Info.plist"))"
+    }
+    copy "{{a}}" a
+    copy "{{b}}" b
+
+# Run one of tools/bench/sessions' sessions of ttybench, as `ab/3-latency` or `scenarios/broadcast`, or `ab/dry` first: `ttybench` on the PATH, or as TTYBENCH names it.
+bench-session name *args:
+    ${TTYBENCH:-ttybench} run tools/bench/sessions/{{name}}.toml {{args}}
+
+# Give docs/bench/releases.json a release's values, of its A/B's ttybench sessions' folders, as `just bench-import 1.5.0 1.4.0 ab-F5b-20.md /tmp/lokyr/ttybench/sessions/ab-*`, then `just release-charts`; `--dry-run` after the folders tells it alone.
+bench-import release against report +folders:
+    python3 tools/bench/releases.py --release {{release}} --against {{against}} --report {{report}} --from {{folders}}
+
 # Check target/Lokyr.app end to end, built first, as a hand would use it: windows, tabs, splits, keys and the find bar, through the system's synthetic events and the app's accessibility tree; it takes the Accessibility permission of the app that runs it, and the keyboard's focus for about a minute, so leave the Mac alone meanwhile. `just e2e --dump` prints the app's tree.
 e2e *args: bundle
     cargo run --locked -p lokyr-e2e -- {{args}}
