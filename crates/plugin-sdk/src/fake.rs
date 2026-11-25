@@ -661,6 +661,9 @@ pub struct FakeHost {
     /// The plugins that a read of the plugins gives, as the test gave them,
     /// whose states the plugin's turning them off and on changes.
     plugins: Vec<host::PluginInfo>,
+    /// The items of the menu bar that a read of them gives, as the test
+    /// gave them, as the app gives the other plugins' items.
+    menu_bar: Vec<host::MenuBarItem>,
     /// The settings that a read of them gives, as the test gave them.
     settings: host::Settings,
     /// The page of the plugin's that the settings' window shows, as the
@@ -825,6 +828,7 @@ impl FakeHost {
             git_branches: BTreeMap::new(),
             agents: Vec::new(),
             plugins: Vec::new(),
+            menu_bar: Vec::new(),
             settings: host::Settings::default(),
             page: None,
             notice: false,
@@ -1140,6 +1144,13 @@ impl FakeHost {
     /// Gives the AI agents that a read of the agents gives.
     pub fn set_agents(&mut self, agents: Vec<host::AgentInfo>) -> &mut Self {
         self.agents = agents;
+        self
+    }
+
+    /// Gives the items of the menu bar that a read of them gives, as the
+    /// app gives the plugins' items, titled, of their keys and states.
+    pub fn set_menu_bar(&mut self, items: Vec<host::MenuBarItem>) -> &mut Self {
+        self.menu_bar = items;
         self
     }
 
@@ -4890,6 +4901,7 @@ impl Calling<'_> {
                 })
             }
             Request::Plugins => Response::Plugins(host.plugins.clone()),
+            Request::MenuBarItems => Response::MenuBarItems(host.menu_bar.clone()),
             Request::Settings => Response::Settings(host.settings.clone()),
             Request::NoticeShows => Response::Boolean(host.notice),
             Request::KeepsState => Response::Boolean(host.keeps_state),

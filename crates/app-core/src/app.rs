@@ -899,6 +899,10 @@ pub struct App<B: Backend> {
     /// The plugins' items of the menus, titled, which the menus' items name
     /// by their places here.
     menu_items: Vec<lokyr_kernel::plugins::MenuEntry>,
+    /// The plugins' items of the menu bar, as a read of them tells, each of
+    /// its menu item's id: titled and of their keys as the menu bar shows
+    /// them, made as the menus are, their states read of `menu_enabled`.
+    menu_bar: Vec<(String, lokyr_kernel::plugins::host::MenuBarItem)>,
     /// The keymap that the plugins last heard of, as `keys-changed` told
     /// them, which a keymap made anew of the same bindings does not tell
     /// again.
@@ -1215,6 +1219,7 @@ impl<B: Backend> App<B> {
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             menu_items: Vec::new(),
+            menu_bar: Vec::new(),
             keys_told: None,
             context_window: None,
             acting: None,
@@ -3871,6 +3876,18 @@ impl<B: Backend> App<B> {
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
         let enabled = |command: &str| menu_enabled.get(command).copied().unwrap_or(true);
+        // The plugins' items of the menu bar, each enabled as the menus
+        // enable its item now.
+        let menu_bar_items = &self.menu_bar;
+        let menu_bar = || {
+            menu_bar_items
+                .iter()
+                .map(|(id, item)| lokyr_kernel::plugins::host::MenuBarItem {
+                    enabled: menu_enabled.get(id).copied().unwrap_or(true),
+                    ..item.clone()
+                })
+                .collect()
+        };
         // Whether a window of the workspace shows a save panel.
         let saves = &self.saves;
         let saving = |window: workspace::WindowId| saves.values().any(|save| save.window == window);
@@ -3912,6 +3929,7 @@ impl<B: Backend> App<B> {
             fonts: &fonts,
             font_styles: &font_styles,
             layouts: &layouts,
+            menu_bar: &menu_bar,
             plugins: &plugin_infos,
             config: &self.config,
             default_bindings: &self.default_bindings,

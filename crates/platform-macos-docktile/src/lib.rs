@@ -6,7 +6,9 @@
 //! which the plug-in follows. The plug-in draws the variant's image of its
 //! own app's bundle alone, `Contents/Resources/icons/lokyr-<name>.icns`, so
 //! that the defaults, which any process of the user can write, name no
-//! other file.
+//! other file. It finds that bundle of its own executable's path, as the
+//! loader tells it: `NSBundle`'s bundle of its class is the process's main
+//! bundle, the Dock's, as the class is made at runtime.
 //!
 //! The Dock finds the plug-in's class by the bundle's `NSPrincipalClass`,
 //! [`CLASS`], as `NSDockTilePlugIn` tells
@@ -18,16 +20,17 @@
 #![cfg(target_os = "macos")]
 
 use std::cell::RefCell;
-use std::ffi::CStr;
-use std::path::PathBuf;
+use std::ffi::{CStr, OsStr};
+use std::os::unix::ffi::OsStrExt;
+use std::path::{Path, PathBuf};
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyClass, NSObject, NSObjectProtocol};
+use objc2::runtime::{AnyClass, AnyObject, NSObject, NSObjectProtocol};
 use objc2::{AnyThread, ClassType, MainThreadMarker, MainThreadOnly, Message, define_class, sel};
 use objc2_app_kit::{NSDockTile, NSDockTilePlugIn, NSImage, NSImageView};
 use objc2_foundation::{
-    NSBundle, NSDistributedNotificationCenter, NSNotification, NSPoint, NSRect, NSSize, NSString,
-    NSUserDefaults,
+    NSDistributedNotificationCenter, NSNotification, NSObjectNSThreadPerformAdditions, NSPoint,
+    NSRect, NSSize, NSString, NSUserDefaults,
 };
 
 /// The app's bundle identifier, whose defaults hold the icon's path.
@@ -67,6 +70,22 @@ define_class!(
         /// drawn of the icon's variant, and drawn anew as it changes.
         #[unsafe(method(setDockTile:))]
         fn set_dock_tile(&self, tile: Option<&NSDockTile>) {
+            // The tile on the main thread alone, where its view lives: a
+            // call from another thread comes again there.
+            if MainThreadMarker::new().is_none() {
+                let tile: Option<&AnyObject> = tile.map(AsRef::as_ref);
+                // SAFETY: the selector is this method's own, of one object
+                // or none, which the runtime keeps until the main thread
+                // runs it.
+                unsafe {
+                    self.performSelectorOnMainThread_withObject_waitUntilDone(
+                        sel!(setDockTile:),
+                        tile,
+                        false,
+                    );
+                }
+                return;
+            }
             let center = NSDistributedNotificationCenter::defaultCenter();
             match tile {
                 Some(tile) => {
@@ -166,15 +185,46 @@ fn is_variant(name: &str) -> bool {
 /// is there: the plug-in lies in `Contents/PlugIns`, the variants in
 /// `Contents/Resources/icons`.
 fn icon_file(name: &str) -> Option<PathBuf> {
-    // SAFETY: the class is the plug-in's own, of the image that the bundle
-    // loaded.
-    let bundle = unsafe { NSBundle::bundleForClass(Plugin::class()) };
-    let plugin = PathBuf::from(bundle.bundlePath().to_string());
-    let contents = plugin.parent()?.parent()?;
-    let file = contents
+    let image = own_image()?;
+    let file = app_contents(&image)?
         .join("Resources/icons")
         .join(format!("lokyr-{name}.icns"));
     file.is_file().then_some(file)
+}
+
+/// The path of the plug-in's own executable, as the loader loaded it.
+fn own_image() -> Option<PathBuf> {
+    let address = own_image as fn() -> Option<PathBuf> as *const libc::c_void;
+    // SAFETY: a `Dl_info` of no pointers set is a valid value, which
+    // `dladdr` fills.
+    let mut info: libc::Dl_info = unsafe { std::mem::zeroed() };
+    // SAFETY: the address is of this image's code, which `dladdr` looks up
+    // in the loader's tables.
+    if unsafe { libc::dladdr(address, &mut info) } == 0 || info.dli_fname.is_null() {
+        return None;
+    }
+    // SAFETY: the loader's path of the image, a C string that lives as long
+    // as the image, which is this code's.
+    let path = unsafe { CStr::from_ptr(info.dli_fname) };
+    Some(PathBuf::from(OsStr::from_bytes(path.to_bytes())))
+}
+
+/// The `Contents` folder of the app whose bundle holds the plug-in's
+/// executable `image`, as
+/// `…/Lokyr.app/Contents/PlugIns/LokyrDockTile.docktileplugin/Contents/MacOS/LokyrDockTile`
+/// gives `…/Lokyr.app/Contents`; none of a file elsewhere.
+fn app_contents(image: &Path) -> Option<&Path> {
+    let macos = image
+        .parent()
+        .filter(|folder| folder.ends_with("Contents/MacOS"))?;
+    let plugin = macos.parent()?.parent()?;
+    if plugin.extension()? != "docktileplugin" {
+        return None;
+    }
+    plugin
+        .parent()
+        .filter(|folder| folder.ends_with("Contents/PlugIns"))?
+        .parent()
 }
 
 /// Runs `register` unless the runtime holds a class of `name`, and keeps
@@ -227,6 +277,31 @@ mod tests {
         // The plug-in's own class, registered as the image loaded.
         assert!(AnyClass::get(CLASS_NAME).is_some());
         assert_eq!(CLASS_NAME.to_str(), Ok(CLASS));
+    }
+
+    #[test]
+    fn the_app_s_contents_are_four_folders_up_of_the_plug_in_s_executable() {
+        let image = Path::new(
+            "/Applications/Lokyr.app/Contents/PlugIns/LokyrDockTile.docktileplugin/Contents/MacOS/LokyrDockTile",
+        );
+        assert_eq!(
+            app_contents(image),
+            Some(Path::new("/Applications/Lokyr.app/Contents"))
+        );
+        for elsewhere in [
+            "/usr/lib/libSystem.B.dylib",
+            "/Applications/Lokyr.app/Contents/MacOS/lokyr",
+            "/tmp/LokyrDockTile.docktileplugin/Contents/MacOS/LokyrDockTile",
+            "/Applications/Lokyr.app/Contents/PlugIns/Other.bundle/Contents/MacOS/Other",
+            "LokyrDockTile",
+        ] {
+            assert_eq!(app_contents(Path::new(elsewhere)), None, "{elsewhere}");
+        }
+        // The loader names this code's image: the tests' executable, of no
+        // app's bundle.
+        let own = own_image().expect("the image's path");
+        assert!(own.is_file(), "{}", own.display());
+        assert_eq!(app_contents(&own), None);
     }
 
     #[test]

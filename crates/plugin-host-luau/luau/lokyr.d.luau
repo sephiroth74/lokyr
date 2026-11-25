@@ -25,6 +25,7 @@ export type Cx = {
     subscribe: (names: { string }) -> (true?, string?, number?),
     emit: (name: string, schema: string, value: Data) -> (true?, string?, number?),
     commands: () -> ({ CommandInfo }?, string?, number?),
+    menu_bar_items: () -> ({ MenuBarItem }?, string?, number?),
     themes: () -> (Themes?, string?, number?),
     theme_tokens: (value: string?) -> (ThemeTokens?, string?, number?),
     preview_theme: (name: string?) -> (true?, string?, number?),
@@ -751,6 +752,18 @@ export type ListItem = {
 export type LocalTime = {
     time: number,
     offset: number,
+}
+
+export type MenuBarItem = {
+    command: string,
+    args: { [string]: Value }?,
+    title: string,
+    submenu: string?,
+    menu: Category,
+    keys: string?,
+    enabled: boolean,
+    ticked: boolean?,
+    plugin: string,
 }
 
 export type MenuItem = {

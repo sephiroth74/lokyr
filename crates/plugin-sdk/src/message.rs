@@ -129,6 +129,10 @@ pub enum Request {
     /// The registered commands, in the order of their registrations, as
     /// the menus list them.
     Commands,
+    /// The items that the plugins added to the menu bar, in their menus'
+    /// order, of `user-commands`, as the palette lists those whose commands
+    /// take arguments.
+    MenuBarItems,
     /// The themes that the app can show, the appearance in force and its
     /// theme.
     Themes,
@@ -1405,6 +1409,9 @@ impl Request {
                 Some(Capability::ClipboardWrite)
             }
             Self::KeepAwake(_) => Some(Capability::KeepAwake),
+            // The items that run the plugins' commands of their arguments,
+            // and the keys bound to them.
+            Self::MenuBarItems => Some(Capability::UserCommands),
             Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::Plugins
@@ -1622,6 +1629,7 @@ impl Request {
             | Self::KeysOf { .. }
             | Self::Message { .. }
             | Self::Commands
+            | Self::MenuBarItems
             | Self::Themes
             | Self::ThemeTokens(_)
             | Self::Fonts
@@ -1779,6 +1787,8 @@ pub enum Response {
     Current(Current),
     /// The registered commands.
     Commands(Vec<CommandInfo>),
+    /// The items that the plugins added to the menu bar.
+    MenuBarItems(Vec<crate::host::MenuBarItem>),
     /// The themes that the app can show.
     Themes(crate::host::Themes),
     /// A theme's tokens, as they resolve; none of a name of no theme.
@@ -2403,6 +2413,7 @@ impl Request {
             | Self::SetState { .. }
             | Self::CancelTimer { .. } => "done",
             Self::Commands { .. } => "commands",
+            Self::MenuBarItems { .. } => "menu-bar-items",
             Self::Themes { .. } => "themes",
             Self::ThemeTokens { .. } => "theme-tokens",
             Self::Fonts { .. } => "fonts",
