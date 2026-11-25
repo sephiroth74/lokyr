@@ -10,7 +10,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
-- A hidden session's windows give back the memory of their last picture, some 12 MB a window or more on a large screen, and draw themselves anew just before they show again.
+- A hidden session's windows give back part of the memory of their pictures, some 10 MB a window on a Retina display and more of a larger window, and draw themselves anew just before they show again.
 
 ### Fixed
 
