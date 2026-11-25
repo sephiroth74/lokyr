@@ -647,6 +647,16 @@ impl<'a> Cx<'a> {
         }
     }
 
+    /// The items that the plugins added to the menu bar, in their menus'
+    /// order, each of its command's arguments, its title, its keys and its
+    /// state, of `user-commands`, as [`Request::MenuBarItems`] says.
+    pub fn menu_bar_items(&mut self) -> Result<Vec<crate::host::MenuBarItem>, Error> {
+        match self.request(Request::MenuBarItems) {
+            Response::MenuBarItems(items) => Ok(items),
+            other => Err(failed(other)),
+        }
+    }
+
     /// Adds the menu item `item`, of a command registered, to the menu bar
     /// or to the pane's context menu, for as long as the plugin runs.
     pub fn add_menu_item(&mut self, item: crate::host::MenuItem) -> Result<(), Error> {

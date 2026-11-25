@@ -2,7 +2,7 @@
 
 use lokyr_plugin_sdk::command::{Capability, Code};
 use lokyr_plugin_sdk::fake::FakeHost;
-use lokyr_plugin_sdk::host::{PaneId, TabId, WindowId};
+use lokyr_plugin_sdk::host::{MenuBarItem, PaneId, TabId, WindowId};
 use lokyr_plugin_sdk::message::Request;
 use lokyr_plugin_sdk::view::Key;
 
@@ -43,6 +43,11 @@ fn host_of(mut host: FakeHost) -> (FakeHost, Palette) {
         kind: Kind::Integer,
         default: None,
     };
+    let direction = Param {
+        name: "direction".to_owned(),
+        kind: Kind::String,
+        default: None,
+    };
     host.set_registry(vec![
         info("window.new", "New Window", Some("⌘N"), Vec::new()),
         info("pane.copy", "Copy", Some("⌘C"), Vec::new()),
@@ -50,6 +55,8 @@ fn host_of(mut host: FakeHost) -> (FakeHost, Palette) {
         info("tabs.new", "New Tab", Some("⌘T"), Vec::new()),
         // Of an argument that it needs, which the palette leaves out.
         info("tabs.goto", "Go to Tab", None, vec![index]),
+        // Of one too, which the menu bar's items give.
+        info("splits.split", "Split Pane", None, vec![direction]),
         // Dimmed by the menus, left out too.
         CommandInfo {
             enabled: Some(false),
@@ -578,6 +585,118 @@ fn the_agents_list_is_one_of_the_palette_s_commands() {
     let (host, _) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
     assert!(commands.contains(&AGENTS));
+}
+
+/// A menu bar's item of `splits.split` of `direction`, titled
+/// `title`, of `keys`.
+fn split_item(direction: &str, title: &str, keys: Option<&str>) -> MenuBarItem {
+    MenuBarItem {
+        command: "splits.split".to_owned(),
+        args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
+        title: title.to_owned(),
+        submenu: Some("Split".to_owned()),
+        menu: Category::Panes,
+        keys: keys.map(str::to_owned),
+        enabled: true,
+        ticked: false,
+        plugin: "lokyr/splits".to_owned(),
+    }
+}
+
+/// A host whose menu bar holds the splits' items, one of them dimmed, an
+/// item of a command that the palette lists of its own, and an item twice.
+fn host_of_menu_bar() -> (FakeHost, Palette) {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    host.set_menu_bar(vec![
+        split_item("right", "Split Right", Some("⌘D")),
+        split_item("left", "Split Left", None),
+        MenuBarItem {
+            enabled: false,
+            ..split_item("up", "Split Up", None)
+        },
+        MenuBarItem {
+            command: "tabs.new".to_owned(),
+            args: Args::new(),
+            title: "New Tab".to_owned(),
+            submenu: None,
+            menu: Category::Tabs,
+            keys: Some("⌘T".to_owned()),
+            enabled: true,
+            ticked: false,
+            plugin: "lokyr/tabs".to_owned(),
+        },
+        split_item("right", "Split Right", Some("⌘D")),
+    ]);
+    host_of(host)
+}
+
+#[test]
+fn the_palette_lists_the_menu_bar_s_items_of_commands_that_need_arguments() {
+    let (mut host, mut plugin) = host_of_menu_bar();
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    let titles = shown(&mut host, &mut plugin);
+    // After the commands, the enabled items, each once; New Tab is the
+    // command's own entry, of no arguments.
+    assert_eq!(
+        titles[titles.len() - 2..],
+        ["Split Right".to_owned(), "Split Left".to_owned()]
+    );
+    assert_eq!(titles.iter().filter(|title| *title == "New Tab").count(), 1);
+    assert!(!titles.iter().any(|title| title == "Split Up"));
+    // Its keys, as the menu bar shows them.
+    let tree = host.render(&mut plugin, &panel()).expect("the palette");
+    let mut left = vec![&tree];
+    let mut keys = None;
+    while let Some(node) = left.pop() {
+        if let lokyr_plugin_sdk::view::Kind::List(list) = &node.kind {
+            keys = list
+                .items
+                .iter()
+                .find(|item| item.texts[0] == "Split Right")
+                .map(|item| item.texts[1].clone());
+        }
+        left.extend(&node.children);
+    }
+    assert_eq!(keys.as_deref(), Some("⌘D"));
+    // Return runs its command of its arguments, as the user's.
+    typed(&mut host, &mut plugin, "split right");
+    let submitted = submit(&mut host, &mut plugin);
+    let call = submitted.iter().find_map(|request| match request {
+        Request::RunCommand { name, args } => Some((name.clone(), args.clone())),
+        _ => None,
+    });
+    assert_eq!(
+        call,
+        Some((
+            "splits.split".to_owned(),
+            Args::from([("direction".to_owned(), Value::String("right".to_owned()))])
+        ))
+    );
+}
+
+#[test]
+fn a_menu_bar_s_item_is_a_recent_command_of_its_arguments() {
+    let (mut host, mut plugin) = host_of_menu_bar();
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    typed(&mut host, &mut plugin, "split left");
+    submit(&mut host, &mut plugin);
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    // Split Left first, Split Right where it was.
+    let titles = shown(&mut host, &mut plugin);
+    assert_eq!(titles[0], "Split Left");
+    assert_eq!(titles.last().map(String::as_str), Some("Split Right"));
+    assert_eq!(plugin.recent, ["splits.split direction=left"]);
+}
+
+#[test]
+fn a_palette_of_no_menu_bar_lists_its_commands_alone() {
+    let (mut host, mut plugin) = host();
+    run(&mut host, &mut plugin, OPEN, Args::new());
+    assert!(
+        !shown(&mut host, &mut plugin)
+            .iter()
+            .any(|title| title.starts_with("Split"))
+    );
 }
 
 /// Submits the palette's field, as Return does, and returns the requests.

@@ -1,7 +1,8 @@
 //! Built-in plugin of the command palette: Command-Shift-P opens a panel at
 //! the top of the focused window, of a large field and, below a thin line,
 //! of the list of the commands that run without arguments and that the
-//! menus enable, each of its title and its keys, which a fuzzy search ranks
+//! menus enable, then the menu bar's items that run a command of its
+//! arguments, as Split Right, each of its title and its keys, which a fuzzy search ranks
 //! as the user types, by their titles, their names,
 //! their keys and their plugins, the recent ones first. The arrows move
 //! through the list while the field takes the keys; Return, or a click,
@@ -24,6 +25,8 @@
 #![forbid(unsafe_code)]
 
 mod rank;
+
+use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Value};
 use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo, SessionId};
@@ -150,6 +153,7 @@ fn theme_entries(cx: &mut Cx<'_>) -> Result<(ThemeVariant, Vec<Entry>), Error> {
             title: theme.name.clone(),
             name: theme.name,
             plugin: None,
+            ..Entry::default()
         })
         .collect();
     if let Some(at) = entries.iter().position(|entry| entry.keys.is_some()) {
@@ -192,6 +196,8 @@ enum Mode {
 struct Open {
     mode: Mode,
     commands: Vec<Entry>,
+    /// The arguments of the entries of the menu bar's items, by their ids.
+    calls: BTreeMap<String, Args>,
     /// The agents of the agents' list, each of its entry's place.
     agents: Vec<AgentInfo>,
     query: String,
@@ -206,6 +212,7 @@ impl Open {
         let mut open = Self {
             mode,
             commands,
+            calls: BTreeMap::new(),
             agents: Vec::new(),
             query: String::new(),
             ranked: Vec::new(),
@@ -231,6 +238,23 @@ impl Open {
     fn chosen(&self) -> Option<&Entry> {
         self.ranked.get(self.selected).map(|&at| &self.commands[at])
     }
+}
+
+/// The id of a menu bar's item of `command` of `args`, which the recent
+/// commands keep: its name, then each argument's name and value, in the
+/// arguments' order, as `splits.split direction=right`.
+fn call_id(command: &str, args: &Args) -> String {
+    let mut id = command.to_owned();
+    for (name, value) in args {
+        let value = match value {
+            Value::String(text) => text.clone(),
+            Value::Integer(number) => number.to_string(),
+            Value::Number(number) => number.to_string(),
+            Value::Boolean(yes) => yes.to_string(),
+        };
+        id.push_str(&format!(" {name}={value}"));
+    }
+    id
 }
 
 /// Whether `command` is one that the palette lists: of no argument that
@@ -443,7 +467,7 @@ impl Palette {
         if self.open.is_some() {
             return cx.focus_node(panel(), FIELD);
         }
-        let commands = cx
+        let mut commands: Vec<Entry> = cx
             .commands()?
             .into_iter()
             .filter(listed)
@@ -452,9 +476,37 @@ impl Palette {
                 title: command.title,
                 keys: command.keys,
                 plugin: command.plugin,
+                ..Entry::default()
             })
             .collect();
-        self.show(cx, Mode::Commands, commands)
+        // The menu bar's items of the commands that need arguments, which
+        // the items give, and of the others' arguments, each once; an item
+        // of a command listed already, of no arguments, is that command.
+        let mut calls = BTreeMap::new();
+        for item in cx.menu_bar_items().unwrap_or_default() {
+            if !item.enabled
+                || (item.args.is_empty() && commands.iter().any(|entry| entry.name == item.command))
+            {
+                continue;
+            }
+            let id = call_id(&item.command, &item.args);
+            if calls.contains_key(&id) {
+                continue;
+            }
+            commands.push(Entry {
+                name: item.command,
+                title: item.title,
+                keys: item.keys,
+                plugin: Some(item.plugin),
+                id: id.clone(),
+            });
+            calls.insert(id, item.args);
+        }
+        self.show(cx, Mode::Commands, commands)?;
+        if let Some(open) = &mut self.open {
+            open.calls = calls;
+        }
+        Ok(())
     }
 
     /// Opens the theme picker in the focused window, of the themes of the
@@ -505,6 +557,7 @@ impl Palette {
                     },
                     keys: Some(format!("{state} · {}", elapsed(agent.since))),
                     plugin: Some(tab),
+                    ..Entry::default()
                 }
             })
             .collect();
@@ -551,6 +604,7 @@ impl Palette {
                 },
                 keys: session.active.then(|| current.clone()),
                 plugin: session.folder.clone(),
+                ..Entry::default()
             })
             .collect();
         let layout_mark = message(cx, "palette-layout");
@@ -559,6 +613,7 @@ impl Palette {
             title: name.clone(),
             keys: Some(layout_mark.clone()),
             plugin: None,
+            ..Entry::default()
         }));
         let taken: Vec<&str> = sessions
             .iter()
@@ -587,6 +642,7 @@ impl Palette {
                 title: name,
                 keys,
                 plugin: Some(folder.clone()),
+                ..Entry::default()
             });
         }
         self.show(cx, Mode::Sessions, entries)
@@ -651,11 +707,16 @@ impl Palette {
     /// Runs the selected command as the user's, once the palette closes,
     /// and puts it first among the recent ones, which the state keeps.
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        let Some((mode, name)) = self
-            .open
-            .as_ref()
-            .and_then(|open| Some((open.mode, open.chosen()?.name.clone())))
-        else {
+        let Some((mode, name, key, args)) = self.open.as_ref().and_then(|open| {
+            let chosen = open.chosen()?;
+            let args = open.calls.get(&chosen.id).cloned().unwrap_or_default();
+            Some((
+                open.mode,
+                chosen.name.clone(),
+                chosen.recent_key().to_owned(),
+                args,
+            ))
+        }) else {
             return Ok(());
         };
         cx.close_panel(PANEL)?;
@@ -678,15 +739,15 @@ impl Palette {
         if mode == Mode::Sessions {
             return switch_to(cx, &name);
         }
-        self.recent.retain(|kept| *kept != name);
-        self.recent.insert(0, name.clone());
+        self.recent.retain(|kept| *kept != key);
+        self.recent.insert(0, key);
         self.recent.truncate(MOST_RECENT);
         let recent = self.recent.iter().cloned().map(Data::Text).collect();
         // Without a state directory, they stay for this run.
         let _ = cx.set_state(Data::Map(
             [(STATE_RECENT.to_owned(), Data::List(recent))].into(),
         ));
-        cx.run_command(&name, Args::new())
+        cx.run_command(&name, args)
     }
 }
 

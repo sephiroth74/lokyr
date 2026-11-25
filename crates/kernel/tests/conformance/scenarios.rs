@@ -26,10 +26,10 @@ use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
     CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
     LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE,
-    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages,
-    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side,
-    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
+    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuBarItem, MenuItem, MenuPlace, Modifier,
+    Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
+    SearchMatch, SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand,
+    Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
     check_file_name,
 };
 use lokyr_plugin_sdk::image::{
@@ -58,6 +58,23 @@ pub const CLIPBOARD: &str = "old";
 /// The world's window's title, as the app gives the system's titlebar, of
 /// its shown tab's folder and program.
 pub const WINDOW_TITLE: &str = "/ — sh";
+
+/// The items that the plugins added to the menu bar in the world, as the
+/// app gives them: a split of its direction, of its keys, and a tick.
+pub fn menu_bar() -> Vec<MenuBarItem> {
+    let item = |direction: &str, keys: Option<&str>, ticked: bool| MenuBarItem {
+        command: "splits.split".to_owned(),
+        args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
+        title: format!("Split {direction}"),
+        submenu: Some("Split".to_owned()),
+        menu: Category::Panes,
+        keys: keys.map(str::to_owned),
+        enabled: true,
+        ticked,
+        plugin: "lokyr/splits".to_owned(),
+    };
+    vec![item("right", Some("⌘D"), false), item("left", None, true)]
+}
 
 /// The plugins of the world, as a read of them tells: an installed one,
 /// active, of a capability granted and one refused.
@@ -3285,6 +3302,7 @@ fn declarations() -> Scenario {
                         .to_vec(),
                 ),
             ),
+            (Request::MenuBarItems, Response::MenuBarItems(menu_bar())),
             (
                 Request::RegisterCommand(ask_command()),
                 failed(

@@ -559,6 +559,9 @@ pub struct Context<'a> {
     /// The names of the layouts of the config's folder, which the sessions'
     /// switcher lists, in their order.
     pub layouts: &'a dyn Fn() -> Vec<String>,
+    /// The items that the plugins added to the menu bar, as the menu bar
+    /// shows them now: titled, of their keys, enabled and ticked.
+    pub menu_bar: &'a dyn Fn() -> Vec<host::MenuBarItem>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -6792,6 +6795,7 @@ impl Host<'_, '_> {
                     .collect();
                 Response::Commands(infos)
             }
+            Asked::MenuBarItems => Response::MenuBarItems((self.context.menu_bar)()),
             Asked::PaneTitle(pane) => {
                 let reads = self.state.reads_processes();
                 let title = self.pane(pane)?.header_title(reads);

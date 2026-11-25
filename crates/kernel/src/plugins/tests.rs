@@ -266,6 +266,7 @@ impl App {
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             layouts: &Vec::new,
+            menu_bar: &Vec::new,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],

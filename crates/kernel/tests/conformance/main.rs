@@ -729,6 +729,7 @@ impl Kernel {
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             layouts: &Vec::new,
+            menu_bar: &scenarios::menu_bar,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],
@@ -928,6 +929,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         Some("main"),
     );
     host.set_plugins(scenarios::plugins());
+    host.set_menu_bar(scenarios::menu_bar());
     host.set_settings(scenarios::settings());
     host.focus(Some(world.pane));
     let pane = host.pane(world.pane);
@@ -1246,11 +1248,12 @@ fn kind(request: &Request) -> usize {
         Request::FloatingPanes(_) => 160,
         Request::OpenPopup { .. } => 161,
         Request::SendTextBroadcast { .. } => 162,
+        Request::MenuBarItems => 163,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 163;
+const KINDS: usize = 164;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
