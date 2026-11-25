@@ -98,6 +98,36 @@ fn a_switch_hides_the_windows_of_the_session_left_and_shows_the_other_s() {
 }
 
 #[test]
+fn a_hidden_session_s_window_lets_its_frames_go_and_draws_before_it_shows() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let mut app = App::new(Some(drawing), Config::default(), None).with_program(quiet());
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    let count = |app: &App, of: fn(&fakes::Surface) -> &std::sync::atomic::AtomicUsize| {
+        app.windows[&first]
+            .surface
+            .as_ref()
+            .map_or(0, |surface| of(surface).load(Ordering::Relaxed))
+    };
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| count(app, |s| &s.frames) > 0);
+    // Hidden by a switch, it lets every frame go, the one that showed too.
+    command(&mut fake, &mut app, NEW_SESSION);
+    assert!(hidden(&fake, first));
+    assert!(count(&app, |s| &s.releases) > 0);
+    assert!(count(&app, |s| &s.clears) > 0);
+    assert!(app.windows[&first].shown.is_none());
+    // Shown again, it has drawn before it shows, of no frame of the loop's.
+    let drawn = count(&app, |s| &s.frames);
+    command(&mut fake, &mut app, LAST_SESSION);
+    assert!(!hidden(&fake, first));
+    assert_eq!(count(&app, |s| &s.frames), drawn + 1);
+    assert!(app.windows[&first].shown.is_some());
+}
+
+#[test]
 fn the_window_menu_s_sessions_rename_and_close_a_session() {
     let (mut fake, mut app) = started();
     let first = fake.windows().next().unwrap();

@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Changed
+
+- A hidden session's windows give back the memory of their last picture, some 12 MB a window or more on a large screen, and draw themselves anew just before they show again.
+
 ### Fixed
 
 - Kept in the Dock, Lokyr shows the icon's variant that `[app] icon` names after it quits too, where the Dock showed the bundle's own icon.
