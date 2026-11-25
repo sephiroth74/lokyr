@@ -199,6 +199,7 @@ Every session's report, the newest first.
 
 | Date | Report |
 |---|---|
+| 25 November 2026 | [The first windows first](startup-F5b-78.md) |
 | 25 November 2026 | [The startup's gap, beside a floor app](startup-TB-23.md) |
 | 25 November 2026 | [`cat` in a large window, 1.4.0 against 1.5.0](output-F5b-46.md) |
 | 25 November 2026 | [A hidden session's windows and their frames](hidden-session-F5b-47.md) |

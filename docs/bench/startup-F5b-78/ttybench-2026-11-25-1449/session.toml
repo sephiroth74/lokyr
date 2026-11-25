@@ -1,0 +1,13 @@
+# startup-F5b-78's part of ttybench: each copy beside the floor app.
+terminals = ["a", "b"]
+terminals-file = "terminals.toml"
+ab = { a = "a", b = "b" }
+pause = 2
+cycles = 2
+season = 20
+folder = "$REPO/target/bench/startup-F5b-78/ttybench-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 12
+args = ["--floor"]
