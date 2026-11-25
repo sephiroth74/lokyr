@@ -34,6 +34,7 @@ mod open_panel;
 mod quick;
 mod save;
 mod screens;
+mod scripting;
 mod secure;
 mod services;
 mod shared;

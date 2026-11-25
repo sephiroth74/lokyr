@@ -62,6 +62,11 @@ const DOCK_TILE_CRATE: &str = "lokyr-platform-macos-docktile";
 /// builds, and their metadata's folder, which the app's build script makes
 /// in its output folder and the bundle's resources hold.
 const APP_INTENTS: &str = "app-intents";
+
+/// AppleScript's dictionary, of the app's resources, which the bundle's
+/// resources hold by its name.
+const SCRIPTING: &str = "Lokyr.sdef";
+const SCRIPTING_SOURCE: &str = "crates/app/resources/Lokyr.sdef";
 const INTENTS_METADATA: &str = "metadata/Metadata.appintents";
 const DOCK_TILE_LIBRARY: &str = "liblokyr_platform_macos_docktile.dylib";
 const DOCK_TILE_CLASS: &str = "LokyrDockTilePlugIn";
@@ -311,6 +316,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         intents.display()
     );
     copy_tree(&intents, &resources.join("Metadata.appintents"))?;
+    fs::copy(root.join(SCRIPTING_SOURCE), resources.join(SCRIPTING))
+        .with_context(|| format!("copying {SCRIPTING_SOURCE}"))?;
     copy_tree(
         &root.join(SHELL_INTEGRATION),
         &resources.join("shell-integration"),
@@ -705,6 +712,8 @@ fn info_plist(
         ("NSHumanReadableCopyright", copyright.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
         ("NSDockTilePlugIn", DOCK_TILE.to_owned()),
+        // AppleScript's dictionary, which Script Editor shows.
+        ("OSAScriptingDefinition", SCRIPTING.to_owned()),
     ];
     keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
     let mut pairs: Vec<(String, String)> = keys
@@ -726,7 +735,7 @@ fn info_plist(
     plist.insert_str(
         at,
         &format!(
-            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
+            "\t<key>NSAppleScriptEnabled</key>\n\t<true/>\n\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
             document_types(&source.types, &source.urls),
             services(&source.services),
             crate::sparkle::plist_entries()
@@ -1372,6 +1381,15 @@ mod tests {
             );
         }
         assert!(plist.contains("<key>NSHighResolutionCapable</key>\n\t<true/>"));
+        // AppleScript's dictionary, of the bundle's resources.
+        assert!(plist.contains("<key>NSAppleScriptEnabled</key>\n\t<true/>"));
+        assert!(plist.contains("<key>OSAScriptingDefinition</key>\n\t<string>Lokyr.sdef</string>"));
+        assert!(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(SCRIPTING_SOURCE)
+                .is_file()
+        );
         assert!(plist.contains(
             "<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>en</string>\n\t\t<string>it</string>\n\t</array>"
         ));

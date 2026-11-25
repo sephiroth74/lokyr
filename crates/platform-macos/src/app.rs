@@ -12,7 +12,7 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
     NSApplicationTerminateReply, NSWindow,
 };
-use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSURL};
+use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSString, NSURL};
 
 use crate::appearance::AppearanceObserver;
 use crate::services::ServicesProvider;
@@ -141,6 +141,15 @@ define_class!(
     // SAFETY: `NSObjectProtocol` has no requirement.
     unsafe impl NSObjectProtocol for AppDelegate {}
 
+    impl AppDelegate {
+        /// AppleScript's windows of the application, of the dictionary's
+        /// key that the delegate answers.
+        #[unsafe(method_id(lokyrWindows))]
+        fn lokyr_windows(&self) -> Retained<NSArray<crate::scripting::ScriptWindow>> {
+            crate::scripting::windows(self.mtm())
+        }
+    }
+
     // SAFETY: `NSApplicationDelegate` has no requirement; each method has
     // AppKit's signature.
     unsafe impl NSApplicationDelegate for AppDelegate {
@@ -208,6 +217,13 @@ define_class!(
             if !links.is_empty() {
                 self.post(Pending::App(AppEvent::OpenUrls(links)));
             }
+        }
+
+        // AppleScript's windows, of the dictionary's key, which the
+        // delegate answers for the application.
+        #[unsafe(method(application:delegateHandlesKey:))]
+        fn application_delegate_handles_key(&self, _sender: &NSApplication, key: &NSString) -> Bool {
+            Bool::new(key.to_string() == crate::scripting::WINDOWS)
         }
 
         #[unsafe(method(applicationShouldTerminate:))]
