@@ -208,6 +208,16 @@ impl ScriptTerminal {
     }
 }
 
+/// Registers the dictionary's classes with the runtime, before Cocoa
+/// Scripting reads the dictionary, which finds each class by its name.
+pub(crate) fn register() {
+    let _ = (
+        ScriptWindow::class(),
+        ScriptTab::class(),
+        ScriptTerminal::class(),
+    );
+}
+
 /// The application's windows, of the automation's answer, which comes at
 /// once; none, of the script command's error, otherwise.
 pub(crate) fn windows(mtm: MainThreadMarker) -> Retained<NSArray<ScriptWindow>> {

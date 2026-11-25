@@ -115,6 +115,9 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     // of their signatures, and lives until it is taken away below.
     unsafe { app.setServicesProvider(Some(&services)) };
     let appearance = AppearanceObserver::start(mtm, Rc::downgrade(&shared));
+    // AppleScript's classes, which the dictionary names, before a script
+    // asks.
+    crate::scripting::register();
 
     app.run();
 
