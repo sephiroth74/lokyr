@@ -1,5 +1,5 @@
 """Tables of startup-TB-23's session: ttybench's window, floor and gap of
-each copy, of its last session's report, and lokyr-bench's first frame
+the copy, of its last session's report, and lokyr-bench's first frame
 and its gap to the minimal app's window, the mean of its rounds.
 
     python3 analyze.py [<the session's directory>]
@@ -7,7 +7,7 @@ and its gap to the minimal app's window, the mean of its rounds.
 import glob, json, os, statistics as st, sys
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../target/bench/startup-TB-23")
-COPIES = ("v140", "v150")
+COPIES = ("v150",)
 METRICS = ("window_ms", "floor_window_ms", "window_gap_ms", "ready_ms")
 
 
@@ -26,18 +26,19 @@ def ttybench():
     folder = folders[-1]
     report = json.load(open(f"{folder}/report.json"))
     print(f"ttybench, {os.path.basename(folder)}:")
-    print("| Metric | " + " | ".join(f"{v} median · mean" for v in COPIES) + " | B − A, interval |")
-    print("|---|" + "---|" * (len(COPIES) + 1))
+    print("| Metric | Median | 95 % interval of the median | Mean ± sd | Samples |")
+    print("|---|---|---|---|---|")
     for metric in METRICS:
         for group in report["groups"]:
             if group["tool"] != "startup" or group["metric"] != metric:
                 continue
-            rows = {row["terminal"]: row["summary"] for row in group["rows"]}
-            cells = [f"{rows[v]['median']:.1f} · {rows[v]['mean']:.1f}" if v in rows else "—" for v in COPIES]
-            change = group.get("change")
-            told = (f"{change['change']:+.1f} [{change['interval'][0]:+.1f}, {change['interval'][1]:+.1f}], {change['verdict']}"
-                    if change else "—")
-            print(f"| `{metric}` | " + " | ".join(cells) + f" | {told} |")
+            for row in group["rows"]:
+                if row["terminal"] not in COPIES:
+                    continue
+                m = row["summary"]
+                low, high = m["median_interval"]
+                print(f"| `{metric}` | {m['median']:.1f} | {low:.1f} … {high:.1f} | "
+                      f"{m['mean']:.1f} ± {m['stddev']:.1f} | {m['count']} |")
     print()
 
 
