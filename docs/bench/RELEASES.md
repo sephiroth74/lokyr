@@ -39,7 +39,7 @@ The latency's budgets, 2 refreshes at the p50 and 4.5 at the p99, set of a displ
 
 Each measure over the last eight releases, a dot of each release, its budget a dashed line, and the best of the other terminals a dotted one, of [the comparison of 21 and 22 November 2026](compare-F5a-78.md), and of [the window's motion](motion-F3-152.md) for the window's motion, measured once of their versions then, Lokyr's own value of that session beside it where its conditions differ from the releases' sessions, the latency's by Typometer, of the screen; of the columns of [the table](#every-measure): different sessions, which compare within a few percent alone. A panel without a dashed line has no budget, as `seq`'s, SGR's, CJK's and the window's motion; without a dotted one, no other terminal was measured of it: that comparison timed no minimal app beside the others' first windows, which their startup's gap needs, nor the four workloads but `cat`, nor a frame's CPU.
 
-![Starting and typing: the startup's gap to a minimal app; a key to its echo, at 60 Hz; the others' by Typometer](releases/start.svg)
+![Starting and typing: the startup's gap to a minimal app, then to ttybench's floor app; a key to its echo, at 60 Hz; the others' by Typometer](releases/start.svg)
 
 ![At rest: a window idle, its memory without the GPU's and its wakeups](releases/rest.svg)
 
@@ -62,47 +62,48 @@ Each release's measures in its own session: ▲ better and ▼ worse than the re
 | **Startup** | | | | | | | | | |
 | Startup, warm, first frame, ms |  | 241.1 ¹ | 248.5 ² | 237.3 ³ | 245.6 ⁴ | 254.3 ⁵ | 238.6 ⁶ | 249.2 ⁷ | 268.2 ⁸ |
 | Its gap to the minimal app's first window, ms | ≤ 35 | 24.9 ▼ ⁹ | 25.4 ¹⁰ | 26.7 ¹¹ | 52.2 ✖ ¹² | 58.5 ✖ ¹³ | 27.2 ¹⁴ | 20.8 ¹⁵ | 55.0 ✖ ¹⁶ |
+| Its window after the floor app's, of ttybench, ms | ≤ 70 | — | — | — | — | — | — | — | 70.4 ✖ ¹⁷ |
 | **Latency** | | | | | | | | | |
-| A key to its echo, p50, ms | ≤ 33.3 ¹⁷ | 19.6 | 20.6 | 19.2 | 13.9 ¹⁸ | 16.6 ▲ | 17.3 | 13.6 | 16.3 ¹⁹ |
-| A key to its echo, p99, ms | ≤ 75 ²⁰ | 47.3 | 42.0 | 48.7 | 32.0 ¹⁸ | 31.5 | 31.5 | 27.5 | 28.0 ²¹ |
-| Its samples in the fourth refresh or later |  | 10 of 1592 | 3 of 1592 | 11 of 1592 | 46 of 1592 ¹⁸ | 0 of 1591 | 0 of 1592 | 0 of 1592 | — |
+| A key to its echo, p50, ms | ≤ 33.3 ¹⁸ | 19.6 | 20.6 | 19.2 | 13.9 ¹⁹ | 16.6 ▲ | 17.3 | 13.6 | 16.3 ²⁰ |
+| A key to its echo, p99, ms | ≤ 75 ²¹ | 47.3 | 42.0 | 48.7 | 32.0 ¹⁹ | 31.5 | 31.5 | 27.5 | 28.0 ²² |
+| Its samples in the fourth refresh or later |  | 10 of 1592 | 3 of 1592 | 11 of 1592 | 46 of 1592 ¹⁹ | 0 of 1591 | 0 of 1592 | 0 of 1592 | — |
 | **At rest** | | | | | | | | | |
-| Package idle wakeups, a second | 0 | 0 | 0 | 0 | 0 | 0 | 0 ²² | 0 | 0 ²³ |
-| Interrupt wakeups, a second | ≤ 0.5 | 0.34 | 0.38 | 0.35 | 0.35 | 0.34 | 0.36 | 0.35 | 0.33 ²⁴ |
-| Footprint without the GPU's, MB | ≤ 35 | 27.2 ▲ | 28.6 ²⁵ | 27.6 | 28.3 | 28.4 ²⁶ | 27.6 ²⁷ | 28.7 ²⁸ | 29.0 ²⁹ |
-| GPU memory, MB |  | 30.1 | 30.1 | 30.1 | 30.6 | 30.6 | 14.2 ³⁰ | 30.6 ³¹ | 30.6 ³² |
+| Package idle wakeups, a second | 0 | 0 | 0 | 0 | 0 | 0 | 0 ²³ | 0 | 0 ²⁴ |
+| Interrupt wakeups, a second | ≤ 0.5 | 0.34 | 0.38 | 0.35 | 0.35 | 0.34 | 0.36 | 0.35 | 0.33 ²⁵ |
+| Footprint without the GPU's, MB | ≤ 35 | 27.2 ▲ | 28.6 ²⁶ | 27.6 | 28.3 | 28.4 ²⁷ | 27.6 ²⁸ | 28.7 ²⁹ | 29.0 ³⁰ |
+| GPU memory, MB |  | 30.1 | 30.1 | 30.1 | 30.6 | 30.6 | 14.2 ³¹ | 30.6 ³² | 30.6 ³³ |
 | **Output on screen** | | | | | | | | | |
-| `cat` of 1 GiB of ASCII, MiB/s | ≥ 275.0 ³³ | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁸ | 314.9 | 308.6 | 304.4 ³⁴ | 313.9 ³⁵ |
-| `seq 1 10000000`, MiB/s |  | 222.1 | 223.8 | 220.9 | 192.6 ¹⁸ | 217.9 | 218.3 | 216.8 ³⁶ | 208.9 ³⁷ |
-| Colored text, SGR, MiB/s |  | 285.6 | 288.9 | 284.7 | 234.7 ¹⁸ | 286.3 | 285.2 | 281.1 ³⁸ | 282.0 ³⁹ |
-| CJK and emoji, MiB/s |  | 215.3 | 216.5 | 214.9 | 207.8 ¹⁸ | 214.9 | 213.2 | 216.1 ⁴⁰ | 330.3 ⁴¹ |
+| `cat` of 1 GiB of ASCII, MiB/s | ≥ 275.0 ³⁴ | 315.0 | 311.9 | 310.9 | 271.1 ✖ ¹⁹ | 314.9 | 308.6 | 304.4 ³⁵ | 313.9 ³⁶ |
+| `seq 1 10000000`, MiB/s |  | 222.1 | 223.8 | 220.9 | 192.6 ¹⁹ | 217.9 | 218.3 | 216.8 ³⁷ | 208.9 ³⁸ |
+| Colored text, SGR, MiB/s |  | 285.6 | 288.9 | 284.7 | 234.7 ¹⁹ | 286.3 | 285.2 | 281.1 ³⁹ | 282.0 ⁴⁰ |
+| CJK and emoji, MiB/s |  | 215.3 | 216.5 | 214.9 | 207.8 ¹⁹ | 214.9 | 213.2 | 216.1 ⁴¹ | 330.3 ⁴² |
 | **A frame on the CPU** | | | | | | | | | |
-| ASCII, p50, ms |  | 0.296 | 0.288 | 0.282 | 0.385 ¹⁸ | 0.298 | 0.277 | 0.323 | 0.360 ⁴² |
-| ASCII, p99, ms | ≤ 2 | 0.427 | 0.429 | 0.403 | 0.463 ¹⁸ | 0.423 | 0.418 | 0.445 | 0.453 ⁴³ |
-| CJK and emoji, p50, ms |  | 0.72 | 0.73 | 0.73 | 0.79 ¹⁸ | 0.78 | 0.73 | 0.68 | 0.777 ⁴⁴ |
+| ASCII, p50, ms |  | 0.296 | 0.288 | 0.282 | 0.385 ¹⁹ | 0.298 | 0.277 | 0.323 | 0.360 ⁴³ |
+| ASCII, p99, ms | ≤ 2 | 0.427 | 0.429 | 0.403 | 0.463 ¹⁹ | 0.423 | 0.418 | 0.445 | 0.453 ⁴⁴ |
+| CJK and emoji, p50, ms |  | 0.72 | 0.73 | 0.73 | 0.79 ¹⁹ | 0.78 | 0.73 | 0.68 | 0.777 ⁴⁵ |
 | **The window's motion** | | | | | | | | | |
-| A drag, opaque, frames a second |  | — ⁴⁵ | — ⁴⁶ | — ⁴⁷ | 57.7 ⁴⁸ | 57.1 | 58.3 ⁴⁹ | 58.4 ⁵⁰ | 58.1 ⁵¹ |
+| A drag, opaque, frames a second |  | — ⁴⁶ | — ⁴⁷ | — ⁴⁸ | 57.7 ⁴⁹ | 57.1 | 58.3 ⁵⁰ | 58.4 ⁵¹ | 58.1 ⁵² |
 | A drag, with a blur, frames a second |  | — | — | — | 58.1 | 58.0 | 58.5 | 58.7 ▲ | — |
-| A drag, opaque, refreshes missed of 600 |  | — | — | — | 16.0 | 23.0 | 7.5 | 11.5 | 17.5 ⁵² |
+| A drag, opaque, refreshes missed of 600 |  | — | — | — | 16.0 | 23.0 | 7.5 | 11.5 | 17.5 ⁵³ |
 | A drag, with a blur, refreshes missed of 600 |  | — | — | — | 15.0 | 16.0 | 9.0 | 9.5 | — |
-| A live resize, opaque, frames a second |  | — | — | — | 56.2 | 55.7 | 57.4 | 55.5 | 58.8 ⁵³ |
+| A live resize, opaque, frames a second |  | — | — | — | 56.2 | 55.7 | 57.4 | 55.5 | 58.8 ⁵⁴ |
 | A live resize, with a blur, frames a second |  | — | — | — | 55.8 | 56.3 | 57.6 | 56.8 | — |
-| A live resize, opaque, refreshes missed of 600 |  | — | — | — | 31.5 | 33.0 | 15.0 ⁵⁴ | 36.0 ⁵⁵ | 11 ⁵⁶ |
+| A live resize, opaque, refreshes missed of 600 |  | — | — | — | 31.5 | 33.0 | 15.0 ⁵⁵ | 36.0 ⁵⁶ | 11 ⁵⁷ |
 | A live resize, with a blur, refreshes missed of 600 |  | — | — | — | 36.5 | 31.0 | 13.7 | 23.5 | — |
-| A live resize, opaque, the window server's CPU, % |  | — | — | — | 35 | 34 | 35 | 35 | 44 ⁵⁷ |
-| A live resize, opaque, the app's CPU, % |  | — | — | — | 16 | 16 | 15 | 17 | 31 ⁵⁸ |
+| A live resize, opaque, the window server's CPU, % |  | — | — | — | 35 | 34 | 35 | 35 | 44 ⁵⁸ |
+| A live resize, opaque, the app's CPU, % |  | — | — | — | 16 | 16 | 15 | 17 | 31 ⁵⁹ |
 | A live resize, with a blur, the window server's CPU, % |  | — | — | — | 31 | 34 | 38 | 37 | — |
 | A live resize, with a blur, the app's CPU, % |  | — | — | — | 15 | 15 | 15 | 16 | — |
-| A live resize, opaque, the compositor's delay, p95, ms |  | — | — | — | 20.6 | 28.3 ⁵⁹ | 21.0 ⁶⁰ | 13.4 | 27.9 ⁶¹ |
-| A live resize, with a blur, the compositor's delay, p95, ms |  | — | — | — | 20.8 | 19.8 | 18.4 | 28.4 ⁶² | — |
+| A live resize, opaque, the compositor's delay, p95, ms |  | — | — | — | 20.6 | 28.3 ⁶⁰ | 21.0 ⁶¹ | 13.4 | 27.9 ⁶² |
+| A live resize, with a blur, the compositor's delay, p95, ms |  | — | — | — | 20.8 | 19.8 | 18.4 | 28.4 ⁶³ | — |
 | **Scrolling by pixels** | | | | | | | | | |
-| A trackpad's scroll, the app's frames a second, at 60 Hz |  | — | — | — | — | — | — | 60.8 ⁶³ | 60.7 ⁶⁴ |
-| Its refreshes with a frame, % |  | — | — | — | — | — | — | 99 | 99.2 ⁶⁵ |
-| Its app's CPU, % |  | — | — | — | — | — | — | 6.9 ⁶⁶ | — |
+| A trackpad's scroll, the app's frames a second, at 60 Hz |  | — | — | — | — | — | — | 60.8 ⁶⁴ | 60.7 ⁶⁵ |
+| Its refreshes with a frame, % |  | — | — | — | — | — | — | 99 | 99.2 ⁶⁶ |
+| Its app's CPU, % |  | — | — | — | — | — | — | 6.9 ⁶⁷ | — |
 | Package idle wakeups after it, a second |  | — | — | — | — | — | — | 0 | — |
-| The same at 120 Hz, the app's frames a second |  | — | — | — | — | — | — | 123.3 ⁶⁷ | — |
+| The same at 120 Hz, the app's frames a second |  | — | — | — | — | — | — | 123.3 ⁶⁸ | — |
 | Its refreshes with a frame at 120 Hz, % |  | — | — | — | — | — | — | 98.6 | — |
-| Its app's CPU at 120 Hz, % |  | — | — | — | — | — | — | 10.7 ⁶⁸ | — |
+| Its app's CPU at 120 Hz, % |  | — | — | — | — | — | — | 10.7 ⁶⁹ | — |
 
 Notes:
 
@@ -122,58 +123,59 @@ Notes:
 14. 1.3.0 · Its gap to the minimal app's first window, ms: of eight rounds against 1.2.0's 28.6, of a minimal app of 207 to 218 ms, as before 1.1.0's sessions.
 15. 1.4.0 · Its gap to the minimal app's first window, ms: of twelve rounds of the releases' notarized DMGs, 1.3.0's 21.7, of a minimal app of 222 to 243 ms, [startup-F5a-79](startup-F5a-79.md#results); 60.9 in the A/B and 43.5 at rest, of a bundle not notarized.
 16. 1.5.0 · Its gap to the minimal app's first window, ms: of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench); after a restart, 28.3 ms, then 51.5 within the same session as the minimal app's launch moved, of no change to the copies, [startup-F5b-45](startup-F5b-45.md#why-the-gap-moves).
-17. The budget · A key to its echo, p50, ms: 2 refreshes at 60 Hz, as the budget of 2 at 120 Hz.
-18. 1.1.0: of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session.
-19. 1.5.0 · A key to its echo, p50, ms: of ttybench, its capture of the window and its keys at every phase of the refresh, eight runs of 100 keys, on a 5K display at 60 Hz; 1.4.0's 16.8 in the same session.
-20. The budget · A key to its echo, p99, ms: 4.5 refreshes at 60 Hz, as the budget of 4.5 at 120 Hz.
-21. 1.5.0 · A key to its echo, p99, ms: of ttybench; 1.4.0's 31.2 in the same session.
-22. 1.3.0 · Package idle wakeups, a second: over 240 s, two rounds; 0.017 in two of four rounds of 60 s, of the same interrupt wakeups as 1.2.0's, [ab-F5a-17](ab-F5a-17.md#results).
-23. 1.5.0 · Package idle wakeups, a second: of ttybench, 30 s of each copy 20 s after its launch, in four cycles; 1.4.0's 0.
-24. 1.5.0 · Interrupt wakeups, a second: of ttybench, the mean of its intervals of a second; 1.4.0's 0.35 in the same session.
-25. 0.9.0 · Footprint without the GPU's, MB: the mean of two rounds, 30.4 and 26.9.
-26. 1.2.0 · Footprint without the GPU's, MB: the mean of four rounds.
-27. 1.3.0 · Footprint without the GPU's, MB: the median of four rounds, one of 31.5.
-28. 1.4.0 · Footprint without the GPU's, MB: the median of four rounds.
-29. 1.5.0 · Footprint without the GPU's, MB: the median of four rounds of `lokyr-bench`, 1.4.0's 28.9 in the same session.
-30. 1.3.0 · GPU memory, MB: of a display at a scale of 1, as 1.2.0's in the same session.
-31. 1.4.0 · GPU memory, MB: of a display at a scale of 2, as 1.3.0's in the same session.
-32. 1.5.0 · GPU memory, MB: of a display at a scale of 2, as 1.4.0's in the same session.
-33. The budget · `cat` of 1 GiB of ASCII, MiB/s: Ghostty's 305.5 MiB/s of the comparison of 21 and 22 November 2026 less 10 %; 294.9 of the comparison of 13 November 2026 before, 275 of the first comparison's before that.
-34. 1.4.0 · `cat` of 1 GiB of ASCII, MiB/s: at rest, 1.3.0's 303.7 in the same session, [rest-F5a-123](rest-F5a-123.md#results); 269.5 in the A/B, of a session's slower output for both.
-35. 1.5.0 · `cat` of 1 GiB of ASCII, MiB/s: of ttybench, to the quiet, a window of 120 × 40 cells, 1.4.0's 313.0 in the same session; 270.4 against 277.1 of `lokyr-bench` in a window of 1920 × 1080.
-36. 1.4.0 · `seq 1 10000000`, MiB/s: at rest, 1.3.0's 218.4, [rest-F5a-123](rest-F5a-123.md#results); 185.9 in the A/B.
-37. 1.5.0 · `seq 1 10000000`, MiB/s: of `lokyr-bench`, of runs of 147 to 231, 1.4.0's 185.8 in the same session.
-38. 1.4.0 · Colored text, SGR, MiB/s: at rest, 1.3.0's 271.8, [rest-F5a-123](rest-F5a-123.md#results); 191.9 in the A/B.
-39. 1.5.0 · Colored text, SGR, MiB/s: of ttybench's colored text, 1.4.0's 282.5 in the same session.
-40. 1.4.0 · CJK and emoji, MiB/s: at rest, 1.3.0's 217.2, [rest-F5a-123](rest-F5a-123.md#results); 204.6 in the A/B.
-41. 1.5.0 · CJK and emoji, MiB/s: of ttybench's wide characters, two cells each, 1.4.0's 330.3 in the same session.
-42. 1.5.0 · ASCII, p50, ms: the mean of two rounds of `lokyr-bench`, 1.4.0's 0.361.
-43. 1.5.0 · ASCII, p99, ms: 1.4.0's 0.451.
-44. 1.5.0 · CJK and emoji, p50, ms: 1.4.0's 0.793.
-45. 0.8.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [rest-F4-58](rest-F4-58.md#the-windows-motion-on-the-m1).
-46. 0.9.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings: 0.8.0's within that noise, [ab-F4-42](ab-F4-42.md#the-windows-motion).
-47. 1.0.0 · A drag, opaque, frames a second: not measured.
-48. 1.1.0 · A drag, opaque, frames a second: measured in 1.2.0's session.
-49. 1.3.0 · A drag, opaque, frames a second: of 1.3.0's session on a Dell U3417W at 60 Hz, of two rounds of the opaque look and three of the blur.
-50. 1.4.0 · A drag, opaque, frames a second: of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look.
-51. 1.5.0 · A drag, opaque, frames a second: of ttybench, a window of 120 × 40 cells of Menlo at 13 points on a 5K display at 60 Hz and a scale of 2, four cycles of the drag alone; 1.4.0's 57.9 in the same session.
-52. 1.5.0 · A drag, opaque, refreshes missed of 600: 1.4.0's 20 in the same session.
-53. 1.5.0 · A live resize, opaque, frames a second: of ttybench, two cycles; 1.4.0's 58.8.
-54. 1.3.0 · A live resize, opaque, refreshes missed of 600: fewer on a display at a scale of 1, 1.2.0's 20.0 there.
-55. 1.4.0 · A live resize, opaque, refreshes missed of 600: 1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2.
-56. 1.5.0 · A live resize, opaque, refreshes missed of 600: 1.4.0's 11.
-57. 1.5.0 · A live resize, opaque, the window server's CPU, %: 1.4.0's 44.
-58. 1.5.0 · A live resize, opaque, the app's CPU, %: of ttybench, of the app's processes, 1.4.0's 32.
-59. 1.2.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F3b-29](ab-F3b-29.md#the-windows-motion).
-60. 1.3.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion).
-61. 1.5.0 · A live resize, opaque, the compositor's delay, p95, ms: of ttybench, of runs of 13 and of 28 ms; 1.4.0's 26.5 in the same session.
-62. 1.4.0 · A live resize, with a blur, the compositor's delay, p95, ms: of runs of 28 ms, 1.3.0's of 13 in the same session, of the two values that every session finds.
-63. 1.4.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels).
-64. 1.5.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of ttybench, the frames that moved the text, smooth scrolling on, four cycles; 1.4.0's 60.7 in the same session; by rows 15.9 for both.
-65. 1.5.0 · Its refreshes with a frame, %: of Instruments' trace of the display, 1.4.0's 98.6 in the same session.
-66. 1.4.0 · Its app's CPU, %: by rows 4.8.
-67. 1.4.0 · The same at 120 Hz, the app's frames a second: of the built-in display, 3 % more than its refreshes, as at 60 Hz the frames are paced a quarter of a millisecond quicker than the refresh; by rows 34.3, as 1.3.0's 34.0, [ab-F5a-78](ab-F5a-78.md#at-120-hz).
-68. 1.4.0 · Its app's CPU at 120 Hz, %: by rows 6.8.
+17. 1.5.0 · Its window after the floor app's, of ttybench, ms: the median of 32 rounds of the release's DMG, notarized, each beside ttybench's floor app launched alike, lokyr-bench's gap 44.8 in the same session, moving from 70.6 to 24.2 between its rounds, [startup-TB-23](startup-TB-23.md#results).
+18. The budget · A key to its echo, p50, ms: 2 refreshes at 60 Hz, as the budget of 2 at 120 Hz.
+19. 1.1.0: of its session on the built-in display at 120 Hz, of the config of the least work, against 1.0.0's of the same session.
+20. 1.5.0 · A key to its echo, p50, ms: of ttybench, its capture of the window and its keys at every phase of the refresh, eight runs of 100 keys, on a 5K display at 60 Hz; 1.4.0's 16.8 in the same session.
+21. The budget · A key to its echo, p99, ms: 4.5 refreshes at 60 Hz, as the budget of 4.5 at 120 Hz.
+22. 1.5.0 · A key to its echo, p99, ms: of ttybench; 1.4.0's 31.2 in the same session.
+23. 1.3.0 · Package idle wakeups, a second: over 240 s, two rounds; 0.017 in two of four rounds of 60 s, of the same interrupt wakeups as 1.2.0's, [ab-F5a-17](ab-F5a-17.md#results).
+24. 1.5.0 · Package idle wakeups, a second: of ttybench, 30 s of each copy 20 s after its launch, in four cycles; 1.4.0's 0.
+25. 1.5.0 · Interrupt wakeups, a second: of ttybench, the mean of its intervals of a second; 1.4.0's 0.35 in the same session.
+26. 0.9.0 · Footprint without the GPU's, MB: the mean of two rounds, 30.4 and 26.9.
+27. 1.2.0 · Footprint without the GPU's, MB: the mean of four rounds.
+28. 1.3.0 · Footprint without the GPU's, MB: the median of four rounds, one of 31.5.
+29. 1.4.0 · Footprint without the GPU's, MB: the median of four rounds.
+30. 1.5.0 · Footprint without the GPU's, MB: the median of four rounds of `lokyr-bench`, 1.4.0's 28.9 in the same session.
+31. 1.3.0 · GPU memory, MB: of a display at a scale of 1, as 1.2.0's in the same session.
+32. 1.4.0 · GPU memory, MB: of a display at a scale of 2, as 1.3.0's in the same session.
+33. 1.5.0 · GPU memory, MB: of a display at a scale of 2, as 1.4.0's in the same session.
+34. The budget · `cat` of 1 GiB of ASCII, MiB/s: Ghostty's 305.5 MiB/s of the comparison of 21 and 22 November 2026 less 10 %; 294.9 of the comparison of 13 November 2026 before, 275 of the first comparison's before that.
+35. 1.4.0 · `cat` of 1 GiB of ASCII, MiB/s: at rest, 1.3.0's 303.7 in the same session, [rest-F5a-123](rest-F5a-123.md#results); 269.5 in the A/B, of a session's slower output for both.
+36. 1.5.0 · `cat` of 1 GiB of ASCII, MiB/s: of ttybench, to the quiet, a window of 120 × 40 cells, 1.4.0's 313.0 in the same session; 270.4 against 277.1 of `lokyr-bench` in a window of 1920 × 1080.
+37. 1.4.0 · `seq 1 10000000`, MiB/s: at rest, 1.3.0's 218.4, [rest-F5a-123](rest-F5a-123.md#results); 185.9 in the A/B.
+38. 1.5.0 · `seq 1 10000000`, MiB/s: of `lokyr-bench`, of runs of 147 to 231, 1.4.0's 185.8 in the same session.
+39. 1.4.0 · Colored text, SGR, MiB/s: at rest, 1.3.0's 271.8, [rest-F5a-123](rest-F5a-123.md#results); 191.9 in the A/B.
+40. 1.5.0 · Colored text, SGR, MiB/s: of ttybench's colored text, 1.4.0's 282.5 in the same session.
+41. 1.4.0 · CJK and emoji, MiB/s: at rest, 1.3.0's 217.2, [rest-F5a-123](rest-F5a-123.md#results); 204.6 in the A/B.
+42. 1.5.0 · CJK and emoji, MiB/s: of ttybench's wide characters, two cells each, 1.4.0's 330.3 in the same session.
+43. 1.5.0 · ASCII, p50, ms: the mean of two rounds of `lokyr-bench`, 1.4.0's 0.361.
+44. 1.5.0 · ASCII, p99, ms: 1.4.0's 0.451.
+45. 1.5.0 · CJK and emoji, p50, ms: 1.4.0's 0.793.
+46. 0.8.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings; 0.7.0's on an M1 Max at 120 Hz, [rest-F4-58](rest-F4-58.md#the-windows-motion-on-the-m1).
+47. 0.9.0 · A drag, opaque, frames a second: not measured on this Mac, Microsoft Defender scanning the recordings: 0.8.0's within that noise, [ab-F4-42](ab-F4-42.md#the-windows-motion).
+48. 1.0.0 · A drag, opaque, frames a second: not measured.
+49. 1.1.0 · A drag, opaque, frames a second: measured in 1.2.0's session.
+50. 1.3.0 · A drag, opaque, frames a second: of 1.3.0's session on a Dell U3417W at 60 Hz, of two rounds of the opaque look and three of the blur.
+51. 1.4.0 · A drag, opaque, frames a second: of 1.4.0's session on a Dell P2721Q at 60 Hz and a scale of 2, of two rounds of each look.
+52. 1.5.0 · A drag, opaque, frames a second: of ttybench, a window of 120 × 40 cells of Menlo at 13 points on a 5K display at 60 Hz and a scale of 2, four cycles of the drag alone; 1.4.0's 57.9 in the same session.
+53. 1.5.0 · A drag, opaque, refreshes missed of 600: 1.4.0's 20 in the same session.
+54. 1.5.0 · A live resize, opaque, frames a second: of ttybench, two cycles; 1.4.0's 58.8.
+55. 1.3.0 · A live resize, opaque, refreshes missed of 600: fewer on a display at a scale of 1, 1.2.0's 20.0 there.
+56. 1.4.0 · A live resize, opaque, refreshes missed of 600: 1.3.0's 26.0 in the same session, as many as 1.2.0's 33 on this display at a scale of 2.
+57. 1.5.0 · A live resize, opaque, refreshes missed of 600: 1.4.0's 11.
+58. 1.5.0 · A live resize, opaque, the window server's CPU, %: 1.4.0's 44.
+59. 1.5.0 · A live resize, opaque, the app's CPU, %: of ttybench, of the app's processes, 1.4.0's 32.
+60. 1.2.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F3b-29](ab-F3b-29.md#the-windows-motion).
+61. 1.3.0 · A live resize, opaque, the compositor's delay, p95, ms: of runs of 13 or 28 ms for both versions, [ab-F5a-17](ab-F5a-17.md#the-windows-motion).
+62. 1.5.0 · A live resize, opaque, the compositor's delay, p95, ms: of ttybench, of runs of 13 and of 28 ms; 1.4.0's 26.5 in the same session.
+63. 1.4.0 · A live resize, with a blur, the compositor's delay, p95, ms: of runs of 28 ms, 1.3.0's of 13 in the same session, of the two values that every session finds.
+64. 1.4.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of synthetic swipes and their momentum, smooth scrolling on; by rows 32.1, as 1.3.0's 32.2, a frame only as a row is crossed, [ab-F5a-78](ab-F5a-78.md#scrolling-by-pixels).
+65. 1.5.0 · A trackpad's scroll, the app's frames a second, at 60 Hz: of ttybench, the frames that moved the text, smooth scrolling on, four cycles; 1.4.0's 60.7 in the same session; by rows 15.9 for both.
+66. 1.5.0 · Its refreshes with a frame, %: of Instruments' trace of the display, 1.4.0's 98.6 in the same session.
+67. 1.4.0 · Its app's CPU, %: by rows 4.8.
+68. 1.4.0 · The same at 120 Hz, the app's frames a second: of the built-in display, 3 % more than its refreshes, as at 60 Hz the frames are paced a quarter of a millisecond quicker than the refresh; by rows 34.3, as 1.3.0's 34.0, [ab-F5a-78](ab-F5a-78.md#at-120-hz).
+69. 1.4.0 · Its app's CPU at 120 Hz, %: by rows 6.8.
 
 <!-- The end of the table that tools/bench/releases.py writes. -->
 
@@ -197,6 +199,7 @@ Every session's report, the newest first.
 
 | Date | Report |
 |---|---|
+| 25 November 2026 | [The startup's gap, beside a floor app](startup-TB-23.md) |
 | 25 November 2026 | [`cat` in a large window, 1.4.0 against 1.5.0](output-F5b-46.md) |
 | 25 November 2026 | [A hidden session's windows and their frames](hidden-session-F5b-47.md) |
 | 25 November 2026 | [Where 1.5.0's startup went](startup-F5b-45.md) |

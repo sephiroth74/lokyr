@@ -1,0 +1,26 @@
+ttybench, ttybench-2026-11-25-1401:
+| Metric | Median | 95 % interval of the median | Mean ± sd | Samples |
+|---|---|---|---|---|
+| `window_ms` | 330.6 | 323.1 … 333.1 | 329.3 ± 10.6 | 32 |
+| `floor_window_ms` | 259.8 | 252.9 … 263.7 | 255.6 ± 16.0 | 32 |
+| `window_gap_ms` | 70.4 | 67.1 … 75.4 | 73.7 ± 15.2 | 32 |
+| `ready_ms` | 694.5 | 690.5 … 701.7 | 695.7 ± 13.8 | 32 |
+
+ttybench, each quarter of the session's rounds, in their order:
+- rounds 1 to 8: window 331.7, floor 260.0, gap 74.5
+- rounds 9 to 16: window 331.4, floor 257.9, gap 71.6
+- rounds 17 to 24: window 326.4, floor 261.5, gap 67.1
+- rounds 25 to 32: window 333.2, floor 256.9, gap 70.0
+- the gap, the floor first 70.2, the floor second 71.1
+
+lokyr-bench, each round's medians:
+- round 1: v150 222.0, the minimal app 175.1, gap 46.9
+- round 2: v150 235.3, the minimal app 182.9, gap 52.4
+- round 3: v150 246.2, the minimal app 175.6, gap 70.6
+- round 4: v150 252.2, the minimal app 215.4, gap 36.8
+- round 5: v150 252.1, the minimal app 214.3, gap 37.8
+- round 6: v150 251.8, the minimal app 227.7, gap 24.2
+lokyr-bench, the mean of the rounds' medians:
+- the minimal app's window: 198.5 ± 23.3 (n 6)
+- v150: first frame 243.3 ± 12.3 (n 6); gap 44.8 ± 15.9 (n 6)
+
