@@ -68,6 +68,16 @@ app = "/tmp/lokyr/ttybench/b/Lokyr.app"
 launch = "open"
 env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/broadcast" }
 
+[terminals.lokyr-a-large]
+app = "/tmp/lokyr/ttybench/a/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/large" }
+
+[terminals.lokyr-b-large]
+app = "/tmp/lokyr/ttybench/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "/tmp/lokyr/ttybench/configs/large" }
+
 [terminals.lokyr-a-hidden-session]
 app = "/tmp/lokyr/ttybench/a/Lokyr.app"
 launch = "open"

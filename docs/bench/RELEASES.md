@@ -197,6 +197,7 @@ Every session's report, the newest first.
 
 | Date | Report |
 |---|---|
+| 25 November 2026 | [`cat` in a large window, 1.4.0 against 1.5.0](output-F5b-46.md) |
 | 25 November 2026 | [A hidden session's windows and their frames](hidden-session-F5b-47.md) |
 | 25 November 2026 | [Where 1.5.0's startup went](startup-F5b-45.md) |
 | 25 November 2026 | [1.5.0's startup of its release's DMG](startup-F5b-21.md) |
