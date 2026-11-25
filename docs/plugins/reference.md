@@ -109,6 +109,7 @@ Each plugin runs in a VM of its own, so a failing plugin never affects the termi
 - **Memory**: 64 MB a plugin.
 - **Faults**: a plugin that faults starts again after a second, then two; at its third fault within a minute, it stays off until it is turned on again.
 - **A call's writes** and requests of the app's, which apply as it returns: 10 000 at most together.
+- **The panes that a plugin opens**, by new tabs, splits, popups, windows and sessions together: 16 a call at most, and 64 a second of its calls together, as each is a shell of its own; past them, another fails. · not released yet
 - **Reads of rows**: four under way at most; **searches**: 16 a call; **images**: four a call, 16 million pixels each.
 - **Cells of rows**, `row_cells`: 1000 rows at most a read, as an image's · Since 1.4.
 - **Temporary files**, `temp_file`: a name of a text's extension, `.txt`, `.log`, `.md`, `.json`, `.yaml`, `.yml`, `.toml`, `.diff` or `.patch`; 8 MiB a file, 16 files and 32 MiB together; 32 MiB of writes at once, each 256 KiB at least, given back at 8 MiB a second; none of a call that only looks, as `applies` · Since 1.4.

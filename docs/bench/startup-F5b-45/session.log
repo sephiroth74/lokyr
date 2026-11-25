@@ -1,0 +1,124 @@
+08:57:24 v140: 1.4.0 (202611220721), stapled
+08:57:24 v150: 1.5.0 (202611242301), stapled
+08:57:27 unregistered /private/tmp/lokyr/startup-F5b-21/v140/Lokyr.app, gone
+08:57:27 unregistered /private/tmp/lokyr/startup-F5b-21/v150/Lokyr.app, gone
+08:57:29 registrations: 5
+09:33:38 session
+--- start
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+ 9:33  up 51 mins, 2 users, load averages: 2.71 2.49 3.17
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+22627  top              8.6 
+0      kernel_task      3.5 
+557    coreaudiod       3.2 
+429    WindowServer     2.7 
+20375  Google Chrome He 1.9 
+629    netext           1.6 
+22225  mdworker_shared  1.2 
+707    AppleCentauriAlp 1.1 
+1409   jetbrains-toolbo 0.9 
+1720   Vorssaint        0.9 
+554    mds_stores       0.8 
+22157  mdworker_shared  0.7 
+09:33:42 load 2.71
+09:33:42 40 starts of v140
+09:33:51 40 starts of v150
+09:34:03 trace few v140 1
+09:34:26 trace few v150 1
+09:34:42 trace few v150 2
+09:34:57 trace few v140 2
+09:35:13 startup few v140 1
+09:35:30 startup few v150 1
+09:35:47 startup few floor 1
+09:36:02 load { 3.32 3.13 3.34 }
+09:36:04 startup few v150 2
+09:36:21 startup few v140 2
+09:36:39 startup few floor 2
+09:36:53 load { 3.22 3.21 3.37 }
+09:36:55 startup few v150 3
+09:37:13 startup few v140 3
+09:37:30 startup few floor 3
+09:37:45 load { 2.84 3.06 3.30 }
+09:37:47 startup few v140 4
+09:38:04 startup few v150 4
+09:38:21 startup few floor 4
+09:38:36 load { 2.63 2.94 3.24 }
+09:38:38 startup few v140 5
+09:38:55 startup few v150 5
+09:39:12 startup few floor 5
+09:39:27 load { 3.55 3.18 3.31 }
+09:39:30 registrations: 25
+09:40:05 trace many v140 1
+09:40:20 trace many v150 1
+09:40:36 trace many v150 2
+09:40:51 trace many v140 2
+09:41:06 startup many v140 1
+09:41:23 startup many v150 1
+09:41:41 startup many floor 1
+09:41:55 load { 3.83 3.31 3.33 }
+09:41:57 startup many v150 2
+09:42:15 startup many v140 2
+09:42:32 startup many floor 2
+09:42:47 load { 2.25 2.95 3.19 }
+09:42:49 startup many v150 3
+09:43:06 startup many v140 3
+09:43:23 startup many floor 3
+09:43:37 load { 2.59 2.90 3.16 }
+09:43:39 startup many v140 4
+09:43:56 startup many v150 4
+09:44:13 startup many floor 4
+09:44:27 load { 4.53 3.38 3.32 }
+09:44:29 startup many v140 5
+09:44:47 startup many v150 5
+09:45:04 startup many floor 5
+09:45:18 load { 3.79 3.38 3.32 }
+09:45:21 registrations: 5
+09:45:53 startup again v140 1
+09:46:10 startup again v150 1
+09:46:27 startup again floor 1
+09:46:41 load { 3.75 3.41 3.33 }
+09:46:43 startup again v150 2
+09:47:00 startup again v140 2
+09:47:17 startup again floor 2
+09:47:31 load { 4.52 3.67 3.43 }
+09:47:33 startup again v150 3
+09:47:50 startup again v140 3
+09:48:07 startup again floor 3
+09:48:21 load { 3.97 3.65 3.44 }
+09:48:23 startup again v140 4
+09:48:40 startup again v150 4
+09:48:57 startup again floor 4
+09:49:12 load { 3.09 3.47 3.38 }
+--- end
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+ 9:49  up  1:07, 2 users, load averages: 3.09 3.47 3.38
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+624    epsext           43.7
+33096  Python           36.1
+608    wdavdaemon       17.7
+616    dlpdaemon        8.3 
+0      kernel_task      6.4 
+33566  top              5.1 
+354    logd             4.4 
+1445   wdavdaemon_unpri 3.2 
+535    backgroundtaskma 2.8 
+843    duetexpertd      1.8 
+4476   BackgroundTaskMa 1.1 
+695    wdavdaemon_enter 1.0 
+09:49:13 session done

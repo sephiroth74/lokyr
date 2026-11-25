@@ -124,11 +124,14 @@ impl lokyr_render_core::Renderer for Renderer {
     }
 }
 
-/// A surface that shows nothing, and counts the frames drawn into it, and
-/// whether it takes colors past white.
+/// A surface that shows nothing, and counts the frames drawn into it, its
+/// releases and its clears, and whether it takes colors past white.
 #[derive(Debug, Default)]
 pub(crate) struct Surface {
     pub(crate) frames: AtomicUsize,
+    /// How many times it let its frames go, and was cleared.
+    pub(crate) releases: AtomicUsize,
+    pub(crate) clears: AtomicUsize,
     pub(crate) extended: std::sync::atomic::AtomicBool,
     /// How many draws into it give no drawable, as a layer whose every
     /// drawable is in use, the next first.
@@ -144,9 +147,12 @@ impl lokyr_render_core::Surface for Surface {
 
     fn set_presents_with_transaction(&self, _with: bool) {}
 
-    fn release(&self) {}
+    fn release(&self) {
+        self.releases.fetch_add(1, Ordering::Relaxed);
+    }
 
     fn clear(&self, _color: Color) -> Result<bool, String> {
+        self.clears.fetch_add(1, Ordering::Relaxed);
         Ok(true)
     }
 

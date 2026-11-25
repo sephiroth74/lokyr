@@ -1,0 +1,5 @@
+/Applications/Lokyr.app
+$REPO/target/bench/startup-F5b-45/copies/v140/Lokyr.app
+$REPO/target/bench/startup-F5b-45/copies/v150/Lokyr.app
+$REPO/target/Lokyr.app
+~/Downloads/Lokyr.app

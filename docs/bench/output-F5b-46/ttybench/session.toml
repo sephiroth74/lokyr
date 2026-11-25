@@ -1,0 +1,15 @@
+# `cat` of 1 GiB of plain text in a large window, A against B: 216 × 64
+# cells of Menlo at 13 points, some 1690 × 1000 points, which a laptop's
+# Retina display holds at a scale of 2, of some four times the pixels of
+# the 120 × 40 cells of 4-output.toml. About two minutes, the Mac unused.
+terminals = ["lokyr-a-large", "lokyr-b-large"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a-large", b = "lokyr-b-large" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/ab-4-output-large-{date}"
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain", "--mib", "1024"]
+rounds = 1

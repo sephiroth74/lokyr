@@ -8,11 +8,19 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Changed
+
+- A hidden session's windows give back part of the memory of their pictures, some 10 MB a window on a Retina display and more of a larger window, and draw themselves anew just before they show again.
+
 ### Fixed
 
 - Kept in the Dock, Lokyr shows the icon's variant that `[app] icon` names after it quits too, where the Dock showed the bundle's own icon.
 - Lokyr's icon shows as itself in the system's lists of small icons, such as System Settings' privacy panes, where it showed as colored noise on a display of no scaling.
 - The command palette lists the menu bar's items that run a command with an argument, as Split Right, Split Down and Select Pane Above, with their keys, which only the menus had.
+
+### Security
+
+- A plugin's call opens 16 panes at most, and a plugin 64 a second, by new tabs, splits, popups, windows and sessions together, so that one cannot start thousands of shells at once and freeze Lokyr.
 
 ## [1.5.0] - 2026-11-25
 

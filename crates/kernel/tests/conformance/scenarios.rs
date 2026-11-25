@@ -25,7 +25,7 @@ use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
     CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
-    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE,
+    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_PANES_A_CALL, MOST_SEARCHES, MOST_STATE,
     MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuBarItem, MenuItem, MenuPlace, Modifier,
     Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
     SearchMatch, SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand,
@@ -266,6 +266,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         pane_changes(world, true),
         pane_changes(world, false),
         bounds(world),
+        panes_a_call(world),
         images(),
         cells_and_saves(world),
         awake(true),
@@ -977,6 +978,40 @@ fn bounds(world: &World) -> Scenario {
             ask(writes),
             ask(vec![(Request::EndSearch(NO_SEARCH), Response::Done)]),
         ],
+    }
+}
+
+/// A call's panes, sixteen at most: of seventeen new tabs, the last
+/// refused.
+fn panes_a_call(world: &World) -> Scenario {
+    let new_tab = || Request::NewTab {
+        window: world.window,
+        index: None,
+        directory: None,
+    };
+    let mut asks: Vec<(Request, Response)> = (0..u64::try_from(MOST_PANES_A_CALL).unwrap())
+        .map(|k| {
+            (
+                new_tab(),
+                Response::Tab {
+                    tab: tab(k),
+                    pane: pane(k),
+                },
+            )
+        })
+        .collect();
+    asks.push((
+        new_tab(),
+        failed(
+            Code::Failed,
+            &format!("a call opens {MOST_PANES_A_CALL} panes at most, each a shell of its own"),
+        ),
+    ));
+    Scenario {
+        name: "a call's panes, sixteen at most".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![ask(asks)],
     }
 }
 
