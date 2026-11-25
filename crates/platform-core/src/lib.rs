@@ -1061,6 +1061,12 @@ pub trait Handler {
     /// The application started: the app opens its first window here.
     fn started(&mut self, platform: &mut dyn Platform);
 
+    /// The application's launch ended: after [`Handler::started`], and after
+    /// the events of the files, folders or links that the system started it
+    /// to open, whose windows the app opened. What no first window needs
+    /// comes here, so that the first windows show sooner.
+    fn launched(&mut self, _platform: &mut dyn Platform) {}
+
     /// Something happened to the application.
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent);
 

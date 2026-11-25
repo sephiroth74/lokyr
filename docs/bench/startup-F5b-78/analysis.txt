@@ -1,0 +1,18 @@
+ttybench, ttybench-2026-11-25-1449:
+| Metric | a, median | b, median | b − a, its 95 % interval | |
+|---|---|---|---|---|
+| `window_ms` | 318.4 | 311.3 | -7.1, -16.9 to -0.9 | better |
+| `floor_window_ms` | 256.7 | 253.8 | -2.9, -13.6 to +7.2 | within-noise |
+| `window_gap_ms` | 60.3 | 58.1 | -2.2, -18.4 to +10.8 | within-noise |
+| `ready_ms` | 657.3 | 645.5 | -11.8, -19.5 to -4.8 | better |
+
+lokyr-bench, each round's first frame, the median of ten starts:
+- round 1: a 238.0, b 234.3
+- round 2: a 238.3, b 235.8
+- round 3: a 240.0, b 219.1
+- round 4: a 254.3, b 236.1
+lokyr-bench, the mean of the rounds' medians:
+- a: 242.7 ± 7.8 (n 4)
+- b: 231.3 ± 8.2 (n 4)
+- b − a, of each round: -11.3 ± 9.6 (n 4)
+
