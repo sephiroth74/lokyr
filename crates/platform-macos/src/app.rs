@@ -1,5 +1,6 @@
 //! The application, its delegate, and its run loop.
 
+use std::cell::RefCell;
 use std::panic;
 use std::rc::{Rc, Weak};
 
@@ -17,6 +18,44 @@ use crate::appearance::AppearanceObserver;
 use crate::services::ServicesProvider;
 use crate::shared::{Pending, Shared};
 use crate::wake::WakeSource;
+
+thread_local! {
+    /// The running application's shared state, on the main thread, which
+    /// [`post_app_event`] reaches.
+    static RUNNING: RefCell<Weak<Shared>> = const { RefCell::new(Weak::new()) };
+}
+
+/// Hands the running application's handler `event`, as the platform's own
+/// events reach it, from code of the main thread that the platform does not
+/// call, as the system's App Intents: whether an application runs to take
+/// it. It does nothing off the main thread.
+pub fn post_app_event(event: AppEvent) -> bool {
+    if MainThreadMarker::new().is_none() {
+        return false;
+    }
+    let Some(shared) = RUNNING.with(|running| running.borrow().upgrade()) else {
+        return false;
+    };
+    shared.post(Pending::App(event));
+    true
+}
+
+/// The App Intents' entry, which their declarations of Swift call on the
+/// main thread as the system runs one: hands the running application the
+/// command named `command`, a C string, as its menus do; 1 where an
+/// application ran to take it, 0 otherwise.
+#[unsafe(no_mangle)]
+pub extern "C" fn lokyr_intent_command(command: *const std::ffi::c_char) -> i32 {
+    if command.is_null() {
+        return 0;
+    }
+    // SAFETY: the intents give a C string, terminated, that lives through
+    // the call.
+    let Ok(name) = unsafe { std::ffi::CStr::from_ptr(command) }.to_str() else {
+        return 0;
+    };
+    i32::from(post_app_event(AppEvent::Command(name.to_owned())))
+}
 
 /// Starts the application, as a regular one, with a Dock icon and a menu
 /// bar, calls [`Handler::started`] once it has launched, and hands the
@@ -48,6 +87,7 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     let make = Box::new(move || Box::new(make()) as Box<dyn Handler>);
     let shared = Shared::new(mtm, make, wake.waker());
     wake.set_target(&shared);
+    RUNNING.with(|running| *running.borrow_mut() = Rc::downgrade(&shared));
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     // Before the launch, so that a service that starts the app reaches it.
@@ -60,6 +100,7 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     app.run();
 
     appearance.stop();
+    RUNNING.with(|running| *running.borrow_mut() = Weak::new());
     // SAFETY: none takes its place.
     unsafe { app.setServicesProvider(None) };
     app.setDelegate(None);

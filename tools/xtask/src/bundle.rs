@@ -11,7 +11,9 @@
 //! `Contents/Resources/licenses` the notices of the licenses of what the
 //! binary and the bundle hold of other projects: the crates', Sparkle's and
 //! the symbols' font's; and the shells' integration, its scripts for zsh,
-//! bash and fish, in `Contents/Resources/shell-integration`.
+//! bash and fish, in `Contents/Resources/shell-integration`; and the App
+//! Intents' metadata, `Contents/Resources/Metadata.appintents`, of the
+//! app's feature `app-intents`, which Shortcuts and Spotlight read.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
 //! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
@@ -23,8 +25,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
-use std::process::{Command, ExitCode};
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -55,6 +57,12 @@ pub(crate) const SLEIP: &str = "sleip";
 const DOCK_TILE: &str = "LokyrDockTile.docktileplugin";
 const DOCK_TILE_EXECUTABLE: &str = "LokyrDockTile";
 const DOCK_TILE_CRATE: &str = "lokyr-platform-macos-docktile";
+
+/// The app's feature of the system's App Intents, which every bundle
+/// builds, and their metadata's folder, which the app's build script makes
+/// in its output folder and the bundle's resources hold.
+const APP_INTENTS: &str = "app-intents";
+const INTENTS_METADATA: &str = "metadata/Metadata.appintents";
 const DOCK_TILE_LIBRARY: &str = "liblokyr_platform_macos_docktile.dylib";
 const DOCK_TILE_CLASS: &str = "LokyrDockTilePlugIn";
 
@@ -238,11 +246,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .canonicalize()
         .context("the workspace's root")?;
     let moment = build_moment(&root)?;
-    run_command(
+    let built = build_app(
         Command::new(env!("CARGO"))
             .args(["build", "--release", "--locked", "-p", "lokyr-app"])
             // The version's date, of the moment of the bundle's number.
             .env("SOURCE_DATE_EPOCH", moment.to_string())
+            .args(["--features", APP_INTENTS])
             .args(
                 features
                     .iter()
@@ -250,7 +259,6 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             )
             .args(bare.then_some("--no-default-features"))
             .current_dir(&root),
-        "building the app",
     )?;
     let app = root.join("target").join(format!("{NAME}.app"));
     if app.exists() {
@@ -293,6 +301,16 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &resources.join("terminfo"),
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
+    // The App Intents' metadata, which Shortcuts and Spotlight read.
+    let intents = built
+        .context("the app's build told no output folder of its build script")?
+        .join(INTENTS_METADATA);
+    ensure!(
+        intents.join("extract.actionsdata").is_file(),
+        "the app's build made no App Intents' metadata in {}",
+        intents.display()
+    );
+    copy_tree(&intents, &resources.join("Metadata.appintents"))?;
     copy_tree(
         &root.join(SHELL_INTEGRATION),
         &resources.join("shell-integration"),
@@ -426,6 +444,40 @@ pub(crate) fn megabytes(bytes: u64) -> String {
 }
 
 /// Runs `command`, which `what` describes, and fails if it fails.
+/// Builds the app of `command`, a `cargo build` of `lokyr-app`, its
+/// diagnostics shown as they come: the output folder of its build script,
+/// which Cargo's messages tell.
+fn build_app(command: &mut Command) -> Result<Option<PathBuf>> {
+    let output = command
+        .arg("--message-format=json-render-diagnostics")
+        .stdout(Stdio::piped())
+        .output()
+        .context("building the app")?;
+    if !output.status.success() {
+        bail!("building the app failed: {}", output.status);
+    }
+    Ok(build_script_output(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+/// The output folder of `lokyr-app`'s build script, of Cargo's JSON
+/// messages `messages`, its last.
+fn build_script_output(messages: &str) -> Option<PathBuf> {
+    messages
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| message["reason"] == "build-script-executed")
+        .filter(|message| {
+            message["package_id"]
+                .as_str()
+                .is_some_and(|id| id.contains("#lokyr-app@"))
+        })
+        .filter_map(|message| message["out_dir"].as_str().map(PathBuf::from))
+        .next()
+}
+
 fn run_command(command: &mut Command, what: &str) -> Result<()> {
     let status = command.status().with_context(|| what.to_owned())?;
     if !status.success() {
@@ -1028,6 +1080,24 @@ fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_app_s_build_script_tells_its_output_folder_of_cargo_s_messages() {
+        let messages = concat!(
+            r#"{"reason":"build-script-executed","package_id":"path+file:///w/crates/kernel#lokyr-kernel@1.5.0","out_dir":"/w/target/release/build/lokyr-kernel-1/out"}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","package_id":"path+file:///w/crates/app#lokyr-app@1.5.0"}"#,
+            "\n",
+            "not json\n",
+            r#"{"reason":"build-script-executed","package_id":"path+file:///w/crates/app#lokyr-app@1.5.0","out_dir":"/w/target/release/build/lokyr-app-2/out"}"#,
+            "\n",
+        );
+        assert_eq!(
+            build_script_output(messages),
+            Some(PathBuf::from("/w/target/release/build/lokyr-app-2/out"))
+        );
+        assert_eq!(build_script_output("{}\n"), None);
+    }
 
     /// The catalogs of the workspace's app.
     fn catalogs() -> BTreeMap<String, Catalog> {
