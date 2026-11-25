@@ -108,6 +108,29 @@
       }
     },
     {
+      "id": "startup-window-gap",
+      "name": "Startup, its window after the floor app's, of ttybench",
+      "unit": "ms",
+      "better": "lower",
+      "budget": 70,
+      "tolerance": 5,
+      "digits": 1,
+      "ttybench": {
+        "tool": "startup",
+        "metric": "window_gap_ms",
+        "stat": "median"
+      },
+      "values": {
+        "1.5.0": 70.4
+      },
+      "sessions": {
+        "1.5.0": {
+          "title": "the startup beside a floor app",
+          "report": "startup-TB-23.md"
+        }
+      }
+    },
+    {
       "id": "latency-p50",
       "name": "Latency, a key to its echo, p50",
       "unit": "ms",
@@ -810,12 +833,18 @@
     {
       "file": "releases/start.svg",
       "title": "Starting and typing",
-      "subtitle": "The startup's gap to a minimal app; a key to its echo, at 60 Hz; the others' by Typometer",
+      "subtitle": "The startup's gap to a minimal app, then to ttybench's floor app; a key to its echo, at 60 Hz; the others' by Typometer",
       "panels": [
         {
           "title": "Startup's gap, ms",
           "series": [
             "startup-gap"
+          ]
+        },
+        {
+          "title": "Startup's gap to the floor app, ms",
+          "series": [
+            "startup-window-gap"
           ]
         },
         {
@@ -1037,6 +1066,21 @@
               "1.5.0": [
                 "55.0",
                 "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench); after a restart, 28.3 ms, then 51.5 within the same session as the minimal app's launch moved, of no change to the copies, [startup-F5b-45](startup-F5b-45.md#why-the-gap-moves)"
+              ]
+            }
+          },
+          {
+            "name": "Its window after the floor app's, of ttybench, ms",
+            "budget": "≤ 70",
+            "measure": "startup-window-gap",
+            "limit": {
+              "value": 70,
+              "better": "lower"
+            },
+            "cells": {
+              "1.5.0": [
+                "70.4",
+                "the median of 32 rounds of the release's DMG, notarized, each beside ttybench's floor app launched alike, lokyr-bench's gap 44.8 in the same session, moving from 70.6 to 24.2 between its rounds, [startup-TB-23](startup-TB-23.md#results)"
               ]
             }
           }

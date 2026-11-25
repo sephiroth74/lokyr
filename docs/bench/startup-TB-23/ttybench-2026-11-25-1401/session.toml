@@ -1,0 +1,12 @@
+# startup-TB-23's part of ttybench: the copy beside the floor app.
+terminals = ["v150"]
+terminals-file = "terminals.toml"
+pause = 2
+cycles = 2
+season = 10
+folder = "$REPO/target/bench/startup-TB-23/ttybench-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 16
+args = ["--floor"]

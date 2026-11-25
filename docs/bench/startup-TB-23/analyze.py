@@ -40,9 +40,28 @@ def ttybench():
                 print(f"| `{metric}` | {m['median']:.1f} | {low:.1f} … {high:.1f} | "
                       f"{m['mean']:.1f} ± {m['stddev']:.1f} | {m['count']} |")
     print()
+    print("ttybench, each quarter of the session's rounds, in their order:")
+    records = [json.loads(line) for line in open(f"{folder}/records.jsonl")]
+    samples = {}
+    for record in records:
+        if record["terminal"] in COPIES:
+            samples.setdefault(record["metric"], []).extend(record["samples"])
+    gaps = samples.get("window_gap_ms", [])
+    quarter = len(gaps) // 4
+    for at in range(4):
+        part = slice(at * quarter, (at + 1) * quarter)
+        print(f"- rounds {at * quarter + 1} to {(at + 1) * quarter}: window {st.median(samples['window_ms'][part]):.1f}, "
+              f"floor {st.median(samples['floor_window_ms'][part]):.1f}, gap {st.median(gaps[part]):.1f}")
+    # The floor before the terminal in each run's odd rounds, after it in
+    # its even ones.
+    first = [g for record in records if record["metric"] == "window_gap_ms" for g in record["samples"][0::2]]
+    second = [g for record in records if record["metric"] == "window_gap_ms" for g in record["samples"][1::2]]
+    print(f"- the gap, the floor first {st.median(first):.1f}, the floor second {st.median(second):.1f}")
+    print()
 
 
 def lokyr_bench():
+    print("lokyr-bench, each round's medians:")
     medians = {v: [] for v in COPIES}
     gaps = {v: [] for v in COPIES}
     floors = []
@@ -59,7 +78,8 @@ def lokyr_bench():
             median = json.load(open(path))["summary"]["from_start_ms"]["median"]
             medians[v].append(median)
             gaps[v].append(median - floor)
-    print("lokyr-bench, the mean of its rounds' medians:")
+            print(f"- round {round}: {v} {median:.1f}, the minimal app {floor:.1f}, gap {median - floor:.1f}")
+    print("lokyr-bench, the mean of the rounds' medians:")
     print(f"- the minimal app's window: {mean_sd(floors)}")
     for v in COPIES:
         print(f"- {v}: first frame {mean_sd(medians[v])}; gap {mean_sd(gaps[v])}")

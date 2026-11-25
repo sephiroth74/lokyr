@@ -12,6 +12,7 @@ folder = "/tmp/lokyr/ttybench/sessions/ab-dry-{date}"
 [[run]]
 tool = "startup"
 rounds = 2
+args = ["--floor"]
 
 [[run]]
 tool = "memory"

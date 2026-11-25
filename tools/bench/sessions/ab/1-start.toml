@@ -14,6 +14,11 @@ tool = "startup"
 rounds = 8
 args = ["--floor"]
 
+# Its window less the floor app's of the same round, the median.
+[[budget]]
+metric = "window_gap_ms"
+at-most = 70
+
 [[run]]
 tool = "memory"
 rounds = 2
