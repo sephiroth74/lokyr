@@ -66,12 +66,13 @@ tell application "Lokyr"
 end tell
 ```
 
-`perform action` takes the names and arguments of [the commands' reference](commands.md):
+`perform action` takes the names and arguments of [the commands' reference](commands.md). It runs the command as if you chose it in Lokyr, on the window in front, so bring Lokyr forward first with `activate`:
 
 ```applescript
 tell application "Lokyr"
+    activate
     perform action "splits.split" with arguments {direction:"right"}
-    perform action "window.switch-session" with arguments {name:"api"}
+    perform action "tabs.goto" with arguments {index:1}
 end tell
 ```
 
@@ -127,7 +128,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **Lokyr's bundled [`automation`](plugins/automation.md) plugin answers** what AppleScript and the Shortcuts app ask. Lokyr hands it each request and waits for its answer.
 - **A new window, tab or split answers once it opens**, with its object, so that the script's next command can use it.
 - **A command line** that you give a new terminal is typed into its shell as it starts, followed by Return.
-- **The commands that `perform action` and Run Command run** act as if you chose them: closing a tab where a program other than a shell runs asks you first.
+- **The commands that `perform action` and Run Command run** act as if you chose them, on Lokyr's window in front: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window is in front, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
 - **A request waits 10 seconds at most** for Lokyr's answer, then fails.
 
 ## Limits
@@ -135,6 +136,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **The ids last while Lokyr runs.** After a restart, a script finds its windows again by their names or their places.
 - **A script can't wait for a command to end** or for its output. Use `delay`, then read `contents`.
 - **`contents` is the screen's text**, not the scrollback above it.
+- **`perform action` and Run Command report a command that Lokyr doesn't have**, but not a command that fails as it runs, such as a switch to a session that isn't there. That failure shows in a card in Lokyr's window, and in its log.
 - **A new terminal always starts your shell**: a command line runs in it, and shows in its history.
 - **Shortcuts lists the actions of one copy of Lokyr**: the one that macOS registered for its identifier, usually the one in your Applications folder.
 
@@ -160,6 +162,16 @@ osascript -e 'tell application "Lokyr" to create window'
 
 ```sh
 rm ~/Library/Application\ Support/lokyr/state/plugins/automation.json
+```
+
+### `perform action` does nothing
+
+**Why**: Lokyr was behind another app, so it had no window in front for the command to act on. Or the command failed as it ran.
+
+**Fix**: add `activate` before `perform action`. When it still does nothing, read the card in Lokyr's window, or the end of its log:
+
+```sh
+tail ~/Library/Logs/Lokyr/lokyr.log
 ```
 
 ### "Lokyr's automation did not answer in time"
