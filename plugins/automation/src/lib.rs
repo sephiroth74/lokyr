@@ -12,8 +12,9 @@
 //! of none; and it tells the windows, their tabs and their panes,
 //! by the host's ids, which stay the same between a script's requests.
 //!
-//! A pane's text may hold a secret: before an app reads one, the user
-//! answers a question about that app, whose answer the plugin keeps in its
+//! Before a client's first request, of any kind, the user answers whether
+//! it may control Lokyr, as a client can type, run commands and read the
+//! panes, whose text may hold a secret: the answers of apps kept in its
 //! state, the default button refusing. Like every built-in plugin, it
 //! depends only on the plugin SDK.
 
@@ -23,8 +24,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::time::Duration;
 
 use lokyr_plugin_sdk::automation::{
-    ANSWER_WITHIN_MS, AutomationAnswer, AutomationCommand, AutomationEdge, AutomationPane,
-    AutomationRequest, AutomationTab, AutomationTarget, AutomationWindow, LONGEST_TEXT,
+    ANSWER_WITHIN_MS, AutomationAnswer, AutomationClient, AutomationCommand, AutomationEdge,
+    AutomationPane, AutomationRequest, AutomationTab, AutomationTarget, AutomationWindow,
+    LONGEST_TEXT,
 };
 use lokyr_plugin_sdk::command::{Args, Code, Error, Kind, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -43,8 +45,8 @@ static CATALOGS: [(&str, &str); 2] = [
 const DENY: u32 = 0;
 const ALLOW: u32 = 1;
 
-/// The key of the state that keeps the apps' answers.
-const READERS: &str = "readers";
+/// The key of the state that keeps the clients' answers.
+const CLIENTS: &str = "clients";
 
 /// The command that brings a window of a number forward.
 const GOTO_WINDOW: &str = "window.goto";
@@ -55,15 +57,19 @@ const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
 /// The plugin of the automation.
 #[derive(Debug, Default)]
 pub struct Automation {
-    /// The apps' answers to the question of reading a pane's text, by the
-    /// apps' names, of its state, once read.
-    readers: Option<BTreeMap<String, bool>>,
-    /// The question that waits for its answer, of its app.
-    question: Option<(u64, String)>,
-    /// The reads of a pane's text that wait for an app's answer, in their
-    /// order: each request's id, its app, its pane and whether it reads
-    /// the selection.
-    reads: Vec<Read>,
+    /// The clients' answers to the question, by their ids, of its state,
+    /// once read.
+    answers: Option<BTreeMap<String, bool>>,
+    /// The answers of programs in Lokyr's own terminals, by their
+    /// processes' ids, which no state keeps.
+    in_terminals: BTreeMap<String, bool>,
+    /// The question that waits for its answer, of its client.
+    question: Option<(u64, AutomationClient)>,
+    /// The clients that wait to be asked, after the question that shows.
+    asking: VecDeque<AutomationClient>,
+    /// The requests that wait for their client's answer, in their order,
+    /// of the clients that wait for it, as a shortcut.
+    waiting: Vec<Waiting>,
     /// The windows asked to open, in their order, which take the next
     /// windows that open, each until its deadline.
     opening: VecDeque<Opening>,
@@ -84,13 +90,13 @@ struct Opening {
     timer: u64,
 }
 
-/// A read of a pane's text that waits for its app's answer.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Read {
+/// A request that waits for its client's answer to the question: its id,
+/// its client, what it asks and the window in front as it came.
+#[derive(Clone, Debug, PartialEq)]
+struct Waiting {
     id: u64,
-    client: String,
-    pane: Option<PaneId>,
-    selection: bool,
+    client: AutomationClient,
+    request: AutomationRequest,
     front: Option<WindowId>,
 }
 
@@ -109,16 +115,7 @@ impl Plugin for Automation {
                     client,
                     request,
                     front,
-                } => {
-                    self.front = *front;
-                    let answer = match self.take(cx, *id, client, request.clone()) {
-                        Ok(answer) => answer,
-                        Err(error) => Some(AutomationAnswer::of_error(&error)),
-                    };
-                    if let Some(answer) = answer {
-                        answer_once(cx, *id, answer);
-                    }
-                }
+                } => self.came(cx, *id, client, request, *front),
                 Event::Workspace(WorkspaceEvent::WindowOpened { window }) => {
                     if let Some(opening) = self.opening.pop_front() {
                         let _ = cx.cancel_timer(opening.timer);
@@ -133,7 +130,7 @@ impl Plugin for Automation {
                 Event::Chosen { id, button }
                     if self.question.as_ref().is_some_and(|(asked, _)| asked == id) =>
                 {
-                    self.chosen(cx, *button)?;
+                    self.chosen(cx, *button);
                 }
                 _ => {}
             }
@@ -147,14 +144,66 @@ impl Plugin for Automation {
 }
 
 impl Automation {
-    /// Does what `request` of `client`, of the id `id`, asks: its answer,
-    /// or none of an answer that comes later, as a window's that opens or
-    /// a read that waits for the user's answer.
+    /// A request of `client`, of the id `id`, as it comes: done at once of
+    /// a client that the user allowed, refused of one that the user
+    /// refused; of a client that the user has not answered, the question
+    /// asked, and the request waiting for its answer, of a client that
+    /// waits, or failed at once, of a script, which runs again once the
+    /// user answers.
+    fn came(
+        &mut self,
+        cx: &mut Cx<'_>,
+        id: u64,
+        client: &AutomationClient,
+        request: &AutomationRequest,
+        front: Option<WindowId>,
+    ) {
+        self.front = front;
+        match self.answer_of(cx, client) {
+            Some(true) => self.run(cx, id, request.clone()),
+            Some(false) => answer_once(cx, id, AutomationAnswer::of_error(&refused(client))),
+            None => {
+                if client.waits {
+                    self.waiting.push(Waiting {
+                        id,
+                        client: client.clone(),
+                        request: request.clone(),
+                        front,
+                    });
+                } else {
+                    answer_once(cx, id, AutomationAnswer::of_error(&asking(client)));
+                }
+                let asked = self
+                    .question
+                    .as_ref()
+                    .is_some_and(|(_, asked)| asked.id == client.id)
+                    || self.asking.iter().any(|queued| queued.id == client.id);
+                if !asked {
+                    self.asking.push_back(client.clone());
+                }
+                if self.question.is_none() {
+                    self.ask_next(cx);
+                }
+            }
+        }
+    }
+
+    /// Does what `request` of the id `id` asks, of a client that the user
+    /// allowed, and answers it, now or once its answer comes.
+    fn run(&mut self, cx: &mut Cx<'_>, id: u64, request: AutomationRequest) {
+        match self.take(cx, id, request) {
+            Ok(Some(answer)) => answer_once(cx, id, answer),
+            Ok(None) => {}
+            Err(error) => answer_once(cx, id, AutomationAnswer::of_error(&error)),
+        }
+    }
+
+    /// Does what `request`, of the id `id`, asks: its answer, or none of an
+    /// answer that comes later, as a window's that opens.
     fn take(
         &mut self,
         cx: &mut Cx<'_>,
         id: u64,
-        client: &str,
         request: AutomationRequest,
     ) -> Result<Option<AutomationAnswer>, Error> {
         let answer = match request {
@@ -244,14 +293,7 @@ impl Automation {
             }
             AutomationRequest::Commands => AutomationAnswer::Commands(palette_commands(cx)?),
             AutomationRequest::PaneText { pane, selection } => {
-                let read = Read {
-                    id,
-                    client: client.to_owned(),
-                    pane,
-                    selection,
-                    front: self.front,
-                };
-                return self.read(cx, read);
+                AutomationAnswer::Text(text(cx, pane, selection, self.front)?)
             }
             AutomationRequest::SwitchSession { name } => {
                 switch_session(cx, &name)?;
@@ -261,108 +303,116 @@ impl Automation {
         Ok(Some(answer))
     }
 
-    /// Reads a pane's text as `read` asks, if its app may: its answer, or
-    /// none while it waits for the user's answer, which the question asks.
-    fn read(&mut self, cx: &mut Cx<'_>, read: Read) -> Result<Option<AutomationAnswer>, Error> {
-        match self.readers(cx).get(&read.client).copied() {
-            Some(true) => Ok(Some(AutomationAnswer::Text(text(
-                cx,
-                read.pane,
-                read.selection,
-                read.front,
-            )?))),
-            Some(false) => Err(refused(&read.client)),
-            None => {
-                let client = read.client.clone();
-                self.reads.push(read);
-                if self.question.is_none() {
-                    self.ask(cx, &client)?;
+    /// The user's answer for `client`, if the user answered: of a program
+    /// in Lokyr's terminals, of this run; of another, of the plugin's
+    /// state.
+    fn answer_of(&mut self, cx: &mut Cx<'_>, client: &AutomationClient) -> Option<bool> {
+        if client.terminal {
+            return self.in_terminals.get(&client.id).copied();
+        }
+        self.answers(cx).get(&client.id).copied()
+    }
+
+    /// Asks the next client that waits to be asked whether it may control
+    /// Lokyr, on the window in front: a client answered meanwhile has its
+    /// requests done; a question that cannot show, as of no window, fails
+    /// its client's requests, and the next is asked.
+    fn ask_next(&mut self, cx: &mut Cx<'_>) {
+        while let Some(client) = self.asking.pop_front() {
+            if let Some(allowed) = self.answer_of(cx, &client) {
+                self.answer_waiting(cx, &client, allowed);
+                continue;
+            }
+            match self.ask(cx, &client) {
+                Ok(id) => {
+                    self.question = Some((id, client));
+                    return;
                 }
-                Ok(None)
+                Err(error) => self.fail_waiting(cx, &client, &error),
             }
         }
     }
 
-    /// Asks the user whether `client` may read the panes' text.
-    fn ask(&mut self, cx: &mut Cx<'_>, client: &str) -> Result<(), Error> {
+    /// Asks the user whether `client` may control Lokyr: the question's id.
+    fn ask(&mut self, cx: &mut Cx<'_>, client: &AutomationClient) -> Result<u64, Error> {
         let message = cx.message(
-            "automation-read-message",
-            &[("client", Data::Text(client.to_owned()))],
+            "automation-control-message",
+            &[("client", Data::Text(client.name.clone()))],
         )?;
-        // On the window in front, or on the first while Lokyr is behind
-        // the app that asks.
+        let detail = if client.terminal {
+            "automation-control-terminal-detail"
+        } else {
+            "automation-control-detail"
+        };
         let window = front_window(cx, self.front)?;
-        let id = cx.ask_choice(
+        cx.ask_choice(
             Some(window),
-            (&message, "automation-read-detail"),
-            &["automation-read-deny", "automation-read-allow"],
-        )?;
-        self.question = Some((id, client.to_owned()));
-        Ok(())
+            (&message, detail),
+            &["automation-control-deny", "automation-control-allow"],
+        )
     }
 
-    /// The user's answer to the question: its app's reads answered, its
-    /// answer kept unless the question closed of none; then the next app's
-    /// question, of the reads that wait.
-    fn chosen(&mut self, cx: &mut Cx<'_>, button: Option<u32>) -> Result<(), Error> {
+    /// The user's answer to the question: kept for its client unless the
+    /// question closed of none, as a program's in Lokyr's terminals for its
+    /// process alone; its client's requests done or refused, each answered
+    /// once; then the next client asked.
+    fn chosen(&mut self, cx: &mut Cx<'_>, button: Option<u32>) {
         let Some((_, client)) = self.question.take() else {
-            return Ok(());
+            return;
         };
         let allowed = button == Some(ALLOW);
         if matches!(button, Some(DENY | ALLOW)) {
-            self.readers(cx).insert(client.clone(), allowed);
-            // An answer that no state keeps, as of a run of no state's
-            // folder, holds for this run: the reads are answered all the
-            // same.
-            let _kept = self.keep_readers(cx);
-        }
-        let (now, later): (Vec<Read>, Vec<Read>) = std::mem::take(&mut self.reads)
-            .into_iter()
-            .partition(|read| read.client == client);
-        self.reads = later;
-        for read in now {
-            let answer = if allowed {
-                text(cx, read.pane, read.selection, read.front).map(AutomationAnswer::Text)
+            if client.terminal {
+                self.in_terminals.insert(client.id.clone(), allowed);
             } else {
-                Err(refused(&client))
-            };
-            cx.answer_automation(
-                read.id,
-                answer.unwrap_or_else(|error| AutomationAnswer::of_error(&error)),
-            )?;
-        }
-        if let Some(next) = self.reads.first().map(|read| read.client.clone()) {
-            // An app answered meanwhile is answered at once.
-            let known = self.readers(cx).get(&next).copied();
-            match known {
-                Some(_) => {
-                    let reads = std::mem::take(&mut self.reads);
-                    for read in reads {
-                        let id = read.id;
-                        if let Some(answer) = self
-                            .read(cx, read)
-                            .unwrap_or_else(|error| Some(AutomationAnswer::of_error(&error)))
-                        {
-                            cx.answer_automation(id, answer)?;
-                        }
-                    }
-                }
-                None => self.ask(cx, &next)?,
+                self.answers(cx).insert(client.id.clone(), allowed);
+                // An answer that no state keeps, as of a run of no state's
+                // folder, holds for this run.
+                let _kept = self.keep_answers(cx);
             }
         }
-        Ok(())
+        self.answer_waiting(cx, &client, allowed);
+        self.ask_next(cx);
     }
 
-    /// The apps' answers, of the plugin's state, read once.
-    fn readers(&mut self, cx: &mut Cx<'_>) -> &mut BTreeMap<String, bool> {
-        self.readers.get_or_insert_with(|| {
+    /// Answers the requests of `client` that wait: done of `allowed`,
+    /// refused otherwise.
+    fn answer_waiting(&mut self, cx: &mut Cx<'_>, client: &AutomationClient, allowed: bool) {
+        let (now, later): (Vec<Waiting>, Vec<Waiting>) = std::mem::take(&mut self.waiting)
+            .into_iter()
+            .partition(|waiting| waiting.client.id == client.id);
+        self.waiting = later;
+        for waiting in now {
+            if allowed {
+                self.front = waiting.front;
+                self.run(cx, waiting.id, waiting.request);
+            } else {
+                answer_once(cx, waiting.id, AutomationAnswer::of_error(&refused(client)));
+            }
+        }
+    }
+
+    /// Fails the requests of `client` that wait, of `error`.
+    fn fail_waiting(&mut self, cx: &mut Cx<'_>, client: &AutomationClient, error: &Error) {
+        let (now, later): (Vec<Waiting>, Vec<Waiting>) = std::mem::take(&mut self.waiting)
+            .into_iter()
+            .partition(|waiting| waiting.client.id == client.id);
+        self.waiting = later;
+        for waiting in now {
+            answer_once(cx, waiting.id, AutomationAnswer::of_error(error));
+        }
+    }
+
+    /// The clients' answers, of the plugin's state, read once.
+    fn answers(&mut self, cx: &mut Cx<'_>) -> &mut BTreeMap<String, bool> {
+        self.answers.get_or_insert_with(|| {
             let Ok(Data::Map(state)) = cx.state() else {
                 return BTreeMap::new();
             };
-            let Some(Data::Map(readers)) = state.get(READERS) else {
+            let Some(Data::Map(answers)) = state.get(CLIENTS) else {
                 return BTreeMap::new();
             };
-            readers
+            answers
                 .iter()
                 .filter_map(|(client, allowed)| match allowed {
                     Data::Boolean(allowed) => Some((client.clone(), *allowed)),
@@ -372,16 +422,16 @@ impl Automation {
         })
     }
 
-    /// Keeps the apps' answers in the plugin's state.
-    fn keep_readers(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        let readers = self
-            .readers(cx)
+    /// Keeps the clients' answers in the plugin's state.
+    fn keep_answers(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let answers = self
+            .answers(cx)
             .iter()
             .map(|(client, allowed)| (client.clone(), Data::Boolean(*allowed)))
             .collect();
         cx.set_state(Data::Map(BTreeMap::from([(
-            READERS.to_owned(),
-            Data::Map(readers),
+            CLIENTS.to_owned(),
+            Data::Map(answers),
         )])))
     }
 }
@@ -700,11 +750,26 @@ fn text(
     Ok(text)
 }
 
-/// The error of a read that the user did not allow `client`.
-fn refused(client: &str) -> Error {
+/// The error of a request of a client that the user did not allow.
+fn refused(client: &AutomationClient) -> Error {
     Error::new(
         Code::Failed,
-        format!("“{client}” may not read the text of Lokyr's panes, as its user answered"),
+        format!(
+            "“{}” may not control Lokyr, as its user answered",
+            client.name
+        ),
+    )
+}
+
+/// The error of a script's request while the user has not answered whether
+/// its client may control Lokyr, which the question asks.
+fn asking(client: &AutomationClient) -> Error {
+    Error::new(
+        Code::Unavailable,
+        format!(
+            "Lokyr asks whether “{}” may control it: answer, then run the script again",
+            client.name
+        ),
     )
 }
 

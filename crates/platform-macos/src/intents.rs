@@ -10,10 +10,6 @@ use lokyr_platform_core::automation::{
     Answer, Arg, Command, Edge, Mouse, MouseAction, MouseButton, Request, Target,
 };
 
-/// The app that asks, as the automation's question about a pane's text
-/// names it.
-const CLIENT: &str = "Shortcuts";
-
 /// The kinds of the intents' requests.
 const NEW_WINDOW: i32 = 1;
 const NEW_TAB: i32 = 2;
@@ -184,7 +180,7 @@ pub extern "C" fn lokyr_intent_request(
         }
     };
     let context = Context(context);
-    let posted = crate::app::post_automation(CLIENT, request, move |reply| {
+    let posted = crate::app::post_automation(crate::clients::shortcuts(), request, move |reply| {
         let (status, text) = answer_of(reply);
         give(answer, context.0, status, &text);
     });

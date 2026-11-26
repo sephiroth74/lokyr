@@ -1,6 +1,7 @@
 # I testi dell'automazione, in italiano.
 
-automation-read-message = Consentire a “{ $client }” di leggere il testo dei pannelli di Lokyr?
-automation-read-detail = Uno script o un comando rapido di questa app chiede il testo che un pannello mostra, che può contenere password e altri segreti. Lokyr ricorda la tua risposta.
-automation-read-deny = Non consentire
-automation-read-allow = Consenti
+automation-control-message = Consentire a “{ $client }” di controllare Lokyr?
+automation-control-detail = Può aprire finestre e tab, scrivere nei tuoi terminali, premere tasti, eseguire i comandi di Lokyr e leggere quello che i tuoi terminali mostrano, che può contenere password e altri segreti. Lokyr ricorda la tua risposta.
+automation-control-terminal-detail = Un programma in esecuzione in uno dei terminali di Lokyr chiede di controllare Lokyr: potrebbe scrivere negli altri tuoi terminali, eseguire comandi lì e leggere quello che mostrano. Lokyr lo chiede di nuovo per ogni programma che viene eseguito.
+automation-control-deny = Non consentire
+automation-control-allow = Consenti

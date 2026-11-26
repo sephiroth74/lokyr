@@ -2233,8 +2233,8 @@ pub enum Event {
     Automation {
         /// The request's id.
         id: u64,
-        /// The app that asks.
-        client: String,
+        /// Who asks.
+        client: crate::automation::AutomationClient,
         /// What it asks.
         request: crate::automation::AutomationRequest,
         /// The window in front: the one with the focus, or, while Lokyr is

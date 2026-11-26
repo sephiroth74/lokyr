@@ -8,29 +8,38 @@ use lokyr_platform_core::automation as platform;
 
 use super::*;
 
-/// The app that asks, in the tests.
-const CLIENT: &str = "com.acme.script";
+/// The client that asks, in the tests, which waits for the user's answer
+/// to the question, as a shortcut does.
+fn client() -> platform::Client {
+    platform::Client {
+        id: "app:TEAM:com.acme.script".to_owned(),
+        name: "Acme Script".to_owned(),
+        terminal: false,
+        waits: true,
+    }
+}
 
-/// Hands the app the request `request` of `id`, of [`CLIENT`], and waits
-/// for its answer.
+/// Hands the app the request `request` of `id`, of [`client`], and waits
+/// for its answer, the question of the client's first request allowed.
 fn ask(fake: &mut Fake, app: &mut App, id: u64, request: platform::Request) -> platform::Answer {
     send(fake, app, id, request);
     answered(fake, app, id)
 }
 
-/// Hands the app the request `request` of `id`, of [`CLIENT`].
+/// Hands the app the request `request` of `id`, of [`client`].
 fn send(fake: &mut Fake, app: &mut App, id: u64, request: platform::Request) {
     fake.send_app(
         app,
         AppEvent::Automation {
             id,
-            client: CLIENT.to_owned(),
+            client: client(),
             request,
         },
     );
 }
 
-/// The answer of `id`, once it comes.
+/// The answer of `id`, once it comes: the question of the client's first
+/// request allowed, its second button.
 fn answered(fake: &mut Fake, app: &mut App, id: u64) -> platform::Answer {
     let answer = |fake: &Fake| {
         fake.automation_answers()
@@ -38,7 +47,14 @@ fn answered(fake: &mut Fake, app: &mut App, id: u64) -> platform::Answer {
             .find(|(answered, _)| *answered == id)
             .map(|(_, answer)| answer.clone())
     };
-    run_until(fake, app, |fake, _| answer(fake).is_some());
+    run_until(fake, app, |fake, _| {
+        answer(fake).is_some() || !fake.alerts().is_empty()
+    });
+    if answer(fake).is_none() {
+        let question = fake.alerts()[0].id;
+        fake.answer_alert(app, question, 1);
+        run_until(fake, app, |fake, _| answer(fake).is_some());
+    }
     answer(fake).unwrap()
 }
 
@@ -551,7 +567,7 @@ fn a_focus_of_a_hidden_session_s_pane_switches_to_its_session() {
 }
 
 #[test]
-fn a_pane_s_text_comes_once_the_user_allows_its_app() {
+fn a_client_s_first_request_waits_for_the_user_s_answer_which_holds_after() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {
         pane: None,
@@ -559,17 +575,21 @@ fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     };
     send(&mut fake, &mut app, 5, request());
     run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-    assert!(fake.alerts()[0].alert.message.contains(CLIENT));
+    let message = &fake.alerts()[0].alert.message;
+    assert!(
+        message.contains("Acme Script") && message.contains("control"),
+        "{message}"
+    );
     assert!(fake.automation_answers().is_empty());
     // The second button allows it.
     let question = fake.alerts()[0].id;
     fake.answer_alert(&mut app, question, 1);
     let answer = answered(&mut fake, &mut app, 5);
     assert!(matches!(answer, platform::Answer::Text(_)), "{answer:?}");
-    // The next read asks nothing.
+    // The next request, of any kind, asks nothing.
     assert!(matches!(
-        ask(&mut fake, &mut app, 6, request()),
-        platform::Answer::Text(_)
+        ask(&mut fake, &mut app, 6, platform::Request::Workspace),
+        platform::Answer::Workspace(_)
     ));
     assert!(fake.alerts().is_empty());
 }
@@ -583,7 +603,10 @@ fn a_request_that_waits_past_its_deadline_fails() {
     };
     send(&mut fake, &mut app, 7, request);
     run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(11));
+    // A client that waits for the question waits up to its deadline.
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(60));
+    assert!(fake.automation_answers().is_empty());
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(111));
     assert_eq!(
         answered(&mut fake, &mut app, 7),
         platform::Answer::Error {

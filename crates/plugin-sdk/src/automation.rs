@@ -19,6 +19,33 @@ pub const LONGEST_TEXT: usize = 1 << 20;
 /// request, in milliseconds.
 pub const ANSWER_WITHIN_MS: u64 = 10_000;
 
+/// How long the host waits for the plugin's answer to a client that waits
+/// for the user's answer to the question, as a shortcut does, in
+/// milliseconds: within macOS's two minutes of an Apple event.
+pub const QUESTION_WITHIN_MS: u64 = 110_000;
+
+/// The client of a script's or a shortcut's request, as the host tells who
+/// it is, which the user's answer to the question is kept of.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AutomationClient {
+    /// Who it is, the same for the same client: of an app, its code
+    /// signature's team and identifier; of a command-line program, its
+    /// app's and the program's; of a program in one of Lokyr's own
+    /// terminals, its process; of the shortcuts, `shortcuts`.
+    pub id: String,
+    /// Its name, as the question names it.
+    pub name: String,
+    /// Whether it is a program in one of Lokyr's own terminals, whose
+    /// answer holds while its process runs alone, and is not kept.
+    #[serde(default)]
+    pub terminal: bool,
+    /// Whether it waits for the user's answer to the question, as a
+    /// shortcut does, [`QUESTION_WITHIN_MS`] at most; a script's request
+    /// fails at once while the question waits.
+    #[serde(default)]
+    pub waits: bool,
+}
+
 /// What a script or a shortcut asks of the app.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

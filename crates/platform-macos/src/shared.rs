@@ -161,7 +161,7 @@ impl Shared {
     /// outside the app's calls.
     pub(crate) fn post_automation(
         &self,
-        client: &str,
+        client: lokyr_platform_core::automation::Client,
         request: lokyr_platform_core::automation::Request,
         reply: crate::backend::AutomationReply,
     ) -> bool {
@@ -172,7 +172,7 @@ impl Shared {
         drop(backend);
         self.post(Pending::App(lokyr_platform_core::AppEvent::Automation {
             id,
-            client: client.to_owned(),
+            client,
             request,
         }));
         true

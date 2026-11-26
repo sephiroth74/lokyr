@@ -5575,14 +5575,15 @@ impl<B: Backend> App<B> {
                 self.after_plugins(platform);
             }
             AppEvent::Timer(timer) if self.automations.is_timer(timer) => {
-                self.automations_late(platform, Instant::now());
+                let now = self.automations.fired_at(Instant::now());
+                self.automations_late(platform, now);
             }
             // A script's or a shortcut's request, to the automation's plugin.
             AppEvent::Automation {
                 id,
                 client,
                 request,
-            } => self.take_automation(platform, id, &client, request),
+            } => self.take_automation(platform, id, client, request),
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;
                 if self

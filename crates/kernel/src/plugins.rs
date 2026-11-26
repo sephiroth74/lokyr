@@ -3145,7 +3145,7 @@ impl Plugins {
     pub fn automation(
         &mut self,
         id: u64,
-        client: &str,
+        client: lokyr_plugin_sdk::automation::AutomationClient,
         request: lokyr_plugin_sdk::automation::AutomationRequest,
         front: Option<WindowId>,
     ) -> bool {
@@ -3168,7 +3168,7 @@ impl Plugins {
             Some(entry.state.name.clone()),
             Event::Automation {
                 id,
-                client: client.to_owned(),
+                client,
                 request,
                 front: front.map(|window| host::WindowId(window.get())),
             },

@@ -18,7 +18,7 @@ use objc2::{
     AllocAnyThread, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message,
     define_class, msg_send,
 };
-use objc2_app_kit::{NSApplication, NSRunningApplication};
+use objc2_app_kit::NSApplication;
 use objc2_foundation::{
     NSAppleEventDescriptor, NSAppleEventManager, NSArray, NSNumber, NSObject, NSRunLoop,
     NSScriptClassDescription, NSScriptCommand, NSScriptObjectSpecifier, NSString,
@@ -440,7 +440,7 @@ pub(crate) fn ask(
             _ => *slot.borrow_mut() = Some(answer),
         }
     };
-    if !crate::app::post_automation(&client(), request, reply) {
+    if !crate::app::post_automation(client(), request, reply) {
         fail_with(FAILED, "Lokyr cannot take the request now");
         return Asked::Later;
     }
@@ -510,7 +510,7 @@ fn ask_now(request: Request) -> Option<Answer> {
         let slot = slot.clone();
         move |answer: Answer| *slot.borrow_mut() = Some(answer)
     };
-    if !crate::app::post_automation(&client(), request, reply) {
+    if !crate::app::post_automation(client(), request, reply) {
         fail_with(FAILED, "Lokyr cannot take the request now");
         return None;
     }
@@ -557,9 +557,10 @@ fn fail_with(number: isize, message: &str) {
     }
 }
 
-/// The app that sent the Apple event that runs now, by its name and its
-/// bundle's identifier, or its process's name.
-fn client() -> String {
+/// The client that sent the Apple event that runs now, as the system tells
+/// who it is: its app's code signature, the app that a command-line program
+/// runs in, or a program of the app's own terminals.
+fn client() -> lokyr_platform_core::automation::Client {
     let pid = NSAppleEventManager::sharedAppleEventManager()
         .currentAppleEvent()
         .and_then(|event| {
@@ -569,34 +570,19 @@ fn client() -> String {
                 unsafe { msg_send![&*event, attributeDescriptorForKeyword: SENDER_PID] };
             sender
         })
-        .map(|sender| sender.int32Value());
-    let Some(pid) = pid.filter(|&pid| pid > 0) else {
-        return "an app".to_owned();
-    };
-    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid);
-    let name = app
-        .as_ref()
-        .and_then(|app| app.localizedName())
-        .map(|name| name.to_string());
-    let bundle = app
-        .as_ref()
-        .and_then(|app| app.bundleIdentifier())
-        .map(|id| id.to_string());
-    match (name, bundle) {
-        (Some(name), Some(bundle)) => format!("{name} ({bundle})"),
-        (None, Some(bundle)) => bundle,
-        _ => process_name(pid).unwrap_or_else(|| format!("process {pid}")),
+        .map(|sender| sender.int32Value())
+        .filter(|&pid| pid > 0);
+    match pid {
+        Some(pid) => crate::clients::of_pid(pid),
+        // An event of no sender's process: one client of its own, which no
+        // process takes.
+        None => lokyr_platform_core::automation::Client {
+            id: "unknown".to_owned(),
+            name: "an app".to_owned(),
+            terminal: false,
+            waits: false,
+        },
     }
-}
-
-/// The name of the process `pid`, as `osascript`.
-fn process_name(pid: i32) -> Option<String> {
-    let mut name = [0u8; 256];
-    // SAFETY: the buffer holds its length's bytes, which the call fills
-    // with a name ended by a zero.
-    let length = unsafe { libc::proc_name(pid, name.as_mut_ptr().cast(), 256) };
-    let length = usize::try_from(length).ok().filter(|&length| length > 0)?;
-    Some(String::from_utf8_lossy(&name[..length]).into_owned())
 }
 
 /// The specifier of the window `window`, of the application's.

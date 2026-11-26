@@ -657,8 +657,14 @@ fn a_failed_call_s_automation_answer_waits_again_and_a_forgotten_request_none() 
     plugins.add_builtin(manifest, Box::new(Answerer)).unwrap();
     assert!(plugins.activate(&mut app.context()).is_empty());
     let workspace = crate::plugins::automation::AutomationRequest::Workspace;
-    assert!(plugins.automation(7, "an app", workspace.clone(), None));
-    assert!(plugins.automation(8, "an app", workspace, None));
+    let client = crate::plugins::automation::AutomationClient {
+        id: "app:TEAM:com.acme".to_owned(),
+        name: "Acme".to_owned(),
+        terminal: false,
+        waits: false,
+    };
+    assert!(plugins.automation(7, client.clone(), workspace.clone(), None));
+    assert!(plugins.automation(8, client, workspace, None));
     // A call that answers and fails: its answer goes with its writes, and
     // the request waits again.
     let failed = plugins.run("answerer.fails", Args::new(), &mut app.context());

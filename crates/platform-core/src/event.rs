@@ -143,8 +143,8 @@ pub enum AppEvent {
     Automation {
         /// The request's id.
         id: u64,
-        /// The app that asks.
-        client: String,
+        /// Who asks.
+        client: crate::automation::Client,
         /// What it asks.
         request: crate::automation::Request,
     },
