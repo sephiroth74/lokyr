@@ -524,6 +524,33 @@ fn a_request_of_no_pane_goes_to_the_session_that_shows_never_a_hidden_one() {
 }
 
 #[test]
+fn a_focus_of_a_hidden_session_s_pane_switches_to_its_session() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    let home = app.workspace.active_session();
+    let pane = app
+        .workspace
+        .focused(app.windows[&first].window)
+        .unwrap()
+        .id()
+        .get();
+    // A new session shows, the first window hidden with its session.
+    app.run(&mut fake, NEW_SESSION, Args::new());
+    assert_ne!(app.workspace.active_session(), home);
+    let request = platform::Request::Focus(platform::Target::Pane(pane));
+    assert_eq!(
+        ask(&mut fake, &mut app, 20, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.active_session() == home
+    });
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.window(first).unwrap().hidden
+    });
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

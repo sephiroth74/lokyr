@@ -48,6 +48,9 @@ const READERS: &str = "readers";
 /// The command that brings a window of a number forward.
 const GOTO_WINDOW: &str = "window.goto";
 
+/// The command that shows the quick terminal.
+const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
+
 /// The plugin of the automation.
 #[derive(Debug, Default)]
 pub struct Automation {
@@ -590,8 +593,10 @@ fn place_of(cx: &mut Cx<'_>, pane: PaneId) -> Result<(WindowId, TabId), Error> {
     ))
 }
 
-/// Brings `target` forward: its window, by its number, its tab shown and
-/// its pane given the keyboard.
+/// Brings `target` forward: its tab shown and its pane given the keyboard;
+/// its window's session switched to, of a session that is hidden, as a
+/// window's number is its session's; then its window, by its number; a
+/// quick terminal shown.
 fn focus(cx: &mut Cx<'_>, target: AutomationTarget) -> Result<(), Error> {
     let window = match target {
         AutomationTarget::Window(window) => window,
@@ -607,13 +612,22 @@ fn focus(cx: &mut Cx<'_>, target: AutomationTarget) -> Result<(), Error> {
             window
         }
     };
-    let number = cx
+    let shown = cx
         .windows()?
         .into_iter()
         .find(|shown| shown.id == window)
-        .ok_or_else(|| Error::new(Code::NotFound, format!("there is no window {}", window.0)))?
-        .number;
-    if let Some(number) = number {
+        .ok_or_else(|| Error::new(Code::NotFound, format!("there is no window {}", window.0)))?;
+    if shown.quick {
+        return cx.run_command(SHOW_QUICK_TERMINAL, Args::new());
+    }
+    let hidden = cx
+        .sessions()?
+        .into_iter()
+        .find(|session| !session.active && session.windows.contains(&window));
+    if let Some(session) = hidden {
+        cx.switch_session(session.id)?;
+    }
+    if let Some(number) = shown.number {
         let args = Args::from([("index".to_owned(), Value::Integer(i64::from(number)))]);
         cx.run_command(GOTO_WINDOW, args)?;
     }
