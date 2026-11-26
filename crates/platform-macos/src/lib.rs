@@ -25,6 +25,7 @@ mod fill;
 mod frame;
 mod full_screen;
 mod global_keys;
+mod intents;
 mod keys;
 mod layer;
 mod menu;
@@ -47,4 +48,4 @@ mod updates;
 mod wake;
 mod window;
 
-pub use app::{post_app_event, post_automation, run, run_with};
+pub use app::{post_automation, run, run_with};
