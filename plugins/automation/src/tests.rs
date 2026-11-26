@@ -473,3 +473,30 @@ fn a_request_of_no_pane_takes_the_window_in_front_while_lokyr_is_behind() {
         text: "y".to_owned(),
     }));
 }
+
+#[test]
+fn a_window_that_never_opened_lets_another_s_window_go_of_its_command() {
+    let (mut host, mut plugin) = host();
+    let request = AutomationRequest::NewWindow {
+        folder: None,
+        command: Some("rm -rf build".to_owned()),
+        environment: Default::default(),
+    };
+    ask(&mut host, &mut plugin, 24, request);
+    assert_eq!(answer(&host, 24), None);
+    // Its deadline passes, the host failing it, and no window opened.
+    host.advance(std::time::Duration::from_millis(ANSWER_WITHIN_MS + 1));
+    host.deliver(&mut plugin).unwrap();
+    host.take_done();
+    // A window that another opened takes no script's command.
+    host.post(Event::Workspace(WorkspaceEvent::WindowOpened {
+        window: WindowId(1),
+    }));
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        host.take_done()
+            .iter()
+            .all(|done| !matches!(done, Request::SendText { .. }))
+    );
+    assert_eq!(answer(&host, 24), None);
+}

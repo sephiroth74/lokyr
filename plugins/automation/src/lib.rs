@@ -20,10 +20,11 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::time::Duration;
 
 use lokyr_plugin_sdk::automation::{
-    AutomationAnswer, AutomationCommand, AutomationEdge, AutomationPane, AutomationRequest,
-    AutomationTab, AutomationTarget, AutomationWindow, LONGEST_TEXT,
+    ANSWER_WITHIN_MS, AutomationAnswer, AutomationCommand, AutomationEdge, AutomationPane,
+    AutomationRequest, AutomationTab, AutomationTarget, AutomationWindow, LONGEST_TEXT,
 };
 use lokyr_plugin_sdk::command::{Args, Code, Error, Kind, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -64,13 +65,23 @@ pub struct Automation {
     /// the selection.
     reads: Vec<Read>,
     /// The windows asked to open, in their order, which take the next
-    /// windows that open: each request's id and the command line of its
-    /// shell's start.
-    opening: VecDeque<(u64, Option<String>)>,
+    /// windows that open, each until its deadline.
+    opening: VecDeque<Opening>,
     /// The window in front as the request under way came, which a request
     /// of no window nor pane takes: the one with the focus, or the last
     /// that had it while Lokyr is behind the app that asks.
     front: Option<WindowId>,
+}
+
+/// A window that a request asked to open, which waits for the next window
+/// that opens: the request's id, the command line of its shell's start,
+/// and the timer of its deadline, past which the host failed the request
+/// and the next window that opens is none of its.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Opening {
+    id: u64,
+    command: Option<String>,
+    timer: u64,
 }
 
 /// A read of a pane's text that waits for its app's answer.
@@ -105,16 +116,20 @@ impl Plugin for Automation {
                         Err(error) => Some(AutomationAnswer::of_error(&error)),
                     };
                     if let Some(answer) = answer {
-                        cx.answer_automation(*id, answer)?;
+                        answer_once(cx, *id, answer);
                     }
                 }
                 Event::Workspace(WorkspaceEvent::WindowOpened { window }) => {
-                    if let Some((id, command)) = self.opening.pop_front() {
-                        let answer = opened_window(cx, *window, command.as_deref())
+                    if let Some(opening) = self.opening.pop_front() {
+                        let _ = cx.cancel_timer(opening.timer);
+                        let answer = opened_window(cx, *window, opening.command.as_deref())
                             .unwrap_or_else(|error| AutomationAnswer::of_error(&error));
-                        cx.answer_automation(id, answer)?;
+                        answer_once(cx, opening.id, answer);
                     }
                 }
+                // A window that never opened, as the host failed its request:
+                // the next window that opens is none of its.
+                Event::Timer { id } => self.opening.retain(|opening| opening.timer != *id),
                 Event::Chosen { id, button }
                     if self.question.as_ref().is_some_and(|(asked, _)| asked == id) =>
                 {
@@ -150,7 +165,8 @@ impl Automation {
                 environment,
             } => {
                 cx.open_window_with(folder.as_deref(), &environment)?;
-                self.opening.push_back((id, command));
+                let timer = cx.start_timer(Duration::from_millis(ANSWER_WITHIN_MS), false)?;
+                self.opening.push_back(Opening { id, command, timer });
                 return Ok(None);
             }
             AutomationRequest::NewTab {
@@ -550,6 +566,13 @@ fn switch_session(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
         }
     }
     Ok(())
+}
+
+/// Answers the request `id` of `answer`, once: an answer that the host
+/// refuses, of a request that it failed already as its deadline passed,
+/// fails nothing else of the call, whose other answers and writes stand.
+fn answer_once(cx: &mut Cx<'_>, id: u64, answer: AutomationAnswer) {
+    let _ = cx.answer_automation(id, answer);
 }
 
 /// The window in front: the one with the focus; else `front`, the window
