@@ -2237,6 +2237,11 @@ pub enum Event {
         client: String,
         /// What it asks.
         request: crate::automation::AutomationRequest,
+        /// The window in front: the one with the focus, or, while Lokyr is
+        /// behind the app that asks, the last that had it; none of no
+        /// window.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front: Option<WindowId>,
     },
     /// A job of the packages' service ended, to its plugin alone: whether
     /// Sleip's command succeeded, as of a job cancelled or of a Sleip not

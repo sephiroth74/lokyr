@@ -648,6 +648,7 @@ fn packages(allowed: bool) -> Scenario {
 fn automation(allowed: bool) -> Scenario {
     const ASKED: u64 = 7;
     let request = Event::Automation {
+        front: Default::default(),
         id: ASKED,
         client: "com.apple.ScriptEditor2".to_owned(),
         request: automation::AutomationRequest::Workspace,

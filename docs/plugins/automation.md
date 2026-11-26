@@ -7,7 +7,7 @@ The answers to what scripts and shortcuts of other apps ask of Lokyr: windows, t
 ## What it answers
 
 - **The windows, their tabs and their panes**, each of its title, the folder where its shell works and whether it has the focus. Their ids stay the same from one request to the next, so that a script that opened a tab can send text to its pane later.
-- **A window, a tab or a split**, its pane in a folder of your choice, its shell running a command line as it starts, as if you typed it. A tab opens in the window in front, or in the first window while Lokyr is behind another app; a split opens beside the focused pane.
+- **A window, a tab or a split**, its pane in a folder of your choice, its shell running a command line as it starts, as if you typed it. A tab opens in the window in front, the one you used last while Lokyr is behind another app; a split opens beside the focused pane.
 - **Text sent to a pane**, as if you typed it.
 - **A window, a tab or a pane brought forward, or closed.** Closing a tab or a pane where a program other than a shell runs asks you first, as Close does.
 - **A command run by its name and arguments**, as the [command palette](command-palette.md) runs it, such as `splits.split` of `direction = "right"`. A command that Lokyr lacks is refused, of the reason.

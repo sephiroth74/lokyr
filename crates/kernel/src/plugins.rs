@@ -3128,14 +3128,15 @@ impl Plugins {
 
     /// Hands the automation's request `request` of the app `client` to the
     /// active plugin whose manifest asks for the capability `automation`,
-    /// and that holds it, as [`Event::Automation`] of `id`, for the next
-    /// delivery, to it alone: whether one takes it, as none does while the
-    /// automation's plugin is off.
+    /// and that holds it, as [`Event::Automation`] of `id` and of the
+    /// window in front `front`, for the next delivery, to it alone: whether
+    /// one takes it, as none does while the automation's plugin is off.
     pub fn automation(
         &mut self,
         id: u64,
         client: &str,
         request: lokyr_plugin_sdk::automation::AutomationRequest,
+        front: Option<WindowId>,
     ) -> bool {
         let Some(entry) = self.entries.iter_mut().find(|entry| {
             let state = &entry.state;
@@ -3158,6 +3159,7 @@ impl Plugins {
                 id,
                 client: client.to_owned(),
                 request,
+                front: front.map(|window| host::WindowId(window.get())),
             },
         ));
         true

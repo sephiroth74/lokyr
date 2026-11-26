@@ -348,6 +348,44 @@ fn a_scroll_of_a_program_of_no_mouse_scrolls_the_pane_s_view() {
 }
 
 #[test]
+fn a_request_of_no_pane_goes_to_the_window_used_last_while_lokyr_is_behind() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    // The second window takes the focus, then Lokyr goes behind another
+    // app, of no window of the focus.
+    assert!(fake.send(&mut app, second, WindowEvent::Focused(true)));
+    assert!(fake.send(&mut app, second, WindowEvent::Focused(false)));
+    let pane_of = |app: &App, window: WindowId| {
+        app.workspace
+            .focused(app.windows[&window].window)
+            .unwrap()
+            .id()
+    };
+    let (in_first, in_second) = (pane_of(&app, first), pane_of(&app, second));
+    let row = |app: &App, pane: PaneId| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    let request = platform::Request::SendText {
+        pane: None,
+        text: "behind".to_owned(),
+    };
+    assert_eq!(
+        ask(&mut fake, &mut app, 16, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, in_second).starts_with("behind")
+    });
+    assert!(!row(&app, in_first).contains("behind"));
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

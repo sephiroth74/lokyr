@@ -64,6 +64,10 @@ pub struct Automation {
     /// windows that open: each request's id and the command line of its
     /// shell's start.
     opening: VecDeque<(u64, Option<String>)>,
+    /// The window in front as the request under way came, which a request
+    /// of no window nor pane takes: the one with the focus, or the last
+    /// that had it while Lokyr is behind the app that asks.
+    front: Option<WindowId>,
 }
 
 /// A read of a pane's text that waits for its app's answer.
@@ -73,6 +77,7 @@ struct Read {
     client: String,
     pane: Option<PaneId>,
     selection: bool,
+    front: Option<WindowId>,
 }
 
 impl Plugin for Automation {
@@ -89,7 +94,9 @@ impl Plugin for Automation {
                     id,
                     client,
                     request,
+                    front,
                 } => {
+                    self.front = *front;
                     let answer = match self.take(cx, *id, client, request.clone()) {
                         Ok(answer) => answer,
                         Err(error) => Some(AutomationAnswer::of_error(&error)),
@@ -151,7 +158,7 @@ impl Automation {
             } => {
                 let window = match window {
                     Some(window) => window,
-                    None => front_window(cx)?,
+                    None => front_window(cx, self.front)?,
                 };
                 let (tab, pane) = cx.new_tab_with(window, None, folder.as_deref(), &environment)?;
                 start(cx, pane, command.as_deref())?;
@@ -165,7 +172,7 @@ impl Automation {
                 command,
                 environment,
             } => {
-                let split = pane_or_focused(cx, pane)?;
+                let split = pane_or_focused(cx, pane, self.front)?;
                 let (window, tab) = place_of(cx, split)?;
                 let (direction, side) = match edge {
                     AutomationEdge::Right => (Direction::Horizontal, Side::Second),
@@ -180,22 +187,22 @@ impl Automation {
                 AutomationAnswer::Opened { window, tab, pane }
             }
             AutomationRequest::SendText { pane, text } => {
-                let pane = pane_or_focused(cx, pane)?;
+                let pane = pane_or_focused(cx, pane, self.front)?;
                 cx.send_text(pane, &text)?;
                 AutomationAnswer::Done
             }
             AutomationRequest::SendMouse { pane, input } => {
-                let pane = pane_or_focused(cx, pane)?;
+                let pane = pane_or_focused(cx, pane, self.front)?;
                 cx.send_mouse(pane, input)?;
                 AutomationAnswer::Done
             }
             AutomationRequest::RunLine { pane, line } => {
-                let pane = pane_or_focused(cx, pane)?;
+                let pane = pane_or_focused(cx, pane, self.front)?;
                 cx.run_line(pane, &line)?;
                 AutomationAnswer::Done
             }
             AutomationRequest::SendKey { pane, keys } => {
-                let pane = pane_or_focused(cx, pane)?;
+                let pane = pane_or_focused(cx, pane, self.front)?;
                 cx.press_key(pane, &keys)?;
                 AutomationAnswer::Done
             }
@@ -223,6 +230,7 @@ impl Automation {
                     client: client.to_owned(),
                     pane,
                     selection,
+                    front: self.front,
                 };
                 return self.read(cx, read);
             }
@@ -242,6 +250,7 @@ impl Automation {
                 cx,
                 read.pane,
                 read.selection,
+                read.front,
             )?))),
             Some(false) => Err(refused(&read.client)),
             None => {
@@ -263,7 +272,7 @@ impl Automation {
         )?;
         // On the window in front, or on the first while Lokyr is behind
         // the app that asks.
-        let window = front_window(cx)?;
+        let window = front_window(cx, self.front)?;
         let id = cx.ask_choice(
             Some(window),
             (&message, "automation-read-detail"),
@@ -294,7 +303,7 @@ impl Automation {
         self.reads = later;
         for read in now {
             let answer = if allowed {
-                text(cx, read.pane, read.selection).map(AutomationAnswer::Text)
+                text(cx, read.pane, read.selection, read.front).map(AutomationAnswer::Text)
             } else {
                 Err(refused(&client))
             };
@@ -429,11 +438,15 @@ fn start(cx: &mut Cx<'_>, pane: PaneId, command: Option<&str>) -> Result<(), Err
 /// `pane`, or without one the focused pane, or, while Lokyr is behind the
 /// app that asks, the pane with the keyboard of the shown tab of its first
 /// window.
-fn pane_or_focused(cx: &mut Cx<'_>, pane: Option<PaneId>) -> Result<PaneId, Error> {
+fn pane_or_focused(
+    cx: &mut Cx<'_>,
+    pane: Option<PaneId>,
+    front: Option<WindowId>,
+) -> Result<PaneId, Error> {
     if let Some(pane) = pane.or_else(|| cx.focused_pane()) {
         return Ok(pane);
     }
-    let window = front_window(cx)?;
+    let window = front_window(cx, front)?;
     cx.tabs(window)?
         .into_iter()
         .find(|tab| tab.active)
@@ -538,11 +551,15 @@ fn switch_session(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
 
 /// The window in front, or its first window while Lokyr is behind the app
 /// that asks.
-fn front_window(cx: &mut Cx<'_>) -> Result<WindowId, Error> {
+fn front_window(cx: &mut Cx<'_>, front: Option<WindowId>) -> Result<WindowId, Error> {
     if let Some(window) = cx.focused_window() {
         return Ok(window);
     }
-    cx.windows()?
+    let windows = cx.windows()?;
+    if let Some(front) = front.filter(|front| windows.iter().any(|window| window.id == *front)) {
+        return Ok(front);
+    }
+    windows
         .first()
         .map(|window| window.id)
         .ok_or_else(no_window)
@@ -609,8 +626,13 @@ fn window_of_tab(cx: &mut Cx<'_>, tab: TabId) -> Result<WindowId, Error> {
 /// The text of `pane`, or of the focused pane: its selection, or the rows
 /// of its screen, each without the spaces that end it, within
 /// [`LONGEST_TEXT`].
-fn text(cx: &mut Cx<'_>, pane: Option<PaneId>, selection: bool) -> Result<String, Error> {
-    let pane = pane_or_focused(cx, pane)?;
+fn text(
+    cx: &mut Cx<'_>,
+    pane: Option<PaneId>,
+    selection: bool,
+    front: Option<WindowId>,
+) -> Result<String, Error> {
+    let pane = pane_or_focused(cx, pane, front)?;
     let mut text = if selection {
         cx.selection_text(pane)?.unwrap_or_default()
     } else {

@@ -44,8 +44,11 @@ impl Automations {
 
 impl<B: Backend> App<B> {
     /// Hands the automation's request `request` of `client`, of the
-    /// platform's id `id`, to the plugin of the capability `automation`;
-    /// fails it at once while no such plugin runs, or of a text too long.
+    /// platform's id `id`, to the plugin of the capability `automation`,
+    /// with the window in front: the one with the focus, or the terminals'
+    /// window that had it last, as Lokyr is behind the app that asks, but
+    /// a quick terminal that hid; fails it at once while no such plugin
+    /// runs, or of a text too long.
     pub(super) fn take_automation(
         &mut self,
         platform: &mut dyn Platform,
@@ -58,7 +61,14 @@ impl<B: Backend> App<B> {
             platform.answer_automation(id, answer_of(AutomationAnswer::of_error(&error)));
             return;
         }
-        if !self.plugins.automation(id, client, request) {
+        let front = platform
+            .focused_window()
+            .or(self.front)
+            .filter(|window| self.quick.get(window).is_none_or(|(_, shown)| *shown))
+            .and_then(|window| self.windows.get(&window))
+            .map(|state| state.window)
+            .filter(|&window| self.workspace.settings_window() != Some(window));
+        if !self.plugins.automation(id, client, request, front) {
             platform.answer_automation(
                 id,
                 platform::Answer::Error {

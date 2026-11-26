@@ -29,6 +29,7 @@ fn host() -> (FakeHost, Automation) {
 /// Hands the plugin the request `request` of `id`, of [`CLIENT`].
 fn ask(host: &mut FakeHost, plugin: &mut Automation, id: u64, request: AutomationRequest) {
     host.post(Event::Automation {
+        front: Default::default(),
         id,
         client: CLIENT.to_owned(),
         request,
@@ -429,5 +430,46 @@ fn a_mouse_event_goes_to_the_focused_pane() {
     assert!(host.take_done().contains(&Request::SendMouse {
         pane: PaneId(1),
         input,
+    }));
+}
+
+#[test]
+fn a_request_of_no_pane_takes_the_window_in_front_while_lokyr_is_behind() {
+    let (mut host, mut plugin) = host();
+    // A second window, of pane 5, and no window of the focus, as while
+    // Lokyr is behind the app that asks.
+    let second = host.pane(PaneId(5));
+    second.window = WindowId(2);
+    second.tab = TabId(2);
+    host.focus(None);
+    host.take_done();
+    host.post(Event::Automation {
+        id: 22,
+        client: CLIENT.to_owned(),
+        request: AutomationRequest::SendText {
+            pane: None,
+            text: "x".to_owned(),
+        },
+        front: Some(WindowId(2)),
+    });
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(answer(&host, 22), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::SendText {
+        pane: PaneId(5),
+        text: "x".to_owned(),
+    }));
+    // Of no window in front, the first window's.
+    ask(
+        &mut host,
+        &mut plugin,
+        23,
+        AutomationRequest::SendText {
+            pane: None,
+            text: "y".to_owned(),
+        },
+    );
+    assert!(host.take_done().contains(&Request::SendText {
+        pane: PaneId(1),
+        text: "y".to_owned(),
     }));
 }

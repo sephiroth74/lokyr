@@ -228,7 +228,7 @@ export type Event =
     | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "popup-closed", pane: PaneId, status: number? }
     | { kind: "package", id: number, line: Data }
-    | { kind: "automation", id: number, client: string, request: AutomationRequest }
+    | { kind: "automation", id: number, client: string, request: AutomationRequest, front: WindowId? }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
     | { kind: "settings-changed" }

@@ -78,7 +78,7 @@ tell application "Lokyr"
 end tell
 ```
 
-`perform action` takes the names and arguments of [the commands' reference](commands.md). It runs the command as if you chose it in Lokyr, on the window in front, so bring Lokyr forward first with `activate`:
+`perform action` takes the names and arguments of [the commands' reference](commands.md). It runs the command as if you chose it in Lokyr, on the window with the focus, so bring Lokyr forward first with `activate`:
 
 ```applescript
 tell application "Lokyr"
@@ -118,7 +118,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Get Terminal Text | Terminal | Returns the text that a terminal shows |
 | Get Selected Text | Terminal | Returns the text of a terminal's selection |
 
-- **A Terminal parameter** lists Lokyr's terminals, each with its title and its folder. Leave it empty for the focused terminal, where the action allows it, or pass the terminals that Find Terminal returns.
+- **A Terminal parameter** lists Lokyr's terminals, each with its title and its folder. Leave it empty for the focused terminal, where the action allows it, or pass the terminals that Find Terminal returns. The focused terminal is the one with the keyboard in the window in front: the window that you used last, while you work in the Shortcuts app or another app.
 - **Environment Variables** is a list of texts, each `NAME=value`, such as `AWS_PROFILE=staging`, which the new shell starts with.
 - **Column and Row** count a terminal's cells from 1, at the top left of its screen.
 - **Arguments** go one a line, as `name=value`, such as `index=2` for `tabs.goto`. Lokyr reads a number or `true` and `false` as the kind that the command takes. In Run Palette Command, they add to the entry's own, or replace them.
@@ -154,12 +154,13 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 
 - **Lokyr's bundled [`automation`](plugins/automation.md) plugin answers** what AppleScript and the Shortcuts app ask. Lokyr hands it each request and waits for its answer.
 - **A new window, tab or split answers once it opens**, with its object, so that the script's next command can use it.
+- **The window in front** is the one with the focus, or, while Lokyr is behind the app that runs the script or the shortcut, the window that you used last. A command of no terminal, a new tab and a question go to it.
 - **A command line** that you give a new terminal is typed into its shell as it starts, followed by Return.
 - **A command line that you run** in a terminal, with `execute` or Run Command Line, is pasted at the shell's prompt and followed by Return, while the shell waits at an empty prompt, as [shell integration](shell-integration.md) reports it. Lokyr refuses it otherwise, such as while a program runs or when the command line holds text, so that it never types into another program.
 - **A key** goes as you press it in Lokyr. The terminal takes the focus first. A key of one of Lokyr's shortcuts runs its command, as ⌘A selects all and ⌘T opens a tab. Any other key goes to the program as the keyboard sends it, following the modes that the program asked for: ↑ moves the cursor in an editor that takes the cursor keys in their application mode, and a program of the keyboard protocol gets the key as that protocol encodes it. A key is a character, or a name: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, or `f1` to `f35`. ⌥ acts as Meta, so `alt+f` sends Escape and `f`. A ⌘ key of no shortcut reaches a program that uses the keyboard protocol, and no other.
 - **A mouse event** goes to the program as the mouse sends it, in the reports and the encoding that the program asked for. A program that doesn't use the mouse gets nothing, but the wheel: its steps scroll the terminal's view a row each, or, on a full-screen program's screen that asks for it, send the arrow keys. A cell off the screen is refused.
 - **Environment variables** that you give a new terminal come over Lokyr's own, such as `TERM`. [Shell integration](shell-integration.md) keeps the variables that it needs, and takes your `ZDOTDIR` as zsh's own folder. A terminal takes 64 variables at most.
-- **The commands that `perform action` and Run Command run** act as if you chose them, on Lokyr's window in front: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window is in front, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
+- **The commands that `perform action` and Run Command run** act as if you chose them, on the window with the focus: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window has the focus, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
 - **A request waits 10 seconds at most** for Lokyr's answer, then fails.
 
 ## Limits
@@ -204,7 +205,7 @@ rm ~/Library/Application\ Support/lokyr/state/plugins/automation.json
 
 ### `perform action` does nothing
 
-**Why**: Lokyr was behind another app, so it had no window in front for the command to act on. Or the command failed as it ran.
+**Why**: Lokyr was behind another app, so no window had the focus for the command to act on. Or the command failed as it ran.
 
 **Fix**: add `activate` before `perform action`. When it still does nothing, read the card in Lokyr's window, or the end of its log:
 
