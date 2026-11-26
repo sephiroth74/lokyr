@@ -450,14 +450,16 @@ pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
-/// Runs `command`, which `what` describes, and fails if it fails.
 /// Builds the app of `command`, a `cargo build` of `lokyr-app`, its
 /// diagnostics shown as they come: the output folder of its build script,
 /// which Cargo's messages tell.
 fn build_app(command: &mut Command) -> Result<Option<PathBuf>> {
+    // Cargo's progress, warnings and errors, and the build scripts', go to
+    // the terminal, as `output` would take them too.
     let output = command
         .arg("--message-format=json-render-diagnostics")
         .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
         .output()
         .context("building the app")?;
     if !output.status.success() {
@@ -485,6 +487,7 @@ fn build_script_output(messages: &str) -> Option<PathBuf> {
         .next()
 }
 
+/// Runs `command`, which `what` describes, and fails if it fails.
 fn run_command(command: &mut Command, what: &str) -> Result<()> {
     let status = command.status().with_context(|| what.to_owned())?;
     if !status.success() {
