@@ -54,15 +54,20 @@ const GOTO_WINDOW: &str = "window.goto";
 /// The command that shows the quick terminal.
 const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
 
+/// The most answers of programs in Lokyr's own terminals kept, past which
+/// the oldest is forgotten, and its program asked again.
+const MOST_TERMINAL_ANSWERS: usize = 256;
+
 /// The plugin of the automation.
 #[derive(Debug, Default)]
 pub struct Automation {
     /// The clients' answers to the question, by their ids, of its state,
     /// once read.
     answers: Option<BTreeMap<String, bool>>,
-    /// The answers of programs in Lokyr's own terminals, by their
-    /// processes' ids, which no state keeps.
-    in_terminals: BTreeMap<String, bool>,
+    /// The answers of programs in Lokyr's own terminals, by their ids (a
+    /// pane's shell and the programs down to the sender), oldest first,
+    /// which no state keeps.
+    in_terminals: VecDeque<(String, bool)>,
     /// The question that waits for its answer, of its client.
     question: Option<(u64, AutomationClient)>,
     /// The clients that wait to be asked, after the question that shows.
@@ -308,7 +313,11 @@ impl Automation {
     /// state.
     fn answer_of(&mut self, cx: &mut Cx<'_>, client: &AutomationClient) -> Option<bool> {
         if client.terminal {
-            return self.in_terminals.get(&client.id).copied();
+            return self
+                .in_terminals
+                .iter()
+                .find(|(id, _)| *id == client.id)
+                .map(|&(_, allowed)| allowed);
         }
         self.answers(cx).get(&client.id).copied()
     }
@@ -353,9 +362,9 @@ impl Automation {
     }
 
     /// The user's answer to the question: kept for its client unless the
-    /// question closed of none, as a program's in Lokyr's terminals for its
-    /// process alone; its client's requests done or refused, each answered
-    /// once; then the next client asked.
+    /// question closed of none, a program's in Lokyr's terminals in memory
+    /// alone, while its pane's shell runs; its client's requests done or
+    /// refused, each answered once; then the next client asked.
     fn chosen(&mut self, cx: &mut Cx<'_>, button: Option<u32>) {
         let Some((_, client)) = self.question.take() else {
             return;
@@ -363,7 +372,11 @@ impl Automation {
         let allowed = button == Some(ALLOW);
         if matches!(button, Some(DENY | ALLOW)) {
             if client.terminal {
-                self.in_terminals.insert(client.id.clone(), allowed);
+                self.in_terminals.retain(|(id, _)| *id != client.id);
+                self.in_terminals.push_back((client.id.clone(), allowed));
+                while self.in_terminals.len() > MOST_TERMINAL_ANSWERS {
+                    self.in_terminals.pop_front();
+                }
             } else {
                 self.answers(cx).insert(client.id.clone(), allowed);
                 // An answer that no state keeps, as of a run of no state's

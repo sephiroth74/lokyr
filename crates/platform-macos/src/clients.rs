@@ -2,7 +2,8 @@
 //! than as the sender names itself: an app, by its code signature's team
 //! and identifier; a command-line program, as `osascript`, by the app that
 //! it runs in and its own path; a program in one of the app's own
-//! terminals, by its process, whose answer holds while it runs alone.
+//! terminals, by its pane's first process and the programs from it down to
+//! the sender, whose answer holds in that pane while its shell runs.
 
 use std::ffi::{CStr, c_char, c_void};
 
@@ -19,10 +20,12 @@ pub(crate) fn of_pid(pid: i32) -> Client {
     let chain = ancestors(pid);
     let program = program_name(pid).unwrap_or_else(|| "a program".to_owned());
     // A program of one of the app's own terminals, whose shell the app
-    // started: macOS asks nothing of it, and one program is not the next.
-    if pid != own && chain.contains(&own) {
+    // started: macOS asks nothing of it.
+    if pid != own
+        && let Some(index) = chain.iter().position(|&process| process == own)
+    {
         return Client {
-            id: format!("terminal:{pid}:{}", start_time(pid)),
+            id: in_terminal(&chain[..index]),
             name: format!("{program}, in a Lokyr terminal"),
             terminal: true,
             waits: false,
@@ -66,6 +69,28 @@ pub(crate) fn of_pid(pid: i32) -> Client {
     }
 }
 
+/// The id of a program in one of the app's own terminals, of `chain`, the
+/// sender then its parents up to the app's child that the pane started:
+/// that child, of its pid and start time, which tell the pane while its
+/// shell runs, then the programs' paths from it down to the sender, of no
+/// pid, so that the same program run again from the same place, as
+/// `osascript` at the prompt, is the same client, and another pane, or a
+/// program that another program runs, is not.
+fn in_terminal(chain: &[i32]) -> String {
+    let Some((&first, below)) = chain.split_last() else {
+        return "terminal".to_owned();
+    };
+    let mut id = format!("terminal:{first}:{}", start_time(first));
+    for &process in below.iter().rev() {
+        id.push('>');
+        match program_path(process) {
+            Some(path) => id.push_str(&path),
+            None => id.push_str(&format!("{process}:{}", start_time(process))),
+        }
+    }
+    id
+}
+
 /// The client of the App Intents, which the system runs in the app's
 /// process for the user's shortcuts, Siri and Spotlight: one of its own,
 /// which waits for the user's answer, as an intent awaits its result.
@@ -83,10 +108,7 @@ fn ancestors(pid: i32) -> Vec<i32> {
     let mut chain = vec![pid];
     let mut current = pid;
     while chain.len() < MOST_PARENTS {
-        let Some(parent) = bsd_info(current).map(|info| info.pbi_ppid) else {
-            break;
-        };
-        let Ok(parent) = i32::try_from(parent) else {
+        let Some(parent) = parent_of(current) else {
             break;
         };
         if parent <= 1 || chain.contains(&parent) {
@@ -98,26 +120,65 @@ fn ancestors(pid: i32) -> Vec<i32> {
     chain
 }
 
-/// The process `pid`'s BSD information, if it runs.
-fn bsd_info(pid: i32) -> Option<libc::proc_bsdinfo> {
-    // SAFETY: an all-zero `proc_bsdinfo` is valid, of plain integers.
-    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
-    // SAFETY: the buffer is a `proc_bsdinfo` of `size` bytes, which the
-    // call fills for `PROC_PIDTBSDINFO`.
-    let read =
-        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size) };
-    (read == size).then_some(info)
+/// The parent of the process `pid`, if it runs: of its short BSD
+/// information, which the system gives of another user's process too, as
+/// the root-owned `login` that a terminal's shell runs under, whose whole
+/// BSD information it refuses.
+fn parent_of(pid: i32) -> Option<i32> {
+    // SAFETY: an all-zero `proc_bsdshortinfo` is valid, of plain integers
+    // and characters.
+    let mut info: libc::proc_bsdshortinfo = unsafe { std::mem::zeroed() };
+    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdshortinfo>()).ok()?;
+    // SAFETY: the buffer is a `proc_bsdshortinfo` of `size` bytes, which
+    // the call fills for `PROC_PIDT_SHORTBSDINFO`.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            0,
+            (&raw mut info).cast(),
+            size,
+        )
+    };
+    (read == size)
+        .then_some(info.pbsi_ppid)
+        .and_then(|parent| i32::try_from(parent).ok())
 }
 
+/// The bytes of a `struct kinfo_proc` that the system gives of a process,
+/// 648 of a 64-bit process, the room larger.
+const KINFO_PROC_ROOM: usize = 1024;
+
 /// When the process `pid` started, in microseconds of the epoch, which
-/// tells it from a later process of its id; 0 of one that is gone.
+/// tells it from a later process of its id; 0 of one that is gone. Read of
+/// the kernel's `kinfo_proc`, whose first field is the start's `timeval`
+/// (`p_starttime`), which the system gives of another user's process too.
 fn start_time(pid: i32) -> u64 {
-    bsd_info(pid).map_or(0, |info| {
-        info.pbi_start_tvsec
-            .saturating_mul(1_000_000)
-            .saturating_add(info.pbi_start_tvusec)
-    })
+    let mut name = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    let mut info = [0u8; KINFO_PROC_ROOM];
+    let mut size = info.len();
+    // SAFETY: `name` holds the four integers of the query, and `info` the
+    // `size` bytes that the call fills, telling how many it wrote.
+    let read = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            4,
+            info.as_mut_ptr().cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    // A `timeval`: its seconds, an `i64`, then its microseconds, an `i32`.
+    if read != 0 || size < 12 {
+        return 0;
+    }
+    let seconds = i64::from_ne_bytes(info[..8].try_into().unwrap_or_default());
+    let micros = i32::from_ne_bytes(info[8..12].try_into().unwrap_or_default());
+    match (u64::try_from(seconds), u64::try_from(micros)) {
+        (Ok(seconds), Ok(micros)) => seconds.saturating_mul(1_000_000).saturating_add(micros),
+        _ => 0,
+    }
 }
 
 /// The name of the process `pid`'s executable, as `osascript`.
@@ -360,7 +421,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_child_of_the_app_is_a_program_of_its_terminals_for_its_process_alone() {
+    fn a_child_of_the_app_is_a_program_of_its_terminals() {
         let mut child = std::process::Command::new("/bin/sleep")
             .arg("5")
             .spawn()
@@ -370,12 +431,69 @@ mod tests {
         let _ = child.kill();
         let _ = child.wait();
         assert!(client.terminal, "{client:?}");
+        // The app's own child is the pane's first process.
         assert!(
             client.id.starts_with(&format!("terminal:{pid}:")),
             "{client:?}"
         );
         assert_eq!(client.name, "sleep, in a Lokyr terminal");
         assert!(!client.waits);
+    }
+
+    #[test]
+    fn a_program_run_again_from_its_pane_s_shell_is_the_same_client() {
+        // The pane's shell, the app's child, which runs a program twice.
+        let mut shell = std::process::Command::new("/bin/sh")
+            .args(["-c", "/bin/sleep 5 & /bin/sleep 5 & wait"])
+            .spawn()
+            .unwrap();
+        let shell_pid = i32::try_from(shell.id()).unwrap();
+        let mut sleeps = Vec::new();
+        for _ in 0..200 {
+            sleeps = children_of(shell_pid);
+            if sleeps.len() == 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let clients: Vec<Client> = sleeps.iter().map(|&pid| of_pid(pid)).collect();
+        let shell_client = of_pid(shell_pid);
+        let _ = shell.kill();
+        let _ = shell.wait();
+        assert_eq!(clients.len(), 2, "{sleeps:?}");
+        assert_eq!(clients[0].id, clients[1].id);
+        assert!(
+            clients[0].id.starts_with(&format!("terminal:{shell_pid}:")),
+            "{clients:?}"
+        );
+        assert!(clients[0].id.ends_with(">/bin/sleep"), "{clients:?}");
+        // The shell itself is another client of its pane.
+        assert_ne!(shell_client.id, clients[0].id);
+    }
+
+    /// The processes whose parent is `parent`.
+    fn children_of(parent: i32) -> Vec<i32> {
+        let mut pids = vec![0i32; 4096];
+        let size = i32::try_from(pids.len() * std::mem::size_of::<i32>()).unwrap();
+        // SAFETY: the buffer holds `size` bytes of pids, which the call
+        // fills with the processes that it lists.
+        let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), size) };
+        let count = usize::try_from(listed).unwrap_or(0).min(pids.len());
+        pids[..count]
+            .iter()
+            .copied()
+            .filter(|&pid| pid > 0 && parent_of(pid) == Some(parent))
+            .collect()
+    }
+
+    #[test]
+    fn another_user_s_process_tells_its_parent_and_its_start() {
+        // launchd, root's, as the `login` that a terminal's shell runs
+        // under, whose whole BSD information the system refuses.
+        assert_eq!(parent_of(1), Some(0));
+        assert!(start_time(1) > 0);
+        let own = i32::try_from(std::process::id()).unwrap();
+        assert!(start_time(own) > start_time(1));
     }
 
     #[test]
