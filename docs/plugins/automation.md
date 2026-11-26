@@ -2,7 +2,7 @@
 
 <sub>`lokyr/automation` · bundled · [source](../../plugins/automation) · not released yet</sub>
 
-The answers to what scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent to a pane, a command run, and the windows, tabs and panes listed, or a pane's text read once you allow it.
+The answers to what scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent to a pane, a command run, and the windows, tabs and panes listed, or a pane's text read once you allow it. [Automation](../automation.md) shows the scripts and the Shortcuts actions that use it.
 
 ## What it answers
 

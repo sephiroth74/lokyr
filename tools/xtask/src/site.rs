@@ -89,7 +89,7 @@ const GENERATED: [(&str, &str, &str); 2] = [
 /// preview, where their heading alone says too little: the words that people
 /// search, of `TITLE_MOST` characters at most with the site's name. Their
 /// heading, the sidebar and the breadcrumbs keep the document's own.
-const TITLES: [(&str, &str); 15] = [
+const TITLES: [(&str, &str); 16] = [
     (
         "CHANGELOG.md",
         "Changelog: every change, release by release",
@@ -101,6 +101,10 @@ const TITLES: [(&str, &str); 15] = [
     (
         "docs/README.md",
         "Documentation of Lokyr, a terminal emulator for macOS",
+    ),
+    (
+        "docs/automation.md",
+        "Scripting Lokyr with AppleScript and Shortcuts",
     ),
     (
         "docs/blocks.md",
