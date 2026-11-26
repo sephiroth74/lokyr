@@ -72,6 +72,8 @@ pub enum Request {
         /// The session's name.
         name: String,
     },
+    /// The app's commands, each of its name and title.
+    Commands,
 }
 
 /// A command's argument, as a script gives it.
@@ -127,6 +129,8 @@ pub enum Answer {
     Workspace(Vec<Window>),
     /// A text.
     Text(String),
+    /// The commands, in the app's order.
+    Commands(Vec<Command>),
     /// Refused or failed: the code's number, whose hundreds tell its
     /// category, and what went wrong.
     Error {
@@ -161,6 +165,15 @@ pub struct Tab {
     pub active: bool,
     /// Its panes.
     pub panes: Vec<Pane>,
+}
+
+/// A command, as an answer tells it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Command {
+    /// Its name, as `tabs.new`.
+    pub name: String,
+    /// Its title, as the menus show it.
+    pub title: String,
 }
 
 /// A pane, as an answer tells it.

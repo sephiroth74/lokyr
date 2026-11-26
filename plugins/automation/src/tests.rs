@@ -251,3 +251,69 @@ fn a_session_s_switch_makes_the_session_of_a_name_that_is_not_there() {
         host.automation_answers()
     );
 }
+
+/// A host of the command `tabs.goto` of an integer's `index` in its
+/// registry, beside the plugin's, and the plugin, activated.
+fn host_of_goto() -> (FakeHost, Automation) {
+    use lokyr_plugin_sdk::command::{Category, Param};
+    use lokyr_plugin_sdk::host::CommandInfo;
+    let mut host = FakeHost::new(NAME);
+    host.set_registry(vec![CommandInfo {
+        name: "tabs.goto".to_owned(),
+        title: "Select Tab".to_owned(),
+        category: Category::Tabs,
+        params: vec![Param {
+            name: "index".to_owned(),
+            kind: Kind::Integer,
+            default: None,
+        }],
+        plugin: Some("lokyr/tabs".to_owned()),
+        keys: None,
+        when: None,
+        enabled: Some(true),
+    }]);
+    host.focus(Some(PaneId(1)));
+    let mut plugin = Automation::default();
+    host.activate(&mut plugin).unwrap();
+    host.take_done();
+    (host, plugin)
+}
+
+#[test]
+fn the_commands_are_told_of_their_names_and_titles() {
+    let (mut host, mut plugin) = host_of_goto();
+    ask(&mut host, &mut plugin, 14, AutomationRequest::Commands);
+    let Some(AutomationAnswer::Commands(commands)) = answer(&host, 14) else {
+        panic!("{:?}", host.automation_answers());
+    };
+    assert!(commands.contains(&AutomationCommand {
+        name: "tabs.goto".to_owned(),
+        title: "Select Tab".to_owned(),
+    }));
+}
+
+#[test]
+fn a_run_s_text_argument_takes_its_parameter_s_kind() {
+    let (mut host, mut plugin) = host_of_goto();
+    let request = AutomationRequest::Run {
+        command: "tabs.goto".to_owned(),
+        args: Args::from([("index".to_owned(), Value::String(" 2 ".to_owned()))]),
+    };
+    ask(&mut host, &mut plugin, 15, request);
+    assert_eq!(answer(&host, 15), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::RunCommand {
+        name: "tabs.goto".to_owned(),
+        args: Args::from([("index".to_owned(), Value::Integer(2))]),
+    }));
+    // A text that reads as no number stays a text, which the run refuses.
+    let request = AutomationRequest::Run {
+        command: "tabs.goto".to_owned(),
+        args: Args::from([("index".to_owned(), Value::String("two".to_owned()))]),
+    };
+    ask(&mut host, &mut plugin, 16, request);
+    assert!(
+        matches!(answer(&host, 16), Some(AutomationAnswer::Error { .. })),
+        "{:?}",
+        host.automation_answers()
+    );
+}

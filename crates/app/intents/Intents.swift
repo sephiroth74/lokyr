@@ -25,7 +25,8 @@ private func lokyrIntentRequest(
 
 /// The kinds of the requests, as the app's function takes them.
 private enum Kind: Int32 {
-    case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession
+    case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession, close, focus,
+        commands
 }
 
 /// An error that the app answered, of its message.
@@ -70,14 +71,33 @@ private func ask(
     }
 }
 
-/// A terminal of Lokyr's, a pane, by the app's id.
+/// A terminal of Lokyr's, a pane, by the app's id, of the properties that
+/// Find Terminal filters on and Get Details of Terminal gives.
 struct TerminalEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Terminal"
     static let defaultQuery = TerminalQuery()
 
     let id: String
-    let title: String
-    let folder: String
+
+    @Property(title: "Title")
+    var title: String
+
+    @Property(title: "Folder")
+    var folder: String
+
+    @Property(title: "Tab ID")
+    var tab: Int
+
+    @Property(title: "Window ID")
+    var window: Int
+
+    init(id: String, title: String, folder: String, tab: Int, window: Int) {
+        self.id = id
+        self.title = title
+        self.folder = folder
+        self.tab = tab
+        self.window = window
+    }
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(title)", subtitle: "\(folder)")
@@ -87,8 +107,9 @@ struct TerminalEntity: AppEntity {
     var pane: UInt64 { UInt64(id) ?? 0 }
 }
 
-/// Lokyr's terminals, as the app lists them.
-struct TerminalQuery: EntityQuery {
+/// Lokyr's terminals, as the app lists them, every one of them, so that
+/// Shortcuts finds them by their properties.
+struct TerminalQuery: EnumerableEntityQuery {
     @MainActor
     func entities(for identifiers: [String]) async throws -> [TerminalEntity] {
         try await terminals().filter { identifiers.contains($0.id) }
@@ -98,17 +119,70 @@ struct TerminalQuery: EntityQuery {
     func suggestedEntities() async throws -> [TerminalEntity] {
         try await terminals()
     }
+
+    @MainActor
+    func allEntities() async throws -> [TerminalEntity] {
+        try await terminals()
+    }
 }
 
-/// Every terminal, of the app's answer: a line each of its id, its title and
-/// its folder, apart by tabs.
+/// Every terminal, of the app's answer: a line each of its id, its title,
+/// its folder, its tab's id and its window's, apart by tabs.
 @MainActor
 private func terminals() async throws -> [TerminalEntity] {
     let answer = try await ask(.workspace)
     return answer.split(separator: "\n").compactMap { line in
         let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        guard fields.count == 3 else { return nil }
-        return TerminalEntity(id: fields[0], title: fields[1], folder: fields[2])
+        guard fields.count == 5 else { return nil }
+        return TerminalEntity(
+            id: fields[0], title: fields[1], folder: fields[2],
+            tab: Int(fields[3]) ?? 0, window: Int(fields[4]) ?? 0)
+    }
+}
+
+/// A command of Lokyr's, by its name, of its title.
+struct CommandEntity: AppEntity {
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Lokyr Command"
+    static let defaultQuery = CommandQuery()
+
+    let id: String
+    let title: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(title)", subtitle: "\(id)")
+    }
+}
+
+/// Lokyr's commands, as the app lists them, found by their titles and
+/// their names as you type.
+struct CommandQuery: EntityStringQuery {
+    @MainActor
+    func entities(for identifiers: [String]) async throws -> [CommandEntity] {
+        try await commands().filter { identifiers.contains($0.id) }
+    }
+
+    @MainActor
+    func entities(matching string: String) async throws -> [CommandEntity] {
+        try await commands().filter {
+            $0.title.localizedCaseInsensitiveContains(string) || $0.id.localizedCaseInsensitiveContains(string)
+        }
+    }
+
+    @MainActor
+    func suggestedEntities() async throws -> [CommandEntity] {
+        try await commands()
+    }
+}
+
+/// Every command, of the app's answer: a line each of its name and its
+/// title, apart by a tab.
+@MainActor
+private func commands() async throws -> [CommandEntity] {
+    let answer = try await ask(.commands)
+    return answer.split(separator: "\n").compactMap { line in
+        let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        guard fields.count == 2 else { return nil }
+        return CommandEntity(id: fields[0], title: fields[1])
     }
 }
 
@@ -201,14 +275,77 @@ struct SendTextIntent: AppIntent {
 /// Runs one of Lokyr's commands by its name.
 struct RunCommandIntent: AppIntent {
     static let title: LocalizedStringResource = "Run Command"
-    static let description = IntentDescription("Runs one of Lokyr's commands by its name, as the command palette runs it, such as tabs.next.")
+    static let description = IntentDescription("Runs one of Lokyr's commands by its name, as the command palette runs it, such as tabs.next, with its arguments, a line each such as index=2.")
     static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Command") var command: String
+    @Parameter(title: "Arguments", inputOptions: String.IntentInputOptions(capitalizationType: .none, multiline: true, autocorrect: false))
+    var arguments: String?
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        _ = try await ask(.run, text: command)
+        _ = try await ask(.run, text: command, more: arguments)
+        return .result()
+    }
+}
+
+/// Runs one of Lokyr's commands, chosen from the list of the command
+/// palette's.
+struct RunPaletteCommandIntent: AppIntent {
+    static let title: LocalizedStringResource = "Run Palette Command"
+    static let description = IntentDescription("Runs one of Lokyr's commands, chosen by its title as the command palette lists it, with its arguments, a line each such as index=2.")
+    static let openAppWhenRun: Bool = true
+
+    @Parameter(title: "Command") var command: CommandEntity
+    @Parameter(title: "Arguments", inputOptions: String.IntentInputOptions(capitalizationType: .none, multiline: true, autocorrect: false))
+    var arguments: String?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.run, text: command.id, more: arguments)
+        return .result()
+    }
+}
+
+/// Closes a terminal.
+struct CloseTerminalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Close Terminal"
+    static let description = IntentDescription("Closes a terminal of Lokyr's. Lokyr asks first when a program other than a shell runs in it.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Terminal") var terminal: TerminalEntity
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.close, first: terminal.pane)
+        return .result()
+    }
+}
+
+/// Brings a terminal forward.
+struct FocusTerminalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Focus Terminal"
+    static let description = IntentDescription("Brings a terminal of Lokyr's forward: its window, its tab and its pane.")
+    static let openAppWhenRun: Bool = true
+
+    @Parameter(title: "Terminal") var terminal: TerminalEntity
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.focus, first: terminal.pane)
+        return .result()
+    }
+}
+
+/// Shows the quick terminal.
+struct OpenQuickTerminalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Open Quick Terminal"
+    static let description = IntentDescription("Shows Lokyr's quick terminal, which slides in over every app, opening it first.")
+    static let openAppWhenRun: Bool = false
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.run, text: "window.show-quick-terminal")
         return .result()
     }
 }

@@ -100,6 +100,8 @@ pub enum AutomationRequest {
         /// The session's name, not empty.
         name: String,
     },
+    /// The commands of the registry, each of its name and title.
+    Commands,
 }
 
 impl AutomationRequest {
@@ -119,7 +121,11 @@ impl AutomationRequest {
             Self::SendText { text, .. } => vec![text.as_str()],
             Self::Run { command, .. } => vec![command.as_str()],
             Self::SwitchSession { name } => vec![name.as_str()],
-            Self::Workspace | Self::Focus(_) | Self::Close(_) | Self::PaneText { .. } => Vec::new(),
+            Self::Workspace
+            | Self::Focus(_)
+            | Self::Close(_)
+            | Self::PaneText { .. }
+            | Self::Commands => Vec::new(),
         };
         if texts.iter().any(|text| text.len() > LONGEST_TEXT) {
             return Err(Error::new(
@@ -176,6 +182,8 @@ pub enum AutomationAnswer {
     Workspace(Vec<AutomationWindow>),
     /// A text.
     Text(String),
+    /// The commands, in the registry's order.
+    Commands(Vec<AutomationCommand>),
     /// Refused or failed, of the registry's code and its message.
     Error {
         /// The code's number.
@@ -219,6 +227,15 @@ pub struct AutomationTab {
     pub active: bool,
     /// Its panes, in their layout's order.
     pub panes: Vec<AutomationPane>,
+}
+
+/// A command of the registry, as the automation tells it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutomationCommand {
+    /// Its name, as `tabs.new`.
+    pub name: String,
+    /// Its title, as the menus show it.
+    pub title: String,
 }
 
 /// A pane, as the automation tells it.

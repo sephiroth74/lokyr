@@ -1689,6 +1689,17 @@
   },
   {
     "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.show-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Show Quick Terminal",
+    "when": null
+  },
+  {
+    "capabilities": [
       "workspace-write"
     ],
     "category": "windows",

@@ -67,19 +67,22 @@ fn quick(plugin: &QuickTerminal) -> WindowId {
 #[test]
 fn the_command_registers_with_its_title_and_the_global_key_s_capability() {
     let (host, _) = host(&[]);
-    let [command] = host.commands() else {
-        panic!("one command: {:?}", host.commands());
+    let [toggle, show] = host.commands() else {
+        panic!("two commands: {:?}", host.commands());
     };
-    assert_eq!(
-        (command.name.as_str(), command.category),
-        (TOGGLE, Category::Windows)
-    );
-    assert_eq!(command.capabilities, [Capability::GlobalHotkey]);
+    for (command, name) in [(toggle, TOGGLE), (show, SHOW)] {
+        assert_eq!(
+            (command.name.as_str(), command.category),
+            (name, Category::Windows)
+        );
+        assert_eq!(command.capabilities, [Capability::GlobalHotkey]);
+    }
     assert_eq!(host.subscriptions(), [WINDOW_FOCUS]);
     // It binds no key: the user's config binds a global one.
     assert!(host.bindings().is_empty());
     for (_, catalog) in CATALOGS {
         assert!(catalog.contains("command-window-toggle-quick-terminal = "));
+        assert!(catalog.contains("command-window-show-quick-terminal = "));
     }
 }
 
@@ -356,4 +359,33 @@ fn the_guide_tells_every_key_of_the_schema_in_its_example_and_its_section() {
             "`{key}` in the section"
         );
     }
+}
+
+#[test]
+fn its_show_opens_or_shows_its_window_and_never_hides_it() {
+    let (mut host, mut plugin) = host(&[]);
+    let show = |host: &mut FakeHost, plugin: &mut QuickTerminal| {
+        host.take_done();
+        host.command(plugin, SHOW, Args::new()).unwrap();
+        quick_requests(host)
+    };
+    assert_eq!(
+        show(&mut host, &mut plugin),
+        [Request::OpenQuickWindow {
+            place: QuickPlace::default(),
+            directory: None,
+        }]
+    );
+    let window = quick(&plugin);
+    // Shown with the focus, it stays.
+    assert_eq!(show(&mut host, &mut plugin), []);
+    // Hidden, it shows.
+    toggle(&mut host, &mut plugin);
+    assert_eq!(
+        show(&mut host, &mut plugin),
+        [Request::ShowQuickWindow {
+            window,
+            place: Some(QuickPlace::default()),
+        }]
+    );
 }

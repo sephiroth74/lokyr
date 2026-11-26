@@ -472,7 +472,13 @@ export type AutomationAnswer =
     | { opened: { window: WindowId, tab: TabId, pane: PaneId } }
     | { workspace: { AutomationWindow } }
     | { text: string }
+    | { commands: { AutomationCommand } }
     | { error: { code: number, message: string } }
+
+export type AutomationCommand = {
+    name: string,
+    title: string,
+}
 
 export type AutomationEdge =
     | "right"
@@ -498,6 +504,7 @@ export type AutomationRequest =
     | { run: { command: string, args: { [string]: Value }? } }
     | { pane_text: { pane: PaneId?, selection: boolean? } }
     | { switch_session: { name: string } }
+    | "commands"
 
 export type AutomationTab = {
     id: TabId,

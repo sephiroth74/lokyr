@@ -18,10 +18,10 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use lokyr_plugin_sdk::automation::{
-    AutomationAnswer, AutomationEdge, AutomationPane, AutomationRequest, AutomationTab,
-    AutomationTarget, AutomationWindow, LONGEST_TEXT,
+    AutomationAnswer, AutomationCommand, AutomationEdge, AutomationPane, AutomationRequest,
+    AutomationTab, AutomationTarget, AutomationWindow, LONGEST_TEXT,
 };
-use lokyr_plugin_sdk::command::{Args, Code, Error, Value};
+use lokyr_plugin_sdk::command::{Args, Code, Error, Kind, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{Direction, PaneId, Side, TabId, TabInfo, WindowId};
 use lokyr_plugin_sdk::message::{Data, Event};
@@ -195,9 +195,19 @@ impl Automation {
                 AutomationAnswer::Done
             }
             AutomationRequest::Run { command, args } => {
+                let args = typed(cx, &command, args)?;
                 cx.run_command(&command, args)?;
                 AutomationAnswer::Done
             }
+            AutomationRequest::Commands => AutomationAnswer::Commands(
+                cx.commands()?
+                    .into_iter()
+                    .map(|command| AutomationCommand {
+                        name: command.name,
+                        title: command.title,
+                    })
+                    .collect(),
+            ),
             AutomationRequest::PaneText { pane, selection } => {
                 let read = Read {
                     id,
@@ -420,6 +430,45 @@ fn pane_or_focused(cx: &mut Cx<'_>, pane: Option<PaneId>) -> Result<PaneId, Erro
         .find(|tab| tab.active)
         .map(|tab| tab.focused)
         .ok_or_else(no_window)
+}
+
+/// `args` of the kinds that `command`'s parameters take: a text of a whole
+/// number, a number or a boolean read as the parameter's kind, as a
+/// shortcut gives every argument as text; the others as they are, which
+/// the command's run checks.
+fn typed(cx: &mut Cx<'_>, command: &str, args: Args) -> Result<Args, Error> {
+    let Some(info) = cx.commands()?.into_iter().find(|info| info.name == command) else {
+        return Ok(args);
+    };
+    let typed = args
+        .into_iter()
+        .map(|(name, value)| {
+            let kind = info
+                .params
+                .iter()
+                .find(|param| param.name == name)
+                .map(|param| param.kind);
+            let read = match (&value, kind) {
+                (Value::String(text), Some(Kind::Integer)) => {
+                    text.trim().parse().ok().map(Value::Integer)
+                }
+                (Value::String(text), Some(Kind::Number)) => text
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|number| number.is_finite())
+                    .map(Value::Number),
+                (Value::String(text), Some(Kind::Boolean)) => match text.trim() {
+                    "true" | "yes" => Some(Value::Boolean(true)),
+                    "false" | "no" => Some(Value::Boolean(false)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            (name, read.unwrap_or(value))
+        })
+        .collect();
+    Ok(typed)
 }
 
 /// Switches to the session of `name`, the one used last of several, as the

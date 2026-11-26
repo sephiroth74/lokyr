@@ -6,7 +6,7 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
-use lokyr_platform_core::automation::{Answer, Edge, Request};
+use lokyr_platform_core::automation::{Answer, Edge, Request, Target};
 
 /// The app that asks, as the automation's question about a pane's text
 /// names it.
@@ -21,6 +21,9 @@ const RUN: i32 = 5;
 const PANE_TEXT: i32 = 6;
 const WORKSPACE: i32 = 7;
 const SWITCH_SESSION: i32 = 8;
+const CLOSE: i32 = 9;
+const FOCUS: i32 = 10;
+const COMMANDS: i32 = 11;
 
 /// The registry's code of a failure, of an answer that the app could not
 /// take or give.
@@ -47,10 +50,14 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 /// - `RUN`: `text` the command's name, `more` its arguments, a line each
 ///   of `name=value`, each value a text.
 /// - `PANE_TEXT`: `first` the pane, `second` 1 of its selection; the text.
-/// - `WORKSPACE`: every pane, a line each of its id, its title and its
-///   folder, apart by tabs.
+/// - `WORKSPACE`: every pane, a line each of its id, its title, its
+///   folder, its tab's id and its window's, apart by tabs.
 /// - `SWITCH_SESSION`: `text` the session's name, which it makes first if
 ///   there is none of that name.
+/// - `CLOSE`: `first` the pane, which it closes.
+/// - `FOCUS`: `first` the pane, which it brings forward.
+/// - `COMMANDS`: every command, a line each of its name and its title,
+///   apart by a tab.
 #[unsafe(no_mangle)]
 pub extern "C" fn lokyr_intent_request(
     kind: i32,
@@ -113,6 +120,9 @@ pub extern "C" fn lokyr_intent_request(
         SWITCH_SESSION => Request::SwitchSession {
             name: text.unwrap_or_default(),
         },
+        CLOSE => Request::Close(Target::Pane(first)),
+        FOCUS => Request::Focus(Target::Pane(first)),
+        COMMANDS => Request::Commands,
         _ => {
             give(
                 answer,
@@ -167,6 +177,12 @@ fn give(answer: AnswerFn, context: *mut c_void, status: i32, text: &str) {
     answer(context, status, text.as_ptr());
 }
 
+/// `text` of no tab nor line break, which part an answer's fields and
+/// lines.
+fn clean(text: &str) -> String {
+    text.replace(['\t', '\n', '\r'], " ")
+}
+
 /// The status and the text of the automation's `answer`.
 fn answer_of(answer: Answer) -> (i32, String) {
     match answer {
@@ -174,19 +190,27 @@ fn answer_of(answer: Answer) -> (i32, String) {
         Answer::Opened { window, tab, pane } => (0, format!("{window} {tab} {pane}")),
         Answer::Text(text) => (0, text),
         Answer::Workspace(windows) => {
-            let lines: Vec<String> = windows
+            let mut lines = Vec::new();
+            for window in &windows {
+                for tab in &window.tabs {
+                    for pane in &tab.panes {
+                        lines.push(format!(
+                            "{}\t{}\t{}\t{}\t{}",
+                            pane.id,
+                            clean(&pane.title),
+                            clean(pane.folder.as_deref().unwrap_or_default()),
+                            tab.id,
+                            window.id
+                        ));
+                    }
+                }
+            }
+            (0, lines.join("\n"))
+        }
+        Answer::Commands(commands) => {
+            let lines: Vec<String> = commands
                 .iter()
-                .flat_map(|window| &window.tabs)
-                .flat_map(|tab| &tab.panes)
-                .map(|pane| {
-                    let clean = |text: &str| text.replace(['\t', '\n'], " ");
-                    format!(
-                        "{}\t{}\t{}",
-                        pane.id,
-                        clean(&pane.title),
-                        clean(pane.folder.as_deref().unwrap_or_default())
-                    )
-                })
+                .map(|command| format!("{}\t{}", clean(&command.name), clean(&command.title)))
                 .collect();
             (0, lines.join("\n"))
         }
@@ -197,7 +221,7 @@ fn answer_of(answer: Answer) -> (i32, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lokyr_platform_core::automation::{Pane, Tab, Window};
+    use lokyr_platform_core::automation::{Command, Pane, Tab, Window};
 
     #[test]
     fn an_answer_goes_to_the_intents_as_its_status_and_its_text() {
@@ -235,7 +259,12 @@ mod tests {
         }]);
         assert_eq!(
             answer_of(workspace),
-            (0, "3\tzsh\t/tmp\n4\ta b\t/tmp".to_owned())
+            (0, "3\tzsh\t/tmp\t2\t1\n4\ta b\t/tmp\t2\t1".to_owned())
         );
+        let commands = Answer::Commands(vec![Command {
+            name: "tabs.new".to_owned(),
+            title: "New\tTab".to_owned(),
+        }]);
+        assert_eq!(answer_of(commands), (0, "tabs.new\tNew Tab".to_owned()));
     }
 }

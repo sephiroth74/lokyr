@@ -130,6 +130,20 @@ fn a_session_s_switch_makes_the_session_of_a_name_that_is_not_there() {
 }
 
 #[test]
+fn the_commands_are_told_of_their_names_and_titles() {
+    let (mut fake, mut app) = started();
+    let platform::Answer::Commands(commands) =
+        ask(&mut fake, &mut app, 8, platform::Request::Commands)
+    else {
+        panic!("{:?}", fake.automation_answers());
+    };
+    assert!(commands.contains(&platform::Command {
+        name: "window.show-quick-terminal".to_owned(),
+        title: "Show Quick Terminal".to_owned(),
+    }));
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

@@ -59,6 +59,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.rename-session` | Rename Session… |  |  |
 | `window.save-layout` | Save Session as Layout… |  |  |
 | `window.set-title` | Set Title… |  | ⇧⌘I (`cmd+shift+i`) |
+| [`window.show-quick-terminal`](plugins/quick-terminal.md) | Show Quick Terminal |  | · not released yet |
 | `window.switch-session` | Switch to Session | `name`, text |  |
 | `window.switch-to-last-session` | Switch to Last Session |  | ⌃⌘L (`cmd+ctrl+l`) |
 | `window.toggle-float-on-top` | Float on Top |  |  |

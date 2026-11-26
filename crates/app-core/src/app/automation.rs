@@ -182,6 +182,7 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             selection,
         },
         platform::Request::SwitchSession { name } => AutomationRequest::SwitchSession { name },
+        platform::Request::Commands => AutomationRequest::Commands,
     }
 }
 
@@ -232,6 +233,15 @@ fn answer_of(answer: AutomationAnswer) -> platform::Answer {
                 .collect(),
         ),
         AutomationAnswer::Text(text) => platform::Answer::Text(text),
+        AutomationAnswer::Commands(commands) => platform::Answer::Commands(
+            commands
+                .into_iter()
+                .map(|command| platform::Command {
+                    name: command.name,
+                    title: command.title,
+                })
+                .collect(),
+        ),
         AutomationAnswer::Error { code, message } => platform::Answer::Error { code, message },
     }
 }
