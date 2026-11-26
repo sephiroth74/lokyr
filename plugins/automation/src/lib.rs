@@ -549,19 +549,29 @@ fn switch_session(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
-/// The window in front, or its first window while Lokyr is behind the app
-/// that asks.
+/// The window in front: the one with the focus; else `front`, the window
+/// in front as the request came, the one used last while Lokyr is behind
+/// the app that asks; else the first window of the session that shows, of
+/// no quick terminal: never a window that does not show.
 fn front_window(cx: &mut Cx<'_>, front: Option<WindowId>) -> Result<WindowId, Error> {
     if let Some(window) = cx.focused_window() {
         return Ok(window);
     }
     let windows = cx.windows()?;
-    if let Some(front) = front.filter(|front| windows.iter().any(|window| window.id == *front)) {
+    let shows = |id: WindowId| {
+        windows
+            .iter()
+            .any(|window| window.id == id && !window.hidden)
+    };
+    if let Some(front) = front.filter(|&front| shows(front)) {
         return Ok(front);
     }
-    windows
-        .first()
-        .map(|window| window.id)
+    let quick = |id: WindowId| windows.iter().any(|window| window.id == id && window.quick);
+    cx.sessions()?
+        .into_iter()
+        .filter(|session| session.active)
+        .flat_map(|session| session.windows)
+        .find(|&window| shows(window) && !quick(window))
         .ok_or_else(no_window)
 }
 

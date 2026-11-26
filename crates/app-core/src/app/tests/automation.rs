@@ -488,6 +488,42 @@ fn a_command_that_presses_its_own_key_stops_as_deep_as_commands_go() {
 }
 
 #[test]
+fn a_request_of_no_pane_goes_to_the_session_that_shows_never_a_hidden_one() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    // A new session, whose window shows, the first window hidden with its
+    // session; no window took the focus, as Lokyr is behind.
+    app.run(&mut fake, NEW_SESSION, Args::new());
+    let shown = fake.windows().find(|&window| window != first).unwrap();
+    let pane_of = |app: &App, window: WindowId| {
+        app.workspace
+            .focused(app.windows[&window].window)
+            .unwrap()
+            .id()
+    };
+    let (hidden_pane, shown_pane) = (pane_of(&app, first), pane_of(&app, shown));
+    let row = |app: &App, pane: PaneId| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    let request = platform::Request::SendText {
+        pane: None,
+        text: "shown".to_owned(),
+    };
+    assert_eq!(
+        ask(&mut fake, &mut app, 19, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, shown_pane).starts_with("shown")
+    });
+    assert!(!row(&app, hidden_pane).contains("shown"));
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

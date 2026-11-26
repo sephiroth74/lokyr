@@ -61,13 +61,24 @@ impl<B: Backend> App<B> {
             platform.answer_automation(id, answer_of(AutomationAnswer::of_error(&error)));
             return;
         }
+        // A window that shows: neither the settings' window, nor a quick
+        // terminal that hid, nor a window of a session that is hidden.
+        let shows =
+            |window: &lokyr_platform_core::WindowId| -> Option<lokyr_kernel::workspace::WindowId> {
+                if self.quick.get(window).is_some_and(|(_, shown)| !shown) {
+                    return None;
+                }
+                let id = self.windows.get(window)?.window;
+                let active = self.workspace.active_session();
+                let shown = self.workspace.window(id)?;
+                (self.workspace.settings_window() != Some(id)
+                    && shown.session().is_none_or(|session| session == active))
+                .then_some(id)
+            };
         let front = platform
             .focused_window()
-            .or(self.front)
-            .filter(|window| self.quick.get(window).is_none_or(|(_, shown)| *shown))
-            .and_then(|window| self.windows.get(&window))
-            .map(|state| state.window)
-            .filter(|&window| self.workspace.settings_window() != Some(window));
+            .and_then(|window| shows(&window))
+            .or_else(|| self.front.and_then(|window| shows(&window)));
         if !self.plugins.automation(id, client, request, front) {
             platform.answer_automation(
                 id,
