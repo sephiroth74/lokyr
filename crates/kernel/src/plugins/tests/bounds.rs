@@ -620,3 +620,65 @@ fn a_search_that_a_call_on_a_plugin_s_thread_replaces_runs_on_if_the_call_fails(
     served(&mut plugins, &mut app);
     assert_eq!(ids(&plugins).1, shown);
 }
+
+/// A plugin of the automation whose command `answerer.fails` answers the
+/// request 7 and fails, and `answerer.answer` answers the request of its
+/// `id` and returns.
+struct Answerer;
+
+impl Plugin for Answerer {
+    fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        cx.register_command(command("answerer.fails"))?;
+        cx.register_command(command("answerer.answer"))
+    }
+
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
+        let answer = crate::plugins::automation::AutomationAnswer::Done;
+        if name == "answerer.fails" {
+            cx.answer_automation(7, answer)?;
+            return Err(Error::new(Code::Failed, "on purpose"));
+        }
+        let id = match args.get("id") {
+            Some(Value::Integer(id)) => u64::try_from(*id).unwrap(),
+            _ => 7,
+        };
+        cx.answer_automation(id, answer)
+    }
+}
+
+#[test]
+fn a_failed_call_s_automation_answer_waits_again_and_a_forgotten_request_none() {
+    let mut app = App::default();
+    let mut plugins = Plugins::new();
+    let manifest = concat!(
+        "[plugin]\nname = \"lokyr/answerer\"\nkind = \"builtin\"\nlicense = \"MIT\"\n",
+        "[capabilities]\nautomation = true\n",
+    );
+    plugins.add_builtin(manifest, Box::new(Answerer)).unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let workspace = crate::plugins::automation::AutomationRequest::Workspace;
+    assert!(plugins.automation(7, "an app", workspace.clone(), None));
+    assert!(plugins.automation(8, "an app", workspace, None));
+    // A call that answers and fails: its answer goes with its writes, and
+    // the request waits again.
+    let failed = plugins.run("answerer.fails", Args::new(), &mut app.context());
+    assert_eq!(failed.unwrap_err().code, Code::Failed);
+    assert!(plugins.take_requests().is_empty());
+    plugins
+        .run("answerer.answer", Args::new(), &mut app.context())
+        .unwrap();
+    assert!(
+        plugins
+            .take_requests()
+            .iter()
+            .any(|request| matches!(request, Request::AnswerAutomation { id: 7, .. }))
+    );
+    // A request that the app failed as its deadline passed takes no answer.
+    plugins.forget_automation(8);
+    let late = plugins.run(
+        "answerer.answer",
+        Args::from([("id".to_owned(), Value::Integer(8))]),
+        &mut app.context(),
+    );
+    assert_eq!(late.unwrap_err().code, Code::NotFound);
+}

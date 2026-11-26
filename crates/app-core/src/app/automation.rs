@@ -122,6 +122,7 @@ impl<B: Backend> App<B> {
             .collect();
         for id in late {
             self.automations.waiting.remove(&id);
+            self.plugins.forget_automation(id);
             platform.answer_automation(
                 id,
                 platform::Answer::Error {
