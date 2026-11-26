@@ -497,6 +497,7 @@ export type AutomationRequest =
     | { close: AutomationTarget }
     | { run: { command: string, args: { [string]: Value }? } }
     | { pane_text: { pane: PaneId?, selection: boolean? } }
+    | { switch_session: { name: string } }
 
 export type AutomationTab = {
     id: TabId,

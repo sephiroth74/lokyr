@@ -25,7 +25,7 @@ private func lokyrIntentRequest(
 
 /// The kinds of the requests, as the app's function takes them.
 private enum Kind: Int32 {
-    case newWindow = 1, newTab, split, sendText, run, paneText, workspace
+    case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession
 }
 
 /// An error that the app answered, of its message.
@@ -223,7 +223,7 @@ struct SwitchSessionIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        _ = try await ask(.run, text: "window.switch-session", more: "name=\(name)")
+        _ = try await ask(.switchSession, text: name)
         return .result()
     }
 }

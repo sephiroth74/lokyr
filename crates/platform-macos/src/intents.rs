@@ -20,6 +20,7 @@ const SEND_TEXT: i32 = 4;
 const RUN: i32 = 5;
 const PANE_TEXT: i32 = 6;
 const WORKSPACE: i32 = 7;
+const SWITCH_SESSION: i32 = 8;
 
 /// The registry's code of a failure, of an answer that the app could not
 /// take or give.
@@ -48,6 +49,8 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 /// - `PANE_TEXT`: `first` the pane, `second` 1 of its selection; the text.
 /// - `WORKSPACE`: every pane, a line each of its id, its title and its
 ///   folder, apart by tabs.
+/// - `SWITCH_SESSION`: `text` the session's name, which it makes first if
+///   there is none of that name.
 #[unsafe(no_mangle)]
 pub extern "C" fn lokyr_intent_request(
     kind: i32,
@@ -107,6 +110,9 @@ pub extern "C" fn lokyr_intent_request(
             selection: second == 1,
         },
         WORKSPACE => Request::Workspace,
+        SWITCH_SESSION => Request::SwitchSession {
+            name: text.unwrap_or_default(),
+        },
         _ => {
             give(
                 answer,

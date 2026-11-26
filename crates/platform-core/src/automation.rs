@@ -66,6 +66,12 @@ pub enum Request {
         /// Its selection, rather than its screen.
         selection: bool,
     },
+    /// Switches to the session of `name`, making it first if there is none
+    /// of that name.
+    SwitchSession {
+        /// The session's name.
+        name: String,
+    },
 }
 
 /// A command's argument, as a script gives it.

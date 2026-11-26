@@ -181,6 +181,7 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             pane: pane.map(PaneId),
             selection,
         },
+        platform::Request::SwitchSession { name } => AutomationRequest::SwitchSession { name },
     }
 }
 

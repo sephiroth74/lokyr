@@ -94,6 +94,12 @@ pub enum AutomationRequest {
         #[serde(default)]
         selection: bool,
     },
+    /// Switches to the session of `name`, the one used last of several,
+    /// making it first if there is none of that name.
+    SwitchSession {
+        /// The session's name, not empty.
+        name: String,
+    },
 }
 
 impl AutomationRequest {
@@ -112,6 +118,7 @@ impl AutomationRequest {
                 .collect(),
             Self::SendText { text, .. } => vec![text.as_str()],
             Self::Run { command, .. } => vec![command.as_str()],
+            Self::SwitchSession { name } => vec![name.as_str()],
             Self::Workspace | Self::Focus(_) | Self::Close(_) | Self::PaneText { .. } => Vec::new(),
         };
         if texts.iter().any(|text| text.len() > LONGEST_TEXT) {

@@ -11,6 +11,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Added
 
 - AppleScript: Lokyr's dictionary of its windows, their tabs and their terminals, of each one's id, name and folder, and commands to create windows, tabs and splits in a folder and running a command, send text, focus, close, and perform any of Lokyr's commands by its name and arguments. A terminal's text is read once you allow the app that asks, which Lokyr remembers.
+- Shortcuts: actions to open a window or a tab in a folder and running a command, split a terminal, send it text, run any of Lokyr's commands by its name, switch to a session by its name (opening it when there is none), open a saved layout, and get a terminal's text or its selection, which Lokyr asks you about first. New Window and New Tab are in Spotlight too.
 
 ### Changed
 

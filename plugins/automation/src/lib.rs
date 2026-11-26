@@ -4,7 +4,8 @@
 //! has. It opens windows, tabs and splits, in a folder and running a
 //! command line at their shells' start; it sends text, brings a window, a
 //! tab or a pane forward and closes it; it runs a command of the registry
-//! as the user's own; and it tells the windows, their tabs and their panes,
+//! as the user's own; it switches to a session of a name, which it makes
+//! of none; and it tells the windows, their tabs and their panes,
 //! by the host's ids, which stay the same between a script's requests.
 //!
 //! A pane's text may hold a secret: before an app reads one, the user
@@ -205,6 +206,10 @@ impl Automation {
                     selection,
                 };
                 return self.read(cx, read);
+            }
+            AutomationRequest::SwitchSession { name } => {
+                switch_session(cx, &name)?;
+                AutomationAnswer::Done
             }
         };
         Ok(Some(answer))
@@ -415,6 +420,30 @@ fn pane_or_focused(cx: &mut Cx<'_>, pane: Option<PaneId>) -> Result<PaneId, Erro
         .find(|tab| tab.active)
         .map(|tab| tab.focused)
         .ok_or_else(no_window)
+}
+
+/// Switches to the session of `name`, the one used last of several, as the
+/// sessions come in the order of their use, or makes it of none of that
+/// name, which opens its first window.
+fn switch_session(cx: &mut Cx<'_>, name: &str) -> Result<(), Error> {
+    if name.trim().is_empty() {
+        return Err(Error::new(
+            Code::MissingArgument,
+            "a session's switch takes its name",
+        ));
+    }
+    let found = cx
+        .sessions()?
+        .into_iter()
+        .find(|session| session.name == name);
+    match found {
+        Some(session) if session.active => {}
+        Some(session) => cx.switch_session(session.id)?,
+        None => {
+            cx.new_session(name, None)?;
+        }
+    }
+    Ok(())
 }
 
 /// The window in front, or its first window while Lokyr is behind the app

@@ -95,6 +95,41 @@ fn the_ids_stay_the_same_from_a_request_to_the_next() {
 }
 
 #[test]
+fn a_session_s_switch_makes_the_session_of_a_name_that_is_not_there() {
+    let (mut fake, mut app) = started();
+    let home = app.workspace.active_session();
+    assert!(app.workspace.rename_session(home, "home"));
+    let switch = |name: &str| platform::Request::SwitchSession {
+        name: name.to_owned(),
+    };
+    assert_eq!(
+        ask(&mut fake, &mut app, 5, switch("work")),
+        platform::Answer::Done
+    );
+    let work = app.workspace.active_session();
+    assert_ne!(work, home);
+    let names: Vec<String> = app
+        .workspace
+        .sessions()
+        .into_iter()
+        .map(|session| session.name().to_owned())
+        .collect();
+    assert_eq!(names, ["work", "home"]);
+    // A session of that name switches, and no other is made.
+    assert_eq!(
+        ask(&mut fake, &mut app, 6, switch("work")),
+        platform::Answer::Done
+    );
+    assert_eq!(app.workspace.active_session(), work);
+    assert_eq!(
+        ask(&mut fake, &mut app, 7, switch("home")),
+        platform::Answer::Done
+    );
+    assert_eq!(app.workspace.active_session(), home);
+    assert_eq!(app.workspace.sessions().len(), 2);
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

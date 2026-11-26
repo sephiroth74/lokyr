@@ -222,3 +222,32 @@ fn an_app_that_the_user_refused_reads_no_text() {
     assert_eq!(host.question(), None);
     assert!(refused(&host, 10));
 }
+
+#[test]
+fn a_session_s_switch_makes_the_session_of_a_name_that_is_not_there() {
+    let (mut host, mut plugin) = host();
+    let switch = |name: &str| AutomationRequest::SwitchSession {
+        name: name.to_owned(),
+    };
+    ask(&mut host, &mut plugin, 11, switch("work"));
+    assert_eq!(answer(&host, 11), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::NewSession {
+        name: "work".to_owned(),
+        directory: None,
+    }));
+    // The active session of that name stays as it is.
+    ask(&mut host, &mut plugin, 12, switch("work"));
+    assert_eq!(answer(&host, 12), Some(AutomationAnswer::Done));
+    assert!(
+        host.take_done()
+            .iter()
+            .all(|done| !matches!(done, Request::NewSession { .. } | Request::SwitchSession(_)))
+    );
+    // A switch of no name is refused.
+    ask(&mut host, &mut plugin, 13, switch(" "));
+    assert!(
+        matches!(answer(&host, 13), Some(AutomationAnswer::Error { code, .. }) if code == Code::MissingArgument.number()),
+        "{:?}",
+        host.automation_answers()
+    );
+}

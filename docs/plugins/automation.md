@@ -11,6 +11,7 @@ The answers to what scripts and shortcuts of other apps ask of Lokyr: windows, t
 - **Text sent to a pane**, as if you typed it.
 - **A window, a tab or a pane brought forward, or closed.** Closing a tab or a pane where a program other than a shell runs asks you first, as Close does.
 - **A command run by its name and arguments**, as the [command palette](command-palette.md) runs it, such as `splits.split` of `direction = "right"`. A command that Lokyr lacks is refused, of the reason.
+- **A switch to a [session](../sessions.md) by its name**, which opens a new session of that name in a new window when there is none.
 
 ## A pane's text
 
