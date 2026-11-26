@@ -502,6 +502,7 @@ export type AutomationRequest =
     | { new_tab: { window: WindowId?, folder: string?, command: string?, environment: { [string]: string }? } }
     | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string?, environment: { [string]: string }? } }
     | { send_text: { pane: PaneId?, text: string } }
+    | { run_line: { pane: PaneId?, line: string } }
     | { send_key: { pane: PaneId?, keys: string } }
     | { focus: AutomationTarget }
     | { close: AutomationTarget }

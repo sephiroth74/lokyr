@@ -80,6 +80,17 @@ pub enum AutomationRequest {
         /// The text.
         text: String,
     },
+    /// Runs `line` in the shell of `pane`, or of the focused one, at its
+    /// prompt, as [`Request::RunLine`](crate::message::Request::RunLine)
+    /// runs it: pasted and Return, while the shell edits an empty command
+    /// line.
+    RunLine {
+        /// The pane.
+        #[serde(default)]
+        pane: Option<PaneId>,
+        /// The command line.
+        line: String,
+    },
     /// Presses the key of `keys`, as `cmd+a`, in `pane`, or the focused
     /// one, as the user presses it: its binding's command, or the
     /// program's key.
@@ -149,6 +160,7 @@ impl AutomationRequest {
                 .collect(),
             Self::SendText { text, .. } => vec![text.as_str()],
             Self::SendKey { keys, .. } => vec![keys.as_str()],
+            Self::RunLine { line, .. } => vec![line.as_str()],
             Self::Run { command, .. } => vec![command.as_str()],
             Self::SwitchSession { name } => vec![name.as_str()],
             Self::Workspace

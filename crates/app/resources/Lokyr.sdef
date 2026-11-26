@@ -81,6 +81,13 @@
                 <cocoa key="terminal"/>
             </parameter>
         </command>
+        <command name="execute" code="LKyrExec" description="Runs a command line in a terminal's shell, the focused one unless another is given, at its prompt: Lokyr pastes it and presses Return, while the shell waits at an empty prompt, and refuses otherwise.">
+            <cocoa class="LokyrExecuteCommand"/>
+            <direct-parameter type="text" description="The command line, such as &quot;ls -la&quot;."/>
+            <parameter name="to" code="LKto" type="terminal" optional="yes" description="The terminal.">
+                <cocoa key="terminal"/>
+            </parameter>
+        </command>
         <command name="send key" code="LKyrSKey" description="Presses a key in a terminal, the focused one unless another is given, which takes the focus, as you press it in Lokyr: a key of a shortcut runs its command, as &quot;cmd+a&quot; selects all; another goes to the program as the keyboard sends it, of the modes that the program asked for. Option acts as Meta.">
             <cocoa class="LokyrSendKeyCommand"/>
             <direct-parameter type="text" description="The key and its modifiers, as a binding writes them, such as &quot;ctrl+c&quot;, &quot;up&quot; or &quot;shift+tab&quot;."/>

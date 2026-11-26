@@ -379,3 +379,28 @@ fn a_key_is_pressed_in_the_focused_pane_and_a_click_is_refused() {
         host.automation_answers()
     );
 }
+
+#[test]
+fn a_command_line_runs_at_the_shell_s_empty_prompt_alone() {
+    let (mut host, mut plugin) = host();
+    let run = || AutomationRequest::RunLine {
+        pane: None,
+        line: "ls -la".to_owned(),
+    };
+    // The shell edits an empty command line at its prompt: the line runs.
+    host.pane(PaneId(1)).edited_line = Some(String::new());
+    ask(&mut host, &mut plugin, 19, run());
+    assert_eq!(answer(&host, 19), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::RunLine {
+        pane: PaneId(1),
+        line: "ls -la".to_owned(),
+    }));
+    // Of no prompt, as while a program runs, it is refused.
+    host.pane(PaneId(1)).edited_line = None;
+    ask(&mut host, &mut plugin, 20, run());
+    assert!(
+        matches!(answer(&host, 20), Some(AutomationAnswer::Error { code, .. }) if code == Code::Unavailable.number()),
+        "{:?}",
+        host.automation_answers()
+    );
+}

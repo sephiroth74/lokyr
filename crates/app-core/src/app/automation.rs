@@ -175,6 +175,10 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             pane: pane.map(PaneId),
             keys,
         },
+        platform::Request::RunLine { pane, line } => AutomationRequest::RunLine {
+            pane: pane.map(PaneId),
+            line,
+        },
         platform::Request::Focus(target) => AutomationRequest::Focus(target_of(target)),
         platform::Request::Close(target) => AutomationRequest::Close(target_of(target)),
         platform::Request::Run { command, args } => AutomationRequest::Run {

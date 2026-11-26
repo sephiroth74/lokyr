@@ -53,6 +53,14 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Runs `line` in the shell of `pane`, or of the focused one, at its
+    /// prompt, while it edits an empty command line.
+    RunLine {
+        /// The pane.
+        pane: Option<u64>,
+        /// The command line.
+        line: String,
+    },
     /// Sends `pane`, or the focused one, the key of `keys`, as `ctrl+c`,
     /// pressed and released.
     SendKey {

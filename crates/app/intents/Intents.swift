@@ -28,7 +28,7 @@ private func lokyrIntentRequest(
 /// The kinds of the requests, as the app's function takes them.
 private enum Kind: Int32 {
     case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession, close, focus,
-        commands, sendKey
+        commands, sendKey, runLine
 }
 
 /// An error that the app answered, of its message.
@@ -291,6 +291,22 @@ struct SendTextIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         _ = try await ask(.sendText, first: terminal?.pane ?? 0, text: text)
+        return .result()
+    }
+}
+
+/// Runs a command line in a terminal's shell, at its prompt.
+struct RunCommandLineIntent: AppIntent {
+    static let title: LocalizedStringResource = "Run Command Line"
+    static let description = IntentDescription("Runs a command line, such as ls -la, in the shell of a terminal of Lokyr's, the focused one unless another is given: Lokyr pastes it at the prompt and presses Return, while the shell waits at an empty prompt, and refuses otherwise, such as while a program runs.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Command Line") var line: String
+    @Parameter(title: "Terminal") var terminal: TerminalEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.runLine, first: terminal?.pane ?? 0, text: line)
         return .result()
     }
 }

@@ -25,6 +25,7 @@ const CLOSE: i32 = 9;
 const FOCUS: i32 = 10;
 const COMMANDS: i32 = 11;
 const SEND_KEY: i32 = 12;
+const RUN_LINE: i32 = 13;
 
 /// The registry's code of a failure, of an answer that the app could not
 /// take or give.
@@ -62,6 +63,8 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 /// - `FOCUS`: `first` the pane, which it brings forward.
 /// - `SEND_KEY`: `first` the pane, `text` the key and its modifiers, as
 ///   a binding writes them, as `ctrl+c`.
+/// - `RUN_LINE`: `first` the pane, `text` the command line, which its
+///   shell runs at its prompt.
 /// - `COMMANDS`: the command palette's entries, a line each of its id and
 ///   its title, apart by a tab: the command's name, then its entry's
 ///   arguments, if any, as a URL's query, `splits.split?direction=right`.
@@ -146,6 +149,10 @@ pub extern "C" fn lokyr_intent_request(
         SEND_KEY => Request::SendKey {
             pane: id(first),
             keys: text.unwrap_or_default(),
+        },
+        RUN_LINE => Request::RunLine {
+            pane: id(first),
+            line: text.unwrap_or_default(),
         },
         _ => {
             give(

@@ -101,6 +101,20 @@ define_class!(
 );
 
 define_class!(
+    /// `execute`.
+    #[unsafe(super(NSScriptCommand, NSObject))]
+    #[name = "LokyrExecuteCommand"]
+    struct ExecuteCommand;
+
+    impl ExecuteCommand {
+        #[unsafe(method_id(performDefaultImplementation))]
+        fn perform(&self) -> Option<Retained<AnyObject>> {
+            execute(self)
+        }
+    }
+);
+
+define_class!(
     /// `send key`.
     #[unsafe(super(NSScriptCommand, NSObject))]
     #[name = "LokyrSendKeyCommand"]
@@ -218,6 +232,26 @@ fn split(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     run(command, request, opened_terminal)
 }
 
+/// What `execute` does.
+fn execute(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    let Some(line) = command
+        .directParameter()
+        .and_then(|line| line.downcast::<NSString>().ok())
+    else {
+        return refuse(
+            command,
+            "`execute` takes a command line, such as \"ls -la\"",
+        );
+    };
+    let request = Request::RunLine {
+        pane: argument(command, "terminal")
+            .and_then(|terminal| terminal.downcast::<ScriptTerminal>().ok())
+            .map(|terminal| terminal.id()),
+        line: line.to_string(),
+    };
+    run(command, request, done)
+}
+
 /// What `send key` does.
 fn send_key(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     let Some(keys) = command
@@ -318,6 +352,7 @@ pub(crate) fn register() {
         SplitCommand::class(),
         InputTextCommand::class(),
         SendKeyCommand::class(),
+        ExecuteCommand::class(),
         FocusCommand::class(),
         CloseCommand::class(),
         PerformActionCommand::class(),
