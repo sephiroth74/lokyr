@@ -90,6 +90,8 @@ end tell
 
 A field named after one of AppleScript's own words, such as `to`, goes between bars: `{|to|:"bottom"}`.
 
+AppleScript's `count` and `exists` work on them too, such as `count terminals of tab 1 of window 1` or `if exists window 2`.
+
 Script Editor shows the whole dictionary: choose File › Open Dictionary… and choose Lokyr.
 
 ## Use Lokyr's actions in Shortcuts
