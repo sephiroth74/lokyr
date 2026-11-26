@@ -65,6 +65,7 @@ use crate::workspace::{
     Workspace,
 };
 
+mod mouse;
 mod search;
 mod worker;
 
@@ -5244,6 +5245,11 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.send_text(&text);
                 }
             }
+            Asked::SendMouse { pane: id, input } => {
+                if let Some(pane) = pane(id) {
+                    mouse::send(pane, input);
+                }
+            }
             // Its combination, which the request's check read.
             Asked::SendKey { pane: id, keys } => {
                 if let (Some(pane), Ok(combo)) =
@@ -6953,6 +6959,13 @@ impl Host<'_, '_> {
                 lokyr_plugin_sdk::keys::typed_key(keys)
                     .map_err(|message| Error::new(Code::WrongKind, message))?;
                 self.known_pane(*pane)?;
+            }
+            // Over a cell of the pane's screen.
+            Asked::SendMouse { pane, input } => {
+                let grid = self.pane(*pane)?.grid();
+                input
+                    .check(grid.columns, grid.rows)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
             }
             Asked::SetBroadcast { window, .. } => {
                 self.window(*window)?;

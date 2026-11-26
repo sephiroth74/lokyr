@@ -5,6 +5,7 @@
 //! command line at their shells' start; it sends text, brings a window, a
 //! tab or a pane forward and closes it; it runs a command of the registry
 //! as the user's own; it runs a command line at a shell's prompt; it
+//! sends a pane a mouse event over a cell; it
 //! presses a key in a pane as the user does, its
 //! binding's command or the program's; it
 //! switches to a session of a name, which it makes
@@ -181,6 +182,11 @@ impl Automation {
             AutomationRequest::SendText { pane, text } => {
                 let pane = pane_or_focused(cx, pane)?;
                 cx.send_text(pane, &text)?;
+                AutomationAnswer::Done
+            }
+            AutomationRequest::SendMouse { pane, input } => {
+                let pane = pane_or_focused(cx, pane)?;
+                cx.send_mouse(pane, input)?;
                 AutomationAnswer::Done
             }
             AutomationRequest::RunLine { pane, line } => {

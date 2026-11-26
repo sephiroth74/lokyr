@@ -179,6 +179,10 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             pane: pane.map(PaneId),
             line,
         },
+        platform::Request::SendMouse { pane, mouse } => AutomationRequest::SendMouse {
+            pane: pane.map(PaneId),
+            input: mouse_input(mouse),
+        },
         platform::Request::Focus(target) => AutomationRequest::Focus(target_of(target)),
         platform::Request::Close(target) => AutomationRequest::Close(target_of(target)),
         platform::Request::Run { command, args } => AutomationRequest::Run {
@@ -201,6 +205,33 @@ fn request_of(request: platform::Request) -> AutomationRequest {
         },
         platform::Request::SwitchSession { name } => AutomationRequest::SwitchSession { name },
         platform::Request::Commands => AutomationRequest::Commands,
+    }
+}
+
+/// The plugin API's mouse event of the platform's `mouse`.
+fn mouse_input(mouse: platform::Mouse) -> lokyr_kernel::plugins::host::MouseInput {
+    use lokyr_kernel::plugins::host::{MouseButton, MouseDoes, MouseInput};
+    MouseInput {
+        action: match mouse.action {
+            platform::MouseAction::Press => MouseDoes::Press,
+            platform::MouseAction::Release => MouseDoes::Release,
+            platform::MouseAction::Move => MouseDoes::Move,
+            platform::MouseAction::ScrollUp => MouseDoes::ScrollUp,
+            platform::MouseAction::ScrollDown => MouseDoes::ScrollDown,
+            platform::MouseAction::ScrollLeft => MouseDoes::ScrollLeft,
+            platform::MouseAction::ScrollRight => MouseDoes::ScrollRight,
+        },
+        button: mouse.button.map(|button| match button {
+            platform::MouseButton::Left => MouseButton::Left,
+            platform::MouseButton::Middle => MouseButton::Middle,
+            platform::MouseButton::Right => MouseButton::Right,
+        }),
+        column: mouse.column,
+        row: mouse.row,
+        shift: mouse.shift,
+        control: mouse.control,
+        alt: mouse.alt,
+        steps: mouse.steps,
     }
 }
 

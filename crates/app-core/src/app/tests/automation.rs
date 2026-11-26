@@ -249,6 +249,104 @@ fn a_key_runs_its_binding_s_command_or_goes_to_the_program() {
     });
 }
 
+/// A mouse event of `action` over the cell at `column` and `row`, from 0.
+fn mouse(action: platform::MouseAction, column: u16, row: u16) -> platform::Mouse {
+    platform::Mouse {
+        action,
+        button: None,
+        column,
+        row,
+        shift: false,
+        control: false,
+        alt: false,
+        steps: None,
+    }
+}
+
+#[test]
+fn a_mouse_event_goes_to_a_program_of_the_mouse_over_its_cell() {
+    // The program asks for the mouse, of SGR's reports, which its
+    // terminal's echo shows.
+    let program = Program::command(
+        "/bin/sh",
+        [
+            "-c",
+            "printf '\\033[?1000h\\033[?1006hready'; exec /bin/cat",
+        ],
+    );
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let pane = app
+        .workspace
+        .focused(app.windows[&window].window)
+        .unwrap()
+        .id();
+    let text = |app: &App| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    run_until(&mut fake, &mut app, |_, app| text(app).starts_with("ready"));
+    let press = platform::Request::SendMouse {
+        pane: None,
+        mouse: mouse(platform::MouseAction::Press, 2, 1),
+    };
+    assert_eq!(ask(&mut fake, &mut app, 13, press), platform::Answer::Done);
+    run_until(&mut fake, &mut app, |_, app| text(app).contains("[<0;3;2M"));
+    // A cell off the screen is refused.
+    let off = platform::Request::SendMouse {
+        pane: None,
+        mouse: mouse(platform::MouseAction::Press, 9999, 0),
+    };
+    assert!(
+        matches!(
+            ask(&mut fake, &mut app, 14, off),
+            platform::Answer::Error { .. }
+        ),
+        "{:?}",
+        fake.automation_answers()
+    );
+}
+
+#[test]
+fn a_scroll_of_a_program_of_no_mouse_scrolls_the_pane_s_view() {
+    let program = Program::command("/bin/sh", ["-c", "seq 200; exec /bin/cat"]);
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    let pane = app
+        .workspace
+        .focused(app.windows[&window].window)
+        .unwrap()
+        .id();
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .is_some_and(|terminal| terminal.scrollback_rows() > 100)
+    });
+    let mut scroll = mouse(platform::MouseAction::ScrollUp, 0, 0);
+    scroll.steps = Some(5);
+    let request = platform::Request::SendMouse {
+        pane: None,
+        mouse: scroll,
+    };
+    assert_eq!(
+        ask(&mut fake, &mut app, 15, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .is_some_and(|shown| shown.view_offset() == 5)
+    });
+}
+
 #[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();

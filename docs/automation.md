@@ -20,6 +20,7 @@ Then open the Shortcuts app, make a new shortcut, and type Lokyr in the search f
 
 - **Windows, tabs and splits**, each in a folder of your choice, with a command line that its shell runs as it starts and environment variables of your own.
 - **A command line run** in a terminal's shell, such as `ls -la`, at its prompt.
+- **Mouse events** over a cell of a terminal, for a program that uses the mouse, such as a click in an editor or the wheel in a file manager.
 - **Text sent to a terminal**, as if you typed it, such as a command and Return, and **keys**, such as ⌃C, the arrows or ⌘A, as you press them.
 - **Any of Lokyr's commands**, run by its name and arguments, as the [command palette](plugins/command-palette.md) runs it.
 - **A window, a tab or a terminal** brought forward or closed, and terminals found by their title or their folder.
@@ -100,6 +101,9 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Split Pane | Terminal, Direction, Folder, Command, Environment Variables | Splits a terminal, the focused one unless you choose one |
 | Run Command Line | Command Line, Terminal | Runs a command line, such as `ls -la`, in a terminal's shell, at its prompt |
 | Send Text | Text, Terminal | Sends text to a terminal, as if you typed it |
+| Send Mouse Button Event | Action (Click, Press, Release), Button, Column, Row, Modifiers, Terminal | Clicks, presses or releases a mouse button over a cell of a terminal |
+| Send Mouse Position Event | Column, Row, Button Held, Modifiers, Terminal | Moves the mouse's pointer over a cell of a terminal |
+| Send Mouse Scroll Event | Direction, Steps, Column, Row, Modifiers, Terminal | Turns the mouse's wheel over a terminal |
 | Send Keyboard Event | Key, Modifiers, Terminal | Presses a key in a terminal as you press it in Lokyr, such as A with Command to select all, or C with Control to interrupt a program |
 | Focus Terminal | Terminal | Brings a terminal forward, with its window and its tab |
 | Close Terminal | Terminal | Closes a terminal |
@@ -116,6 +120,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 
 - **A Terminal parameter** lists Lokyr's terminals, each with its title and its folder. Leave it empty for the focused terminal, where the action allows it, or pass the terminals that Find Terminal returns.
 - **Environment Variables** is a list of texts, each `NAME=value`, such as `AWS_PROFILE=staging`, which the new shell starts with.
+- **Column and Row** count a terminal's cells from 1, at the top left of its screen.
 - **Arguments** go one a line, as `name=value`, such as `index=2` for `tabs.goto`. Lokyr reads a number or `true` and `false` as the kind that the command takes. In Run Palette Command, they add to the entry's own, or replace them.
 - **Send Text, Close Terminal, the quick terminal's actions and the Get actions** work while Lokyr stays behind. The others bring Lokyr forward.
 - **Spotlight** finds New Window and New Tab: type "New Lokyr window" or "New Lokyr tab".
@@ -152,6 +157,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **A command line** that you give a new terminal is typed into its shell as it starts, followed by Return.
 - **A command line that you run** in a terminal, with `execute` or Run Command Line, is pasted at the shell's prompt and followed by Return, while the shell waits at an empty prompt, as [shell integration](shell-integration.md) reports it. Lokyr refuses it otherwise, such as while a program runs or when the command line holds text, so that it never types into another program.
 - **A key** goes as you press it in Lokyr. The terminal takes the focus first. A key of one of Lokyr's shortcuts runs its command, as ⌘A selects all and ⌘T opens a tab. Any other key goes to the program as the keyboard sends it, following the modes that the program asked for: ↑ moves the cursor in an editor that takes the cursor keys in their application mode, and a program of the keyboard protocol gets the key as that protocol encodes it. A key is a character, or a name: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, or `f1` to `f35`. ⌥ acts as Meta, so `alt+f` sends Escape and `f`. A ⌘ key of no shortcut reaches a program that uses the keyboard protocol, and no other.
+- **A mouse event** goes to the program as the mouse sends it, in the reports and the encoding that the program asked for. A program that doesn't use the mouse gets nothing, but the wheel: its steps scroll the terminal's view a row each, or, on a full-screen program's screen that asks for it, send the arrow keys. A cell off the screen is refused.
 - **Environment variables** that you give a new terminal come over Lokyr's own, such as `TERM`. [Shell integration](shell-integration.md) keeps the variables that it needs, and takes your `ZDOTDIR` as zsh's own folder. A terminal takes 64 variables at most.
 - **The commands that `perform action` and Run Command run** act as if you chose them, on Lokyr's window in front: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window is in front, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
 - **A request waits 10 seconds at most** for Lokyr's answer, then fails.
@@ -161,6 +167,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **The ids last while Lokyr runs.** After a restart, a script finds its windows again by their names or their places.
 - **A script can't wait for a command to end** or for its output. Use `delay`, then read `contents`.
 - **`contents` is the screen's text**, not the scrollback above it.
+- **Mouse events are Shortcuts' alone**: AppleScript's dictionary has none.
 - **`perform action` and Run Command report a command that Lokyr doesn't have**, but not a command that fails as it runs, such as a switch to a session that isn't there. That failure shows in a card in Lokyr's window, and in its log.
 - **A new terminal always starts your shell**: a command line runs in it, and shows in its history.
 - **Shortcuts lists the actions of one copy of Lokyr**: the one that macOS registered for its identifier, usually the one in your Applications folder.

@@ -404,3 +404,30 @@ fn a_command_line_runs_at_the_shell_s_empty_prompt_alone() {
         host.automation_answers()
     );
 }
+
+#[test]
+fn a_mouse_event_goes_to_the_focused_pane() {
+    use lokyr_plugin_sdk::host::{MouseButton, MouseDoes, MouseInput};
+    let (mut host, mut plugin) = host();
+    let input = MouseInput {
+        action: MouseDoes::Press,
+        button: Some(MouseButton::Left),
+        column: 4,
+        row: 2,
+        shift: false,
+        control: false,
+        alt: false,
+        steps: None,
+    };
+    ask(
+        &mut host,
+        &mut plugin,
+        21,
+        AutomationRequest::SendMouse { pane: None, input },
+    );
+    assert_eq!(answer(&host, 21), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::SendMouse {
+        pane: PaneId(1),
+        input,
+    }));
+}

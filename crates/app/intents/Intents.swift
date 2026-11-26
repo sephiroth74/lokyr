@@ -28,7 +28,7 @@ private func lokyrIntentRequest(
 /// The kinds of the requests, as the app's function takes them.
 private enum Kind: Int32 {
     case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession, close, focus,
-        commands, sendKey, runLine
+        commands, sendKey, runLine, sendMouse
 }
 
 /// An error that the app answered, of its message.
@@ -291,6 +291,122 @@ struct SendTextIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         _ = try await ask(.sendText, first: terminal?.pane ?? 0, text: text)
+        return .result()
+    }
+}
+
+/// A button of the mouse.
+enum MouseButtonKind: String, AppEnum {
+    case left, middle, right
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Mouse Button"
+    static let caseDisplayRepresentations: [MouseButtonKind: DisplayRepresentation] = [
+        .left: "Left", .middle: "Middle", .right: "Right",
+    ]
+}
+
+/// What a mouse button does.
+enum MouseButtonAction: String, AppEnum {
+    case click, press, release
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Button Action"
+    static let caseDisplayRepresentations: [MouseButtonAction: DisplayRepresentation] = [
+        .click: "Click", .press: "Press", .release: "Release",
+    ]
+}
+
+/// Which way the mouse's wheel turns.
+enum ScrollDirection: String, AppEnum {
+    case up, down, left, right
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Scroll Direction"
+    static let caseDisplayRepresentations: [ScrollDirection: DisplayRepresentation] = [
+        .up: "Up", .down: "Down", .left: "Left", .right: "Right",
+    ]
+}
+
+/// The fields of a mouse event as the app reads them, a line each: the
+/// cell of `column` and `row` from 1, as the app counts them from 0.
+private func mouseFields(
+    button: MouseButtonKind?, column: Int, row: Int, steps: Int? = nil, modifiers: [KeyModifier]?
+) -> String {
+    var lines = ["column=\(max(column - 1, 0))", "row=\(max(row - 1, 0))"]
+    if let button { lines.append("button=\(button.rawValue)") }
+    if let steps { lines.append("steps=\(steps)") }
+    for modifier in modifiers ?? [] {
+        switch modifier {
+        case .shift: lines.append("shift=true")
+        case .control: lines.append("control=true")
+        case .option: lines.append("alt=true")
+        case .command: break
+        }
+    }
+    return lines.joined(separator: "\n")
+}
+
+/// Sends a mouse button's press, release or click to a terminal.
+struct SendMouseButtonEventIntent: AppIntent {
+    static let title: LocalizedStringResource = "Send Mouse Button Event"
+    static let description = IntentDescription("Sends a mouse button's click, press or release over a cell of a terminal of Lokyr's, the focused one unless another is given, as the program asked for the mouse; a program that takes no mouse gets nothing. Columns and rows count from 1 at the top left.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Action", default: .click) var action: MouseButtonAction
+    @Parameter(title: "Button", default: .left) var button: MouseButtonKind
+    @Parameter(title: "Column", default: 1) var column: Int
+    @Parameter(title: "Row", default: 1) var row: Int
+    @Parameter(title: "Modifiers") var modifiers: [KeyModifier]?
+    @Parameter(title: "Terminal") var terminal: TerminalEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let fields = mouseFields(button: button, column: column, row: row, modifiers: modifiers)
+        let actions = action == .click ? ["press", "release"] : [action.rawValue]
+        for name in actions {
+            _ = try await ask(.sendMouse, first: terminal?.pane ?? 0, text: name, more: fields)
+        }
+        return .result()
+    }
+}
+
+/// Moves the mouse's pointer over a cell of a terminal.
+struct SendMousePositionEventIntent: AppIntent {
+    static let title: LocalizedStringResource = "Send Mouse Position Event"
+    static let description = IntentDescription("Moves the mouse's pointer over a cell of a terminal of Lokyr's, the focused one unless another is given, a button held if given, as the program asked for the mouse's moves. Columns and rows count from 1 at the top left.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Column", default: 1) var column: Int
+    @Parameter(title: "Row", default: 1) var row: Int
+    @Parameter(title: "Button Held") var button: MouseButtonKind?
+    @Parameter(title: "Modifiers") var modifiers: [KeyModifier]?
+    @Parameter(title: "Terminal") var terminal: TerminalEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let fields = mouseFields(button: button, column: column, row: row, modifiers: modifiers)
+        _ = try await ask(.sendMouse, first: terminal?.pane ?? 0, text: "move", more: fields)
+        return .result()
+    }
+}
+
+/// Turns the mouse's wheel over a terminal.
+struct SendMouseScrollEventIntent: AppIntent {
+    static let title: LocalizedStringResource = "Send Mouse Scroll Event"
+    static let description = IntentDescription("Turns the mouse's wheel over a cell of a terminal of Lokyr's, the focused one unless another is given, by steps: a program that asked for the mouse gets each step, and the terminal's own view scrolls a row a step otherwise.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Direction", default: .down) var direction: ScrollDirection
+    @Parameter(title: "Steps", default: 1) var steps: Int
+    @Parameter(title: "Column", default: 1) var column: Int
+    @Parameter(title: "Row", default: 1) var row: Int
+    @Parameter(title: "Modifiers") var modifiers: [KeyModifier]?
+    @Parameter(title: "Terminal") var terminal: TerminalEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let fields = mouseFields(
+            button: nil, column: column, row: row, steps: steps, modifiers: modifiers)
+        _ = try await ask(
+            .sendMouse, first: terminal?.pane ?? 0, text: "scroll-\(direction.rawValue)", more: fields)
         return .result()
     }
 }

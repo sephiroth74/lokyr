@@ -720,6 +720,16 @@ pub enum Request {
         /// The key and its modifiers.
         keys: String,
     },
+    /// Sends a pane's program a mouse event over a cell of its screen, as
+    /// the app's mouse encodes it of the modes and the encoding that the
+    /// program asked for; of a program that takes no mouse, a scroll
+    /// scrolls the pane's view, a row a step, and the others do nothing.
+    SendMouse {
+        /// The pane.
+        pane: PaneId,
+        /// The event.
+        input: crate::host::MouseInput,
+    },
     /// Presses a key in a pane as the user presses it in Lokyr, which takes
     /// `user-commands` beside `pty-write`: the pane takes its window's
     /// keyboard, and a binding of `keys` in its context runs its command,
@@ -1529,6 +1539,7 @@ impl Request {
             | Self::SendTextBroadcast { .. }
             | Self::SendText { .. }
             | Self::SendKey { .. }
+            | Self::SendMouse { .. }
             | Self::PressKey { .. }
             | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
@@ -1727,6 +1738,7 @@ impl Request {
             | Self::Paste { .. }
             | Self::SendText { .. }
             | Self::SendKey { .. }
+            | Self::SendMouse { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::Decorate { .. }
@@ -2444,6 +2456,7 @@ impl Request {
             | Self::Paste { .. }
             | Self::SendText { .. }
             | Self::SendKey { .. }
+            | Self::SendMouse { .. }
             | Self::PressKey { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }

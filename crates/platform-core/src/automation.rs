@@ -53,6 +53,13 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Sends `pane`, or the focused one, the mouse event `mouse`.
+    SendMouse {
+        /// The pane.
+        pane: Option<u64>,
+        /// The event.
+        mouse: Mouse,
+    },
     /// Runs `line` in the shell of `pane`, or of the focused one, at its
     /// prompt, while it edits an empty command line.
     RunLine {
@@ -97,6 +104,58 @@ pub enum Request {
     /// The commands that the command palette lists, each of its name, its
     /// title and its entry's arguments.
     Commands,
+}
+
+/// A mouse event over a cell of a pane's screen, as a script gives it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Mouse {
+    /// What it does.
+    pub action: MouseAction,
+    /// Its button: of a press or a release, the left one for none; of a
+    /// move, the one held, if any.
+    pub button: Option<MouseButton>,
+    /// The cell's column, from 0.
+    pub column: u16,
+    /// The cell's row, from 0.
+    pub row: u16,
+    /// Whether Shift is held.
+    pub shift: bool,
+    /// Whether Control is held.
+    pub control: bool,
+    /// Whether Option is held.
+    pub alt: bool,
+    /// The wheel's steps of a scroll.
+    pub steps: Option<u16>,
+}
+
+/// What a mouse event does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseAction {
+    /// A button goes down.
+    Press,
+    /// A button goes up.
+    Release,
+    /// The pointer moves.
+    Move,
+    /// The wheel turns up.
+    ScrollUp,
+    /// The wheel turns down.
+    ScrollDown,
+    /// The wheel tilts left.
+    ScrollLeft,
+    /// The wheel tilts right.
+    ScrollRight,
+}
+
+/// A button of the mouse.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MouseButton {
+    /// The left one.
+    Left,
+    /// The middle one.
+    Middle,
+    /// The right one.
+    Right,
 }
 
 /// A command's argument, as a script gives it.

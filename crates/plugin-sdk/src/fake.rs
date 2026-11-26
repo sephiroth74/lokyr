@@ -5269,6 +5269,13 @@ impl Calling<'_> {
                 self.known_pane(*pane)?;
                 Response::Done
             }
+            Request::SendMouse { pane, input } => {
+                let (columns, rows) = self.host.held(*pane)?.grid;
+                input
+                    .check(columns, rows)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                Response::Done
+            }
             Request::SendKey { pane, keys } | Request::PressKey { pane, keys } => {
                 crate::keys::typed_key(keys)
                     .map_err(|message| Error::new(Code::WrongKind, message))?;

@@ -80,6 +80,16 @@ pub enum AutomationRequest {
         /// The text.
         text: String,
     },
+    /// Sends `pane`, or the focused one, the mouse event `input`, as
+    /// [`Request::SendMouse`](crate::message::Request::SendMouse) sends
+    /// it.
+    SendMouse {
+        /// The pane.
+        #[serde(default)]
+        pane: Option<PaneId>,
+        /// The event.
+        input: crate::host::MouseInput,
+    },
     /// Runs `line` in the shell of `pane`, or of the focused one, at its
     /// prompt, as [`Request::RunLine`](crate::message::Request::RunLine)
     /// runs it: pasted and Return, while the shell edits an empty command
@@ -167,7 +177,8 @@ impl AutomationRequest {
             | Self::Focus(_)
             | Self::Close(_)
             | Self::PaneText { .. }
-            | Self::Commands => Vec::new(),
+            | Self::Commands
+            | Self::SendMouse { .. } => Vec::new(),
         };
         if texts.iter().any(|text| text.len() > LONGEST_TEXT) {
             return Err(Error::new(

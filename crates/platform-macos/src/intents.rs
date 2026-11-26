@@ -6,7 +6,9 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
-use lokyr_platform_core::automation::{Answer, Arg, Command, Edge, Request, Target};
+use lokyr_platform_core::automation::{
+    Answer, Arg, Command, Edge, Mouse, MouseAction, MouseButton, Request, Target,
+};
 
 /// The app that asks, as the automation's question about a pane's text
 /// names it.
@@ -26,6 +28,7 @@ const FOCUS: i32 = 10;
 const COMMANDS: i32 = 11;
 const SEND_KEY: i32 = 12;
 const RUN_LINE: i32 = 13;
+const SEND_MOUSE: i32 = 14;
 
 /// The registry's code of a failure, of an answer that the app could not
 /// take or give.
@@ -65,6 +68,11 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 ///   a binding writes them, as `ctrl+c`.
 /// - `RUN_LINE`: `first` the pane, `text` the command line, which its
 ///   shell runs at its prompt.
+/// - `SEND_MOUSE`: `first` the pane, `text` the action (`press`,
+///   `release`, `move`, `scroll-up`, `scroll-down`, `scroll-left`,
+///   `scroll-right`), `more` its fields, a line each of `name=value`:
+///   `button` (`left`, `middle`, `right`), `column` and `row` from 0,
+///   `steps`, and `shift`, `control` and `alt` of `true`.
 /// - `COMMANDS`: the command palette's entries, a line each of its id and
 ///   its title, apart by a tab: the command's name, then its entry's
 ///   arguments, if any, as a URL's query, `splits.split?direction=right`.
@@ -154,6 +162,16 @@ pub extern "C" fn lokyr_intent_request(
             pane: id(first),
             line: text.unwrap_or_default(),
         },
+        SEND_MOUSE => match mouse_of(text.as_deref().unwrap_or_default(), more.as_deref()) {
+            Ok(mouse) => Request::SendMouse {
+                pane: id(first),
+                mouse,
+            },
+            Err(message) => {
+                give(answer, context, FAILED, &message);
+                return 0;
+            }
+        },
         _ => {
             give(
                 answer,
@@ -202,6 +220,62 @@ pub(crate) fn variables_of<'a>(
         }
     }
     Ok(variables)
+}
+
+/// The mouse event of `action` and of the fields of `fields`, a line each
+/// of `name=value`; why not of an action, a button or a number that does
+/// not read.
+fn mouse_of(action: &str, fields: Option<&str>) -> Result<Mouse, String> {
+    let action = match action.trim() {
+        "press" => MouseAction::Press,
+        "release" => MouseAction::Release,
+        "move" => MouseAction::Move,
+        "scroll-up" => MouseAction::ScrollUp,
+        "scroll-down" => MouseAction::ScrollDown,
+        "scroll-left" => MouseAction::ScrollLeft,
+        "scroll-right" => MouseAction::ScrollRight,
+        other => return Err(format!("`{other}` is no mouse's action")),
+    };
+    let mut mouse = Mouse {
+        action,
+        button: None,
+        column: 0,
+        row: 0,
+        shift: false,
+        control: false,
+        alt: false,
+        steps: None,
+    };
+    let number = |name: &str, value: &str| {
+        value
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| format!("the mouse's {name} `{value}` is no whole number"))
+    };
+    for (name, value) in fields
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| line.split_once('='))
+    {
+        match name.trim() {
+            "button" => {
+                mouse.button = Some(match value.trim() {
+                    "left" => MouseButton::Left,
+                    "middle" => MouseButton::Middle,
+                    "right" => MouseButton::Right,
+                    other => return Err(format!("`{other}` is no mouse's button")),
+                });
+            }
+            "column" => mouse.column = number("column", value)?,
+            "row" => mouse.row = number("row", value)?,
+            "steps" => mouse.steps = Some(number("steps", value)?),
+            "shift" => mouse.shift = value.trim() == "true",
+            "control" => mouse.control = value.trim() == "true",
+            "alt" => mouse.alt = value.trim() == "true",
+            _ => {}
+        }
+    }
+    Ok(mouse)
 }
 
 /// The intents' context, which goes back to them as it came.
@@ -399,6 +473,30 @@ mod tests {
                     .to_owned()
             )
         );
+    }
+
+    #[test]
+    fn a_mouse_event_is_its_action_and_the_lines_of_its_fields() {
+        assert_eq!(
+            mouse_of("press", Some("button=right\ncolumn=3\nrow=2\nshift=true")),
+            Ok(Mouse {
+                action: MouseAction::Press,
+                button: Some(MouseButton::Right),
+                column: 3,
+                row: 2,
+                shift: true,
+                control: false,
+                alt: false,
+                steps: None,
+            })
+        );
+        assert_eq!(
+            mouse_of("scroll-down", Some("steps=5")).map(|mouse| mouse.steps),
+            Ok(Some(5))
+        );
+        assert!(mouse_of("wiggle", None).is_err());
+        assert!(mouse_of("press", Some("button=fourth")).is_err());
+        assert!(mouse_of("move", Some("column=-1")).is_err());
     }
 
     #[test]

@@ -56,6 +56,93 @@ pub fn check_session_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The most steps of the wheel of a mouse event that a plugin sends a pane.
+pub const MOST_MOUSE_STEPS: u16 = 100;
+
+/// What a mouse event that a plugin sends a pane does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MouseDoes {
+    /// A button goes down.
+    Press,
+    /// A button goes up.
+    Release,
+    /// The pointer moves to the cell, a button held or none.
+    Move,
+    /// The wheel turns up, toward the content's top.
+    ScrollUp,
+    /// The wheel turns down.
+    ScrollDown,
+    /// The wheel tilts left.
+    ScrollLeft,
+    /// The wheel tilts right.
+    ScrollRight,
+}
+
+/// A button of the mouse.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MouseButton {
+    /// The left one, the primary.
+    #[default]
+    Left,
+    /// The middle one, the wheel's.
+    Middle,
+    /// The right one, the secondary.
+    Right,
+}
+
+/// A mouse event that a plugin sends a pane, as the pointer over a cell of
+/// its screen makes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MouseInput {
+    /// What it does.
+    pub action: MouseDoes,
+    /// Its button: of a press or a release, the left one for none; of a
+    /// move, the one held, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<MouseButton>,
+    /// The cell's column on the screen, from 0.
+    pub column: u16,
+    /// The cell's row on the screen, from 0.
+    pub row: u16,
+    /// Whether Shift is held.
+    #[serde(default)]
+    pub shift: bool,
+    /// Whether Control is held.
+    #[serde(default)]
+    pub control: bool,
+    /// Whether Option is held, which a report tells as Meta.
+    #[serde(default)]
+    pub alt: bool,
+    /// The wheel's steps of a scroll, each a row: 1 for none,
+    /// [`MOST_MOUSE_STEPS`] at most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u16>,
+}
+
+impl MouseInput {
+    /// Whether it is an event over a cell of a screen of `columns` by
+    /// `rows`, of steps from 1 to [`MOST_MOUSE_STEPS`]; why not otherwise.
+    pub fn check(&self, columns: u16, rows: u16) -> Result<(), String> {
+        if self.column >= columns || self.row >= rows {
+            return Err(format!(
+                "the cell at column {} and row {} is not on the pane's screen",
+                self.column, self.row
+            ));
+        }
+        if self
+            .steps
+            .is_some_and(|steps| steps == 0 || steps > MOST_MOUSE_STEPS)
+        {
+            return Err(format!(
+                "a mouse's scroll is of 1 to {MOST_MOUSE_STEPS} steps"
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// A new pane's environment variables, by their names, which its program
 /// takes over the terminal's own, the shells' integration keeping its
 /// own.

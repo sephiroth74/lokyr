@@ -106,6 +106,7 @@ export type Cx = {
     paste: (pane: PaneId, text: string) -> (true?, string?, number?),
     send_text: (pane: PaneId, text: string) -> (true?, string?, number?),
     send_key: (pane: PaneId, keys: string) -> (true?, string?, number?),
+    send_mouse: (pane: PaneId, input: MouseInput) -> (true?, string?, number?),
     press_key: (pane: PaneId, keys: string) -> (true?, string?, number?),
     edited_line: (pane: PaneId) -> (string?, string?, number?),
     run_line: (pane: PaneId, line: string) -> (true?, string?, number?),
@@ -502,6 +503,7 @@ export type AutomationRequest =
     | { new_tab: { window: WindowId?, folder: string?, command: string?, environment: { [string]: string }? } }
     | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string?, environment: { [string]: string }? } }
     | { send_text: { pane: PaneId?, text: string } }
+    | { send_mouse: { pane: PaneId?, input: MouseInput } }
     | { run_line: { pane: PaneId?, line: string } }
     | { send_key: { pane: PaneId?, keys: string } }
     | { focus: AutomationTarget }
@@ -855,6 +857,31 @@ export type Mods = {
     control: boolean,
     option: boolean,
     command: boolean,
+}
+
+export type MouseButton =
+    | "left"
+    | "middle"
+    | "right"
+
+export type MouseDoes =
+    | "press"
+    | "release"
+    | "move"
+    | "scroll-up"
+    | "scroll-down"
+    | "scroll-left"
+    | "scroll-right"
+
+export type MouseInput = {
+    action: MouseDoes,
+    button: MouseButton?,
+    column: number,
+    row: number,
+    shift: boolean?,
+    control: boolean?,
+    alt: boolean?,
+    steps: number?,
 }
 
 export type NodeDirection =

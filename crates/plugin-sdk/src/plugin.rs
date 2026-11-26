@@ -1230,6 +1230,16 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Sends `pane`'s program the mouse event `input`, as this call returns,
+    /// as [`Request::SendMouse`] says.
+    pub fn send_mouse(
+        &mut self,
+        pane: PaneId,
+        input: crate::host::MouseInput,
+    ) -> Result<(), Error> {
+        self.done(Request::SendMouse { pane, input })
+    }
+
     /// Presses the key of `keys` in `pane` as the user presses it, as this
     /// call returns, as [`Request::PressKey`] says: its binding's command,
     /// or the program.

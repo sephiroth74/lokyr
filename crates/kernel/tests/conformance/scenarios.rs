@@ -28,10 +28,10 @@ use lokyr_plugin_sdk::host::{
     CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
     LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_PANES_A_CALL, MOST_SEARCHES, MOST_STATE,
     MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuBarItem, MenuItem, MenuPlace, Modifier,
-    Packages, PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll,
-    SearchMatch, SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand,
-    Side, StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
-    check_file_name,
+    MouseButton, MouseDoes, MouseInput, Packages, PaneId, PluginInfo, PluginState, QuickLength,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionFolders,
+    SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
+    Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -2804,6 +2804,22 @@ fn capabilities(world: &World) -> Scenario {
                 },
                 lacks("user-commands"),
             ),
+            (
+                Request::SendMouse {
+                    pane: world.pane,
+                    input: MouseInput {
+                        action: MouseDoes::Move,
+                        button: None,
+                        column: 0,
+                        row: 0,
+                        shift: false,
+                        control: false,
+                        alt: false,
+                        steps: None,
+                    },
+                },
+                lacks("pty-write"),
+            ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
             (
                 Request::OpenPopup {
@@ -3271,6 +3287,41 @@ fn core_actions(world: &World) -> Scenario {
                         keys: "cmd+a".to_owned(),
                     },
                     Response::Done,
+                ),
+                (
+                    Request::SendMouse {
+                        pane,
+                        input: MouseInput {
+                            action: MouseDoes::ScrollUp,
+                            button: None,
+                            column: 0,
+                            row: 0,
+                            shift: false,
+                            control: false,
+                            alt: false,
+                            steps: Some(3),
+                        },
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SendMouse {
+                        pane,
+                        input: MouseInput {
+                            action: MouseDoes::Press,
+                            button: Some(MouseButton::Left),
+                            column: 9999,
+                            row: 0,
+                            shift: false,
+                            control: false,
+                            alt: false,
+                            steps: None,
+                        },
+                    },
+                    failed(
+                        Code::Failed,
+                        "the cell at column 9999 and row 0 is not on the pane's screen",
+                    ),
                 ),
                 (
                     Request::SendKey {
