@@ -416,6 +416,12 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     }
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
     copy_folder(&root.join("site/public"), out, &|_| true)?;
+    // The updates' feed: the latest published release's appcast, an asset
+    // of the release, in place of the site's own, which a release of none
+    // keeps.
+    if let Some(appcast) = crate::feed::latest_release_appcast() {
+        fs::write(out.join("appcast.xml"), appcast).context("writing the site's appcast")?;
+    }
     for file in ["style.css", "search.js", "site.js"] {
         fs::copy(root.join("site").join(file), out.join(file))
             .with_context(|| format!("copying {file}"))?;

@@ -618,7 +618,7 @@ pub(crate) fn told_version(binary: &Path) -> Result<String> {
 /// The moment of the build, in seconds since the epoch, as the app's build
 /// script takes it: `SOURCE_DATE_EPOCH`'s, when it is set, or else the time
 /// of HEAD's commit, or else, for a source without git, now.
-fn build_moment(root: &Path) -> Result<u64> {
+pub(crate) fn build_moment(root: &Path) -> Result<u64> {
     if let Ok(given) = std::env::var("SOURCE_DATE_EPOCH") {
         return given
             .trim()
