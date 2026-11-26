@@ -106,6 +106,9 @@ pub enum Request {
         pane: PaneId,
         /// The key and its modifiers.
         combo: lokyr_plugin_sdk::keys::Combo,
+        /// The chain of the command whose call asked it, as a run's, which
+        /// the command of the key's binding runs of.
+        chain: Chain,
     },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given, its program taking
@@ -5834,14 +5837,16 @@ fn own_call(state: &State, command: &str, args: Args) -> Result<Args, Error> {
     own.check_call(args)
 }
 
-/// Gives the commands that `requests` run the chain `chain`, of the
+/// Gives the commands that `requests` run, and the keys that they press,
+/// the chain `chain`, of the
 /// command whose call asked them, or a new chain, one for all of them, of a
 /// call of no command's, as `chain`'s id of 0 tells: so that each call's
 /// runs count against one chain's bound, however many it asks.
 fn deepen(requests: &mut [Request], chain: Chain) {
     let chain = if chain.id == 0 { new_chain() } else { chain };
     for request in requests {
-        if let Request::Run { chain: asked, .. } = request {
+        if let Request::Run { chain: asked, .. } | Request::PressKey { chain: asked, .. } = request
+        {
             *asked = chain;
         }
     }
@@ -7815,6 +7820,7 @@ impl Host<'_, '_> {
                 Request::PressKey {
                     pane: PaneId::of(pane.0),
                     combo,
+                    chain: Chain::default(),
                 }
             }
             Asked::SetText {

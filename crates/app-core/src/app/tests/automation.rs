@@ -386,6 +386,108 @@ fn a_request_of_no_pane_goes_to_the_window_used_last_while_lokyr_is_behind() {
 }
 
 #[test]
+fn a_key_s_command_runs_in_its_pane_s_window_whatever_window_has_the_focus() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    let tabs = |app: &App, window: WindowId| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    let pane_of = |app: &App, window: WindowId| {
+        app.workspace
+            .focused(app.windows[&window].window)
+            .unwrap()
+            .id()
+            .get()
+    };
+    let key = |pane: u64| platform::Request::SendKey {
+        pane: Some(pane),
+        keys: "cmd+t".to_owned(),
+    };
+    // The first window has the focus: Command-T to the second's pane opens
+    // the tab there.
+    assert!(fake.send(&mut app, first, WindowEvent::Focused(true)));
+    let in_second = pane_of(&app, second);
+    assert_eq!(
+        ask(&mut fake, &mut app, 17, key(in_second)),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| tabs(app, second) == 2);
+    assert_eq!(tabs(&app, first), 1);
+    // No window has the focus, as Lokyr is behind: it opens all the same.
+    assert!(fake.send(&mut app, first, WindowEvent::Focused(false)));
+    let in_first = pane_of(&app, first);
+    assert_eq!(
+        ask(&mut fake, &mut app, 18, key(in_first)),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| tabs(app, first) == 2);
+}
+
+/// A plugin whose command, `presser.go`, bound to Control-Option-P, presses
+/// its own key in the focused pane, as `runs` counts.
+struct Presser {
+    runs: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl lokyr_kernel::plugins::Plugin for Presser {
+    fn activate(&mut self, cx: &mut lokyr_kernel::plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "presser.go".to_owned(),
+            title: "Press".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.bind(lokyr_kernel::plugins::host::Binding {
+            keys: "ctrl+alt+p".to_owned(),
+            command: "presser.go".to_owned(),
+            args: Args::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(
+        &mut self,
+        cx: &mut lokyr_kernel::plugins::Cx<'_>,
+        _: &str,
+        _: Args,
+    ) -> Result<(), Error> {
+        self.runs.set(self.runs.get() + 1);
+        let pane = cx
+            .focused_pane()
+            .ok_or_else(|| Error::new(Code::NotFound, "no pane"))?;
+        cx.press_key(pane, "ctrl+alt+p")
+    }
+}
+
+#[test]
+fn a_command_that_presses_its_own_key_stops_as_deep_as_commands_go() {
+    let runs = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin(
+        "presser",
+        Box::new(Presser {
+            runs: std::rc::Rc::clone(&runs),
+        }),
+    );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    assert!(fake.send(&mut app, window, WindowEvent::Focused(true)));
+    app.run(&mut fake, "presser.go", Args::new());
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(runs.get() > 1, "{}", runs.get());
+    assert!(runs.get() <= COMMANDS_DEEP + 1, "{}", runs.get());
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {
