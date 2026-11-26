@@ -5615,11 +5615,16 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::OpenWindow { directory } => {
+            Request::OpenWindow {
+                directory,
+                environment,
+            } => {
                 if let Some(directory) = directory {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 Response::Done
             }
@@ -5912,25 +5917,35 @@ impl Calling<'_> {
                 Response::Done
             }
             Request::NewTab {
-                window, directory, ..
+                window,
+                directory,
+                environment,
+                ..
             } => {
                 self.known_window(*window)?;
                 if let Some(directory) = directory {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
                 opened = Opened::Tab(tab, pane);
                 Response::Tab { tab, pane }
             }
             Request::Split {
-                pane, directory, ..
+                pane,
+                directory,
+                environment,
+                ..
             } => {
                 if let Some(directory) = directory {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.known_pane(*pane)?;
                 let floating = self
                     .host

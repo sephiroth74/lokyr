@@ -33,6 +33,10 @@
             <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
                 <cocoa key="folder"/>
             </parameter>
+            <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
+                <type type="text" list="yes"/>
+                <cocoa key="environment"/>
+            </parameter>
             <result type="window" description="The window."/>
         </command>
         <command name="create tab" code="LKyrCrTb" description="Opens a tab, in the window in front unless another is given.">
@@ -45,6 +49,10 @@
             </parameter>
             <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
                 <cocoa key="folder"/>
+            </parameter>
+            <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
+                <type type="text" list="yes"/>
+                <cocoa key="environment"/>
             </parameter>
             <result type="tab" description="The tab."/>
         </command>
@@ -59,6 +67,10 @@
             </parameter>
             <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
                 <cocoa key="folder"/>
+            </parameter>
+            <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
+                <type type="text" list="yes"/>
+                <cocoa key="environment"/>
             </parameter>
             <result type="terminal" description="The new terminal."/>
         </command>

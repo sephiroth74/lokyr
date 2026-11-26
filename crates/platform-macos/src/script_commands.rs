@@ -144,21 +144,31 @@ define_class!(
 
 /// What `create window` does.
 fn create_window(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    let environment = match environment_argument(command) {
+        Ok(environment) => environment,
+        Err(message) => return refuse(command, &message),
+    };
     let request = Request::NewWindow {
         folder: text_argument(command, "folder"),
         command: text_argument(command, "command"),
+        environment,
     };
     run(command, request, opened_window)
 }
 
 /// What `create tab` does.
 fn create_tab(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    let environment = match environment_argument(command) {
+        Ok(environment) => environment,
+        Err(message) => return refuse(command, &message),
+    };
     let request = Request::NewTab {
         window: argument(command, "window")
             .and_then(|window| window.downcast::<ScriptWindow>().ok())
             .map(|window| window.id()),
         folder: text_argument(command, "folder"),
         command: text_argument(command, "command"),
+        environment,
     };
     run(command, request, opened_tab)
 }
@@ -180,11 +190,16 @@ fn split(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
         [Target::Pane(pane)] => Some(*pane),
         _ => return refuse(command, "a split splits one terminal"),
     };
+    let environment = match environment_argument(command) {
+        Ok(environment) => environment,
+        Err(message) => return refuse(command, &message),
+    };
     let request = Request::Split {
         pane,
         edge,
         folder: text_argument(command, "folder"),
         command: text_argument(command, "command"),
+        environment,
     };
     run(command, request, opened_terminal)
 }
@@ -308,6 +323,38 @@ fn text_argument(command: &NSScriptCommand, key: &str) -> Option<String> {
         .and_then(|text| text.downcast::<NSString>().ok())
         .map(|text| text.to_string())
 }
+
+/// The environment variables of `command`'s `with environment`, a list of
+/// texts each `NAME=value`, or one text; none without it, and why not of
+/// another value or an entry of no `=`.
+fn environment_argument(command: &NSScriptCommand) -> Result<Vec<(String, String)>, String> {
+    let Some(given) = argument(command, "environment") else {
+        return Ok(Vec::new());
+    };
+    let entries: Vec<String> = match given.downcast::<NSArray>() {
+        Ok(list) => list
+            .to_vec()
+            .iter()
+            .map(|entry| {
+                entry
+                    .downcast_ref::<NSString>()
+                    .map(ToString::to_string)
+                    .ok_or_else(|| ENVIRONMENT_LIST.to_owned())
+            })
+            .collect::<Result<_, _>>()?,
+        Err(single) => vec![
+            single
+                .downcast::<NSString>()
+                .map_err(|_| ENVIRONMENT_LIST.to_owned())?
+                .to_string(),
+        ],
+    };
+    crate::intents::variables_of(entries.iter().map(String::as_str))
+}
+
+/// What `with environment` takes.
+const ENVIRONMENT_LIST: &str =
+    "the environment is a list of texts, each NAME=value, such as {\"EDITOR=vim\"}";
 
 /// The windows, tabs and terminals that `command` acts on, its receivers.
 fn receivers(command: &NSScriptCommand) -> Vec<Target> {

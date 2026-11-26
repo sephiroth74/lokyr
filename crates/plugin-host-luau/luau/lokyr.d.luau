@@ -110,7 +110,7 @@ export type Cx = {
     scroll: (pane: PaneId, scroll: Scroll) -> (true?, string?, number?),
     font_size: () -> (number?, string?, number?),
     set_font_size: (size: number?) -> (true?, string?, number?),
-    open_window: (directory: string?) -> (true?, string?, number?),
+    open_window: (directory: string?, environment: { [string]: string }?) -> (true?, string?, number?),
     open_quick_window: (place: QuickPlace, directory: string?) -> (WindowId?, string?, number?),
     show_quick_window: (window: WindowId, place: QuickPlace?) -> (true?, string?, number?),
     close_window: (window: WindowId) -> (true?, string?, number?),
@@ -120,8 +120,8 @@ export type Cx = {
     recent_tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
     groups: (window: WindowId) -> ({ GroupInfo }?, string?, number?),
     layout: (tab: TabId) -> (Layout?, string?, number?),
-    new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
-    split: (pane: PaneId, direction: Direction, side: Side, directory: string?) -> (PaneId?, string?, number?),
+    new_tab: (window: WindowId, index: number?, directory: string?, environment: { [string]: string }?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
+    split: (pane: PaneId, direction: Direction, side: Side, directory: string?, environment: { [string]: string }?) -> (PaneId?, string?, number?),
     close_tab: (tab: TabId, ask: boolean?, keep: number?) -> (true?, string?, number?),
     reopen_tab: (window: WindowId) -> (true?, string?, number?),
     close_pane: (pane: PaneId, ask: boolean?) -> (true?, string?, number?),
@@ -496,9 +496,9 @@ export type AutomationPane = {
 
 export type AutomationRequest =
     | "workspace"
-    | { new_window: { folder: string?, command: string? } }
-    | { new_tab: { window: WindowId?, folder: string?, command: string? } }
-    | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string? } }
+    | { new_window: { folder: string?, command: string?, environment: { [string]: string }? } }
+    | { new_tab: { window: WindowId?, folder: string?, command: string?, environment: { [string]: string }? } }
+    | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string?, environment: { [string]: string }? } }
     | { send_text: { pane: PaneId?, text: string } }
     | { focus: AutomationTarget }
     | { close: AutomationTarget }

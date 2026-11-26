@@ -1260,14 +1260,26 @@ impl<'a> Cx<'a> {
 
     /// Opens a window, once this call returns.
     pub fn open_window(&mut self) -> Result<(), Error> {
-        self.done(Request::OpenWindow { directory: None })
+        self.open_window_with(None, &crate::host::Variables::new())
     }
 
     /// Opens a window whose pane starts in `directory`, a path absolute or
     /// from `~`, or in the folder of a file there, once this call returns.
     pub fn open_window_in(&mut self, directory: &str) -> Result<(), Error> {
+        self.open_window_with(Some(directory), &crate::host::Variables::new())
+    }
+
+    /// Opens a window as [`open_window_in`](Self::open_window_in) does, in
+    /// `directory` if given, its pane's program taking `environment` over
+    /// the terminal's variables, which takes `pty-write` too.
+    pub fn open_window_with(
+        &mut self,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<(), Error> {
         self.done(Request::OpenWindow {
-            directory: Some(directory.to_owned()),
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         })
     }
 
@@ -1499,14 +1511,7 @@ impl<'a> Cx<'a> {
         window: WindowId,
         index: Option<usize>,
     ) -> Result<(TabId, PaneId), Error> {
-        match self.request(Request::NewTab {
-            window,
-            index,
-            directory: None,
-        }) {
-            Response::Tab { tab, pane } => Ok((tab, pane)),
-            other => Err(failed(other)),
-        }
+        self.new_tab_with(window, index, None, &crate::host::Variables::new())
     }
 
     /// Opens a tab as [`new_tab`](Self::new_tab) does, its pane in
@@ -1518,10 +1523,29 @@ impl<'a> Cx<'a> {
         index: Option<usize>,
         directory: &str,
     ) -> Result<(TabId, PaneId), Error> {
+        self.new_tab_with(
+            window,
+            index,
+            Some(directory),
+            &crate::host::Variables::new(),
+        )
+    }
+
+    /// Opens a tab as [`new_tab_in`](Self::new_tab_in) does, in `directory`
+    /// if given, its pane's program taking `environment` over the
+    /// terminal's variables, which takes `pty-write` too.
+    pub fn new_tab_with(
+        &mut self,
+        window: WindowId,
+        index: Option<usize>,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<(TabId, PaneId), Error> {
         match self.request(Request::NewTab {
             window,
             index,
-            directory: Some(directory.to_owned()),
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         }) {
             Response::Tab { tab, pane } => Ok((tab, pane)),
             other => Err(failed(other)),
@@ -1536,15 +1560,7 @@ impl<'a> Cx<'a> {
         direction: Direction,
         side: Side,
     ) -> Result<PaneId, Error> {
-        match self.request(Request::Split {
-            pane,
-            direction,
-            side,
-            directory: None,
-        }) {
-            Response::Pane(Some(pane)) => Ok(pane),
-            other => Err(failed(other)),
-        }
+        self.split_with(pane, direction, side, None, &crate::host::Variables::new())
     }
 
     /// Splits `pane` as [`split`](Self::split) does, the new pane in
@@ -1557,11 +1573,32 @@ impl<'a> Cx<'a> {
         side: Side,
         directory: &str,
     ) -> Result<PaneId, Error> {
+        self.split_with(
+            pane,
+            direction,
+            side,
+            Some(directory),
+            &crate::host::Variables::new(),
+        )
+    }
+
+    /// Splits `pane` as [`split_in`](Self::split_in) does, in `directory` if
+    /// given, the new pane's program taking `environment` over the
+    /// terminal's variables, which takes `pty-write` too.
+    pub fn split_with(
+        &mut self,
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<PaneId, Error> {
         match self.request(Request::Split {
             pane,
             direction,
             side,
-            directory: Some(directory.to_owned()),
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         }) {
             Response::Pane(Some(pane)) => Ok(pane),
             other => Err(failed(other)),

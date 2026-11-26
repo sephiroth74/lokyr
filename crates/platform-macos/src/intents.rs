@@ -35,17 +35,19 @@ const FAILED: i32 = 201;
 pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *const c_char);
 
 /// Makes the automation's request of `kind`, of the ids `first` and
-/// `second`, none of 0, and the texts `text` and `more`, none of a null
-/// pointer, and gives its answer to `answer` of `context`, once: at once of
-/// a request that the app cannot take, later otherwise. Whether the app
-/// took it.
+/// `second`, none of 0, and the texts `text`, `more` and `variables`, none
+/// of a null pointer, and gives its answer to `answer` of `context`, once:
+/// at once of a request that the app cannot take, later otherwise. Whether
+/// the app took it.
 ///
-/// - `NEW_WINDOW`: `text` the folder, `more` the command line; the ids of
-///   the window, its tab and its pane, apart by spaces.
+/// - `NEW_WINDOW`: `text` the folder, `more` the command line, `variables`
+///   the environment's, a line each of `NAME=value`; the ids of the
+///   window, its tab and its pane, apart by spaces.
 /// - `NEW_TAB`: `first` the window, `text` the folder, `more` the command
-///   line; the ids alike.
+///   line, `variables` alike; the ids alike.
 /// - `SPLIT`: `first` the pane, `second` the edge (0 right, 1 left, 2 down,
-///   3 up), `text` the folder, `more` the command line; the ids alike.
+///   3 up), `text` the folder, `more` the command line, `variables` alike;
+///   the ids alike.
 /// - `SEND_TEXT`: `first` the pane, `text` the text.
 /// - `RUN`: `text` the command's name, or a palette's entry as `COMMANDS`
 ///   gives it, `more` its arguments, a line each of `name=value`, each
@@ -67,22 +69,32 @@ pub extern "C" fn lokyr_intent_request(
     second: u64,
     text: *const c_char,
     more: *const c_char,
+    variables: *const c_char,
     context: *mut c_void,
     answer: AnswerFn,
 ) -> i32 {
     // SAFETY: the intents give C strings, terminated, that live through
     // the call, or null pointers.
-    let (text, more) = unsafe { (owned(text), owned(more)) };
+    let (text, more, variables) = unsafe { (owned(text), owned(more), owned(variables)) };
+    let environment = match variables_of(variables.as_deref().unwrap_or_default().lines()) {
+        Ok(environment) => environment,
+        Err(message) => {
+            give(answer, context, FAILED, &message);
+            return 0;
+        }
+    };
     let id = |id: u64| (id != 0).then_some(id);
     let request = match kind {
         NEW_WINDOW => Request::NewWindow {
             folder: text,
             command: more,
+            environment,
         },
         NEW_TAB => Request::NewTab {
             window: id(first),
             folder: text,
             command: more,
+            environment,
         },
         SPLIT => Request::Split {
             pane: id(first),
@@ -94,6 +106,7 @@ pub extern "C" fn lokyr_intent_request(
             },
             folder: text,
             command: more,
+            environment,
         },
         SEND_TEXT => Request::SendText {
             pane: id(first),
@@ -151,6 +164,30 @@ pub extern "C" fn lokyr_intent_request(
         );
     }
     i32::from(posted)
+}
+
+/// The environment variables of `entries`, each `NAME=value`, a blank one
+/// left out; why not of an entry of no `=` or of no name.
+pub(crate) fn variables_of<'a>(
+    entries: impl Iterator<Item = &'a str>,
+) -> Result<Vec<(String, String)>, String> {
+    let mut variables = Vec::new();
+    for entry in entries {
+        if entry.trim().is_empty() {
+            continue;
+        }
+        match entry.split_once('=') {
+            Some((name, value)) if !name.trim().is_empty() => {
+                variables.push((name.trim().to_owned(), value.to_owned()));
+            }
+            _ => {
+                return Err(format!(
+                    "`{entry}` is no environment variable: write it as NAME=value"
+                ));
+            }
+        }
+    }
+    Ok(variables)
 }
 
 /// The intents' context, which goes back to them as it came.
@@ -348,6 +385,20 @@ mod tests {
                     .to_owned()
             )
         );
+    }
+
+    #[test]
+    fn the_variables_are_lines_of_a_name_and_its_value() {
+        assert_eq!(
+            variables_of("A=1\n\n B = x=y\nC=".lines()),
+            Ok(vec![
+                ("A".to_owned(), "1".to_owned()),
+                ("B".to_owned(), " x=y".to_owned()),
+                ("C".to_owned(), String::new()),
+            ])
+        );
+        assert!(variables_of(["PATH"].into_iter()).is_err());
+        assert!(variables_of(["=x"].into_iter()).is_err());
     }
 
     #[test]

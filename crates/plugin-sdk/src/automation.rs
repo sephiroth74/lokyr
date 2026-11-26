@@ -9,7 +9,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Args, Code, Error};
-use crate::host::{PaneId, TabId, WindowId};
+use crate::host::{PaneId, TabId, Variables, WindowId};
 
 /// The longest text of a request, a command line, a folder or text sent,
 /// and of a text answered, in bytes.
@@ -34,6 +34,9 @@ pub enum AutomationRequest {
         /// The command line that its shell runs as it starts.
         #[serde(default)]
         command: Option<String>,
+        /// The environment variables that its shell takes.
+        #[serde(default)]
+        environment: Variables,
     },
     /// Opens a tab in `window`, or in the window in front, as a new tab's
     /// pane starts, in `folder` and running `command` as a window's.
@@ -47,6 +50,9 @@ pub enum AutomationRequest {
         /// The command line that its shell runs as it starts.
         #[serde(default)]
         command: Option<String>,
+        /// The environment variables that its shell takes.
+        #[serde(default)]
+        environment: Variables,
     },
     /// Splits `pane`, or the focused one, with a new pane at `edge`, in
     /// `folder` and running `command` as a window's.
@@ -62,6 +68,9 @@ pub enum AutomationRequest {
         /// The command line that its shell runs as it starts.
         #[serde(default)]
         command: Option<String>,
+        /// The environment variables that its shell takes.
+        #[serde(default)]
+        environment: Variables,
     },
     /// Sends `text` to `pane`, or to the focused one, as typed.
     SendText {
@@ -108,8 +117,17 @@ pub enum AutomationRequest {
 impl AutomationRequest {
     /// Whether its texts are within [`LONGEST_TEXT`], or the error.
     pub fn check(&self) -> Result<(), Error> {
+        if let Self::NewWindow { environment, .. }
+        | Self::NewTab { environment, .. }
+        | Self::Split { environment, .. } = self
+        {
+            crate::host::check_variables(environment)
+                .map_err(|message| Error::new(Code::WrongKind, message))?;
+        }
         let texts: Vec<&str> = match self {
-            Self::NewWindow { folder, command }
+            Self::NewWindow {
+                folder, command, ..
+            }
             | Self::NewTab {
                 folder, command, ..
             }
@@ -275,6 +293,7 @@ mod tests {
         );
         assert!(
             AutomationRequest::NewTab {
+                environment: Default::default(),
                 window: None,
                 folder: Some(long),
                 command: None

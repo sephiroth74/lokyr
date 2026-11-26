@@ -56,6 +56,59 @@ pub fn check_session_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A new pane's environment variables, by their names, which its program
+/// takes over the terminal's own, the shells' integration keeping its
+/// own.
+pub type Variables = std::collections::BTreeMap<String, String>;
+
+/// The most variables of a new pane's environment.
+pub const MOST_VARIABLES: usize = 64;
+
+/// The most bytes of a variable's name.
+pub const LONGEST_VARIABLE_NAME: usize = 256;
+
+/// The most bytes of a variable's value.
+pub const LONGEST_VARIABLE_VALUE: usize = 32 * 1024;
+
+/// Whether `variables` are a new pane's: [`MOST_VARIABLES`] at most, each
+/// name of [`LONGEST_VARIABLE_NAME`] bytes at most, not empty, of no `=`
+/// nor NUL, each value of [`LONGEST_VARIABLE_VALUE`] bytes at most and no
+/// NUL; why not otherwise.
+pub fn check_variables(variables: &Variables) -> Result<(), String> {
+    if variables.len() > MOST_VARIABLES {
+        return Err(format!(
+            "a new pane takes {MOST_VARIABLES} environment variables at most, not {}",
+            variables.len()
+        ));
+    }
+    for (name, value) in variables {
+        if name.is_empty() || name.contains(['=', '\0']) {
+            return Err(format!(
+                "`{}` is no environment variable's name, which is not empty and holds no `=` nor NUL",
+                name.escape_debug()
+            ));
+        }
+        if name.len() > LONGEST_VARIABLE_NAME {
+            return Err(format!(
+                "an environment variable's name is {LONGEST_VARIABLE_NAME} bytes at most, not {}",
+                name.len()
+            ));
+        }
+        if value.contains('\0') {
+            return Err(format!(
+                "the value of the environment variable `{name}` holds a NUL"
+            ));
+        }
+        if value.len() > LONGEST_VARIABLE_VALUE {
+            return Err(format!(
+                "the value of the environment variable `{name}` is {LONGEST_VARIABLE_VALUE} bytes at most, not {}",
+                value.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The most bytes of a session's folder.
 pub const MOST_SESSION_DIRECTORY: usize = 1024;
 
@@ -2842,6 +2895,27 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_pane_s_variables_are_bounded_named_and_of_no_nul() {
+        let of = |pairs: &[(&str, &str)]| -> Variables {
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect()
+        };
+        assert!(check_variables(&of(&[("EDITOR", "vim"), ("EMPTY", "")])).is_ok());
+        assert!(check_variables(&of(&[("", "x")])).is_err());
+        assert!(check_variables(&of(&[("A=B", "x")])).is_err());
+        assert!(check_variables(&of(&[("A\0", "x")])).is_err());
+        assert!(check_variables(&of(&[("A", "x\0y")])).is_err());
+        let long = "x".repeat(LONGEST_VARIABLE_VALUE + 1);
+        assert!(check_variables(&of(&[("A", &long)])).is_err());
+        let many: Variables = (0..=MOST_VARIABLES)
+            .map(|at| (format!("V{at}"), String::new()))
+            .collect();
+        assert!(check_variables(&many).is_err());
+    }
 
     #[test]
     fn a_view_of_folds_shows_the_rows_past_them_each_fold_one_row() {

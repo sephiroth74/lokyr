@@ -98,8 +98,14 @@ pub enum Request {
         chain: Chain,
     },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
-    /// or in the folder of a file there, if given.
-    OpenWindow(Option<String>),
+    /// or in the folder of a file there, if given, its program taking
+    /// `environment` over the terminal's variables.
+    OpenWindow {
+        /// The folder of its pane.
+        directory: Option<String>,
+        /// Its pane's environment variables.
+        environment: host::Variables,
+    },
     /// Open the first window of the session `session`, which a plugin made,
     /// as [`Request::OpenWindow`] opens one, in that session, which shows:
     /// none of a session that a later write of the call took away.
@@ -506,6 +512,20 @@ pub trait Panes {
     /// its size as a new pane's beside it; its directory `directory`, if
     /// given, a path absolute or from `~`, or the folder of a file there.
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
+
+    /// A pane as [`Panes::spawn`] gives one, whose program takes
+    /// `environment` over the terminal's variables: a new pane's of a
+    /// factory that sets none.
+    fn spawn_with(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        environment: &host::Variables,
+    ) -> Pane {
+        let _ = environment;
+        self.spawn(id, near, directory)
+    }
 
     /// A popup's pane, as [`Panes::spawn`] gives a pane, whose program is
     /// the user's login shell running `command`: a new pane's of a factory
@@ -1331,6 +1351,7 @@ enum Write {
         tab: TabId,
         pane: PaneId,
         directory: Option<String>,
+        environment: host::Variables,
     },
     /// A split of `pane`, of the id that the host gave the new pane.
     Split {
@@ -1339,6 +1360,7 @@ enum Write {
         side: Side,
         new: PaneId,
         directory: Option<String>,
+        environment: host::Variables,
     },
     /// A popup over the active tab of `window`, the focused one's for none,
     /// of the id that the host gave its pane.
@@ -5004,11 +5026,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 tab,
                 pane,
                 directory,
+                environment,
             } => {
                 if context.workspace.window(window).is_some() {
                     let near = context.workspace.active_pane(window);
                     let near = near.and_then(|near| context.workspace.pane(near));
-                    let new = context.panes.spawn(pane, near, directory.as_deref());
+                    let new =
+                        context
+                            .panes
+                            .spawn_with(pane, near, directory.as_deref(), &environment);
                     context
                         .workspace
                         .open_tab_as(window, new, index.unwrap_or(usize::MAX), tab);
@@ -5021,9 +5047,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 side,
                 new,
                 directory,
+                environment,
             } => {
                 if let Some(near) = context.workspace.pane(split) {
-                    let new = context.panes.spawn(new, Some(near), directory.as_deref());
+                    let new = context.panes.spawn_with(
+                        new,
+                        Some(near),
+                        directory.as_deref(),
+                        &environment,
+                    );
                     context.workspace.split(split, direction, new, side);
                 }
                 continue;
@@ -6990,6 +7022,7 @@ impl Host<'_, '_> {
                 window,
                 index,
                 directory,
+                environment,
             } => {
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
@@ -6997,6 +7030,8 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 let (tab, pane) = (TabId::new(), PaneId::new());
                 self.writes.push(Write::NewTab {
@@ -7005,6 +7040,7 @@ impl Host<'_, '_> {
                     tab,
                     pane,
                     directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Tab {
                     tab: tab.into(),
@@ -7072,11 +7108,14 @@ impl Host<'_, '_> {
                 direction: lying,
                 side: new_side,
                 directory,
+                environment,
             } => {
                 if let Some(directory) = directory {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.known_pane(*pane)?;
                 // A floating pane splits not, of no layout of its own: its
                 // shell would start and go.
@@ -7100,6 +7139,7 @@ impl Host<'_, '_> {
                     side: side(*new_side),
                     new,
                     directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Pane(Some(new.into())));
             }
@@ -7485,13 +7525,21 @@ impl Host<'_, '_> {
                     place,
                 }
             }
-            Asked::OpenWindow { directory } => {
+            Asked::OpenWindow {
+                directory,
+                environment,
+            } => {
                 if let Some(directory) = &directory {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(&environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
-                Request::OpenWindow(directory)
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                }
             }
             Asked::PreviewTheme(name) => {
                 if let Some(name) = &name {

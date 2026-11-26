@@ -2563,6 +2563,19 @@ impl<B: Backend> App<B> {
         page: Option<String>,
         directory: Option<PathBuf>,
     ) -> Option<WindowId> {
+        self.open_window_running_with(platform, program, page, directory, Vec::new())
+    }
+
+    /// Opens a window as [`App::open_window_running`] does, its program
+    /// taking `variables` over the terminal's own.
+    fn open_window_running_with(
+        &mut self,
+        platform: &mut dyn Platform,
+        program: &Program,
+        page: Option<String>,
+        directory: Option<PathBuf>,
+        variables: Vec<(String, String)>,
+    ) -> Option<WindowId> {
         // The windows of a session left hide first, as a new session's
         // window opens.
         self.settle_sessions(platform);
@@ -2585,6 +2598,7 @@ impl<B: Backend> App<B> {
             .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
         let environment = Environment {
             directory: directory.or_else(|| self.start_directory(platform)),
+            variables,
             ..self.environment.clone()
         };
         let attributes = WindowAttributes {
@@ -3999,7 +4013,10 @@ impl<B: Backend> App<B> {
                         self.chains.1.pop();
                     }
                 }
-                Request::OpenWindow(None) => self.open_window(platform),
+                Request::OpenWindow {
+                    directory: None,
+                    environment,
+                } if environment.is_empty() => self.open_window(platform),
                 Request::OpenQuickWindow {
                     window,
                     place,
@@ -4030,11 +4047,16 @@ impl<B: Backend> App<B> {
                     }
                 }
                 // A window in the folder that the plugin asked for, or a
-                // new window's of a path that is not there.
-                Request::OpenWindow(Some(directory)) => {
+                // new window's of a path that is not there, of the
+                // variables that it asked for.
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                } => {
                     let program = self.program.clone();
-                    let folder = spawn::folder_of(&directory);
-                    self.open_window_running(platform, &program, None, folder);
+                    let folder = directory.as_deref().and_then(spawn::folder_of);
+                    let variables = environment.into_iter().collect();
+                    self.open_window_running_with(platform, &program, None, folder, variables);
                 }
                 Request::CloseWindow(window) => {
                     let shown = self

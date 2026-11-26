@@ -18,7 +18,7 @@ Then open the Shortcuts app, make a new shortcut, and type Lokyr in the search f
 
 ## What it gives you
 
-- **Windows, tabs and splits**, each in a folder of your choice, with a command line that its shell runs as it starts.
+- **Windows, tabs and splits**, each in a folder of your choice, with a command line that its shell runs as it starts and environment variables of your own.
 - **Text sent to a terminal**, as if you typed it, such as a command and Return.
 - **Any of Lokyr's commands**, run by its name and arguments, as the [command palette](plugins/command-palette.md) runs it.
 - **A window, a tab or a terminal** brought forward or closed, and terminals found by their title or their folder.
@@ -45,15 +45,21 @@ Its commands:
 
 | Command | What it does | Result |
 |---|---|---|
-| `create window [with command text] [in folder text]` | Opens a window | the window |
-| `create tab [in window] [with command text] [in folder text]` | Opens a tab, in the window in front unless you give one | the tab |
-| `split [terminal] [direction right/left/down/up] [with command text] [in folder text]` | Splits a terminal, the focused one unless you give one, on the right unless you give a direction | the new terminal |
+| `create window [with command text] [in folder text] [with environment list]` | Opens a window | the window |
+| `create tab [in window] [with command text] [in folder text] [with environment list]` | Opens a tab, in the window in front unless you give one | the tab |
+| `split [terminal] [direction right/left/down/up] [with command text] [in folder text] [with environment list]` | Splits a terminal, the focused one unless you give one, on the right unless you give a direction | the new terminal |
 | `input text text [to terminal]` | Sends text to a terminal, the focused one unless you give one, as if you typed it | |
 | `focus window/tab/terminal` | Brings it forward | |
 | `close window/tab/terminal` | Closes it | |
 | `perform action text [with arguments record]` | Runs one of Lokyr's commands by its name, with its arguments | |
 
-A folder is a path from `/` or `~`. A command line runs in the shell, so it can hold pipes and variables, and it shows in the shell's history.
+A folder is a path from `/` or `~`. A command line runs in the shell, so it can hold pipes and variables, and it shows in the shell's history. `with environment` takes a list of environment variables, each `NAME=value`, which the new shell starts with:
+
+```applescript
+tell application "Lokyr"
+    create tab with environment {"AWS_PROFILE=staging", "EDITOR=vim"}
+end tell
+```
 
 This script opens a window, splits it, runs a command in the new terminal and reads what it shows:
 
@@ -85,9 +91,9 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 
 | Action | Parameters | What it does |
 |---|---|---|
-| New Window | Folder, Command | Opens a window |
-| New Tab | Folder, Command | Opens a tab in Lokyr's window in front |
-| Split Pane | Terminal, Direction, Folder, Command | Splits a terminal, the focused one unless you choose one |
+| New Window | Folder, Command, Environment Variables | Opens a window |
+| New Tab | Folder, Command, Environment Variables | Opens a tab in Lokyr's window in front |
+| Split Pane | Terminal, Direction, Folder, Command, Environment Variables | Splits a terminal, the focused one unless you choose one |
 | Send Text | Text, Terminal | Sends text to a terminal, as if you typed it |
 | Focus Terminal | Terminal | Brings a terminal forward, with its window and its tab |
 | Close Terminal | Terminal | Closes a terminal |
@@ -103,6 +109,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Get Selected Text | Terminal | Returns the text of a terminal's selection |
 
 - **A Terminal parameter** lists Lokyr's terminals, each with its title and its folder. Leave it empty for the focused terminal, where the action allows it, or pass the terminals that Find Terminal returns.
+- **Environment Variables** is a list of texts, each `NAME=value`, such as `AWS_PROFILE=staging`, which the new shell starts with.
 - **Arguments** go one a line, as `name=value`, such as `index=2` for `tabs.goto`. Lokyr reads a number or `true` and `false` as the kind that the command takes. In Run Palette Command, they add to the entry's own, or replace them.
 - **Send Text, Close Terminal, the quick terminal's actions and the Get actions** work while Lokyr stays behind. The others bring Lokyr forward.
 - **Spotlight** finds New Window and New Tab: type "New Lokyr window" or "New Lokyr tab".
@@ -137,6 +144,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **Lokyr's bundled [`automation`](plugins/automation.md) plugin answers** what AppleScript and the Shortcuts app ask. Lokyr hands it each request and waits for its answer.
 - **A new window, tab or split answers once it opens**, with its object, so that the script's next command can use it.
 - **A command line** that you give a new terminal is typed into its shell as it starts, followed by Return.
+- **Environment variables** that you give a new terminal come over Lokyr's own, such as `TERM`. [Shell integration](shell-integration.md) keeps the variables that it needs, and takes your `ZDOTDIR` as zsh's own folder. A terminal takes 64 variables at most.
 - **The commands that `perform action` and Run Command run** act as if you chose them, on Lokyr's window in front: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window is in front, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
 - **A request waits 10 seconds at most** for Lokyr's answer, then fails.
 

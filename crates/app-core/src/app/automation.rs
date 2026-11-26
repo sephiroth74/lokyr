@@ -129,23 +129,32 @@ impl<B: Backend> App<B> {
 fn request_of(request: platform::Request) -> AutomationRequest {
     match request {
         platform::Request::Workspace => AutomationRequest::Workspace,
-        platform::Request::NewWindow { folder, command } => {
-            AutomationRequest::NewWindow { folder, command }
-        }
+        platform::Request::NewWindow {
+            folder,
+            command,
+            environment,
+        } => AutomationRequest::NewWindow {
+            folder,
+            command,
+            environment: environment.into_iter().collect(),
+        },
         platform::Request::NewTab {
             window,
             folder,
             command,
+            environment,
         } => AutomationRequest::NewTab {
             window: window.map(WindowId),
             folder,
             command,
+            environment: environment.into_iter().collect(),
         },
         platform::Request::Split {
             pane,
             edge,
             folder,
             command,
+            environment,
         } => AutomationRequest::Split {
             pane: pane.map(PaneId),
             edge: match edge {
@@ -156,6 +165,7 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             },
             folder,
             command,
+            environment: environment.into_iter().collect(),
         },
         platform::Request::SendText { pane, text } => AutomationRequest::SendText {
             pane: pane.map(PaneId),

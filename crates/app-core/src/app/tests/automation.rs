@@ -47,6 +47,7 @@ fn a_script_s_request_opens_a_tab_whose_ids_its_answer_tells() {
     let (mut fake, mut app) = started();
     let window = fake.windows().next().unwrap();
     let request = platform::Request::NewTab {
+        environment: Default::default(),
         window: None,
         folder: None,
         command: None,
@@ -151,6 +152,54 @@ fn the_commands_are_told_as_the_palette_lists_them() {
                     platform::Arg::Text("right".to_owned())
                 )]),
         "{commands:?}"
+    );
+}
+
+#[test]
+fn a_new_tab_s_program_takes_the_variables_that_the_request_gives() {
+    let program = Program::command(
+        "/bin/sh",
+        ["-c", "printf '%s' \"$LOKYR_TEST_VARIABLE\"; exec /bin/cat"],
+    );
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), program);
+    fake.start(&mut app);
+    let request = platform::Request::NewTab {
+        window: None,
+        folder: None,
+        command: None,
+        environment: vec![(
+            "LOKYR_TEST_VARIABLE".to_owned(),
+            "from-a-shortcut".to_owned(),
+        )],
+    };
+    let platform::Answer::Opened { pane, .. } = ask(&mut fake, &mut app, 9, request) else {
+        panic!("{:?}", fake.automation_answers());
+    };
+    let first_row = |app: &App| {
+        app.workspace
+            .pane(PaneId::of(pane))
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    run_until(&mut fake, &mut app, |_, app| {
+        first_row(app).starts_with("from-a-shortcut")
+    });
+    // A name of `=` is refused, as the request opens nothing.
+    let request = platform::Request::NewTab {
+        window: None,
+        folder: None,
+        command: None,
+        environment: vec![("A=B".to_owned(), "x".to_owned())],
+    };
+    assert!(
+        matches!(
+            ask(&mut fake, &mut app, 10, request),
+            platform::Answer::Error { .. }
+        ),
+        "{:?}",
+        fake.automation_answers()
     );
 }
 

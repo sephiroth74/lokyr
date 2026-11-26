@@ -165,6 +165,21 @@ impl Panes for Spawner<'_> {
     }
 
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, asked: Option<&str>) -> Pane {
+        self.spawn_with(
+            id,
+            near,
+            asked,
+            &lokyr_kernel::plugins::host::Variables::new(),
+        )
+    }
+
+    fn spawn_with(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        asked: Option<&str>,
+        variables: &lokyr_kernel::plugins::host::Variables,
+    ) -> Pane {
         let new = match &self.config.window.new_directory {
             NewDirectory::Home => None,
             // The directory that its shell told last, of this machine, as
@@ -181,6 +196,10 @@ impl Panes for Spawner<'_> {
         let directory = asked.and_then(folder_of).or(new);
         let environment = Environment {
             directory,
+            variables: variables
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
             ..self.environment.clone()
         };
         let settings = settings(self.config, self.environment, self.budget);

@@ -10,8 +10,9 @@ import AppIntents
 /// the error's message.
 typealias LokyrAnswer = @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
 
-/// Makes the automation's request of `kind`, of two ids and two texts, whose
-/// answer comes once through `answer`: whether the app took it.
+/// Makes the automation's request of `kind`, of two ids, two texts and the
+/// environment's variables, a line each, whose answer comes once through
+/// `answer`: whether the app took it.
 @_silgen_name("lokyr_intent_request")
 private func lokyrIntentRequest(
     _ kind: Int32,
@@ -19,6 +20,7 @@ private func lokyrIntentRequest(
     _ second: UInt64,
     _ text: UnsafePointer<CChar>?,
     _ more: UnsafePointer<CChar>?,
+    _ variables: UnsafePointer<CChar>?,
     _ context: UnsafeMutableRawPointer?,
     _ answer: LokyrAnswer
 ) -> Int32
@@ -50,13 +52,16 @@ private func withText<T>(_ text: String?, _ body: (UnsafePointer<CChar>?) -> T) 
 /// The app's answer to the request of `kind`, its text, or its error.
 @MainActor
 private func ask(
-    _ kind: Kind, first: UInt64 = 0, second: UInt64 = 0, text: String? = nil, more: String? = nil
+    _ kind: Kind, first: UInt64 = 0, second: UInt64 = 0, text: String? = nil, more: String? = nil,
+    variables: [String]? = nil
 ) async throws -> String {
     try await withCheckedThrowingContinuation { continuation in
         let context = Unmanaged.passRetained(Waiting(continuation)).toOpaque()
+        let lines = variables.map { $0.joined(separator: "\n") }
         _ = withText(text) { text in
             withText(more) { more in
-                lokyrIntentRequest(kind.rawValue, first, second, text, more, context) { context, status, text in
+              withText(lines) { lines in
+                lokyrIntentRequest(kind.rawValue, first, second, text, more, lines, context) { context, status, text in
                     guard let context else { return }
                     let waiting = Unmanaged<Waiting>.fromOpaque(context).takeRetainedValue()
                     let message = text.map { String(cString: $0) } ?? ""
@@ -66,6 +71,7 @@ private func ask(
                         waiting.continuation.resume(throwing: LokyrError(message: message))
                     }
                 }
+              }
             }
         }
     }
@@ -221,15 +227,16 @@ enum SplitDirection: String, AppEnum {
 /// Opens a window, in a folder and running a command line if given.
 struct NewWindowIntent: AppIntent {
     static let title: LocalizedStringResource = "New Window"
-    static let description = IntentDescription("Opens a new Lokyr window, in a folder and running a command line if given.")
+    static let description = IntentDescription("Opens a new Lokyr window, in a folder and running a command line if given, its shell taking environment variables, each NAME=value.")
     static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Folder") var folder: String?
     @Parameter(title: "Command") var command: String?
+    @Parameter(title: "Environment Variables") var environment: [String]?
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        _ = try await ask(.newWindow, text: folder, more: command)
+        _ = try await ask(.newWindow, text: folder, more: command, variables: environment)
         return .result()
     }
 }
@@ -237,15 +244,16 @@ struct NewWindowIntent: AppIntent {
 /// Opens a tab in the window in front.
 struct NewTabIntent: AppIntent {
     static let title: LocalizedStringResource = "New Tab"
-    static let description = IntentDescription("Opens a tab in Lokyr's window in front, in a folder and running a command line if given.")
+    static let description = IntentDescription("Opens a tab in Lokyr's window in front, in a folder and running a command line if given, its shell taking environment variables, each NAME=value.")
     static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Folder") var folder: String?
     @Parameter(title: "Command") var command: String?
+    @Parameter(title: "Environment Variables") var environment: [String]?
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        _ = try await ask(.newTab, text: folder, more: command)
+        _ = try await ask(.newTab, text: folder, more: command, variables: environment)
         return .result()
     }
 }
@@ -253,17 +261,20 @@ struct NewTabIntent: AppIntent {
 /// Splits a terminal, the focused one unless another is given.
 struct SplitPaneIntent: AppIntent {
     static let title: LocalizedStringResource = "Split Pane"
-    static let description = IntentDescription("Splits a terminal of Lokyr's, the focused one unless another is given, of a new terminal beside it.")
+    static let description = IntentDescription("Splits a terminal of Lokyr's, the focused one unless another is given, of a new terminal beside it, its shell taking environment variables, each NAME=value.")
     static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Terminal") var terminal: TerminalEntity?
     @Parameter(title: "Direction", default: .right) var direction: SplitDirection
     @Parameter(title: "Folder") var folder: String?
     @Parameter(title: "Command") var command: String?
+    @Parameter(title: "Environment Variables") var environment: [String]?
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        _ = try await ask(.split, first: terminal?.pane ?? 0, second: direction.code, text: folder, more: command)
+        _ = try await ask(
+            .split, first: terminal?.pane ?? 0, second: direction.code, text: folder, more: command,
+            variables: environment)
         return .result()
     }
 }

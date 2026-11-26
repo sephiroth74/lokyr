@@ -1036,7 +1036,10 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     assert_eq!(
         asked,
         [
-            Request::OpenWindow(None),
+            Request::OpenWindow {
+                directory: None,
+                environment: Default::default(),
+            },
             Request::Quit,
             Request::FontSize(Some(20.0)),
             Request::FontSize(None),

@@ -48,6 +48,7 @@ fn answer(host: &FakeHost, id: u64) -> Option<AutomationAnswer> {
 fn a_request_opens_a_tab_in_a_folder_and_its_shell_runs_its_command() {
     let (mut host, mut plugin) = host();
     let request = AutomationRequest::NewTab {
+        environment: Default::default(),
         window: None,
         folder: Some("~".to_owned()),
         command: Some("ls -l".to_owned()),
@@ -59,6 +60,7 @@ fn a_request_opens_a_tab_in_a_folder_and_its_shell_runs_its_command() {
     assert_eq!(window, WindowId(1));
     let done = host.take_done();
     assert!(done.contains(&Request::NewTab {
+        environment: Default::default(),
         window,
         index: None,
         directory: Some("~".to_owned()),
@@ -74,6 +76,7 @@ fn a_request_opens_a_tab_in_a_folder_and_its_shell_runs_its_command() {
 fn a_split_opens_at_its_edge_and_tells_its_tab() {
     let (mut host, mut plugin) = host();
     let request = AutomationRequest::Split {
+        environment: Default::default(),
         pane: None,
         edge: AutomationEdge::Left,
         folder: None,
@@ -85,6 +88,7 @@ fn a_split_opens_at_its_edge_and_tells_its_tab() {
     };
     assert_eq!((window, tab), (WindowId(1), TabId(1)));
     assert!(host.take_done().contains(&Request::Split {
+        environment: Default::default(),
         pane: PaneId(1),
         direction: Direction::Horizontal,
         side: Side::First,
@@ -134,15 +138,16 @@ fn the_workspace_tells_the_same_ids_from_a_request_to_the_next() {
 fn a_new_window_answers_once_it_opens_and_its_shell_runs_its_command() {
     let (mut host, mut plugin) = host();
     let request = AutomationRequest::NewWindow {
+        environment: Default::default(),
         folder: None,
         command: Some("top".to_owned()),
     };
     ask(&mut host, &mut plugin, 6, request);
     assert_eq!(answer(&host, 6), None);
-    assert!(
-        host.take_done()
-            .contains(&Request::OpenWindow { directory: None })
-    );
+    assert!(host.take_done().contains(&Request::OpenWindow {
+        environment: Default::default(),
+        directory: None
+    }));
     host.post(Event::Workspace(WorkspaceEvent::WindowOpened {
         window: WindowId(1),
     }));

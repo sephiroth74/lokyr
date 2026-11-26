@@ -1047,6 +1047,7 @@ fn bounds(world: &World) -> Scenario {
 /// refused.
 fn panes_a_call(world: &World) -> Scenario {
     let new_tab = || Request::NewTab {
+        environment: Default::default(),
         window: world.window,
         index: None,
         directory: None,
@@ -1381,6 +1382,7 @@ fn tabs(world: &World) -> Scenario {
             ask(vec![
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: Some(0),
                         directory: None,
@@ -1392,6 +1394,7 @@ fn tabs(world: &World) -> Scenario {
                 ),
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: None,
                         directory: None,
@@ -1403,6 +1406,7 @@ fn tabs(world: &World) -> Scenario {
                 ),
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: None,
                         directory: None,
@@ -1574,6 +1578,7 @@ fn sessions(world: &World) -> Scenario {
             ask(vec![
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: window(0),
                         index: None,
                         directory: None,
@@ -1585,6 +1590,7 @@ fn sessions(world: &World) -> Scenario {
                 ),
                 (
                     Request::Split {
+                        environment: Default::default(),
                         pane: pane(0),
                         direction: Direction::Vertical,
                         side: Side::Second,
@@ -1676,6 +1682,7 @@ fn sessions(world: &World) -> Scenario {
                     (new("again", None), Response::Session(session(2))),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: window(0),
                             index: None,
                             directory: None,
@@ -1993,6 +2000,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2004,6 +2012,7 @@ fn groups(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2199,6 +2208,7 @@ fn groups(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2234,6 +2244,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2293,6 +2304,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2330,6 +2342,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2878,6 +2891,7 @@ fn capabilities(world: &World) -> Scenario {
             // a plugin draws over them; and the pointer.
             (
                 Request::NewTab {
+                    environment: Default::default(),
                     window: world.window,
                     index: None,
                     directory: None,
@@ -3904,7 +3918,13 @@ fn app_requests(world: &World) -> Scenario {
                     "`conformer.ask` takes no argument `n`",
                 ),
             ),
-            (Request::OpenWindow { directory: None }, Response::Done),
+            (
+                Request::OpenWindow {
+                    environment: Default::default(),
+                    directory: None,
+                },
+                Response::Done,
+            ),
             (
                 Request::OpenQuickWindow {
                     place: QuickPlace::default(),
@@ -3947,12 +3967,14 @@ fn app_requests(world: &World) -> Scenario {
             ),
             (
                 Request::OpenWindow {
+                    environment: Default::default(),
                     directory: Some("/tmp".to_owned()),
                 },
                 Response::Done,
             ),
             (
                 Request::OpenWindow {
+                    environment: Default::default(),
                     directory: Some("tmp".to_owned()),
                 },
                 failed(
@@ -4346,6 +4368,7 @@ fn workspace(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: Some("~/x".to_owned()),
@@ -4357,6 +4380,7 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::Split {
+                            environment: Default::default(),
                             pane: pane(0),
                             direction: Direction::Vertical,
                             side: Side::Second,
@@ -4382,6 +4406,7 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: NO_WINDOW,
                             index: None,
                             directory: None,
@@ -4390,6 +4415,7 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: Some("x".to_owned()),
@@ -4766,6 +4792,7 @@ fn workspace(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,

@@ -742,11 +742,17 @@ pub enum Request {
     SetFontSize(Option<f32>),
     /// Opens a window, its pane in `directory`, a path absolute or from
     /// `~`, or in the folder of a file there, if given; in the folder of a
-    /// new window's pane otherwise.
+    /// new window's pane otherwise. Its pane's program takes `environment`
+    /// over the terminal's variables, which takes `pty-write` too, as a
+    /// variable can run a command in the shell.
     OpenWindow {
         /// The folder of its pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// Its pane's environment variables, as
+        /// [`check_variables`](crate::host::check_variables) bounds them.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Opens a quick window of a new pane, which shows at `place` over every
     /// app's windows, as a global key shows it, and takes the focus: its id,
@@ -791,7 +797,7 @@ pub enum Request {
     /// with the tab's id and the pane's, and opens them as the call
     /// returns. The window shows the tab that it showed. Its pane starts in
     /// `directory`, a path absolute or from `~`, or in the folder of a file
-    /// there, if given.
+    /// there, if given, of `environment` as [`Request::OpenWindow`]'s.
     NewTab {
         /// The window.
         window: WindowId,
@@ -800,6 +806,9 @@ pub enum Request {
         /// The folder of its pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// Its pane's environment variables.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Splits a pane's part along `direction`, with a new pane on `side`,
     /// whose program starts as a new pane's does, beside the pane: the host
@@ -816,6 +825,10 @@ pub enum Request {
         /// folder of a file there; the split pane's otherwise.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// The new pane's environment variables, as
+        /// [`Request::OpenWindow`]'s.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Closes a tab, with its panes, whose programs are hung up; its window
     /// shows the tab after it, or before it, and closes with its last tab.
@@ -1392,6 +1405,15 @@ impl Request {
             // programs of other panes; and a popup, a pane of a command that
             // the shell runs.
             Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } | Self::OpenPopup { .. } => {
+                vec![Capability::WorkspaceWrite, Capability::PtyWrite]
+            }
+            // A new pane of environment variables, which can run a command
+            // in its shell, as `PROMPT_COMMAND` does.
+            Self::OpenWindow { environment, .. }
+            | Self::NewTab { environment, .. }
+            | Self::Split { environment, .. }
+                if !environment.is_empty() =>
+            {
                 vec![Capability::WorkspaceWrite, Capability::PtyWrite]
             }
             _ => self.capability().into_iter().collect(),
@@ -2612,6 +2634,29 @@ pub fn within_depth(mut request: Request) -> Result<Request, crate::command::Err
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_pane_of_variables_takes_the_ptys_writes_too() {
+        let tab = |environment: crate::host::Variables| Request::NewTab {
+            window: WindowId(1),
+            index: None,
+            directory: None,
+            environment,
+        };
+        assert_eq!(
+            tab(crate::host::Variables::new()).capabilities(),
+            [Capability::WorkspaceWrite]
+        );
+        let variables = crate::host::Variables::from([("EDITOR".to_owned(), "vim".to_owned())]);
+        assert_eq!(
+            tab(variables.clone()).capabilities(),
+            [Capability::WorkspaceWrite, Capability::PtyWrite]
+        );
+        assert_eq!(
+            tab(variables).lacking(&[Capability::WorkspaceWrite]),
+            Some(Capability::PtyWrite)
+        );
+    }
 
     /// A value of lists nested `depth` levels deep, made without recursion.
     fn nested(depth: usize) -> Data {

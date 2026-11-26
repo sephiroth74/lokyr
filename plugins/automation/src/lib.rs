@@ -130,11 +130,12 @@ impl Automation {
     ) -> Result<Option<AutomationAnswer>, Error> {
         let answer = match request {
             AutomationRequest::Workspace => AutomationAnswer::Workspace(workspace(cx)?),
-            AutomationRequest::NewWindow { folder, command } => {
-                match folder {
-                    Some(folder) => cx.open_window_in(&folder)?,
-                    None => cx.open_window()?,
-                }
+            AutomationRequest::NewWindow {
+                folder,
+                command,
+                environment,
+            } => {
+                cx.open_window_with(folder.as_deref(), &environment)?;
                 self.opening.push_back((id, command));
                 return Ok(None);
             }
@@ -142,15 +143,13 @@ impl Automation {
                 window,
                 folder,
                 command,
+                environment,
             } => {
                 let window = match window {
                     Some(window) => window,
                     None => front_window(cx)?,
                 };
-                let (tab, pane) = match folder {
-                    Some(folder) => cx.new_tab_in(window, None, &folder)?,
-                    None => cx.new_tab(window, None)?,
-                };
+                let (tab, pane) = cx.new_tab_with(window, None, folder.as_deref(), &environment)?;
                 start(cx, pane, command.as_deref())?;
                 cx.activate_tab(tab)?;
                 AutomationAnswer::Opened { window, tab, pane }
@@ -160,6 +159,7 @@ impl Automation {
                 edge,
                 folder,
                 command,
+                environment,
             } => {
                 let split = pane_or_focused(cx, pane)?;
                 let (window, tab) = place_of(cx, split)?;
@@ -169,10 +169,8 @@ impl Automation {
                     AutomationEdge::Down => (Direction::Vertical, Side::Second),
                     AutomationEdge::Up => (Direction::Vertical, Side::First),
                 };
-                let pane = match folder {
-                    Some(folder) => cx.split_in(split, direction, side, &folder)?,
-                    None => cx.split(split, direction, side)?,
-                };
+                let pane =
+                    cx.split_with(split, direction, side, folder.as_deref(), &environment)?;
                 start(cx, pane, command.as_deref())?;
                 cx.focus_pane(pane)?;
                 AutomationAnswer::Opened { window, tab, pane }

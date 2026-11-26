@@ -17,6 +17,8 @@ pub enum Request {
         folder: Option<String>,
         /// The command line that its shell runs as it starts.
         command: Option<String>,
+        /// The environment variables that its shell takes, by their names.
+        environment: Vec<(String, String)>,
     },
     /// Opens a tab in `window`, or in the window in front, as a window's
     /// pane starts.
@@ -27,6 +29,8 @@ pub enum Request {
         folder: Option<String>,
         /// The command line that its shell runs as it starts.
         command: Option<String>,
+        /// The environment variables that its shell takes, by their names.
+        environment: Vec<(String, String)>,
     },
     /// Splits `pane`, or the focused one, with a new pane at `edge`, as a
     /// window's pane starts.
@@ -39,6 +43,8 @@ pub enum Request {
         folder: Option<String>,
         /// The command line that its shell runs as it starts.
         command: Option<String>,
+        /// The environment variables that its shell takes, by their names.
+        environment: Vec<(String, String)>,
     },
     /// Sends `text` to `pane`, or to the focused one, as typed.
     SendText {
