@@ -11,8 +11,8 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 ### Added
 
 - AppleScript: Lokyr's dictionary has its windows, their tabs and their terminals, each with its id, name and folder, and commands that create windows, tabs and splits in a folder with a command to run, send text, focus, close, and perform any of Lokyr's commands by its name and arguments. A script reads a terminal's text once you allow the app that runs it, and Lokyr remembers your answer.
-- Shortcuts: actions that open a window or a tab in a folder with a command to run, split a terminal, send it text, focus or close it, find terminals by their title or folder and get their details, show the quick terminal, run any of Lokyr's commands by its name or from the palette's list with its arguments, switch to a session by its name, opening it when there is none, open a saved layout, and get a terminal's text or its selection, which Lokyr asks you about first. Spotlight finds New Window and New Tab too. Scripts and shortcuts stop working with `enabled = false` in `[plugins.automation]`.
-- `window.show-quick-terminal` shows the quick terminal and never hides it, for a key or a shortcut of your own.
+- Shortcuts: actions that open a window or a tab in a folder with a command to run, split a terminal, send it text, focus or close it, find terminals by their title or folder and get their details, show or hide the quick terminal, run any of Lokyr's commands by its name, or an entry of the palette's list, such as Split Right, switch to a session by its name, opening it when there is none, open a saved layout, and get a terminal's text or its selection, which Lokyr asks you about first. Spotlight finds New Window and New Tab too. Scripts and shortcuts stop working with `enabled = false` in `[plugins.automation]`.
+- `window.show-quick-terminal` and `window.hide-quick-terminal` show and hide the quick terminal, for a key or a shortcut of your own, where Quick Terminal toggles it.
 
 ### Changed
 

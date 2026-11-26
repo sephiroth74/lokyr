@@ -67,10 +67,10 @@ fn quick(plugin: &QuickTerminal) -> WindowId {
 #[test]
 fn the_command_registers_with_its_title_and_the_global_key_s_capability() {
     let (host, _) = host(&[]);
-    let [toggle, show] = host.commands() else {
-        panic!("two commands: {:?}", host.commands());
+    let [toggle, show, hide] = host.commands() else {
+        panic!("three commands: {:?}", host.commands());
     };
-    for (command, name) in [(toggle, TOGGLE), (show, SHOW)] {
+    for (command, name) in [(toggle, TOGGLE), (show, SHOW), (hide, HIDE)] {
         assert_eq!(
             (command.name.as_str(), command.category),
             (name, Category::Windows)
@@ -83,6 +83,7 @@ fn the_command_registers_with_its_title_and_the_global_key_s_capability() {
     for (_, catalog) in CATALOGS {
         assert!(catalog.contains("command-window-toggle-quick-terminal = "));
         assert!(catalog.contains("command-window-show-quick-terminal = "));
+        assert!(catalog.contains("command-window-hide-quick-terminal = "));
     }
 }
 
@@ -388,4 +389,28 @@ fn its_show_opens_or_shows_its_window_and_never_hides_it() {
             place: Some(QuickPlace::default()),
         }]
     );
+}
+
+#[test]
+fn its_hide_hides_its_window_and_never_shows_it() {
+    let (mut host, mut plugin) = host(&[]);
+    let hide = |host: &mut FakeHost, plugin: &mut QuickTerminal| {
+        host.take_done();
+        host.command(plugin, HIDE, Args::new()).unwrap();
+        quick_requests(host)
+    };
+    // Not open, it opens nothing.
+    assert_eq!(hide(&mut host, &mut plugin), []);
+    toggle(&mut host, &mut plugin);
+    let window = quick(&plugin);
+    // Shown, it hides.
+    assert_eq!(
+        hide(&mut host, &mut plugin),
+        [Request::ShowQuickWindow {
+            window,
+            place: None
+        }]
+    );
+    // Hidden, it stays hidden.
+    assert_eq!(hide(&mut host, &mut plugin), []);
 }

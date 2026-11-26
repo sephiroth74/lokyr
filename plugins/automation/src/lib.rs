@@ -199,15 +199,7 @@ impl Automation {
                 cx.run_command(&command, args)?;
                 AutomationAnswer::Done
             }
-            AutomationRequest::Commands => AutomationAnswer::Commands(
-                cx.commands()?
-                    .into_iter()
-                    .map(|command| AutomationCommand {
-                        name: command.name,
-                        title: command.title,
-                    })
-                    .collect(),
-            ),
+            AutomationRequest::Commands => AutomationAnswer::Commands(palette_commands(cx)?),
             AutomationRequest::PaneText { pane, selection } => {
                 let read = Read {
                     id,
@@ -430,6 +422,38 @@ fn pane_or_focused(cx: &mut Cx<'_>, pane: Option<PaneId>) -> Result<PaneId, Erro
         .find(|tab| tab.active)
         .map(|tab| tab.focused)
         .ok_or_else(no_window)
+}
+
+/// The commands as the command palette lists them: those of no argument
+/// that they need, then the menu bar's items of their arguments, each
+/// once, as Split Right; an item of a command listed already, of no
+/// arguments, is that command. Whether the menus enable them now does not
+/// count, as a shortcut runs them later.
+fn palette_commands(cx: &mut Cx<'_>) -> Result<Vec<AutomationCommand>, Error> {
+    let mut commands: Vec<AutomationCommand> = cx
+        .commands()?
+        .into_iter()
+        .filter(|command| command.params.iter().all(|param| param.default.is_some()))
+        .map(|command| AutomationCommand {
+            name: command.name,
+            title: command.title,
+            args: Args::new(),
+        })
+        .collect();
+    for item in cx.menu_bar_items().unwrap_or_default() {
+        let listed = commands
+            .iter()
+            .any(|command| command.name == item.command && command.args == item.args);
+        if listed {
+            continue;
+        }
+        commands.push(AutomationCommand {
+            name: item.command,
+            title: item.title,
+            args: item.args,
+        });
+    }
+    Ok(commands)
 }
 
 /// `args` of the kinds that `command`'s parameters take: a text of a whole

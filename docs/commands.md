@@ -50,6 +50,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.close` | Close Window |  | ⇧⌘W (`cmd+shift+w`) |
 | `window.close-session` | Close Session |  |  |
 | `window.goto` | Go to Window | `index`, whole number | ⌥⌘1 to ⌥⌘9 (`cmd+alt+1` to `cmd+alt+9`), `index` 1 to 9 |
+| [`window.hide-quick-terminal`](plugins/quick-terminal.md) | Hide Quick Terminal |  | · not released yet |
 | `window.new` | New Window |  | ⌘N (`cmd+n`) |
 | `window.new-session` | New Session |  |  |
 | `window.next` | Cycle Through Windows |  | ⌘\` (`` cmd+` ``) |

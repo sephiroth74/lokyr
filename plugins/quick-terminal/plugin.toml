@@ -12,5 +12,6 @@ global-hotkey = true
 commands = [
     { name = "window.toggle-quick-terminal", title = "Quick Terminal" },
     { name = "window.show-quick-terminal", title = "Show Quick Terminal" },
+    { name = "window.hide-quick-terminal", title = "Hide Quick Terminal" },
 ]
 config-schema = "quick-terminal.schema.json"

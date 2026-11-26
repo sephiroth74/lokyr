@@ -478,6 +478,7 @@ export type AutomationAnswer =
 export type AutomationCommand = {
     name: string,
     title: string,
+    args: { [string]: Value }?,
 }
 
 export type AutomationEdge =

@@ -23,6 +23,7 @@ lokyr_plugin_sdk::export_plugin!(QuickTerminal);
 /// Shows the quick terminal, or hides it.
 const TOGGLE: &str = "window.toggle-quick-terminal";
 const SHOW: &str = "window.show-quick-terminal";
+const HIDE: &str = "window.hide-quick-terminal";
 
 static CATALOGS: [(&str, &str); 2] = [
     ("en", include_str!("../locales/en/quick-terminal.ftl")),
@@ -155,7 +156,11 @@ fn length_of(text: &str) -> Option<QuickLength> {
 
 impl Plugin for QuickTerminal {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        for (name, title) in [(TOGGLE, "Quick Terminal"), (SHOW, "Show Quick Terminal")] {
+        for (name, title) in [
+            (TOGGLE, "Quick Terminal"),
+            (SHOW, "Show Quick Terminal"),
+            (HIDE, "Hide Quick Terminal"),
+        ] {
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
@@ -207,10 +212,12 @@ impl Plugin for QuickTerminal {
     /// Shows the quick terminal, at its config's place, opening it first,
     /// in the folder of a new window's; or hides it, of the toggle, if it
     /// shows with the focus. Shown without the focus, it takes the focus.
+    /// Its hide hides it, its shell running, if it shows.
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
         match name {
             TOGGLE => self.toggle(cx),
             SHOW => self.show(cx),
+            HIDE => self.hide(cx),
             _ => Err(Error::new(
                 Code::NotFound,
                 format!("quick-terminal has no command `{name}`"),

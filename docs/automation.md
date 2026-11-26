@@ -22,7 +22,7 @@ Then open the Shortcuts app, make a new shortcut, and type Lokyr in the search f
 - **Text sent to a terminal**, as if you typed it, such as a command and Return.
 - **Any of Lokyr's commands**, run by its name and arguments, as the [command palette](plugins/command-palette.md) runs it.
 - **A window, a tab or a terminal** brought forward or closed, and terminals found by their title or their folder.
-- **The [quick terminal](plugins/quick-terminal.md)** shown from a shortcut.
+- **The [quick terminal](plugins/quick-terminal.md)** shown or hidden from a shortcut.
 - **The [sessions](sessions.md)**: Shortcuts switches to a session by its name, and opens a saved [layout](layouts.md).
 - **What a terminal shows**, or its selection, once you allow the app that asks.
 
@@ -94,16 +94,17 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Find Terminal | filters on Title, Folder, Tab ID and Window ID | Returns the terminals that match, such as those whose folder contains `src` |
 | Get Details of Terminal | Terminal | Returns a terminal's title, folder, tab ID or window ID |
 | Open Quick Terminal | | Shows the [quick terminal](plugins/quick-terminal.md), opening it first |
+| Close Quick Terminal | | Hides the quick terminal, its shell still running |
 | Run Command | Command, Arguments | Runs one of Lokyr's commands by its name, such as `tabs.next` |
-| Run Palette Command | Command, Arguments | Runs one of Lokyr's commands, chosen from the list of their titles that the command palette shows |
+| Run Palette Command | Command, Arguments | Runs an entry of the command palette, chosen from its list, such as Split Right, with the entry's arguments |
 | Switch Session | Session | Switches to the session of that name, and opens a new session of that name when there is none |
 | Open Layout | Layout | Opens a saved layout as a new session |
 | Get Terminal Text | Terminal | Returns the text that a terminal shows |
 | Get Selected Text | Terminal | Returns the text of a terminal's selection |
 
 - **A Terminal parameter** lists Lokyr's terminals, each with its title and its folder. Leave it empty for the focused terminal, where the action allows it, or pass the terminals that Find Terminal returns.
-- **Arguments** go one a line, as `name=value`, such as `index=2` for `tabs.goto`. Lokyr reads a number or `true` and `false` as the kind that the command takes.
-- **Send Text, Close Terminal, Open Quick Terminal and the Get actions** work while Lokyr stays behind. The others bring Lokyr forward.
+- **Arguments** go one a line, as `name=value`, such as `index=2` for `tabs.goto`. Lokyr reads a number or `true` and `false` as the kind that the command takes. In Run Palette Command, they add to the entry's own, or replace them.
+- **Send Text, Close Terminal, the quick terminal's actions and the Get actions** work while Lokyr stays behind. The others bring Lokyr forward.
 - **Spotlight** finds New Window and New Tab: type "New Lokyr window" or "New Lokyr tab".
 
 ## Allow an app to read your terminals

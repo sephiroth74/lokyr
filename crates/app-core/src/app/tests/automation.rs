@@ -130,7 +130,7 @@ fn a_session_s_switch_makes_the_session_of_a_name_that_is_not_there() {
 }
 
 #[test]
-fn the_commands_are_told_of_their_names_and_titles() {
+fn the_commands_are_told_as_the_palette_lists_them() {
     let (mut fake, mut app) = started();
     let platform::Answer::Commands(commands) =
         ask(&mut fake, &mut app, 8, platform::Request::Commands)
@@ -140,7 +140,18 @@ fn the_commands_are_told_of_their_names_and_titles() {
     assert!(commands.contains(&platform::Command {
         name: "window.show-quick-terminal".to_owned(),
         title: "Show Quick Terminal".to_owned(),
+        args: Vec::new(),
     }));
+    // The menu bar's items of their arguments, as the palette lists them.
+    assert!(
+        commands.iter().any(|command| command.name == "splits.split"
+            && command.args
+                == [(
+                    "direction".to_owned(),
+                    platform::Arg::Text("right".to_owned())
+                )]),
+        "{commands:?}"
+    );
 }
 
 #[test]

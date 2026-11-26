@@ -280,16 +280,52 @@ fn host_of_goto() -> (FakeHost, Automation) {
 }
 
 #[test]
-fn the_commands_are_told_of_their_names_and_titles() {
+fn the_commands_are_told_as_the_palette_lists_them_of_their_entries_arguments() {
+    use lokyr_plugin_sdk::command::Category;
+    use lokyr_plugin_sdk::host::MenuBarItem;
     let (mut host, mut plugin) = host_of_goto();
+    let item = |index: i64, title: &str, enabled: bool| MenuBarItem {
+        command: "tabs.goto".to_owned(),
+        args: Args::from([("index".to_owned(), Value::Integer(index))]),
+        title: title.to_owned(),
+        submenu: None,
+        menu: Category::Tabs,
+        keys: None,
+        enabled,
+        ticked: false,
+        plugin: "lokyr/tabs".to_owned(),
+    };
+    // An item that the menus disable now is listed all the same, and an
+    // item twice once.
+    host.set_menu_bar(vec![
+        item(1, "Select First Tab", true),
+        item(2, "Select Second Tab", false),
+        item(1, "Select First Tab", true),
+    ]);
     ask(&mut host, &mut plugin, 14, AutomationRequest::Commands);
     let Some(AutomationAnswer::Commands(commands)) = answer(&host, 14) else {
         panic!("{:?}", host.automation_answers());
     };
-    assert!(commands.contains(&AutomationCommand {
-        name: "tabs.goto".to_owned(),
-        title: "Select Tab".to_owned(),
-    }));
+    let goto: Vec<(&str, &Args)> = commands
+        .iter()
+        .filter(|command| command.name == "tabs.goto")
+        .map(|command| (command.title.as_str(), &command.args))
+        .collect();
+    // The command, of an argument that it needs, is listed of its items
+    // alone.
+    assert_eq!(
+        goto,
+        [
+            (
+                "Select First Tab",
+                &Args::from([("index".to_owned(), Value::Integer(1))])
+            ),
+            (
+                "Select Second Tab",
+                &Args::from([("index".to_owned(), Value::Integer(2))])
+            ),
+        ]
+    );
 }
 
 #[test]

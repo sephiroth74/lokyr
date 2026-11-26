@@ -100,7 +100,8 @@ pub enum AutomationRequest {
         /// The session's name, not empty.
         name: String,
     },
-    /// The commands of the registry, each of its name and title.
+    /// The commands that the command palette lists, each of its name, its
+    /// title and the arguments that its entry gives.
     Commands,
 }
 
@@ -229,13 +230,18 @@ pub struct AutomationTab {
     pub panes: Vec<AutomationPane>,
 }
 
-/// A command of the registry, as the automation tells it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// A command as the command palette lists it, as the automation tells
+/// it: of no argument, or of the arguments of a menu bar's item, as Split
+/// Right.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AutomationCommand {
     /// Its name, as `tabs.new`.
     pub name: String,
     /// Its title, as the menus show it.
     pub title: String,
+    /// The arguments that its entry gives.
+    #[serde(default)]
+    pub args: Args,
 }
 
 /// A pane, as the automation tells it.

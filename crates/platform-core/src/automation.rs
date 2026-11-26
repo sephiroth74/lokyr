@@ -72,7 +72,8 @@ pub enum Request {
         /// The session's name.
         name: String,
     },
-    /// The app's commands, each of its name and title.
+    /// The commands that the command palette lists, each of its name, its
+    /// title and its entry's arguments.
     Commands,
 }
 
@@ -167,13 +168,15 @@ pub struct Tab {
     pub panes: Vec<Pane>,
 }
 
-/// A command, as an answer tells it.
+/// A command as the command palette lists it, as an answer tells it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Command {
     /// Its name, as `tabs.new`.
     pub name: String,
     /// Its title, as the menus show it.
     pub title: String,
+    /// The arguments that its entry gives, by their names.
+    pub args: Vec<(String, Arg)>,
 }
 
 /// A pane, as an answer tells it.

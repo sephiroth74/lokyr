@@ -239,6 +239,19 @@ fn answer_of(answer: AutomationAnswer) -> platform::Answer {
                 .map(|command| platform::Command {
                     name: command.name,
                     title: command.title,
+                    args: command
+                        .args
+                        .into_iter()
+                        .map(|(name, value)| {
+                            let arg = match value {
+                                Value::String(text) => platform::Arg::Text(text),
+                                Value::Integer(number) => platform::Arg::Integer(number),
+                                Value::Boolean(yes) => platform::Arg::Bool(yes),
+                                Value::Number(number) => platform::Arg::Text(number.to_string()),
+                            };
+                            (name, arg)
+                        })
+                        .collect(),
                 })
                 .collect(),
         ),

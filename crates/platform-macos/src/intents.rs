@@ -6,7 +6,7 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 
-use lokyr_platform_core::automation::{Answer, Edge, Request, Target};
+use lokyr_platform_core::automation::{Answer, Arg, Command, Edge, Request, Target};
 
 /// The app that asks, as the automation's question about a pane's text
 /// names it.
@@ -47,8 +47,9 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 /// - `SPLIT`: `first` the pane, `second` the edge (0 right, 1 left, 2 down,
 ///   3 up), `text` the folder, `more` the command line; the ids alike.
 /// - `SEND_TEXT`: `first` the pane, `text` the text.
-/// - `RUN`: `text` the command's name, `more` its arguments, a line each
-///   of `name=value`, each value a text.
+/// - `RUN`: `text` the command's name, or a palette's entry as `COMMANDS`
+///   gives it, `more` its arguments, a line each of `name=value`, each
+///   value a text, over the entry's.
 /// - `PANE_TEXT`: `first` the pane, `second` 1 of its selection; the text.
 /// - `WORKSPACE`: every pane, a line each of its id, its title, its
 ///   folder, its tab's id and its window's, apart by tabs.
@@ -56,8 +57,9 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 ///   there is none of that name.
 /// - `CLOSE`: `first` the pane, which it closes.
 /// - `FOCUS`: `first` the pane, which it brings forward.
-/// - `COMMANDS`: every command, a line each of its name and its title,
-///   apart by a tab.
+/// - `COMMANDS`: the command palette's entries, a line each of its id and
+///   its title, apart by a tab: the command's name, then its entry's
+///   arguments, if any, as a URL's query, `splits.split?direction=right`.
 #[unsafe(no_mangle)]
 pub extern "C" fn lokyr_intent_request(
     kind: i32,
@@ -97,21 +99,23 @@ pub extern "C" fn lokyr_intent_request(
             pane: id(first),
             text: text.unwrap_or_default(),
         },
-        RUN => Request::Run {
-            command: text.unwrap_or_default(),
-            args: more
+        RUN => {
+            let text = text.unwrap_or_default();
+            let (command, query) = text.split_once('?').unwrap_or((&text, ""));
+            let given = more
                 .as_deref()
                 .unwrap_or_default()
                 .lines()
                 .filter_map(|line| line.split_once('='))
-                .map(|(name, value)| {
-                    (
-                        name.trim().to_owned(),
-                        lokyr_platform_core::automation::Arg::Text(value.to_owned()),
-                    )
-                })
-                .collect(),
-        },
+                .map(|(name, value)| (name.trim().to_owned(), value.to_owned()));
+            Request::Run {
+                command: command.to_owned(),
+                args: entry_args(query)
+                    .chain(given)
+                    .map(|(name, value)| (name, Arg::Text(value)))
+                    .collect(),
+            }
+        }
         PANE_TEXT => Request::PaneText {
             pane: id(first),
             selection: second == 1,
@@ -177,6 +181,66 @@ fn give(answer: AnswerFn, context: *mut c_void, status: i32, text: &str) {
     answer(context, status, text.as_ptr());
 }
 
+/// The id of the palette's entry of `command`: its name, then its
+/// arguments, if any, as a URL's query, each name and value encoded.
+fn entry_id(command: &Command) -> String {
+    let mut id = clean(&command.name);
+    for (at, (name, arg)) in command.args.iter().enumerate() {
+        let value = match arg {
+            Arg::Text(text) => text.clone(),
+            Arg::Integer(number) => number.to_string(),
+            Arg::Bool(yes) => yes.to_string(),
+        };
+        id.push(if at == 0 { '?' } else { '&' });
+        id.push_str(&encoded(name));
+        id.push('=');
+        id.push_str(&encoded(&value));
+    }
+    id
+}
+
+/// The arguments of an entry's id's `query`, each name and value decoded;
+/// none of a pair that does not decode.
+fn entry_args(query: &str) -> impl Iterator<Item = (String, String)> + '_ {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .filter_map(|(name, value)| Some((decoded(name)?, decoded(value)?)))
+}
+
+/// `text` of every byte but a letter, a digit, `-`, `.`, `_` and `~` as
+/// `%` and its two hexadecimal digits.
+fn encoded(text: &str) -> String {
+    let mut out = String::new();
+    for byte in text.bytes() {
+        if byte.is_ascii_alphanumeric() || b"-._~".contains(&byte) {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// `text` of its `%` and two hexadecimal digits as their bytes; none of a
+/// `%` of no two digits, or of bytes of no UTF-8.
+fn decoded(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'%' {
+            let digits = std::str::from_utf8(bytes.get(at + 1..at + 3)?).ok()?;
+            out.push(u8::from_str_radix(digits, 16).ok()?);
+            at += 3;
+        } else {
+            out.push(bytes[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
 /// `text` of no tab nor line break, which part an answer's fields and
 /// lines.
 fn clean(text: &str) -> String {
@@ -210,7 +274,7 @@ fn answer_of(answer: Answer) -> (i32, String) {
         Answer::Commands(commands) => {
             let lines: Vec<String> = commands
                 .iter()
-                .map(|command| format!("{}\t{}", clean(&command.name), clean(&command.title)))
+                .map(|command| format!("{}\t{}", entry_id(command), clean(&command.title)))
                 .collect();
             (0, lines.join("\n"))
         }
@@ -221,7 +285,7 @@ fn answer_of(answer: Answer) -> (i32, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lokyr_platform_core::automation::{Command, Pane, Tab, Window};
+    use lokyr_platform_core::automation::{Pane, Tab, Window};
 
     #[test]
     fn an_answer_goes_to_the_intents_as_its_status_and_its_text() {
@@ -261,10 +325,44 @@ mod tests {
             answer_of(workspace),
             (0, "3\tzsh\t/tmp\t2\t1\n4\ta b\t/tmp\t2\t1".to_owned())
         );
-        let commands = Answer::Commands(vec![Command {
-            name: "tabs.new".to_owned(),
-            title: "New\tTab".to_owned(),
-        }]);
-        assert_eq!(answer_of(commands), (0, "tabs.new\tNew Tab".to_owned()));
+        let commands = Answer::Commands(vec![
+            Command {
+                name: "tabs.new".to_owned(),
+                title: "New\tTab".to_owned(),
+                args: Vec::new(),
+            },
+            Command {
+                name: "splits.split".to_owned(),
+                title: "Split Right".to_owned(),
+                args: vec![
+                    ("direction".to_owned(), Arg::Text("right".to_owned())),
+                    ("folder".to_owned(), Arg::Text("~/a b&c=d".to_owned())),
+                ],
+            },
+        ]);
+        assert_eq!(
+            answer_of(commands),
+            (
+                0,
+                "tabs.new\tNew Tab\nsplits.split?direction=right&folder=~%2Fa%20b%26c%3Dd\tSplit Right"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn an_entry_s_arguments_come_back_of_its_id_under_the_ones_given() {
+        let id = "splits.split?direction=right&folder=~%2Fa%20b%26c%3Dd";
+        let (command, query) = id.split_once('?').unwrap();
+        assert_eq!(command, "splits.split");
+        assert_eq!(
+            entry_args(query).collect::<Vec<_>>(),
+            [
+                ("direction".to_owned(), "right".to_owned()),
+                ("folder".to_owned(), "~/a b&c=d".to_owned()),
+            ]
+        );
+        assert_eq!(decoded("%zz"), None);
+        assert_eq!(decoded("%e2%82%ac"), Some("€".to_owned()));
     }
 }

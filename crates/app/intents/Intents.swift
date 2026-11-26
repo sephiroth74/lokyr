@@ -140,7 +140,9 @@ private func terminals() async throws -> [TerminalEntity] {
     }
 }
 
-/// A command of Lokyr's, by its name, of its title.
+/// An entry of Lokyr's command palette, of its title: by its id, the
+/// command's name, then its entry's arguments, if any, as a URL's query,
+/// as `splits.split?direction=right` of Split Right.
 struct CommandEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Lokyr Command"
     static let defaultQuery = CommandQuery()
@@ -149,12 +151,22 @@ struct CommandEntity: AppEntity {
     let title: String
 
     var displayRepresentation: DisplayRepresentation {
-        DisplayRepresentation(title: "\(title)", subtitle: "\(id)")
+        DisplayRepresentation(title: "\(title)", subtitle: "\(call)")
+    }
+
+    /// The command's name and its arguments, as `splits.split direction=right`.
+    var call: String {
+        let parts = id.split(separator: "?", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return id }
+        let pairs = parts[1].split(separator: "&").map { pair in
+            String(pair).removingPercentEncoding ?? String(pair)
+        }
+        return ([parts[0]] + pairs).joined(separator: " ")
     }
 }
 
-/// Lokyr's commands, as the app lists them, found by their titles and
-/// their names as you type.
+/// The command palette's entries, as the app lists them, found by their
+/// titles and their names as you type.
 struct CommandQuery: EntityStringQuery {
     @MainActor
     func entities(for identifiers: [String]) async throws -> [CommandEntity] {
@@ -174,8 +186,8 @@ struct CommandQuery: EntityStringQuery {
     }
 }
 
-/// Every command, of the app's answer: a line each of its name and its
-/// title, apart by a tab.
+/// Every entry of the command palette, of the app's answer: a line each of
+/// its id and its title, apart by a tab.
 @MainActor
 private func commands() async throws -> [CommandEntity] {
     let answer = try await ask(.commands)
@@ -289,11 +301,11 @@ struct RunCommandIntent: AppIntent {
     }
 }
 
-/// Runs one of Lokyr's commands, chosen from the list of the command
-/// palette's.
+/// Runs an entry of the command palette, chosen from its list, of the
+/// arguments that the entry gives, as Split Right.
 struct RunPaletteCommandIntent: AppIntent {
     static let title: LocalizedStringResource = "Run Palette Command"
-    static let description = IntentDescription("Runs one of Lokyr's commands, chosen by its title as the command palette lists it, with its arguments, a line each such as index=2.")
+    static let description = IntentDescription("Runs one of Lokyr's commands, chosen by its title as the command palette lists it, such as Split Right, with the arguments of its entry. Arguments, a line each such as index=2, add to them.")
     static let openAppWhenRun: Bool = true
 
     @Parameter(title: "Command") var command: CommandEntity
@@ -333,6 +345,19 @@ struct FocusTerminalIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         _ = try await ask(.focus, first: terminal.pane)
+        return .result()
+    }
+}
+
+/// Hides the quick terminal, its shell running.
+struct CloseQuickTerminalIntent: AppIntent {
+    static let title: LocalizedStringResource = "Close Quick Terminal"
+    static let description = IntentDescription("Hides Lokyr's quick terminal, which slides out; its shell keeps running, and Open Quick Terminal brings it back.")
+    static let openAppWhenRun: Bool = false
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        _ = try await ask(.run, text: "window.hide-quick-terminal")
         return .result()
     }
 }
