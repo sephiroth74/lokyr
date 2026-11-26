@@ -318,41 +318,99 @@ fn a_refused_client_s_requests_fail_and_ask_nothing_more() {
     );
 }
 
-#[test]
-fn a_program_in_a_terminal_is_answered_for_its_process_alone() {
-    let (mut host, mut plugin) = asking_host();
-    let program = |pid: u32| AutomationClient {
-        id: format!("terminal:{pid}:1"),
+/// A program in a Lokyr terminal, of its pane's shell `pane` and its chain.
+fn in_pane(pane: u32, chain: &str) -> AutomationClient {
+    AutomationClient {
+        id: format!("terminal:{pane}:1>{chain}"),
         name: "osascript, in a Lokyr terminal".to_owned(),
         terminal: true,
         waits: false,
-    };
+    }
+}
+
+#[test]
+fn a_program_in_a_terminal_is_answered_in_its_pane_alone() {
+    let (mut host, mut plugin) = asking_host();
+    let typed = in_pane(100, "/bin/zsh>/usr/bin/osascript");
     ask_of(
         &mut host,
         &mut plugin,
         15,
-        &program(100),
+        &typed,
         AutomationRequest::Workspace,
     );
+    // A script fails at once while its question waits.
+    assert!(matches!(
+        answer(&host, 15),
+        Some(AutomationAnswer::Error { .. })
+    ));
     choose(&mut host, &mut plugin, ALLOW);
+    // Run again, a new process of the same place takes the answer.
     ask_of(
         &mut host,
         &mut plugin,
         16,
-        &program(100),
+        &typed,
         AutomationRequest::Workspace,
     );
+    assert_eq!(host.question(), None);
     assert!(matches!(
         answer(&host, 16),
         Some(AutomationAnswer::Workspace(_))
     ));
-    // No state keeps it, and the next program asks again.
+    // No state keeps it; another pane, or a program that another runs,
+    // asks again.
     assert!(!matches!(host.state(), Data::Map(map) if map.contains_key(CLIENTS)));
     ask_of(
         &mut host,
         &mut plugin,
         17,
-        &program(101),
+        &in_pane(101, "/bin/zsh>/usr/bin/osascript"),
+        AutomationRequest::Workspace,
+    );
+    assert!(host.question().is_some());
+    choose(&mut host, &mut plugin, DENY);
+    ask_of(
+        &mut host,
+        &mut plugin,
+        18,
+        &in_pane(100, "/bin/zsh>/bin/sh>/usr/bin/osascript"),
+        AutomationRequest::Workspace,
+    );
+    assert!(host.question().is_some());
+}
+
+#[test]
+fn the_terminals_answers_keep_the_newest() {
+    let (mut host, mut plugin) = asking_host();
+    let mut id = 1000;
+    for pane in 0..=MOST_TERMINAL_ANSWERS {
+        let pane = u32::try_from(pane).unwrap();
+        ask_of(
+            &mut host,
+            &mut plugin,
+            id,
+            &in_pane(pane, "/usr/bin/osascript"),
+            AutomationRequest::Workspace,
+        );
+        choose(&mut host, &mut plugin, ALLOW);
+        id += 1;
+    }
+    // The newest is kept, the oldest forgotten and asked again.
+    let newest = u32::try_from(MOST_TERMINAL_ANSWERS).unwrap();
+    ask_of(
+        &mut host,
+        &mut plugin,
+        id,
+        &in_pane(newest, "/usr/bin/osascript"),
+        AutomationRequest::Workspace,
+    );
+    assert_eq!(host.question(), None);
+    ask_of(
+        &mut host,
+        &mut plugin,
+        id + 1,
+        &in_pane(0, "/usr/bin/osascript"),
         AutomationRequest::Workspace,
     );
     assert!(host.question().is_some());

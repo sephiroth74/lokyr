@@ -534,6 +534,43 @@ struct FocusTerminalIntent: AppIntent {
     }
 }
 
+/// A terminal's detail that Get Details of Terminal gives.
+enum TerminalDetail: String, AppEnum {
+    case title, folder, tab, window
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Detail"
+    static let caseDisplayRepresentations: [TerminalDetail: DisplayRepresentation] = [
+        .title: "Title", .folder: "Folder", .tab: "Tab ID", .window: "Window ID",
+    ]
+}
+
+/// A detail of a terminal: its title, its folder, its tab's id or its
+/// window's, as the app lists it as the action runs.
+struct GetTerminalDetailsIntent: AppIntent {
+    static let title: LocalizedStringResource = "Get Details of Terminal"
+    static let description = IntentDescription("A detail of a terminal of Lokyr's: its title, its folder, the ID of its tab or the ID of its window.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Detail", default: .title) var detail: TerminalDetail
+    @Parameter(title: "Terminal") var terminal: TerminalEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get \(\.$detail) of \(\.$terminal)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let value: String =
+            switch detail {
+            case .title: terminal.title
+            case .folder: terminal.folder
+            case .tab: String(terminal.tab)
+            case .window: String(terminal.window)
+            }
+        return .result(value: value)
+    }
+}
+
 /// Hides the quick terminal, its shell running.
 struct CloseQuickTerminalIntent: AppIntent {
     static let title: LocalizedStringResource = "Close Quick Terminal"

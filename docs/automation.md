@@ -110,7 +110,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Focus Terminal | Terminal | Brings a terminal forward, with its window and its tab |
 | Close Terminal | Terminal | Closes a terminal |
 | Find Terminal | filters on Title, Folder, Tab ID and Window ID | Returns the terminals that match, such as those whose folder contains `src` |
-| Get Details of Terminal | Terminal | Returns a terminal's title, folder, tab ID or window ID |
+| Get Details of Terminal | Detail (Title, Folder, Tab ID, Window ID), Terminal | Returns a detail of a terminal: its title, its folder, its tab's ID or its window's ID |
 | Open Quick Terminal | | Shows the [quick terminal](plugins/quick-terminal.md), opening it first |
 | Close Quick Terminal | | Hides the quick terminal, its shell still running |
 | Run Command | Command, Arguments | Runs one of Lokyr's commands by its name, such as `tabs.next` |
@@ -137,7 +137,7 @@ An app that controls Lokyr can type into your terminals, run commands there, pre
 Lokyr tells apps apart by their code signature, not by the names that they give, so another app can't take an allowed app's answer. It remembers your answer for each app, from one start to the next.
 
 - **A script that runs from another app's terminal**, such as `osascript` in a terminal of your editor, asks as that program in that app: "osascript in Visual Studio Code".
-- **A program that runs in one of Lokyr's own terminals** asks for itself, and Lokyr's answer holds while that program runs alone: each new program asks again, so that a script in one terminal can't drive your other terminals, a root shell or an ssh session, without your answer.
+- **A program that runs in one of Lokyr's own terminals** asks for itself, and Lokyr's answer holds in that terminal until its shell exits, without being remembered after Lokyr quits. The same program run again from the same place, such as `osascript` typed at the prompt or run by the same kind of script, takes the answer. Another terminal, or a program that another program runs, asks again, so that a script in one terminal can't drive your other terminals, a root shell or an ssh session, without your answer.
 - **Shortcuts** asks once for all your shortcuts, Siri and Spotlight.
 
 While the question waits for your answer, a script's request fails with "Lokyr asks whether … may control it": answer, then run the script again. A shortcut waits for your answer.
