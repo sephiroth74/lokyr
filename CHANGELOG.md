@@ -8,6 +8,10 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ## [Unreleased]
 
+### Added
+
+- AppleScript: Lokyr's dictionary of its windows, their tabs and their terminals, of each one's id, name and folder, and commands to create windows, tabs and splits in a folder and running a command, send text, focus, close, and perform any of Lokyr's commands by its name and arguments. A terminal's text is read once you allow the app that asks, which Lokyr remembers.
+
 ### Changed
 
 - The first window shows sooner at the start, some 7 to 11 ms, as the menu bar, the global keys and the updates' checks wait until it opens; when Lokyr starts to open a script, a folder or a link, that window no longer waits for them.
