@@ -15,6 +15,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Fixed
 
+- `tabs.set-color` and `tabs.set-group-color` take a color of three digits, such as `#d14`, as the tab bar's page shows, which they refused.
 - Kept in the Dock, Lokyr shows the icon's variant that `[app] icon` names after it quits too, where the Dock showed the bundle's own icon.
 - Lokyr's icon shows as itself in the system's lists of small icons, such as System Settings' privacy panes, where it showed as colored noise on a display of no scaling.
 - The command palette lists the menu bar's items that run a command with an argument, as Split Right, Split Down and Select Pane Above, with their keys, which only the menus had.
