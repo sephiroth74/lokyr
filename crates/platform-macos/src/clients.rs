@@ -108,10 +108,7 @@ fn ancestors(pid: i32) -> Vec<i32> {
     let mut chain = vec![pid];
     let mut current = pid;
     while chain.len() < MOST_PARENTS {
-        let Some(parent) = bsd_info(current).map(|info| info.pbi_ppid) else {
-            break;
-        };
-        let Ok(parent) = i32::try_from(parent) else {
+        let Some(parent) = parent_of(current) else {
             break;
         };
         if parent <= 1 || chain.contains(&parent) {
@@ -123,26 +120,65 @@ fn ancestors(pid: i32) -> Vec<i32> {
     chain
 }
 
-/// The process `pid`'s BSD information, if it runs.
-fn bsd_info(pid: i32) -> Option<libc::proc_bsdinfo> {
-    // SAFETY: an all-zero `proc_bsdinfo` is valid, of plain integers.
-    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
-    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
-    // SAFETY: the buffer is a `proc_bsdinfo` of `size` bytes, which the
-    // call fills for `PROC_PIDTBSDINFO`.
-    let read =
-        unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDTBSDINFO, 0, (&raw mut info).cast(), size) };
-    (read == size).then_some(info)
+/// The parent of the process `pid`, if it runs: of its short BSD
+/// information, which the system gives of another user's process too, as
+/// the root-owned `login` that a terminal's shell runs under, whose whole
+/// BSD information it refuses.
+fn parent_of(pid: i32) -> Option<i32> {
+    // SAFETY: an all-zero `proc_bsdshortinfo` is valid, of plain integers
+    // and characters.
+    let mut info: libc::proc_bsdshortinfo = unsafe { std::mem::zeroed() };
+    let size = i32::try_from(std::mem::size_of::<libc::proc_bsdshortinfo>()).ok()?;
+    // SAFETY: the buffer is a `proc_bsdshortinfo` of `size` bytes, which
+    // the call fills for `PROC_PIDT_SHORTBSDINFO`.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            0,
+            (&raw mut info).cast(),
+            size,
+        )
+    };
+    (read == size)
+        .then_some(info.pbsi_ppid)
+        .and_then(|parent| i32::try_from(parent).ok())
 }
 
+/// The bytes of a `struct kinfo_proc` that the system gives of a process,
+/// 648 of a 64-bit process, the room larger.
+const KINFO_PROC_ROOM: usize = 1024;
+
 /// When the process `pid` started, in microseconds of the epoch, which
-/// tells it from a later process of its id; 0 of one that is gone.
+/// tells it from a later process of its id; 0 of one that is gone. Read of
+/// the kernel's `kinfo_proc`, whose first field is the start's `timeval`
+/// (`p_starttime`), which the system gives of another user's process too.
 fn start_time(pid: i32) -> u64 {
-    bsd_info(pid).map_or(0, |info| {
-        info.pbi_start_tvsec
-            .saturating_mul(1_000_000)
-            .saturating_add(info.pbi_start_tvusec)
-    })
+    let mut name = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    let mut info = [0u8; KINFO_PROC_ROOM];
+    let mut size = info.len();
+    // SAFETY: `name` holds the four integers of the query, and `info` the
+    // `size` bytes that the call fills, telling how many it wrote.
+    let read = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            4,
+            info.as_mut_ptr().cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    // A `timeval`: its seconds, an `i64`, then its microseconds, an `i32`.
+    if read != 0 || size < 12 {
+        return 0;
+    }
+    let seconds = i64::from_ne_bytes(info[..8].try_into().unwrap_or_default());
+    let micros = i32::from_ne_bytes(info[8..12].try_into().unwrap_or_default());
+    match (u64::try_from(seconds), u64::try_from(micros)) {
+        (Ok(seconds), Ok(micros)) => seconds.saturating_mul(1_000_000).saturating_add(micros),
+        _ => 0,
+    }
 }
 
 /// The name of the process `pid`'s executable, as `osascript`.
@@ -446,11 +482,18 @@ mod tests {
         pids[..count]
             .iter()
             .copied()
-            .filter(|&pid| {
-                pid > 0
-                    && bsd_info(pid).is_some_and(|info| i32::try_from(info.pbi_ppid) == Ok(parent))
-            })
+            .filter(|&pid| pid > 0 && parent_of(pid) == Some(parent))
             .collect()
+    }
+
+    #[test]
+    fn another_user_s_process_tells_its_parent_and_its_start() {
+        // launchd, root's, as the `login` that a terminal's shell runs
+        // under, whose whole BSD information the system refuses.
+        assert_eq!(parent_of(1), Some(0));
+        assert!(start_time(1) > 0);
+        let own = i32::try_from(std::process::id()).unwrap();
+        assert!(start_time(own) > start_time(1));
     }
 
     #[test]
