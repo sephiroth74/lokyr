@@ -294,6 +294,21 @@ fn focus(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     }
 }
 
+/// What `command` does to `target`, one of its receivers, as Cocoa
+/// Scripting asks each receiver of a command of several in turn, by the
+/// method that the dictionary's `responds-to` names: a close or a focus of
+/// it alone; another command's own implementation, which takes its
+/// receivers itself.
+pub(crate) fn perform_on(target: Target, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    if command.downcast_ref::<CloseCommand>().is_some() {
+        return run(command, Request::Close(target), done);
+    }
+    if command.downcast_ref::<FocusCommand>().is_some() {
+        return run(command, Request::Focus(target), done);
+    }
+    command.performDefaultImplementation()
+}
+
 /// What `close` does.
 fn close(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     let targets = receivers(command);

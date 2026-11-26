@@ -106,7 +106,7 @@ define_class!(
         // own implementations.
         #[unsafe(method_id(lokyrPerformDefault:))]
         fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
-            command.performDefaultImplementation()
+            crate::script_commands::perform_on(lokyr_platform_core::automation::Target::Window(self.id()), command)
         }
     }
 );
@@ -152,7 +152,7 @@ define_class!(
         // own implementations.
         #[unsafe(method_id(lokyrPerformDefault:))]
         fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
-            command.performDefaultImplementation()
+            crate::script_commands::perform_on(lokyr_platform_core::automation::Target::Tab(self.id()), command)
         }
     }
 );
@@ -201,7 +201,7 @@ define_class!(
         // own implementations.
         #[unsafe(method_id(lokyrPerformDefault:))]
         fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
-            command.performDefaultImplementation()
+            crate::script_commands::perform_on(lokyr_platform_core::automation::Target::Pane(self.id()), command)
         }
     }
 );
