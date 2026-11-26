@@ -566,6 +566,57 @@ fn a_focus_of_a_hidden_session_s_pane_switches_to_its_session() {
     });
 }
 
+/// A plugin whose command, `opener.go`, runs the app's `window.new` twenty
+/// times in one call.
+struct Opener;
+
+impl lokyr_kernel::plugins::Plugin for Opener {
+    fn activate(&mut self, cx: &mut lokyr_kernel::plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "opener.go".to_owned(),
+            title: "Open".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(
+        &mut self,
+        cx: &mut lokyr_kernel::plugins::Cx<'_>,
+        _: &str,
+        _: Args,
+    ) -> Result<(), Error> {
+        for _ in 0..20 {
+            cx.run_command(NEW_WINDOW, Args::new())?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_runs_of_the_app_s_new_window_open_as_many_panes_as_its_own() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin("opener", Box::new(Opener));
+    fake.start(&mut app);
+    assert_eq!(fake.windows().count(), 1);
+    app.run(&mut fake, "opener.go", Args::new());
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    // The call's bound of panes: sixteen, past which none opens.
+    assert_eq!(
+        fake.windows().count(),
+        1 + lokyr_kernel::plugins::host::MOST_PANES_A_CALL
+    );
+    // The user's own new window opens whatever the plugins opened.
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    assert_eq!(
+        fake.windows().count(),
+        2 + lokyr_kernel::plugins::host::MOST_PANES_A_CALL
+    );
+}
+
 #[test]
 fn a_client_s_first_request_waits_for_the_user_s_answer_which_holds_after() {
     let (mut fake, mut app) = started();
