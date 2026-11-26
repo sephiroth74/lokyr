@@ -294,6 +294,21 @@ fn focus(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     }
 }
 
+/// What `command` does to `target`, one of its receivers, as Cocoa
+/// Scripting asks each receiver of a command of several in turn, by the
+/// method that the dictionary's `responds-to` names: a close or a focus of
+/// it alone; another command's own implementation, which takes its
+/// receivers itself.
+pub(crate) fn perform_on(target: Target, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    if command.downcast_ref::<CloseCommand>().is_some() {
+        return run(command, Request::Close(target), done);
+    }
+    if command.downcast_ref::<FocusCommand>().is_some() {
+        return run(command, Request::Focus(target), done);
+    }
+    command.performDefaultImplementation()
+}
+
 /// What `close` does.
 fn close(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     let targets = receivers(command);
@@ -544,8 +559,9 @@ fn descriptor_arg(value: &NSAppleEventDescriptor) -> Option<Arg> {
                 Some(Arg::Integer(i64::from(number)))
             }
             b"bool" | b"true" | b"fals" => {
-                let yes: bool = msg_send![value, booleanValue];
-                Some(Arg::Bool(yes))
+                // `Boolean`, a byte, which a `bool` would not match.
+                let yes: u8 = msg_send![value, booleanValue];
+                Some(Arg::Bool(yes != 0))
             }
             b"doub" | b"sing" | b"comp" => {
                 let number: f64 = msg_send![value, doubleValue];
@@ -661,6 +677,11 @@ mod tests {
             let _: () = msg_send![&*record, setDescriptor: &*text("api"), forKeyword: u32::from_be_bytes(*b"pnam")];
             let index = NSAppleEventDescriptor::descriptorWithInt32(2);
             let _: () = msg_send![&*record, setDescriptor: &*index, forKeyword: u32::from_be_bytes(*b"pidx")];
+            // A field of the user's of a boolean, as `{selected:true}`.
+            let _: () = msg_send![&*fields, insertDescriptor: &*text("selected"), atIndex: 3_isize];
+            let yes = NSAppleEventDescriptor::descriptorWithBoolean(1);
+            let _: () = msg_send![&*fields, insertDescriptor: &*yes, atIndex: 4_isize];
+            let _: () = msg_send![&*record, setDescriptor: &*fields, forKeyword: USER_FIELDS];
         }
         let mut args = record_fields(&record).unwrap();
         args.sort_by(|a, b| a.0.cmp(&b.0));
@@ -670,6 +691,7 @@ mod tests {
                 ("direction".to_owned(), Arg::Text("right".to_owned())),
                 ("index".to_owned(), Arg::Integer(2)),
                 ("name".to_owned(), Arg::Text("api".to_owned())),
+                ("selected".to_owned(), Arg::Bool(true)),
             ]
         );
         // A term that no argument is named after refuses the record.

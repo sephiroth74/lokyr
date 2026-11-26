@@ -2280,6 +2280,7 @@ fn a_call_is_its_own_plugin_s() {
             awake: host::Awake::Off,
             popups: BTreeMap::new(),
             automations: BTreeSet::new(),
+            automations_forgotten: BTreeSet::new(),
             double_tap: None,
             images: (image::Budget::default(), None),
             quick_windows: Vec::new(),

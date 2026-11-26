@@ -8,29 +8,38 @@ use lokyr_platform_core::automation as platform;
 
 use super::*;
 
-/// The app that asks, in the tests.
-const CLIENT: &str = "com.acme.script";
+/// The client that asks, in the tests, which waits for the user's answer
+/// to the question, as a shortcut does.
+fn client() -> platform::Client {
+    platform::Client {
+        id: "app:TEAM:com.acme.script".to_owned(),
+        name: "Acme Script".to_owned(),
+        terminal: false,
+        waits: true,
+    }
+}
 
-/// Hands the app the request `request` of `id`, of [`CLIENT`], and waits
-/// for its answer.
+/// Hands the app the request `request` of `id`, of [`client`], and waits
+/// for its answer, the question of the client's first request allowed.
 fn ask(fake: &mut Fake, app: &mut App, id: u64, request: platform::Request) -> platform::Answer {
     send(fake, app, id, request);
     answered(fake, app, id)
 }
 
-/// Hands the app the request `request` of `id`, of [`CLIENT`].
+/// Hands the app the request `request` of `id`, of [`client`].
 fn send(fake: &mut Fake, app: &mut App, id: u64, request: platform::Request) {
     fake.send_app(
         app,
         AppEvent::Automation {
             id,
-            client: CLIENT.to_owned(),
+            client: client(),
             request,
         },
     );
 }
 
-/// The answer of `id`, once it comes.
+/// The answer of `id`, once it comes: the question of the client's first
+/// request allowed, its second button.
 fn answered(fake: &mut Fake, app: &mut App, id: u64) -> platform::Answer {
     let answer = |fake: &Fake| {
         fake.automation_answers()
@@ -38,7 +47,14 @@ fn answered(fake: &mut Fake, app: &mut App, id: u64) -> platform::Answer {
             .find(|(answered, _)| *answered == id)
             .map(|(_, answer)| answer.clone())
     };
-    run_until(fake, app, |fake, _| answer(fake).is_some());
+    run_until(fake, app, |fake, _| {
+        answer(fake).is_some() || !fake.alerts().is_empty()
+    });
+    if answer(fake).is_none() {
+        let question = fake.alerts()[0].id;
+        fake.answer_alert(app, question, 1);
+        run_until(fake, app, |fake, _| answer(fake).is_some());
+    }
     answer(fake).unwrap()
 }
 
@@ -386,7 +402,223 @@ fn a_request_of_no_pane_goes_to_the_window_used_last_while_lokyr_is_behind() {
 }
 
 #[test]
-fn a_pane_s_text_comes_once_the_user_allows_its_app() {
+fn a_key_s_command_runs_in_its_pane_s_window_whatever_window_has_the_focus() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    let tabs = |app: &App, window: WindowId| {
+        app.workspace
+            .window(app.windows[&window].window)
+            .unwrap()
+            .tabs()
+            .len()
+    };
+    let pane_of = |app: &App, window: WindowId| {
+        app.workspace
+            .focused(app.windows[&window].window)
+            .unwrap()
+            .id()
+            .get()
+    };
+    let key = |pane: u64| platform::Request::SendKey {
+        pane: Some(pane),
+        keys: "cmd+t".to_owned(),
+    };
+    // The first window has the focus: Command-T to the second's pane opens
+    // the tab there.
+    assert!(fake.send(&mut app, first, WindowEvent::Focused(true)));
+    let in_second = pane_of(&app, second);
+    assert_eq!(
+        ask(&mut fake, &mut app, 17, key(in_second)),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| tabs(app, second) == 2);
+    assert_eq!(tabs(&app, first), 1);
+    // No window has the focus, as Lokyr is behind: it opens all the same.
+    assert!(fake.send(&mut app, first, WindowEvent::Focused(false)));
+    let in_first = pane_of(&app, first);
+    assert_eq!(
+        ask(&mut fake, &mut app, 18, key(in_first)),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| tabs(app, first) == 2);
+}
+
+/// A plugin whose command, `presser.go`, bound to Control-Option-P, presses
+/// its own key in the focused pane, as `runs` counts.
+struct Presser {
+    runs: std::rc::Rc<std::cell::Cell<usize>>,
+}
+
+impl lokyr_kernel::plugins::Plugin for Presser {
+    fn activate(&mut self, cx: &mut lokyr_kernel::plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "presser.go".to_owned(),
+            title: "Press".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.bind(lokyr_kernel::plugins::host::Binding {
+            keys: "ctrl+alt+p".to_owned(),
+            command: "presser.go".to_owned(),
+            args: Args::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(
+        &mut self,
+        cx: &mut lokyr_kernel::plugins::Cx<'_>,
+        _: &str,
+        _: Args,
+    ) -> Result<(), Error> {
+        self.runs.set(self.runs.get() + 1);
+        let pane = cx
+            .focused_pane()
+            .ok_or_else(|| Error::new(Code::NotFound, "no pane"))?;
+        cx.press_key(pane, "ctrl+alt+p")
+    }
+}
+
+#[test]
+fn a_command_that_presses_its_own_key_stops_as_deep_as_commands_go() {
+    let runs = std::rc::Rc::new(std::cell::Cell::new(0));
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin(
+        "presser",
+        Box::new(Presser {
+            runs: std::rc::Rc::clone(&runs),
+        }),
+    );
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    assert!(fake.send(&mut app, window, WindowEvent::Focused(true)));
+    app.run(&mut fake, "presser.go", Args::new());
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    assert!(runs.get() > 1, "{}", runs.get());
+    assert!(runs.get() <= COMMANDS_DEEP + 1, "{}", runs.get());
+}
+
+#[test]
+fn a_request_of_no_pane_goes_to_the_session_that_shows_never_a_hidden_one() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    // A new session, whose window shows, the first window hidden with its
+    // session; no window took the focus, as Lokyr is behind.
+    app.run(&mut fake, NEW_SESSION, Args::new());
+    let shown = fake.windows().find(|&window| window != first).unwrap();
+    let pane_of = |app: &App, window: WindowId| {
+        app.workspace
+            .focused(app.windows[&window].window)
+            .unwrap()
+            .id()
+    };
+    let (hidden_pane, shown_pane) = (pane_of(&app, first), pane_of(&app, shown));
+    let row = |app: &App, pane: PaneId| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    let request = platform::Request::SendText {
+        pane: None,
+        text: "shown".to_owned(),
+    };
+    assert_eq!(
+        ask(&mut fake, &mut app, 19, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        row(app, shown_pane).starts_with("shown")
+    });
+    assert!(!row(&app, hidden_pane).contains("shown"));
+}
+
+#[test]
+fn a_focus_of_a_hidden_session_s_pane_switches_to_its_session() {
+    let (mut fake, mut app) = started();
+    let first = fake.windows().next().unwrap();
+    let home = app.workspace.active_session();
+    let pane = app
+        .workspace
+        .focused(app.windows[&first].window)
+        .unwrap()
+        .id()
+        .get();
+    // A new session shows, the first window hidden with its session.
+    app.run(&mut fake, NEW_SESSION, Args::new());
+    assert_ne!(app.workspace.active_session(), home);
+    let request = platform::Request::Focus(platform::Target::Pane(pane));
+    assert_eq!(
+        ask(&mut fake, &mut app, 20, request),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace.active_session() == home
+    });
+    run_until(&mut fake, &mut app, |fake, _| {
+        !fake.window(first).unwrap().hidden
+    });
+}
+
+/// A plugin whose command, `opener.go`, runs the app's `window.new` twenty
+/// times in one call.
+struct Opener;
+
+impl lokyr_kernel::plugins::Plugin for Opener {
+    fn activate(&mut self, cx: &mut lokyr_kernel::plugins::Cx<'_>) -> Result<(), Error> {
+        cx.register_command(lokyr_kernel::commands::Command {
+            name: "opener.go".to_owned(),
+            title: "Open".to_owned(),
+            category: lokyr_kernel::commands::Category::View,
+            capabilities: Vec::new(),
+            params: Vec::new(),
+            when: None,
+        })
+    }
+
+    fn on_command(
+        &mut self,
+        cx: &mut lokyr_kernel::plugins::Cx<'_>,
+        _: &str,
+        _: Args,
+    ) -> Result<(), Error> {
+        for _ in 0..20 {
+            cx.run_command(NEW_WINDOW, Args::new())?;
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn a_plugin_s_runs_of_the_app_s_new_window_open_as_many_panes_as_its_own() {
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), quiet()).with_plugin("opener", Box::new(Opener));
+    fake.start(&mut app);
+    assert_eq!(fake.windows().count(), 1);
+    app.run(&mut fake, "opener.go", Args::new());
+    let pause = Instant::now() + Duration::from_millis(200);
+    run_until(&mut fake, &mut app, |_, _| Instant::now() > pause);
+    // The call's bound of panes: sixteen, past which none opens.
+    assert_eq!(
+        fake.windows().count(),
+        1 + lokyr_kernel::plugins::host::MOST_PANES_A_CALL
+    );
+    // The user's own new window opens whatever the plugins opened.
+    app.run(&mut fake, NEW_WINDOW, Args::new());
+    assert_eq!(
+        fake.windows().count(),
+        2 + lokyr_kernel::plugins::host::MOST_PANES_A_CALL
+    );
+}
+
+#[test]
+fn a_client_s_first_request_waits_for_the_user_s_answer_which_holds_after() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {
         pane: None,
@@ -394,17 +626,21 @@ fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     };
     send(&mut fake, &mut app, 5, request());
     run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-    assert!(fake.alerts()[0].alert.message.contains(CLIENT));
+    let message = &fake.alerts()[0].alert.message;
+    assert!(
+        message.contains("Acme Script") && message.contains("control"),
+        "{message}"
+    );
     assert!(fake.automation_answers().is_empty());
     // The second button allows it.
     let question = fake.alerts()[0].id;
     fake.answer_alert(&mut app, question, 1);
     let answer = answered(&mut fake, &mut app, 5);
     assert!(matches!(answer, platform::Answer::Text(_)), "{answer:?}");
-    // The next read asks nothing.
+    // The next request, of any kind, asks nothing.
     assert!(matches!(
-        ask(&mut fake, &mut app, 6, request()),
-        platform::Answer::Text(_)
+        ask(&mut fake, &mut app, 6, platform::Request::Workspace),
+        platform::Answer::Workspace(_)
     ));
     assert!(fake.alerts().is_empty());
 }
@@ -418,7 +654,10 @@ fn a_request_that_waits_past_its_deadline_fails() {
     };
     send(&mut fake, &mut app, 7, request);
     run_until(&mut fake, &mut app, |fake, _| fake.alerts().len() == 1);
-    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(11));
+    // A client that waits for the question waits up to its deadline.
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(60));
+    assert!(fake.automation_answers().is_empty());
+    fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(111));
     assert_eq!(
         answered(&mut fake, &mut app, 7),
         platform::Answer::Error {

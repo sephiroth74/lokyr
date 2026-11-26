@@ -10,10 +10,6 @@ use lokyr_platform_core::automation::{
     Answer, Arg, Command, Edge, Mouse, MouseAction, MouseButton, Request, Target,
 };
 
-/// The app that asks, as the automation's question about a pane's text
-/// names it.
-const CLIENT: &str = "Shortcuts";
-
 /// The kinds of the intents' requests.
 const NEW_WINDOW: i32 = 1;
 const NEW_TAB: i32 = 2;
@@ -58,8 +54,9 @@ pub type AnswerFn = extern "C" fn(context: *mut c_void, status: i32, text: *cons
 ///   gives it, `more` its arguments, a line each of `name=value`, each
 ///   value a text, over the entry's.
 /// - `PANE_TEXT`: `first` the pane, `second` 1 of its selection; the text.
-/// - `WORKSPACE`: every pane, a line each of its id, its title, its
-///   folder, its tab's id and its window's, apart by tabs.
+/// - `WORKSPACE`: every pane, a line each of its entity's id (this start's
+///   token, a dot and the pane's id), its title, its folder, its tab's id
+///   and its window's, apart by tabs.
 /// - `SWITCH_SESSION`: `text` the session's name, which it makes first if
 ///   there is none of that name.
 /// - `CLOSE`: `first` the pane, which it closes.
@@ -183,7 +180,7 @@ pub extern "C" fn lokyr_intent_request(
         }
     };
     let context = Context(context);
-    let posted = crate::app::post_automation(CLIENT, request, move |reply| {
+    let posted = crate::app::post_automation(crate::clients::shortcuts(), request, move |reply| {
         let (status, text) = answer_of(reply);
         give(answer, context.0, status, &text);
     });
@@ -306,6 +303,20 @@ fn give(answer: AnswerFn, context: *mut c_void, status: i32, text: &str) {
     answer(context, status, text.as_ptr());
 }
 
+/// This start's token, which a terminal's entity's id begins with: the
+/// panes' ids start anew at each start, so that a shortcut that keeps a
+/// terminal of another start finds none, rather than another pane of its
+/// number.
+fn start_token() -> &'static str {
+    static TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TOKEN.get_or_init(|| {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos());
+        format!("{:x}{:x}", std::process::id(), nanos)
+    })
+}
+
 /// The id of the palette's entry of `command`: its name, then its
 /// arguments, if any, as a URL's query, each name and value encoded.
 fn entry_id(command: &Command) -> String {
@@ -384,7 +395,8 @@ fn answer_of(answer: Answer) -> (i32, String) {
                 for tab in &window.tabs {
                     for pane in &tab.panes {
                         lines.push(format!(
-                            "{}\t{}\t{}\t{}\t{}",
+                            "{}.{}\t{}\t{}\t{}\t{}",
+                            start_token(),
                             pane.id,
                             clean(&pane.title),
                             clean(pane.folder.as_deref().unwrap_or_default()),
@@ -446,10 +458,18 @@ mod tests {
                 panes: vec![pane(3, "zsh"), pane(4, "a\tb")],
             }],
         }]);
+        let token = start_token();
         assert_eq!(
             answer_of(workspace),
-            (0, "3\tzsh\t/tmp\t2\t1\n4\ta b\t/tmp\t2\t1".to_owned())
+            (
+                0,
+                format!("{token}.3\tzsh\t/tmp\t2\t1\n{token}.4\ta b\t/tmp\t2\t1")
+            )
         );
+        // The same start's token each time, of no dot, so that the pane's id
+        // follows the last dot.
+        assert_eq!(start_token(), token);
+        assert!(!token.contains('.'));
         let commands = Answer::Commands(vec![
             Command {
                 name: "tabs.new".to_owned(),

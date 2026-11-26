@@ -10,7 +10,8 @@ use std::time::{Duration, Instant};
 use lokyr_kernel::commands::Code;
 use lokyr_kernel::commands::{Args, Value};
 use lokyr_kernel::plugins::automation::{
-    ANSWER_WITHIN_MS, AutomationAnswer, AutomationEdge, AutomationRequest, AutomationTarget,
+    ANSWER_WITHIN_MS, AutomationAnswer, AutomationClient, AutomationEdge, AutomationRequest,
+    AutomationTarget, QUESTION_WITHIN_MS,
 };
 use lokyr_kernel::plugins::host::{PaneId, TabId, WindowId};
 use lokyr_platform_core::automation as platform;
@@ -33,12 +34,20 @@ pub(super) const LATE: &str = "Lokyr's automation did not answer in time";
 pub(super) struct Automations {
     waiting: BTreeMap<u64, Instant>,
     timer: Option<TimerId>,
+    /// The deadline that the timer fires at, which has come once it fires.
+    timer_at: Option<Instant>,
 }
 
 impl Automations {
     /// Whether `timer` is its timer.
     pub(super) fn is_timer(&self, timer: TimerId) -> bool {
         self.timer == Some(timer)
+    }
+
+    /// The time as its timer fires: its deadline, which came, or `now`,
+    /// later.
+    pub(super) fn fired_at(&self, now: Instant) -> Instant {
+        self.timer_at.map_or(now, |at| at.max(now))
     }
 }
 
@@ -53,7 +62,7 @@ impl<B: Backend> App<B> {
         &mut self,
         platform: &mut dyn Platform,
         id: u64,
-        client: &str,
+        client: platform::Client,
         request: platform::Request,
     ) {
         let request = request_of(request);
@@ -61,13 +70,37 @@ impl<B: Backend> App<B> {
             platform.answer_automation(id, answer_of(AutomationAnswer::of_error(&error)));
             return;
         }
+        // A window that shows: neither the settings' window, nor a quick
+        // terminal that hid, nor a window of a session that is hidden.
+        let shows =
+            |window: &lokyr_platform_core::WindowId| -> Option<lokyr_kernel::workspace::WindowId> {
+                if self.quick.get(window).is_some_and(|(_, shown)| !shown) {
+                    return None;
+                }
+                let id = self.windows.get(window)?.window;
+                let active = self.workspace.active_session();
+                let shown = self.workspace.window(id)?;
+                (self.workspace.settings_window() != Some(id)
+                    && shown.session().is_none_or(|session| session == active))
+                .then_some(id)
+            };
         let front = platform
             .focused_window()
-            .or(self.front)
-            .filter(|window| self.quick.get(window).is_none_or(|(_, shown)| *shown))
-            .and_then(|window| self.windows.get(&window))
-            .map(|state| state.window)
-            .filter(|&window| self.workspace.settings_window() != Some(window));
+            .and_then(|window| shows(&window))
+            .or_else(|| self.front.and_then(|window| shows(&window)));
+        // A client that waits for the user's answer to the question waits
+        // for its answer longer, within macOS's two minutes.
+        let within = if client.waits {
+            QUESTION_WITHIN_MS
+        } else {
+            ANSWER_WITHIN_MS
+        };
+        let client = AutomationClient {
+            id: client.id,
+            name: client.name,
+            terminal: client.terminal,
+            waits: client.waits,
+        };
         if !self.plugins.automation(id, client, request, front) {
             platform.answer_automation(
                 id,
@@ -78,7 +111,7 @@ impl<B: Backend> App<B> {
             );
             return;
         }
-        let deadline = Instant::now() + Duration::from_millis(ANSWER_WITHIN_MS);
+        let deadline = Instant::now() + Duration::from_millis(within);
         self.automations.waiting.insert(id, deadline);
         self.settle_automation_timer(platform);
     }
@@ -111,6 +144,7 @@ impl<B: Backend> App<B> {
             .collect();
         for id in late {
             self.automations.waiting.remove(&id);
+            self.plugins.forget_automation(id);
             platform.answer_automation(
                 id,
                 platform::Answer::Error {
@@ -129,6 +163,7 @@ impl<B: Backend> App<B> {
         if let Some(timer) = self.automations.timer.take() {
             platform.cancel_timer(timer);
         }
+        self.automations.timer_at = first;
         if let Some(at) = first {
             self.automations.timer = Some(platform.start_timer(at));
         }

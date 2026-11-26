@@ -179,7 +179,12 @@ fn every() -> Vec<Event> {
         Event::Automation {
             front: Default::default(),
             id: 13,
-            client: "com.apple.shortcuts".to_owned(),
+            client: lokyr_plugin_sdk::automation::AutomationClient {
+                id: "shortcuts".to_owned(),
+                name: "Shortcuts".to_owned(),
+                terminal: false,
+                waits: true,
+            },
             request: lokyr_plugin_sdk::automation::AutomationRequest::Split {
                 environment: Default::default(),
                 pane: Some(PaneId(3)),

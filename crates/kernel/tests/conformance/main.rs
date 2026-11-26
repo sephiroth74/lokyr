@@ -897,7 +897,7 @@ fn on_kernel(
                     front,
                 } => {
                     let front = front.map(|window| lokyr_kernel::workspace::WindowId::of(window.0));
-                    plugins.automation(*id, client, request.clone(), front);
+                    plugins.automation(*id, client.clone(), request.clone(), front);
                 }
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 Event::ColorPicked { color } => plugins.color_picked(name(scenario), *color),

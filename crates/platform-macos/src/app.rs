@@ -30,7 +30,7 @@ thread_local! {
 /// the main thread: `reply` takes its answer, once, as the app gives it.
 /// Whether an application ran to take it; `reply` goes unanswered without.
 pub fn post_automation(
-    client: &str,
+    client: lokyr_platform_core::automation::Client,
     request: lokyr_platform_core::automation::Request,
     reply: impl FnOnce(lokyr_platform_core::automation::Answer) + 'static,
 ) -> bool {

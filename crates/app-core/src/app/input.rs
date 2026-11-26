@@ -172,16 +172,19 @@ impl<B: Backend> App<B> {
     }
 
     /// Presses the key of `combo` in `pane` as the user presses it, as a
-    /// plugin asks: the pane takes its window's keyboard; the keymap runs
-    /// the command of the key's binding in its context, or holds it as a
-    /// sequence's; else the pane's program takes the key, pressed and
-    /// released, Option acting as Meta, as a script means it. A key that
-    /// no US key types goes to the program alone.
+    /// plugin asks of its call's `chain`: the pane takes its window's
+    /// keyboard; the keymap runs the command of the key's binding in its
+    /// context, in that window whatever window has the focus, as a
+    /// context menu's commands run, of the chain, which bounds it as a
+    /// run's; or holds it as a sequence's; else the pane's program takes
+    /// the key, pressed and released, Option acting as Meta, as a script
+    /// means it. A key that no US key types goes to the program alone.
     pub(super) fn press_key(
         &mut self,
         platform: &mut dyn Platform,
         pane: PaneId,
         combo: lokyr_kernel::keymap::Combo,
+        chain: plugins::Chain,
     ) {
         let Some(window) = self.window_of(pane) else {
             return;
@@ -197,7 +200,23 @@ impl<B: Backend> App<B> {
             let _ = self.resolve_key(window, &released);
         }
         match taken {
-            Taken::Run(invocation) => self.run(platform, &invocation.command, invocation.args),
+            Taken::Run(invocation) => {
+                let chain = match chain.id {
+                    0 => plugins::new_chain(),
+                    _ => chain,
+                };
+                if self.may_run(chain, &invocation.command) {
+                    let deeper = plugins::Chain {
+                        depth: chain.depth + 1,
+                        ..chain
+                    };
+                    let acting = self.acting.replace(window);
+                    self.chains.1.push(chain.id);
+                    self.run_deep(platform, &invocation.command, invocation.args, deeper);
+                    self.chains.1.pop();
+                    self.acting = acting;
+                }
+            }
             Taken::Held => {}
             Taken::Program(_) => {
                 if let Some(found) = self.workspace.pane(pane) {

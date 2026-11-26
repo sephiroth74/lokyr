@@ -935,6 +935,10 @@ pub struct App<B: Backend> {
     /// chains, by their ids, and the chains whose commands run now, one
     /// within another.
     chains: (BTreeMap<u64, usize>, Vec<u64>),
+    /// The panes that the app's own commands opened, as plugins' runs
+    /// asked them: of each chain, by its id, and when, within the last
+    /// second, as the plugins' own panes are bounded.
+    plugin_panes: (BTreeMap<u64, usize>, std::collections::VecDeque<Instant>),
     /// Whether the cursors and the text that blinks blink as on layers of
     /// their own without them, as the tests' fake platform, which draws
     /// nothing, shows them.
@@ -1223,6 +1227,7 @@ impl<B: Backend> App<B> {
             performance: None,
             performance_chosen: None,
             chains: (BTreeMap::new(), Vec::new()),
+            plugin_panes: (BTreeMap::new(), std::collections::VecDeque::new()),
             layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
@@ -3469,6 +3474,43 @@ impl<B: Backend> App<B> {
 
     /// Counts a run of `chain`, which commands asked: whether it may run,
     /// within the chain's depth and its runs.
+    /// Whether the app's own command `command` may run, as to the panes
+    /// that it opens: a command of the user's own, or one that opens none,
+    /// runs; one that opens panes, as a plugin's run asks it, counts
+    /// against the chain under way's [`plugins::host::MOST_PANES_A_CALL`]
+    /// and the plugins' runs' [`plugins::host::MOST_PANES_A_SECOND`], as
+    /// a plugin's own panes do.
+    fn may_open_panes(&mut self, command: &str) -> bool {
+        const OPENS_PANES: [&str; 5] = [NEW_WINDOW, NEW_SESSION, NEW_FLOATING, POPUP, OPEN_LAYOUT];
+        let Some(&chain) = self.chains.1.last() else {
+            return true;
+        };
+        if !OPENS_PANES.contains(&command) {
+            return true;
+        }
+        let now = Instant::now();
+        let (of_chains, recent) = &mut self.plugin_panes;
+        while recent
+            .front()
+            .is_some_and(|&at| now.saturating_duration_since(at) >= Duration::from_secs(1))
+        {
+            recent.pop_front();
+        }
+        let opened = of_chains.get(&chain).copied().unwrap_or(0);
+        if opened >= plugins::host::MOST_PANES_A_CALL
+            || recent.len() >= plugins::host::MOST_PANES_A_SECOND
+        {
+            return false;
+        }
+        of_chains.insert(chain, opened + 1);
+        // The newest chains' counts alone, as the chains' runs are kept.
+        while of_chains.len() > CHAINS_KEPT {
+            of_chains.pop_first();
+        }
+        recent.push_back(now);
+        true
+    }
+
     fn may_run(&mut self, chain: plugins::Chain, command: &str) -> bool {
         if chain.depth >= COMMANDS_DEEP {
             eprintln!(
@@ -3534,6 +3576,16 @@ impl<B: Backend> App<B> {
                 }
                 ran
             }
+            // The app's own commands that open panes, as a plugin's run asks
+            // them, within the bounds of the panes that plugins open.
+            Ok(_) if !self.may_open_panes(name) => Err(Error::new(
+                Code::Failed,
+                format!(
+                    "`{name}` opens no pane, as plugins' runs open {} a call and {} a second at most",
+                    plugins::host::MOST_PANES_A_CALL,
+                    plugins::host::MOST_PANES_A_SECOND
+                ),
+            )),
             Ok(args) => match name {
                 QUIT => {
                     self.ask_quit(platform, false);
@@ -4069,7 +4121,9 @@ impl<B: Backend> App<B> {
                     }
                 }
                 Request::Quit => self.ask_quit(platform, false),
-                Request::PressKey { pane, combo } => self.press_key(platform, pane, combo),
+                Request::PressKey { pane, combo, chain } => {
+                    self.press_key(platform, pane, combo, chain);
+                }
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
@@ -5573,14 +5627,15 @@ impl<B: Backend> App<B> {
                 self.after_plugins(platform);
             }
             AppEvent::Timer(timer) if self.automations.is_timer(timer) => {
-                self.automations_late(platform, Instant::now());
+                let now = self.automations.fired_at(Instant::now());
+                self.automations_late(platform, now);
             }
             // A script's or a shortcut's request, to the automation's plugin.
             AppEvent::Automation {
                 id,
                 client,
                 request,
-            } => self.take_automation(platform, id, &client, request),
+            } => self.take_automation(platform, id, client, request),
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;
                 if self

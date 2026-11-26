@@ -5,6 +5,23 @@
 //! [`Platform::answer_automation`](crate::Platform::answer_automation). The
 //! windows, the tabs and the panes go by the app's ids of them.
 
+/// Who sends a script's or a shortcut's request, as the platform tells it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Client {
+    /// Who it is, the same for the same client: of an app, its code
+    /// signature's team and identifier; of a command-line program, its
+    /// app's and the program's; of a program in one of the app's own
+    /// terminals, its process; of the shortcuts, `shortcuts`.
+    pub id: String,
+    /// Its name, as a question names it.
+    pub name: String,
+    /// Whether it is a program in one of the app's own terminals.
+    pub terminal: bool,
+    /// Whether it waits for the user's answer to a question, as a shortcut
+    /// does, rather than failing while it waits, as a script does.
+    pub waits: bool,
+}
+
 /// What a script or a shortcut asks of the app.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {

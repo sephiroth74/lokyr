@@ -13,14 +13,14 @@ The answers to what scripts and shortcuts of other apps ask of Lokyr: windows, t
 - **A command run by its name and arguments**, as the [command palette](command-palette.md) runs it, such as `splits.split` of `direction = "right"`. A command that Lokyr lacks is refused, of the reason.
 - **A switch to a [session](../sessions.md) by its name**, which opens a new session of that name in a new window when there is none.
 
-## A pane's text
+## The question
 
-A pane's text may hold passwords and other secrets. The first time that an app asks for it, Lokyr asks you whether to allow that app, on the window in front:
+The first time that an app sends Lokyr a request, of any kind, Lokyr asks you whether to allow that app to control it, on the window in front:
 
 - **Don't Allow**, the default button, refuses this request and the app's next ones.
-- **Allow** answers this request and the app's next ones.
+- **Allow** answers this request and the app's next ones, reading the panes' text among them.
 
-Lokyr remembers your answer for each app, from one start to the next.
+Lokyr tells apps apart by their code signature, remembers your answer for each app from one start to the next, and asks again for each program that runs in one of its own terminals. [Allow an app to control Lokyr](../automation.md#allow-an-app-to-control-lokyr) tells more.
 
 ## Turning it off
 

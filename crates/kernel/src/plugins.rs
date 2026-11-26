@@ -106,6 +106,9 @@ pub enum Request {
         pane: PaneId,
         /// The key and its modifiers.
         combo: lokyr_plugin_sdk::keys::Combo,
+        /// The chain of the command whose call asked it, as a run's, which
+        /// the command of the key's binding runs of.
+        chain: Chain,
     },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given, its program taking
@@ -727,6 +730,9 @@ struct State {
     popups: BTreeMap<host::PaneId, Option<i32>>,
     /// The automation's requests that it heard and has not answered.
     automations: BTreeSet<u64>,
+    /// The automation's requests whose deadline passed, which the app
+    /// failed: a failed call gives none of them back.
+    automations_forgotten: BTreeSet<u64>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1350,6 +1356,10 @@ impl Drop for Cancel {
     }
 }
 
+/// The most automation's requests that a plugin keeps of those whose
+/// deadline passed, past which the oldest go.
+const MOST_FORGOTTEN_AUTOMATIONS: usize = 256;
+
 /// A write of a call, which the host applies as the call returns.
 enum Write {
     /// One that the plugin asked, as it asked it.
@@ -1893,6 +1903,7 @@ impl Plugins {
                 awake: host::Awake::Off,
                 popups: BTreeMap::new(),
                 automations: BTreeSet::new(),
+                automations_forgotten: BTreeSet::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -3134,7 +3145,7 @@ impl Plugins {
     pub fn automation(
         &mut self,
         id: u64,
-        client: &str,
+        client: lokyr_plugin_sdk::automation::AutomationClient,
         request: lokyr_plugin_sdk::automation::AutomationRequest,
         front: Option<WindowId>,
     ) -> bool {
@@ -3157,12 +3168,27 @@ impl Plugins {
             Some(entry.state.name.clone()),
             Event::Automation {
                 id,
-                client: client.to_owned(),
+                client,
                 request,
                 front: front.map(|window| host::WindowId(window.get())),
             },
         ));
         true
+    }
+
+    /// Forgets the automation's request `id`, which the app failed as its
+    /// deadline passed: its plugin's answer, if it comes, is refused, and a
+    /// call that fails gives it back not.
+    pub fn forget_automation(&mut self, id: u64) {
+        for entry in &mut self.entries {
+            if entry.state.automations.remove(&id) {
+                entry.state.automations_forgotten.insert(id);
+                // Bounded: the oldest of those forgotten go.
+                while entry.state.automations_forgotten.len() > MOST_FORGOTTEN_AUTOMATIONS {
+                    entry.state.automations_forgotten.pop_first();
+                }
+            }
+        }
     }
 
     /// Tells `plugin` the end of its job `id` of the packages' service,
@@ -4431,6 +4457,7 @@ struct Kept {
     quick_windows: Vec<WindowId>,
     timers: BTreeMap<u64, Timer>,
     question: Option<u64>,
+    automations: BTreeSet<u64>,
 }
 
 impl Kept {
@@ -4444,6 +4471,7 @@ impl Kept {
             quick_windows: state.quick_windows.clone(),
             timers: state.timers.clone(),
             question: state.question,
+            automations: state.automations.clone(),
         }
     }
 
@@ -4454,6 +4482,17 @@ impl Kept {
         state.gutter_marks = self.gutter_marks;
         state.held_cursors = self.held_cursors;
         state.quick_windows = self.quick_windows;
+        // The automation's requests that the call answered wait again, as
+        // its answers go with its writes; those that came meanwhile, of the
+        // app's, and those that the app forgot meanwhile, as their deadline
+        // passed, are as the app left them.
+        state.automations.extend(
+            self.automations
+                .difference(&state.automations)
+                .copied()
+                .filter(|id| !state.automations_forgotten.contains(id))
+                .collect::<Vec<_>>(),
+        );
         // The question that the call asked goes, as it never showed; one
         // that the user answered meanwhile stays answered, as a call of a
         // plugin's thread runs beside the main thread's answers, and the
@@ -5834,14 +5873,16 @@ fn own_call(state: &State, command: &str, args: Args) -> Result<Args, Error> {
     own.check_call(args)
 }
 
-/// Gives the commands that `requests` run the chain `chain`, of the
+/// Gives the commands that `requests` run, and the keys that they press,
+/// the chain `chain`, of the
 /// command whose call asked them, or a new chain, one for all of them, of a
 /// call of no command's, as `chain`'s id of 0 tells: so that each call's
 /// runs count against one chain's bound, however many it asks.
 fn deepen(requests: &mut [Request], chain: Chain) {
     let chain = if chain.id == 0 { new_chain() } else { chain };
     for request in requests {
-        if let Request::Run { chain: asked, .. } = request {
+        if let Request::Run { chain: asked, .. } | Request::PressKey { chain: asked, .. } = request
+        {
             *asked = chain;
         }
     }
@@ -7815,6 +7856,7 @@ impl Host<'_, '_> {
                 Request::PressKey {
                     pane: PaneId::of(pane.0),
                     combo,
+                    chain: Chain::default(),
                 }
             }
             Asked::SetText {

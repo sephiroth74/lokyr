@@ -41,7 +41,7 @@ Lokyr's dictionary has three kinds of objects, each inside the one before:
 - **`id`** stays the same while Lokyr runs, so a script can keep it from one command to the next.
 - **`name`** is the title that the window, the tab or the terminal shows.
 - **`working directory`** is the folder where the terminal's shell works, as [shell integration](shell-integration.md) reports it.
-- **`contents`** is the text that the terminal's screen shows, and **`selected text`** the text of its selection. Lokyr asks you first, as [Allow an app to read your terminals](#allow-an-app-to-read-your-terminals) says.
+- **`contents`** is the text that the terminal's screen shows, and **`selected text`** the text of its selection. Lokyr reads them for an app that you allowed, as [Allow an app to control Lokyr](#allow-an-app-to-control-lokyr) says.
 
 Its commands:
 
@@ -90,6 +90,8 @@ end tell
 
 A field named after one of AppleScript's own words, such as `to`, goes between bars: `{|to|:"bottom"}`.
 
+AppleScript's `count` and `exists` work on them too, such as `count terminals of tab 1 of window 1` or `if exists window 2`.
+
 Script Editor shows the whole dictionary: choose File › Open Dictionary… and choose Lokyr.
 
 ## Use Lokyr's actions in Shortcuts
@@ -125,17 +127,23 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 - **Send Text, Close Terminal, the quick terminal's actions and the Get actions** work while Lokyr stays behind. The others bring Lokyr forward.
 - **Spotlight** finds New Window and New Tab: type "New Lokyr window" or "New Lokyr tab".
 
-## Allow an app to read your terminals
+## Allow an app to control Lokyr
 
-What a terminal shows may hold passwords and other secrets. The first time a script or a shortcut asks for a terminal's text, Lokyr asks you whether to allow the app that runs it, such as Script Editor or Shortcuts:
+An app that controls Lokyr can type into your terminals, run commands there, press keys and read what they show, which may hold passwords and other secrets. The first time a script or a shortcut sends Lokyr a request, of any kind, Lokyr asks you whether to allow the app that runs it:
 
 - **Don't Allow**, the default button, refuses this request and the app's next ones.
-- **Allow** answers this request and the app's next ones.
+- **Allow** answers this request and the app's next ones, and the app reads your terminals with no more questions.
 
-Lokyr remembers your answer for each app, from one start to the next.
+Lokyr tells apps apart by their code signature, not by the names that they give, so another app can't take an allowed app's answer. It remembers your answer for each app, from one start to the next.
+
+- **A script that runs from another app's terminal**, such as `osascript` in a terminal of your editor, asks as that program in that app: "osascript in Visual Studio Code".
+- **A program that runs in one of Lokyr's own terminals** asks for itself, and Lokyr's answer holds while that program runs alone: each new program asks again, so that a script in one terminal can't drive your other terminals, a root shell or an ssh session, without your answer.
+- **Shortcuts** asks once for all your shortcuts, Siri and Spotlight.
+
+While the question waits for your answer, a script's request fails with "Lokyr asks whether … may control it": answer, then run the script again. A shortcut waits for your answer.
 
 > [!IMPORTANT]
-> An app that may control Lokyr can type into your terminals, and so run any command as you. macOS asks you before an app sends Lokyr its first command: allow only the apps you trust. System Settings › Privacy & Security › Automation lists the apps you allowed.
+> Allow only the apps you trust: an app that controls Lokyr can run any command as you. For an app of another developer's, macOS asks you too before its first command, and System Settings › Privacy & Security › Automation lists the apps you allowed there.
 
 ## Turn it off
 
@@ -187,9 +195,9 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 osascript -e 'tell application "Lokyr" to create window'
 ```
 
-### "may not read the text of Lokyr's panes"
+### "may not control Lokyr"
 
-**Why**: you clicked Don't Allow when Lokyr asked whether the app may read your terminals' text, and Lokyr remembers it.
+**Why**: you clicked Don't Allow when Lokyr asked whether the app may control it, and Lokyr remembers it.
 
 **Fix**: quit Lokyr, then remove the file where it keeps the answers. Lokyr asks again about every app.
 
@@ -215,9 +223,9 @@ tail ~/Library/Logs/Lokyr/lokyr.log
 
 ### "Lokyr's automation did not answer in time"
 
-**Why**: Lokyr waits 10 seconds at most for each request. A question about reading a terminal's text that you leave open longer fails the request.
+**Why**: Lokyr waits 10 seconds at most for each request, and a shortcut's request almost two minutes while Lokyr's question waits for your answer.
 
-**Fix**: run the script again, and answer the question within 10 seconds.
+**Fix**: run the script or the shortcut again, and answer the question in time.
 
 ### "Lokyr's automation is off"
 

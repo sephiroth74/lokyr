@@ -650,7 +650,12 @@ fn automation(allowed: bool) -> Scenario {
     let request = Event::Automation {
         front: Default::default(),
         id: ASKED,
-        client: "com.apple.ScriptEditor2".to_owned(),
+        client: automation::AutomationClient {
+            id: "app:apple:com.apple.ScriptEditor2".to_owned(),
+            name: "Script Editor".to_owned(),
+            terminal: false,
+            waits: false,
+        },
         request: automation::AutomationRequest::Workspace,
     };
     let lacks = || {

@@ -10,6 +10,21 @@
             <direct-parameter type="specifier" description="The object."/>
             <result type="any" description="Its data."/>
         </command>
+        <command name="count" code="corecnte" description="Return the number of elements of a class within an object.">
+            <cocoa class="NSCountCommand"/>
+            <access-group identifier="*"/>
+            <direct-parameter type="specifier" description="The objects to count."/>
+            <parameter name="each" code="kocl" type="type" optional="yes" description="The class of the objects to count.">
+                <cocoa key="ObjectClass"/>
+            </parameter>
+            <result type="integer" description="Their number."/>
+        </command>
+        <command name="exists" code="coredoex" description="Whether an object exists.">
+            <cocoa class="NSExistsCommand"/>
+            <access-group identifier="*"/>
+            <direct-parameter type="any" description="The object."/>
+            <result type="boolean" description="Whether it exists."/>
+        </command>
         <class name="application" code="capp" description="Lokyr." plural="applications">
             <cocoa class="NSApplication"/>
             <property name="name" code="pnam" type="text" access="r" description="The application's name."/>
@@ -34,8 +49,8 @@
                 <cocoa key="folder"/>
             </parameter>
             <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
-                <type type="text" list="yes"/>
                 <cocoa key="environment"/>
+                <type type="text" list="yes"/>
             </parameter>
             <result type="window" description="The window."/>
         </command>
@@ -51,8 +66,8 @@
                 <cocoa key="folder"/>
             </parameter>
             <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
-                <type type="text" list="yes"/>
                 <cocoa key="environment"/>
+                <type type="text" list="yes"/>
             </parameter>
             <result type="tab" description="The tab."/>
         </command>
@@ -69,8 +84,8 @@
                 <cocoa key="folder"/>
             </parameter>
             <parameter name="with environment" code="LKev" optional="yes" description="Environment variables that its shell takes, each &quot;NAME=value&quot;, such as {&quot;EDITOR=vim&quot;}.">
-                <type type="text" list="yes"/>
                 <cocoa key="environment"/>
+                <type type="text" list="yes"/>
             </parameter>
             <result type="terminal" description="The new terminal."/>
         </command>
