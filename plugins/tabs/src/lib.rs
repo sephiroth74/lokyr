@@ -1222,15 +1222,25 @@ fn integer(args: &Args, name: &str) -> i64 {
     }
 }
 
-/// The color that `text` writes, as `#ff8800` or `ff8800`, if it writes
-/// one.
+/// The color that `text` writes, as `#ff8800` or `ff8800`, or of a digit
+/// a channel, as `#f80`, if it writes one.
 fn color(text: &str) -> Option<Color> {
     let hex = text.strip_prefix('#').unwrap_or(text);
-    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
         return None;
     }
-    let part = |at: usize| u8::from_str_radix(&hex[at..at + 2], 16).ok();
-    Some(Color::Rgb(part(0)?, part(2)?, part(4)?))
+    let digits = match hex.len() {
+        3 => 1,
+        6 => 2,
+        _ => return None,
+    };
+    let part = |at: usize| {
+        let channel = &hex[at * digits..(at + 1) * digits];
+        u8::from_str_radix(channel, 16)
+            .ok()
+            .map(|value| if digits == 1 { value * 17 } else { value })
+    };
+    Some(Color::Rgb(part(0)?, part(1)?, part(2)?))
 }
 
 #[cfg(test)]
