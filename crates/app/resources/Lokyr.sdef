@@ -84,10 +84,15 @@
                 <cocoa key="arguments"/>
             </parameter>
         </command>
-        <class-extension extends="application" description="Lokyr's windows.">
+        <class-extension extends="application" description="Lokyr's windows, and the commands that need no object of its own.">
             <element type="window" access="r" description="Its windows, the one in front first.">
                 <cocoa key="lokyrWindows"/>
             </element>
+            <responds-to command="create window"/>
+            <responds-to command="create tab"/>
+            <responds-to command="split"/>
+            <responds-to command="input text"/>
+            <responds-to command="perform action"/>
         </class-extension>
         <class name="window" code="cwin" description="A window of Lokyr's." plural="windows">
             <cocoa class="LokyrScriptWindow"/>
