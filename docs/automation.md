@@ -110,7 +110,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | Focus Terminal | Terminal | Brings a terminal forward, with its window and its tab |
 | Close Terminal | Terminal | Closes a terminal |
 | Find Terminal | filters on Title, Folder, Tab ID and Window ID | Returns the terminals that match, such as those whose folder contains `src` |
-| Get Details of Terminal | Terminal | Returns a terminal's title, folder, tab ID or window ID |
+| Get Details of Terminal | Detail (Title, Folder, Tab ID, Window ID), Terminal | Returns a detail of a terminal: its title, its folder, its tab's ID or its window's ID |
 | Open Quick Terminal | | Shows the [quick terminal](plugins/quick-terminal.md), opening it first |
 | Close Quick Terminal | | Hides the quick terminal, its shell still running |
 | Run Command | Command, Arguments | Runs one of Lokyr's commands by its name, such as `tabs.next` |
