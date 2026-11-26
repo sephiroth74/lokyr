@@ -80,7 +80,7 @@
         <command name="perform action" code="LKyrPerf" description="Runs one of Lokyr's commands by its name, as the command palette runs it, such as &quot;splits.split&quot;.">
             <cocoa class="LokyrPerformActionCommand"/>
             <direct-parameter type="text" description="The command's name."/>
-            <parameter name="with arguments" code="LKar" type="record" optional="yes" description="Its arguments, such as {direction:&quot;right&quot;}.">
+            <parameter name="with arguments" code="LKar" type="any" optional="yes" description="Its arguments, such as {direction:&quot;right&quot;}.">
                 <cocoa key="arguments"/>
             </parameter>
         </command>

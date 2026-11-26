@@ -8,8 +8,10 @@
 use lokyr_platform_core::automation::{Answer, Arg, Edge, Request, Target};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{ClassType, MainThreadMarker, define_class};
-use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSObject, NSScriptCommand, NSString};
+use objc2::{ClassType, MainThreadMarker, define_class, msg_send};
+use objc2_foundation::{
+    NSAppleEventDescriptor, NSArray, NSDictionary, NSNumber, NSObject, NSScriptCommand, NSString,
+};
 
 use crate::scripting::{
     Asked, Converted, ScriptTab, ScriptTerminal, ScriptWindow, ask, error_of, finish,
@@ -20,6 +22,9 @@ const RIGHT: u32 = u32::from_be_bytes(*b"LKdR");
 const LEFT: u32 = u32::from_be_bytes(*b"LKdL");
 const DOWN: u32 = u32::from_be_bytes(*b"LKdD");
 const UP: u32 = u32::from_be_bytes(*b"LKdU");
+
+/// The keyword of a record's fields of the user's, `keyASUserRecordFields`.
+const USER_FIELDS: u32 = u32::from_be_bytes(*b"usrf");
 
 /// AppleScript's errors of a parameter of the wrong kind and of a
 /// failure.
@@ -319,9 +324,13 @@ fn target_of(object: &AnyObject) -> Option<Target> {
         .map(|terminal| Target::Pane(terminal.id()))
 }
 
-/// The command's arguments of an AppleScript record, a dictionary of its
-/// fields' names: none of a value that is no text, number or boolean.
+/// The command's arguments of an AppleScript record: a dictionary of its
+/// fields' names, or the record's descriptor, of its user's fields; none
+/// of a value that is no text, number or boolean.
 fn arguments_of(record: &AnyObject) -> Option<Vec<(String, Arg)>> {
+    if let Some(record) = record.downcast_ref::<NSAppleEventDescriptor>() {
+        return record_fields(record);
+    }
     let record = record.downcast_ref::<NSDictionary>()?;
     let mut args = Vec::new();
     for key in record.allKeys().to_vec() {
@@ -334,6 +343,66 @@ fn arguments_of(record: &AnyObject) -> Option<Vec<(String, Arg)>> {
         args.push((name, arg));
     }
     Some(args)
+}
+
+/// The fields of a record's descriptor, as a script writes them, of its
+/// user's fields, `usrf`: a list of each name and its value in turn.
+fn record_fields(record: &NSAppleEventDescriptor) -> Option<Vec<(String, Arg)>> {
+    // SAFETY: each call is a method of `NSAppleEventDescriptor`'s of these
+    // arguments and result, on a descriptor that lives through the calls.
+    unsafe {
+        let fields: Option<Retained<NSAppleEventDescriptor>> =
+            msg_send![record, descriptorForKeyword: USER_FIELDS];
+        let Some(fields) = fields else {
+            // A record of no field of the user's.
+            return Some(Vec::new());
+        };
+        let count: isize = msg_send![&*fields, numberOfItems];
+        let mut args = Vec::new();
+        let mut at = 1;
+        while at < count {
+            let name: Option<Retained<NSAppleEventDescriptor>> =
+                msg_send![&*fields, descriptorAtIndex: at];
+            let value: Option<Retained<NSAppleEventDescriptor>> =
+                msg_send![&*fields, descriptorAtIndex: at + 1];
+            let name = name?.stringValue()?.to_string();
+            let value = value?;
+            args.push((name, descriptor_arg(&value)?));
+            at += 2;
+        }
+        Some(args)
+    }
+}
+
+/// The argument of a field's value: a text, a whole number, a boolean, or
+/// the text of a real number.
+fn descriptor_arg(value: &NSAppleEventDescriptor) -> Option<Arg> {
+    // SAFETY: `descriptorType` and the values' getters are methods of
+    // `NSAppleEventDescriptor`'s of no argument.
+    unsafe {
+        let kind: u32 = msg_send![value, descriptorType];
+        match &kind.to_be_bytes() {
+            b"utxt" | b"TEXT" | b"utf8" => Some(Arg::Text(value.stringValue()?.to_string())),
+            b"long" | b"shor" => {
+                let number: i32 = msg_send![value, int32Value];
+                Some(Arg::Integer(i64::from(number)))
+            }
+            b"bool" | b"true" | b"fals" => {
+                let yes: bool = msg_send![value, booleanValue];
+                Some(Arg::Bool(yes))
+            }
+            b"doub" | b"sing" | b"comp" => {
+                let number: f64 = msg_send![value, doubleValue];
+                if number.fract() == 0.0 && number.abs() < 9.0e15 {
+                    #[allow(clippy::cast_possible_truncation)]
+                    Some(Arg::Integer(number as i64))
+                } else {
+                    Some(Arg::Text(number.to_string()))
+                }
+            }
+            _ => None,
+        }
+    }
 }
 
 /// The argument of `number`: a boolean, a whole number, or the text of a
