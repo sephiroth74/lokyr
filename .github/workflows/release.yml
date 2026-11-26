@@ -1,0 +1,44 @@
+name: Release
+
+# A release's pull request, of `release/X.Y` into main: the release's
+# checks, of no secret, which `cargo xtask release check` makes as the
+# release's first step, of the pull request's head (its notes and their
+# listing, the changelog's section, no mark of what no release has, the
+# version not released, the build's number above the feed's latest); the
+# result shows on the pull request.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Actions are pinned by commit SHA; the comment after each one names its tag.
+jobs:
+  check:
+    name: check
+    # A release's branch alone, of no secret: a fork's pull request of that
+    # name reads what any reader does.
+    if: startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    # A few minutes with its cache.
+    timeout-minutes: 30
+    steps:
+      # The pull request's head, whose commit the release is built of, not
+      # the merge that GitHub makes of it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Check the release
+        env:
+          # The repository's commits and releases, read with the run's own
+          # token.
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask release check

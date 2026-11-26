@@ -1,8 +1,9 @@
 name: Site
 
 # lokyr.dev on GitHub Pages: the home page, the documentation's site of the
-# public Markdown, its search, and the updates' feed, `appcast.xml`, which
-# `just release` writes into `site/public` and a push of main publishes.
+# public Markdown, its search, and the updates' feed, `appcast.xml`, the
+# latest published release's asset, or `site/public`'s of a release of
+# none; a push of main publishes it.
 on:
   push:
     branches: [main]

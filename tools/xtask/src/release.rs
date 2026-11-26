@@ -44,24 +44,7 @@ const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let args: Vec<String> = args.collect();
-    let (step, rest) = match args.first().map(String::as_str) {
-        Some(step @ ("check" | "build" | "draft" | "publish")) => (Some(step), &args[1..]),
-        _ => (None, &args[..]),
-    };
-    let mut version = None;
-    let mut without_feed = false;
-    for arg in rest {
-        match arg.as_str() {
-            "--without-feed" => without_feed = true,
-            other if other.starts_with('-') || version.is_some() => bail!("{USAGE}, not `{other}`"),
-            other => version = Some(other.to_owned()),
-        }
-    }
-    let version = match (version, step) {
-        (Some(version), _) => version,
-        (None, Some("check")) => env!("CARGO_PKG_VERSION").to_owned(),
-        (None, _) => bail!("{USAGE}"),
-    };
+    let (step, version, without_feed) = parse(&args, env!("CARGO_PKG_VERSION"))?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -75,17 +58,53 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         without_feed,
     };
     match step {
-        Some("check") => release.check()?,
-        Some("build") => release.build()?,
-        Some("draft") => release.draft()?,
-        Some("publish") => release.publish()?,
-        _ => {
+        Some(Step::Check) => release.check()?,
+        Some(Step::Build) => release.build()?,
+        Some(Step::Draft) => release.draft()?,
+        Some(Step::Publish) => release.publish()?,
+        None => {
             release.check()?;
             release.build()?;
             release.draft()?;
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// A step of a release.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    Check,
+    Build,
+    Draft,
+    Publish,
+}
+
+/// The step, if one alone, the version and whether it goes without the
+/// feed, of `args`: of `check` without a version, the crate's, `crate_version`.
+fn parse(args: &[String], crate_version: &str) -> Result<(Option<Step>, String, bool)> {
+    let (step, rest) = match args.first().map(String::as_str) {
+        Some("check") => (Some(Step::Check), &args[1..]),
+        Some("build") => (Some(Step::Build), &args[1..]),
+        Some("draft") => (Some(Step::Draft), &args[1..]),
+        Some("publish") => (Some(Step::Publish), &args[1..]),
+        _ => (None, args),
+    };
+    let mut version = None;
+    let mut without_feed = false;
+    for arg in rest {
+        match arg.as_str() {
+            "--without-feed" => without_feed = true,
+            other if other.starts_with('-') || version.is_some() => bail!("{USAGE}, not `{other}`"),
+            other => version = Some(other.to_owned()),
+        }
+    }
+    let version = match (version, step) {
+        (Some(version), _) => version,
+        (None, Some(Step::Check)) => crate_version.to_owned(),
+        (None, _) => bail!("{USAGE}"),
+    };
+    Ok((step, version, without_feed))
 }
 
 /// A release, or a candidate, of its version, from the workspace at
@@ -498,6 +517,29 @@ fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_takes_a_step_alone_or_all_of_them_and_check_the_crate_s_version() {
+        let args =
+            |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        assert_eq!(
+            parse(&args("1.6.0"), "1.6.0").unwrap(),
+            (None, "1.6.0".to_owned(), false)
+        );
+        assert_eq!(
+            parse(&args("check"), "1.6.0").unwrap(),
+            (Some(Step::Check), "1.6.0".to_owned(), false)
+        );
+        assert_eq!(
+            parse(&args("build 1.6.0-rc.1 --without-feed"), "1.6.0").unwrap(),
+            (Some(Step::Build), "1.6.0-rc.1".to_owned(), true)
+        );
+        // A step of no version but `check`, and anything else, refused.
+        assert!(parse(&args("draft"), "1.6.0").is_err());
+        assert!(parse(&args(""), "1.6.0").is_err());
+        assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());
+        assert!(parse(&args("check --fast"), "1.6.0").is_err());
+    }
 
     #[test]
     fn the_notes_list_names_a_release_of_its_item() {
