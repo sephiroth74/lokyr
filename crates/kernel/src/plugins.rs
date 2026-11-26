@@ -34,6 +34,7 @@ use lokyr_pkg_model::manifest::{
 };
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::API_VERSION;
+pub use lokyr_plugin_sdk::automation;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::host::MOST_WRITES;
@@ -64,6 +65,7 @@ use crate::workspace::{
     Workspace,
 };
 
+mod mouse;
 mod search;
 mod worker;
 
@@ -96,9 +98,24 @@ pub enum Request {
         /// render's.
         chain: Chain,
     },
+    /// Press the key of `combo` in `pane` as the user presses it: the pane
+    /// takes its window's keyboard, and the keymap runs the key's command,
+    /// or the program takes it.
+    PressKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        combo: lokyr_plugin_sdk::keys::Combo,
+    },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
-    /// or in the folder of a file there, if given.
-    OpenWindow(Option<String>),
+    /// or in the folder of a file there, if given, its program taking
+    /// `environment` over the terminal's variables.
+    OpenWindow {
+        /// The folder of its pane.
+        directory: Option<String>,
+        /// Its pane's environment variables.
+        environment: host::Variables,
+    },
     /// Open the first window of the session `session`, which a plugin made,
     /// as [`Request::OpenWindow`] opens one, in that session, which shows:
     /// none of a session that a later write of the call took away.
@@ -330,6 +347,14 @@ pub enum Request {
         /// The job's id.
         id: u64,
     },
+    /// Give the script or the shortcut that made the automation's request
+    /// `id` its answer.
+    AnswerAutomation {
+        /// The request's id.
+        id: u64,
+        /// The answer.
+        answer: lokyr_plugin_sdk::automation::AutomationAnswer,
+    },
     /// Ask the name of a copy of the theme `name`, write it into the user's
     /// themes folder and name it in `[theme]`, the copy's name, or none,
     /// the answer that [`Plugins::answer`] gives the plugin.
@@ -497,6 +522,20 @@ pub trait Panes {
     /// its size as a new pane's beside it; its directory `directory`, if
     /// given, a path absolute or from `~`, or the folder of a file there.
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
+
+    /// A pane as [`Panes::spawn`] gives one, whose program takes
+    /// `environment` over the terminal's variables: a new pane's of a
+    /// factory that sets none.
+    fn spawn_with(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        environment: &host::Variables,
+    ) -> Pane {
+        let _ = environment;
+        self.spawn(id, near, directory)
+    }
 
     /// A popup's pane, as [`Panes::spawn`] gives a pane, whose program is
     /// the user's login shell running `command`: a new pane's of a factory
@@ -686,6 +725,8 @@ struct State {
     /// The popups that it opened, and the status of each one's command
     /// once it ended, which it hears as each closes.
     popups: BTreeMap<host::PaneId, Option<i32>>,
+    /// The automation's requests that it heard and has not answered.
+    automations: BTreeSet<u64>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1320,6 +1361,7 @@ enum Write {
         tab: TabId,
         pane: PaneId,
         directory: Option<String>,
+        environment: host::Variables,
     },
     /// A split of `pane`, of the id that the host gave the new pane.
     Split {
@@ -1327,6 +1369,8 @@ enum Write {
         direction: Direction,
         side: Side,
         new: PaneId,
+        directory: Option<String>,
+        environment: host::Variables,
     },
     /// A popup over the active tab of `window`, the focused one's for none,
     /// of the id that the host gave its pane.
@@ -1848,6 +1892,7 @@ impl Plugins {
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
                 popups: BTreeMap::new(),
+                automations: BTreeSet::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -3079,6 +3124,45 @@ impl Plugins {
                 line: data(line),
             },
         ));
+    }
+
+    /// Hands the automation's request `request` of the app `client` to the
+    /// active plugin whose manifest asks for the capability `automation`,
+    /// and that holds it, as [`Event::Automation`] of `id` and of the
+    /// window in front `front`, for the next delivery, to it alone: whether
+    /// one takes it, as none does while the automation's plugin is off.
+    pub fn automation(
+        &mut self,
+        id: u64,
+        client: &str,
+        request: lokyr_plugin_sdk::automation::AutomationRequest,
+        front: Option<WindowId>,
+    ) -> bool {
+        let Some(entry) = self.entries.iter_mut().find(|entry| {
+            let state = &entry.state;
+            state.status == Status::Active
+                && state
+                    .manifest
+                    .as_ref()
+                    .is_some_and(|manifest| manifest.capabilities.contains(&Capability::Automation))
+                && state
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::Automation))
+        }) else {
+            return false;
+        };
+        entry.state.automations.insert(id);
+        self.out.events.push((
+            Some(entry.state.name.clone()),
+            Event::Automation {
+                id,
+                client: client.to_owned(),
+                request,
+                front: front.map(|window| host::WindowId(window.get())),
+            },
+        ));
+        true
     }
 
     /// Tells `plugin` the end of its job `id` of the packages' service,
@@ -4954,11 +5038,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 tab,
                 pane,
                 directory,
+                environment,
             } => {
                 if context.workspace.window(window).is_some() {
                     let near = context.workspace.active_pane(window);
                     let near = near.and_then(|near| context.workspace.pane(near));
-                    let new = context.panes.spawn(pane, near, directory.as_deref());
+                    let new =
+                        context
+                            .panes
+                            .spawn_with(pane, near, directory.as_deref(), &environment);
                     context
                         .workspace
                         .open_tab_as(window, new, index.unwrap_or(usize::MAX), tab);
@@ -4970,9 +5058,16 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 direction,
                 side,
                 new,
+                directory,
+                environment,
             } => {
                 if let Some(near) = context.workspace.pane(split) {
-                    let new = context.panes.spawn(new, Some(near), None);
+                    let new = context.panes.spawn_with(
+                        new,
+                        Some(near),
+                        directory.as_deref(),
+                        &environment,
+                    );
                     context.workspace.split(split, direction, new, side);
                 }
                 continue;
@@ -5150,6 +5245,19 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SendText { pane: id, text } => {
                 if let Some(pane) = pane(id) {
                     pane.send_text(&text);
+                }
+            }
+            Asked::SendMouse { pane: id, input } => {
+                if let Some(pane) = pane(id) {
+                    mouse::send(pane, input);
+                }
+            }
+            // Its combination, which the request's check read.
+            Asked::SendKey { pane: id, keys } => {
+                if let (Some(pane), Ok(combo)) =
+                    (pane(id), lokyr_plugin_sdk::keys::typed_key(&keys))
+                {
+                    crate::typed::send(pane, combo);
                 }
             }
             // As the user's keys: to the pane and those that its window
@@ -6849,6 +6957,18 @@ impl Host<'_, '_> {
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
             }
+            Asked::SendKey { pane, keys } => {
+                lokyr_plugin_sdk::keys::typed_key(keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(*pane)?;
+            }
+            // Over a cell of the pane's screen.
+            Asked::SendMouse { pane, input } => {
+                let grid = self.pane(*pane)?.grid();
+                input
+                    .check(grid.columns, grid.rows)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+            }
             Asked::SetBroadcast { window, .. } => {
                 self.window(*window)?;
             }
@@ -6939,6 +7059,7 @@ impl Host<'_, '_> {
                 window,
                 index,
                 directory,
+                environment,
             } => {
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
@@ -6946,6 +7067,8 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 let (tab, pane) = (TabId::new(), PaneId::new());
                 self.writes.push(Write::NewTab {
@@ -6954,6 +7077,7 @@ impl Host<'_, '_> {
                     tab,
                     pane,
                     directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Tab {
                     tab: tab.into(),
@@ -7020,7 +7144,15 @@ impl Host<'_, '_> {
                 pane,
                 direction: lying,
                 side: new_side,
+                directory,
+                environment,
             } => {
+                if let Some(directory) = directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.known_pane(*pane)?;
                 // A floating pane splits not, of no layout of its own: its
                 // shell would start and go.
@@ -7043,6 +7175,8 @@ impl Host<'_, '_> {
                     direction: direction(*lying),
                     side: side(*new_side),
                     new,
+                    directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Pane(Some(new.into())));
             }
@@ -7428,13 +7562,21 @@ impl Host<'_, '_> {
                     place,
                 }
             }
-            Asked::OpenWindow { directory } => {
+            Asked::OpenWindow {
+                directory,
+                environment,
+            } => {
                 if let Some(directory) = &directory {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(&environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
-                Request::OpenWindow(directory)
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                }
             }
             Asked::PreviewTheme(name) => {
                 if let Some(name) = &name {
@@ -7666,6 +7808,15 @@ impl Host<'_, '_> {
                 Request::CloseWindow(id)
             }
             Asked::Quit => Request::Quit,
+            Asked::PressKey { pane, keys } => {
+                let combo = lokyr_plugin_sdk::keys::typed_key(&keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(pane)?;
+                Request::PressKey {
+                    pane: PaneId::of(pane.0),
+                    combo,
+                }
+            }
             Asked::SetText {
                 view,
                 key,
@@ -7785,6 +7936,16 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // An automation's request that the plugin heard, answered once.
+            Asked::AnswerAutomation { id, answer } => {
+                if !self.state.automations.remove(&id) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no automation's request {id} that waits for an answer"),
+                    ));
+                }
+                Request::AnswerAutomation { id, answer }
+            }
             // A notice of its bounds, a second at least after the plugin's
             // last, of the host's time, titled of its namespace without a
             // title of its own.

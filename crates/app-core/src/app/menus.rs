@@ -589,6 +589,11 @@ const SHOW_AGENTS: &str = "command-palette.agents";
 /// The palette's sessions' switcher, which the Window menu's Sessions
 /// shows first.
 const SWITCH_SESSION: &str = "command-palette.sessions";
+
+/// The quick terminal's show and hide, for keys and shortcuts, which the
+/// Shell menu leaves out beside its toggle.
+const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
+const HIDE_QUICK_TERMINAL: &str = "window.hide-quick-terminal";
 /// The arguments of `man` for the page that `text` names: its name, and
 /// its section before it when `text` ends with one in brackets, as
 /// `ls(1)`, after `--`; `None` for a text that is no page's name, which
@@ -722,6 +727,8 @@ pub(super) fn main_menu(
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
                     && command.name != SWITCH_SESSION
+                    && command.name != SHOW_QUICK_TERMINAL
+                    && command.name != HIDE_QUICK_TERMINAL
                     && command.name != NEXT_WINDOW
                     && command.name != PREVIOUS_WINDOW
                     && !SESSIONS.contains(&command.name.as_str())

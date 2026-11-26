@@ -55,6 +55,7 @@ use crate::watch::Watcher;
 use crate::window::{Surfaces, Window};
 
 mod access;
+mod automation;
 pub(crate) use access::TreeCursor;
 mod agents;
 mod asks;
@@ -727,6 +728,8 @@ pub struct App<B: Backend> {
     /// The timer past which a start that the system made to open files,
     /// folders or links opens a new window, if what it opened opened none.
     untitled_timer: Option<TimerId>,
+    /// The automation's requests that wait for its plugin's answers.
+    automations: automation::Automations,
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
@@ -1152,6 +1155,7 @@ impl<B: Backend> App<B> {
             exit_timer: None,
             bench_deadline: None,
             untitled_timer: None,
+            automations: automation::Automations::default(),
             restart_timer: None,
             closed_timer: None,
             kept_closes: BTreeMap::new(),
@@ -2559,6 +2563,19 @@ impl<B: Backend> App<B> {
         page: Option<String>,
         directory: Option<PathBuf>,
     ) -> Option<WindowId> {
+        self.open_window_running_with(platform, program, page, directory, Vec::new())
+    }
+
+    /// Opens a window as [`App::open_window_running`] does, its program
+    /// taking `variables` over the terminal's own.
+    fn open_window_running_with(
+        &mut self,
+        platform: &mut dyn Platform,
+        program: &Program,
+        page: Option<String>,
+        directory: Option<PathBuf>,
+        variables: Vec<(String, String)>,
+    ) -> Option<WindowId> {
         // The windows of a session left hide first, as a new session's
         // window opens.
         self.settle_sessions(platform);
@@ -2581,6 +2598,7 @@ impl<B: Backend> App<B> {
             .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
         let environment = Environment {
             directory: directory.or_else(|| self.start_directory(platform)),
+            variables,
             ..self.environment.clone()
         };
         let attributes = WindowAttributes {
@@ -3995,7 +4013,10 @@ impl<B: Backend> App<B> {
                         self.chains.1.pop();
                     }
                 }
-                Request::OpenWindow(None) => self.open_window(platform),
+                Request::OpenWindow {
+                    directory: None,
+                    environment,
+                } if environment.is_empty() => self.open_window(platform),
                 Request::OpenQuickWindow {
                     window,
                     place,
@@ -4026,11 +4047,16 @@ impl<B: Backend> App<B> {
                     }
                 }
                 // A window in the folder that the plugin asked for, or a
-                // new window's of a path that is not there.
-                Request::OpenWindow(Some(directory)) => {
+                // new window's of a path that is not there, of the
+                // variables that it asked for.
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                } => {
                     let program = self.program.clone();
-                    let folder = spawn::folder_of(&directory);
-                    self.open_window_running(platform, &program, None, folder);
+                    let folder = directory.as_deref().and_then(spawn::folder_of);
+                    let variables = environment.into_iter().collect();
+                    self.open_window_running_with(platform, &program, None, folder, variables);
                 }
                 Request::CloseWindow(window) => {
                     let shown = self
@@ -4043,6 +4069,7 @@ impl<B: Backend> App<B> {
                     }
                 }
                 Request::Quit => self.ask_quit(platform, false),
+                Request::PressKey { pane, combo } => self.press_key(platform, pane, combo),
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
@@ -4105,6 +4132,9 @@ impl<B: Backend> App<B> {
                     self.start_packages(platform, (plugin, id), &call);
                 }
                 Request::CancelPackages { plugin, id } => self.cancel_packages(&plugin, id),
+                Request::AnswerAutomation { id, answer } => {
+                    self.answer_automation(platform, id, answer);
+                }
                 // A theme copied, or one of the folder's `.itermcolors`
                 // converted, as the Theme Editor asks, of the user's answer.
                 Request::CopyTheme { plugin, id, name } => {
@@ -5542,6 +5572,15 @@ impl<B: Backend> App<B> {
                 }
                 self.after_plugins(platform);
             }
+            AppEvent::Timer(timer) if self.automations.is_timer(timer) => {
+                self.automations_late(platform, Instant::now());
+            }
+            // A script's or a shortcut's request, to the automation's plugin.
+            AppEvent::Automation {
+                id,
+                client,
+                request,
+            } => self.take_automation(platform, id, &client, request),
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;
                 if self

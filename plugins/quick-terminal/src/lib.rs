@@ -22,6 +22,8 @@ lokyr_plugin_sdk::export_plugin!(QuickTerminal);
 
 /// Shows the quick terminal, or hides it.
 const TOGGLE: &str = "window.toggle-quick-terminal";
+const SHOW: &str = "window.show-quick-terminal";
+const HIDE: &str = "window.hide-quick-terminal";
 
 static CATALOGS: [(&str, &str); 2] = [
     ("en", include_str!("../locales/en/quick-terminal.ftl")),
@@ -154,14 +156,20 @@ fn length_of(text: &str) -> Option<QuickLength> {
 
 impl Plugin for QuickTerminal {
     fn activate(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
-        cx.register_command(Command {
-            name: TOGGLE.to_owned(),
-            title: "Quick Terminal".to_owned(),
-            category: Category::Windows,
-            capabilities: vec![Capability::GlobalHotkey],
-            params: Vec::new(),
-            when: None,
-        })?;
+        for (name, title) in [
+            (TOGGLE, "Quick Terminal"),
+            (SHOW, "Show Quick Terminal"),
+            (HIDE, "Hide Quick Terminal"),
+        ] {
+            cx.register_command(Command {
+                name: name.to_owned(),
+                title: title.to_owned(),
+                category: Category::Windows,
+                capabilities: vec![Capability::GlobalHotkey],
+                params: Vec::new(),
+                when: None,
+            })?;
+        }
         cx.subscribe(&[WINDOW_FOCUS])?;
         // A size that does not read leaves the default's, and the plugin
         // starts all the same.
@@ -202,16 +210,19 @@ impl Plugin for QuickTerminal {
     }
 
     /// Shows the quick terminal, at its config's place, opening it first,
-    /// in the folder of a new window's; or hides it, if it shows with the
-    /// focus. Shown without the focus, it takes the focus.
+    /// in the folder of a new window's; or hides it, of the toggle, if it
+    /// shows with the focus. Shown without the focus, it takes the focus.
+    /// Its hide hides it, its shell running, if it shows.
     fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
-        if name != TOGGLE {
-            return Err(Error::new(
+        match name {
+            TOGGLE => self.toggle(cx),
+            SHOW => self.show(cx),
+            HIDE => self.hide(cx),
+            _ => Err(Error::new(
                 Code::NotFound,
                 format!("quick-terminal has no command `{name}`"),
-            ));
+            )),
         }
-        self.toggle(cx)
     }
 }
 
@@ -229,6 +240,20 @@ impl QuickTerminal {
             Some(info) if !info.hidden && cx.focused_window() == Some(info.id) => {
                 cx.show_quick_window(info.id, None)
             }
+            Some(info) => cx.show_quick_window(info.id, Some(place)),
+        }
+    }
+
+    /// Shows the quick terminal, at its config's place, opening it first,
+    /// in the folder of a new window's; shown with the focus, it stays.
+    fn show(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let place = self.settings.place;
+        match self.shown(cx)? {
+            None => {
+                self.window = Some(cx.open_quick_window(place, None)?);
+                Ok(())
+            }
+            Some(info) if !info.hidden && cx.focused_window() == Some(info.id) => Ok(()),
             Some(info) => cx.show_quick_window(info.id, Some(place)),
         }
     }

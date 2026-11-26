@@ -135,6 +135,19 @@ pub enum AppEvent {
     /// The user clicked a notification that the app showed for a window,
     /// of the app's number, with [`Platform::notify`](crate::Platform::notify).
     NotificationClicked(WindowId, u64),
+    /// A script or a shortcut asks something of the app, through the
+    /// system's automation: the request's id, which its answer takes, by
+    /// [`Platform::answer_automation`](crate::Platform::answer_automation);
+    /// the app that asks, by its bundle's identifier or its name; and what
+    /// it asks.
+    Automation {
+        /// The request's id.
+        id: u64,
+        /// The app that asks.
+        client: String,
+        /// What it asks.
+        request: crate::automation::Request,
+    },
     /// A key that the app takes from every app, with
     /// [`Platform::set_global_keys`](crate::Platform::set_global_keys),
     /// was pressed: its index.

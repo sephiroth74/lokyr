@@ -156,6 +156,28 @@ impl Shared {
 
     /// Queues `pending`, and hands it on now unless a dispatch is in
     /// progress, which will.
+    /// Keeps `reply` of an automation's request until the app answers it,
+    /// and posts the request: whether the backend took it, as it does
+    /// outside the app's calls.
+    pub(crate) fn post_automation(
+        &self,
+        client: &str,
+        request: lokyr_platform_core::automation::Request,
+        reply: crate::backend::AutomationReply,
+    ) -> bool {
+        let Ok(mut backend) = self.backend.try_borrow_mut() else {
+            return false;
+        };
+        let id = backend.wait_automation(reply);
+        drop(backend);
+        self.post(Pending::App(lokyr_platform_core::AppEvent::Automation {
+            id,
+            client: client.to_owned(),
+            request,
+        }));
+        true
+    }
+
     pub(crate) fn post(&self, pending: Pending) {
         self.enqueue(pending);
         self.dispatch();

@@ -705,6 +705,10 @@ pub struct FakeHost {
     /// The jobs of the packages' service that the plugin started, which
     /// run, by their ids.
     jobs: BTreeMap<u64, host::Packages>,
+    /// The automation's requests that the test gave the plugin, which wait
+    /// for its answers, and its answers, in their order.
+    automations: BTreeSet<u64>,
+    automation_answers: Vec<(u64, crate::automation::AutomationAnswer)>,
     /// The files that its saves wrote, by their paths.
     saved: BTreeMap<String, Vec<u8>>,
     /// The ids of the images that the host keeps of the plugin's, the
@@ -870,6 +874,8 @@ impl FakeHost {
             clipboard_image: None,
             saves: BTreeMap::new(),
             jobs: BTreeMap::new(),
+            automations: BTreeSet::new(),
+            automation_answers: Vec::new(),
             saved: BTreeMap::new(),
             kept: Vec::new(),
             images: (crate::image::Budget::default(), None),
@@ -1700,8 +1706,26 @@ impl FakeHost {
         {
             self.question = None;
         }
+        // An automation's request waits for the plugin's answer, of the
+        // capability's plugin alone, as the app's host hands it.
+        if let Event::Automation { id, .. } = &event {
+            let holds = self
+                .granted
+                .as_ref()
+                .is_none_or(|granted| granted.contains(&Capability::Automation));
+            if !holds {
+                return self;
+            }
+            self.automations.insert(*id);
+        }
         self.owed.push(event);
         self
+    }
+
+    /// The plugin's answers to the automation's requests that the test
+    /// posted, as [`Event::Automation`], in their order.
+    pub fn automation_answers(&self) -> &[(u64, crate::automation::AutomationAnswer)] {
+        &self.automation_answers
     }
 
     /// The id of the plugin's question of a text or of buttons that waits
@@ -1950,6 +1974,7 @@ impl FakeHost {
                     | Event::PopupClosed { .. }
                     | Event::Package { .. }
                     | Event::PackagesEnded { .. }
+                    | Event::Automation { .. }
                     | Event::TabBarResized { .. }
                     | Event::DoubleTapped { .. }
             ) || self.subscribed.iter().any(|name| name == event.name());
@@ -2063,10 +2088,12 @@ impl FakeHost {
             saving: Vec::new(),
             jobs: Vec::new(),
             cancelled: Vec::new(),
+            answered: Vec::new(),
         };
         let result = call(&mut Cx::new(&mut calling, &caller));
         let (writes, asked, closed) = (calling.writes, calling.asked, calling.closed);
         let (saving, jobs, cancelled) = (calling.saving, calling.jobs, calling.cancelled);
+        let answered = calling.answered;
         // A look, or a call that failed, leaves things as they were, as the
         // app's host leaves them: its writes and what it asked of the app
         // go, and what its requests took at once comes back; a look takes
@@ -2218,6 +2245,12 @@ impl FakeHost {
         for id in cancelled {
             if self.jobs.remove(&id).is_some() {
                 self.owed.push(Event::PackagesEnded { id, ok: false });
+            }
+        }
+        // The automation's requests answered, which the scripts take.
+        for (id, answer) in answered {
+            if self.automations.remove(&id) {
+                self.automation_answers.push((id, answer));
             }
         }
         result
@@ -2420,6 +2453,7 @@ impl FakeHost {
                 pane,
                 direction,
                 side,
+                ..
             } => {
                 if let Opened::Pane(new) = opened {
                     self.split(*pane, *direction, *side, new);
@@ -4456,6 +4490,8 @@ struct Calling<'h> {
     /// start as it returns, and those that it cancelled.
     jobs: Vec<(u64, host::Packages)>,
     cancelled: Vec<u64>,
+    /// The automation's requests that the call answered, and their answers.
+    answered: Vec<(u64, crate::automation::AutomationAnswer)>,
 }
 
 impl Calling<'_> {
@@ -5233,6 +5269,19 @@ impl Calling<'_> {
                 self.known_pane(*pane)?;
                 Response::Done
             }
+            Request::SendMouse { pane, input } => {
+                let (columns, rows) = self.host.held(*pane)?.grid;
+                input
+                    .check(columns, rows)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                Response::Done
+            }
+            Request::SendKey { pane, keys } | Request::PressKey { pane, keys } => {
+                crate::keys::typed_key(keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(*pane)?;
+                Response::Done
+            }
             Request::PaneToNewWindow(pane) => {
                 self.known_pane(*pane)?;
                 self.not_popup(*pane)?;
@@ -5389,6 +5438,19 @@ impl Calling<'_> {
             }
             Request::CancelPackages(id) => {
                 self.cancelled.push(*id);
+                Response::Done
+            }
+            // An automation's request that the test gave and that waits,
+            // once.
+            Request::AnswerAutomation { id, answer } => {
+                let answered = self.answered.iter().any(|(done, _)| done == id);
+                if answered || !self.host.automations.contains(id) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no automation's request {id} that waits for an answer"),
+                    ));
+                }
+                self.answered.push((*id, answer.clone()));
                 Response::Done
             }
             // A page of the plugin's manifest.
@@ -5566,11 +5628,16 @@ impl Calling<'_> {
                 }
                 Response::Done
             }
-            Request::OpenWindow { directory } => {
+            Request::OpenWindow {
+                directory,
+                environment,
+            } => {
                 if let Some(directory) = directory {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 Response::Done
             }
@@ -5863,19 +5930,35 @@ impl Calling<'_> {
                 Response::Done
             }
             Request::NewTab {
-                window, directory, ..
+                window,
+                directory,
+                environment,
+                ..
             } => {
                 self.known_window(*window)?;
                 if let Some(directory) = directory {
                     crate::host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.count_pane()?;
                 let (tab, pane) = (TabId(self.host.next_id()), PaneId(self.host.next_id()));
                 opened = Opened::Tab(tab, pane);
                 Response::Tab { tab, pane }
             }
-            Request::Split { pane, .. } => {
+            Request::Split {
+                pane,
+                directory,
+                environment,
+                ..
+            } => {
+                if let Some(directory) = directory {
+                    crate::host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                crate::host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.known_pane(*pane)?;
                 let floating = self
                     .host

@@ -144,6 +144,7 @@ lokyr-replay = { path = "tools/replay" }
 lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
 lokyr-progress = { path = "plugins/progress" }
+lokyr-automation = { path = "plugins/automation" }
 lokyr-quick-terminal = { path = "plugins/quick-terminal" }
 lokyr-quick-tips = { path = "plugins/quick-tips" }
 lokyr-plugin-manager = { path = "plugins/plugin-manager" }

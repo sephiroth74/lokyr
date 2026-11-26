@@ -56,6 +56,146 @@ pub fn check_session_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The most steps of the wheel of a mouse event that a plugin sends a pane.
+pub const MOST_MOUSE_STEPS: u16 = 100;
+
+/// What a mouse event that a plugin sends a pane does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MouseDoes {
+    /// A button goes down.
+    Press,
+    /// A button goes up.
+    Release,
+    /// The pointer moves to the cell, a button held or none.
+    Move,
+    /// The wheel turns up, toward the content's top.
+    ScrollUp,
+    /// The wheel turns down.
+    ScrollDown,
+    /// The wheel tilts left.
+    ScrollLeft,
+    /// The wheel tilts right.
+    ScrollRight,
+}
+
+/// A button of the mouse.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MouseButton {
+    /// The left one, the primary.
+    #[default]
+    Left,
+    /// The middle one, the wheel's.
+    Middle,
+    /// The right one, the secondary.
+    Right,
+}
+
+/// A mouse event that a plugin sends a pane, as the pointer over a cell of
+/// its screen makes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MouseInput {
+    /// What it does.
+    pub action: MouseDoes,
+    /// Its button: of a press or a release, the left one for none; of a
+    /// move, the one held, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<MouseButton>,
+    /// The cell's column on the screen, from 0.
+    pub column: u16,
+    /// The cell's row on the screen, from 0.
+    pub row: u16,
+    /// Whether Shift is held.
+    #[serde(default)]
+    pub shift: bool,
+    /// Whether Control is held.
+    #[serde(default)]
+    pub control: bool,
+    /// Whether Option is held, which a report tells as Meta.
+    #[serde(default)]
+    pub alt: bool,
+    /// The wheel's steps of a scroll, each a row: 1 for none,
+    /// [`MOST_MOUSE_STEPS`] at most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<u16>,
+}
+
+impl MouseInput {
+    /// Whether it is an event over a cell of a screen of `columns` by
+    /// `rows`, of steps from 1 to [`MOST_MOUSE_STEPS`]; why not otherwise.
+    pub fn check(&self, columns: u16, rows: u16) -> Result<(), String> {
+        if self.column >= columns || self.row >= rows {
+            return Err(format!(
+                "the cell at column {} and row {} is not on the pane's screen",
+                self.column, self.row
+            ));
+        }
+        if self
+            .steps
+            .is_some_and(|steps| steps == 0 || steps > MOST_MOUSE_STEPS)
+        {
+            return Err(format!(
+                "a mouse's scroll is of 1 to {MOST_MOUSE_STEPS} steps"
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// A new pane's environment variables, by their names, which its program
+/// takes over the terminal's own, the shells' integration keeping its
+/// own.
+pub type Variables = std::collections::BTreeMap<String, String>;
+
+/// The most variables of a new pane's environment.
+pub const MOST_VARIABLES: usize = 64;
+
+/// The most bytes of a variable's name.
+pub const LONGEST_VARIABLE_NAME: usize = 256;
+
+/// The most bytes of a variable's value.
+pub const LONGEST_VARIABLE_VALUE: usize = 32 * 1024;
+
+/// Whether `variables` are a new pane's: [`MOST_VARIABLES`] at most, each
+/// name of [`LONGEST_VARIABLE_NAME`] bytes at most, not empty, of no `=`
+/// nor NUL, each value of [`LONGEST_VARIABLE_VALUE`] bytes at most and no
+/// NUL; why not otherwise.
+pub fn check_variables(variables: &Variables) -> Result<(), String> {
+    if variables.len() > MOST_VARIABLES {
+        return Err(format!(
+            "a new pane takes {MOST_VARIABLES} environment variables at most, not {}",
+            variables.len()
+        ));
+    }
+    for (name, value) in variables {
+        if name.is_empty() || name.contains(['=', '\0']) {
+            return Err(format!(
+                "`{}` is no environment variable's name, which is not empty and holds no `=` nor NUL",
+                name.escape_debug()
+            ));
+        }
+        if name.len() > LONGEST_VARIABLE_NAME {
+            return Err(format!(
+                "an environment variable's name is {LONGEST_VARIABLE_NAME} bytes at most, not {}",
+                name.len()
+            ));
+        }
+        if value.contains('\0') {
+            return Err(format!(
+                "the value of the environment variable `{name}` holds a NUL"
+            ));
+        }
+        if value.len() > LONGEST_VARIABLE_VALUE {
+            return Err(format!(
+                "the value of the environment variable `{name}` is {LONGEST_VARIABLE_VALUE} bytes at most, not {}",
+                value.len()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The most bytes of a session's folder.
 pub const MOST_SESSION_DIRECTORY: usize = 1024;
 
@@ -2842,6 +2982,27 @@ pub trait Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_pane_s_variables_are_bounded_named_and_of_no_nul() {
+        let of = |pairs: &[(&str, &str)]| -> Variables {
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect()
+        };
+        assert!(check_variables(&of(&[("EDITOR", "vim"), ("EMPTY", "")])).is_ok());
+        assert!(check_variables(&of(&[("", "x")])).is_err());
+        assert!(check_variables(&of(&[("A=B", "x")])).is_err());
+        assert!(check_variables(&of(&[("A\0", "x")])).is_err());
+        assert!(check_variables(&of(&[("A", "x\0y")])).is_err());
+        let long = "x".repeat(LONGEST_VARIABLE_VALUE + 1);
+        assert!(check_variables(&of(&[("A", &long)])).is_err());
+        let many: Variables = (0..=MOST_VARIABLES)
+            .map(|at| (format!("V{at}"), String::new()))
+            .collect();
+        assert!(check_variables(&many).is_err());
+    }
 
     #[test]
     fn a_view_of_folds_shows_the_rows_past_them_each_fold_one_row() {

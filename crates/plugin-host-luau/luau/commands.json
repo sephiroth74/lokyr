@@ -1583,6 +1583,17 @@
   },
   {
     "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.hide-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Hide Quick Terminal",
+    "when": null
+  },
+  {
+    "capabilities": [
       "workspace-write"
     ],
     "category": "windows",
@@ -1685,6 +1696,17 @@
     "params": [],
     "plugin": null,
     "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.show-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Show Quick Terminal",
     "when": null
   },
   {

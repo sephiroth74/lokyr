@@ -185,11 +185,13 @@ fn a_call_makes_its_request_of_its_arguments_in_their_order() {
                 ])),
             },
             Request::NewTab {
+                environment: Default::default(),
                 window: WindowId(1),
                 index: None,
                 directory: None,
             },
             Request::NewTab {
+                environment: Default::default(),
                 window: WindowId(1),
                 index: None,
                 directory: Some("~/src".to_owned()),

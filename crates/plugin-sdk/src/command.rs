@@ -193,6 +193,10 @@ pub enum Capability {
     /// their schemas, read, and its keys written; Lokyr's own plugins'
     /// alone.
     Config,
+    /// The requests of scripts and shortcuts from outside the app, which
+    /// the plugin answers of the commands and the workspace that it reaches;
+    /// Lokyr's own plugins' alone.
+    Automation,
     /// Turning off the plugin of a name while this one runs, as both show
     /// in the same place, of the manifest's `[plugin] replaces`; the
     /// plugin is turned on again as this one goes.
@@ -225,6 +229,7 @@ impl Capability {
             "appearance-write" => Self::AppearanceWrite,
             "packages" => Self::Packages,
             "config" => Self::Config,
+            "automation" => Self::Automation,
             _ => return None,
         })
     }
@@ -274,7 +279,7 @@ impl Capability {
     /// it, which a manifest of another plugin has refused, with a notice:
     /// the plugins' install and removal.
     pub fn is_first_party_only(&self) -> bool {
-        matches!(self, Self::Packages | Self::Config)
+        matches!(self, Self::Packages | Self::Config | Self::Automation)
     }
 }
 
@@ -344,6 +349,7 @@ impl fmt::Display for Capability {
             Self::AppearanceWrite => f.write_str("appearance-write"),
             Self::Packages => f.write_str("packages"),
             Self::Config => f.write_str("config"),
+            Self::Automation => f.write_str("automation"),
             Self::Replaces(plugin) => write!(f, "replaces:{plugin}"),
         }
     }
@@ -713,7 +719,8 @@ mod tests {
             | Capability::KeepAwake
             | Capability::AppearanceWrite
             | Capability::Packages
-            | Capability::Config => capability.to_string(),
+            | Capability::Config
+            | Capability::Automation => capability.to_string(),
         };
         let every = [
             Capability::TerminalRead,
@@ -740,6 +747,7 @@ mod tests {
             Capability::AppearanceWrite,
             Capability::Packages,
             Capability::Config,
+            Capability::Automation,
             Capability::Replaces(String::new()),
         ];
         for capability in &every {
@@ -875,6 +883,11 @@ mod tests {
         assert!(!Capability::KeepAwake.is_first_party_only());
         assert_eq!(Capability::of_name("config"), Some(Capability::Config));
         assert!(Capability::Config.is_first_party_only());
+        assert_eq!(
+            Capability::of_name("automation"),
+            Some(Capability::Automation)
+        );
+        assert!(Capability::Automation.is_first_party_only());
     }
 
     #[test]

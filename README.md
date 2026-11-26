@@ -123,6 +123,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`quick-tips`](docs/plugins/quick-tips.md) | A tip at the start, once a week at most: a shortcut as your keymap binds it, or a feature that shows in no menu |
 | [`settings`](docs/plugins/settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |
 | [`plugin-manager`](docs/plugins/plugin-manager.md) | The settings window's Plugins page: every plugin, its state and its capabilities, to disable, enable or remove |
+| [`automation`](docs/plugins/automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · not released yet |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 

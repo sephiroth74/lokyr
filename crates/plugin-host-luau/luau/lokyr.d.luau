@@ -65,6 +65,7 @@ export type Cx = {
     packages: (call: Packages) -> (number?, string?, number?),
     show_page: (page: string) -> (true?, string?, number?),
     cancel_packages: (job: number) -> (true?, string?, number?),
+    answer_automation: (id: number, answer: AutomationAnswer) -> (true?, string?, number?),
     focused_window: () -> (WindowId?, string?, number?),
     focused_pane: () -> (PaneId?, string?, number?),
     selection_text: (pane: PaneId) -> (string?, string?, number?),
@@ -104,12 +105,15 @@ export type Cx = {
     clear: (pane: PaneId) -> (true?, string?, number?),
     paste: (pane: PaneId, text: string) -> (true?, string?, number?),
     send_text: (pane: PaneId, text: string) -> (true?, string?, number?),
+    send_key: (pane: PaneId, keys: string) -> (true?, string?, number?),
+    send_mouse: (pane: PaneId, input: MouseInput) -> (true?, string?, number?),
+    press_key: (pane: PaneId, keys: string) -> (true?, string?, number?),
     edited_line: (pane: PaneId) -> (string?, string?, number?),
     run_line: (pane: PaneId, line: string) -> (true?, string?, number?),
     scroll: (pane: PaneId, scroll: Scroll) -> (true?, string?, number?),
     font_size: () -> (number?, string?, number?),
     set_font_size: (size: number?) -> (true?, string?, number?),
-    open_window: (directory: string?) -> (true?, string?, number?),
+    open_window: (directory: string?, environment: { [string]: string }?) -> (true?, string?, number?),
     open_quick_window: (place: QuickPlace, directory: string?) -> (WindowId?, string?, number?),
     show_quick_window: (window: WindowId, place: QuickPlace?) -> (true?, string?, number?),
     close_window: (window: WindowId) -> (true?, string?, number?),
@@ -119,8 +123,8 @@ export type Cx = {
     recent_tabs: (window: WindowId) -> ({ TabInfo }?, string?, number?),
     groups: (window: WindowId) -> ({ GroupInfo }?, string?, number?),
     layout: (tab: TabId) -> (Layout?, string?, number?),
-    new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
-    split: (pane: PaneId, direction: Direction, side: Side) -> (PaneId?, string?, number?),
+    new_tab: (window: WindowId, index: number?, directory: string?, environment: { [string]: string }?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),
+    split: (pane: PaneId, direction: Direction, side: Side, directory: string?, environment: { [string]: string }?) -> (PaneId?, string?, number?),
     close_tab: (tab: TabId, ask: boolean?, keep: number?) -> (true?, string?, number?),
     reopen_tab: (window: WindowId) -> (true?, string?, number?),
     close_pane: (pane: PaneId, ask: boolean?) -> (true?, string?, number?),
@@ -224,6 +228,7 @@ export type Event =
     | { kind: "saved", id: number, path: string?, error: string? }
     | { kind: "popup-closed", pane: PaneId, status: number? }
     | { kind: "package", id: number, line: Data }
+    | { kind: "automation", id: number, client: string, request: AutomationRequest, front: WindowId? }
     | { kind: "packages-ended", id: number, ok: boolean }
     | { kind: "plugins-changed" }
     | { kind: "settings-changed" }
@@ -464,6 +469,68 @@ export type Anchor =
     | { window_corner: { window: WindowId, corner: Corner } }
     | { view_window: { view: ViewId, corner: Corner } }
     | { view_pointer: { view: ViewId } }
+
+export type AutomationAnswer =
+    | "done"
+    | { opened: { window: WindowId, tab: TabId, pane: PaneId } }
+    | { workspace: { AutomationWindow } }
+    | { text: string }
+    | { commands: { AutomationCommand } }
+    | { error: { code: number, message: string } }
+
+export type AutomationCommand = {
+    name: string,
+    title: string,
+    args: { [string]: Value }?,
+}
+
+export type AutomationEdge =
+    | "right"
+    | "left"
+    | "down"
+    | "up"
+
+export type AutomationPane = {
+    id: PaneId,
+    title: string,
+    folder: string?,
+    focused: boolean,
+}
+
+export type AutomationRequest =
+    | "workspace"
+    | { new_window: { folder: string?, command: string?, environment: { [string]: string }? } }
+    | { new_tab: { window: WindowId?, folder: string?, command: string?, environment: { [string]: string }? } }
+    | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string?, environment: { [string]: string }? } }
+    | { send_text: { pane: PaneId?, text: string } }
+    | { send_mouse: { pane: PaneId?, input: MouseInput } }
+    | { run_line: { pane: PaneId?, line: string } }
+    | { send_key: { pane: PaneId?, keys: string } }
+    | { focus: AutomationTarget }
+    | { close: AutomationTarget }
+    | { run: { command: string, args: { [string]: Value }? } }
+    | { pane_text: { pane: PaneId?, selection: boolean? } }
+    | { switch_session: { name: string } }
+    | "commands"
+
+export type AutomationTab = {
+    id: TabId,
+    title: string,
+    active: boolean,
+    panes: { AutomationPane },
+}
+
+export type AutomationTarget =
+    | { window: WindowId }
+    | { tab: TabId }
+    | { pane: PaneId }
+
+export type AutomationWindow = {
+    id: WindowId,
+    title: string,
+    focused: boolean,
+    tabs: { AutomationTab },
+}
 
 export type Awake =
     | "off"
@@ -790,6 +857,31 @@ export type Mods = {
     control: boolean,
     option: boolean,
     command: boolean,
+}
+
+export type MouseButton =
+    | "left"
+    | "middle"
+    | "right"
+
+export type MouseDoes =
+    | "press"
+    | "release"
+    | "move"
+    | "scroll-up"
+    | "scroll-down"
+    | "scroll-left"
+    | "scroll-right"
+
+export type MouseInput = {
+    action: MouseDoes,
+    button: MouseButton?,
+    column: number,
+    row: number,
+    shift: boolean?,
+    control: boolean?,
+    alt: boolean?,
+    steps: number?,
 }
 
 export type NodeDirection =

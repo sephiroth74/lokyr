@@ -130,6 +130,7 @@ fn a_new_tab_opens_after_the_others_and_shows() {
             window: WINDOW,
             index: None,
             directory: None,
+            ..
         },
         Request::ActivateTab(tab),
     ] = done[..]
@@ -586,6 +587,7 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
                     window: WINDOW,
                     index: None,
                     directory: None,
+                    ..
                 },
                 Request::ActivateTab(_)
             ]

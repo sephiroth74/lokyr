@@ -408,6 +408,18 @@ pub enum Request {
     /// [`Event::PackagesEnded`] of no success; a job that ended already is
     /// left as it is.
     CancelPackages(u64),
+    /// Answers the automation's request `id`, which came as an
+    /// [`Event::Automation`] to the plugin alone, as the host gives the
+    /// answer back to the script or the shortcut that asked; a request
+    /// answers once, within
+    /// [`ANSWER_WITHIN_MS`](crate::automation::ANSWER_WITHIN_MS), past which
+    /// the host failed it. Lokyr's own plugins' alone.
+    AnswerAutomation {
+        /// The request's id.
+        id: u64,
+        /// The answer.
+        answer: crate::automation::AutomationAnswer,
+    },
     /// The window that has the focus.
     FocusedWindow,
     /// The pane that has the focus: the active one of the focused window.
@@ -697,6 +709,38 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Sends a pane's program a key, pressed and released, as the app's
+    /// keyboard encodes it of the modes that the program asked for:
+    /// `keys`, one combination as a binding writes it, as `ctrl+c`, `up`
+    /// or `shift+tab`, of no click nor wheel. Option acts as Meta; Command
+    /// reaches a program of the keyboard protocol alone.
+    SendKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        keys: String,
+    },
+    /// Sends a pane's program a mouse event over a cell of its screen, as
+    /// the app's mouse encodes it of the modes and the encoding that the
+    /// program asked for; of a program that takes no mouse, a scroll
+    /// scrolls the pane's view, a row a step, and the others do nothing.
+    SendMouse {
+        /// The pane.
+        pane: PaneId,
+        /// The event.
+        input: crate::host::MouseInput,
+    },
+    /// Presses a key in a pane as the user presses it in Lokyr, which takes
+    /// `user-commands` beside `pty-write`: the pane takes its window's
+    /// keyboard, and a binding of `keys` in its context runs its command,
+    /// as `cmd+a` selects all; a key of no binding goes to the program as
+    /// [`Request::SendKey`] sends it.
+    PressKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        keys: String,
+    },
     /// The command line that a pane's shell edits at its prompt, as its
     /// cells show it, if it edits one: after its input's mark and before
     /// its output's (OSC 133), on the primary screen, of no right prompt,
@@ -730,11 +774,17 @@ pub enum Request {
     SetFontSize(Option<f32>),
     /// Opens a window, its pane in `directory`, a path absolute or from
     /// `~`, or in the folder of a file there, if given; in the folder of a
-    /// new window's pane otherwise.
+    /// new window's pane otherwise. Its pane's program takes `environment`
+    /// over the terminal's variables, which takes `pty-write` too, as a
+    /// variable can run a command in the shell.
     OpenWindow {
         /// The folder of its pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// Its pane's environment variables, as
+        /// [`check_variables`](crate::host::check_variables) bounds them.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Opens a quick window of a new pane, which shows at `place` over every
     /// app's windows, as a global key shows it, and takes the focus: its id,
@@ -779,7 +829,7 @@ pub enum Request {
     /// with the tab's id and the pane's, and opens them as the call
     /// returns. The window shows the tab that it showed. Its pane starts in
     /// `directory`, a path absolute or from `~`, or in the folder of a file
-    /// there, if given.
+    /// there, if given, of `environment` as [`Request::OpenWindow`]'s.
     NewTab {
         /// The window.
         window: WindowId,
@@ -788,6 +838,9 @@ pub enum Request {
         /// The folder of its pane.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         directory: Option<String>,
+        /// Its pane's environment variables.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Splits a pane's part along `direction`, with a new pane on `side`,
     /// whose program starts as a new pane's does, beside the pane: the host
@@ -800,6 +853,14 @@ pub enum Request {
         direction: Direction,
         /// The new pane's part.
         side: Side,
+        /// The folder of the new pane, a path absolute or from `~`, or the
+        /// folder of a file there; the split pane's otherwise.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        directory: Option<String>,
+        /// The new pane's environment variables, as
+        /// [`Request::OpenWindow`]'s.
+        #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+        environment: crate::host::Variables,
     },
     /// Closes a tab, with its panes, whose programs are hung up; its window
     /// shows the tab after it, or before it, and closes with its last tab.
@@ -1378,6 +1439,17 @@ impl Request {
             Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } | Self::OpenPopup { .. } => {
                 vec![Capability::WorkspaceWrite, Capability::PtyWrite]
             }
+            // A key as the user presses it, whose binding runs a command.
+            Self::PressKey { .. } => vec![Capability::UserCommands, Capability::PtyWrite],
+            // A new pane of environment variables, which can run a command
+            // in its shell, as `PROMPT_COMMAND` does.
+            Self::OpenWindow { environment, .. }
+            | Self::NewTab { environment, .. }
+            | Self::Split { environment, .. }
+                if !environment.is_empty() =>
+            {
+                vec![Capability::WorkspaceWrite, Capability::PtyWrite]
+            }
             _ => self.capability().into_iter().collect(),
         }
     }
@@ -1416,6 +1488,7 @@ impl Request {
             | Self::CancelPackages(_)
             | Self::Plugins
             | Self::SetPluginEnabled { .. } => Some(Capability::Packages),
+            Self::AnswerAutomation { .. } => Some(Capability::Automation),
             // The config's keys, and the themes' files of the user's folder.
             Self::Settings
             | Self::SetSetting { .. }
@@ -1465,6 +1538,9 @@ impl Request {
             | Self::PasteBroadcast { .. }
             | Self::SendTextBroadcast { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
+            | Self::SendMouse { .. }
+            | Self::PressKey { .. }
             | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
@@ -1661,6 +1737,8 @@ impl Request {
             | Self::Clear(_)
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
+            | Self::SendMouse { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::Decorate { .. }
@@ -1737,6 +1815,8 @@ impl Request {
             | Self::CloseColorPanel
             | Self::SaveFile { .. }
             | Self::Notify { .. }
+            | Self::PressKey { .. }
+            | Self::AnswerAutomation { .. }
             | Self::Packages(_)
             | Self::CancelPackages(_)
             | Self::SetPluginEnabled { .. }
@@ -2145,6 +2225,24 @@ pub enum Event {
         /// The event.
         line: Data,
     },
+    /// A request of a script or a shortcut from outside the app, to the
+    /// plugin of the capability `automation` alone, which answers it by
+    /// [`Request::AnswerAutomation`] of its `id`: `client`, the app that
+    /// asks, by its bundle's identifier or its name, as the system tells
+    /// it, which a question about it names.
+    Automation {
+        /// The request's id.
+        id: u64,
+        /// The app that asks.
+        client: String,
+        /// What it asks.
+        request: crate::automation::AutomationRequest,
+        /// The window in front: the one with the focus, or, while Lokyr is
+        /// behind the app that asks, the last that had it; none of no
+        /// window.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        front: Option<WindowId>,
+    },
     /// A job of the packages' service ended, to its plugin alone: whether
     /// Sleip's command succeeded, as of a job cancelled or of a Sleip not
     /// found, whose `error` line came before.
@@ -2236,6 +2334,7 @@ impl Event {
             Self::PopupClosed { .. } => "popup-closed",
             Self::Package { .. } => "package",
             Self::PackagesEnded { .. } => "packages-ended",
+            Self::Automation { .. } => "automation",
             Self::PluginsChanged => PLUGINS_CHANGED,
             Self::SettingsChanged => SETTINGS_CHANGED,
             Self::ThemesChanged => THEMES_CHANGED,
@@ -2344,6 +2443,7 @@ impl Request {
             | Self::SetPluginEnabled { .. }
             | Self::SetSetting { .. }
             | Self::Notify { .. }
+            | Self::AnswerAutomation { .. }
             | Self::ShowPage { .. }
             | Self::DropImage { .. }
             | Self::EndSearch { .. }
@@ -2360,6 +2460,9 @@ impl Request {
             | Self::Clear { .. }
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
+            | Self::SendMouse { .. }
+            | Self::PressKey { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::SetFontSize { .. }
@@ -2579,6 +2682,29 @@ pub fn within_depth(mut request: Request) -> Result<Request, crate::command::Err
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_pane_of_variables_takes_the_ptys_writes_too() {
+        let tab = |environment: crate::host::Variables| Request::NewTab {
+            window: WindowId(1),
+            index: None,
+            directory: None,
+            environment,
+        };
+        assert_eq!(
+            tab(crate::host::Variables::new()).capabilities(),
+            [Capability::WorkspaceWrite]
+        );
+        let variables = crate::host::Variables::from([("EDITOR".to_owned(), "vim".to_owned())]);
+        assert_eq!(
+            tab(variables.clone()).capabilities(),
+            [Capability::WorkspaceWrite, Capability::PtyWrite]
+        );
+        assert_eq!(
+            tab(variables).lacking(&[Capability::WorkspaceWrite]),
+            Some(Capability::PtyWrite)
+        );
+    }
 
     /// A value of lists nested `depth` levels deep, made without recursion.
     fn nested(depth: usize) -> Data {

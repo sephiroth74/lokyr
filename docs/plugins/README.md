@@ -49,6 +49,7 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
 | [`settings`](settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |
 | [`plugin-manager`](plugin-manager.md) | The settings window's Plugins page: every plugin, its state and its capabilities, to disable, enable or remove |
+| [`automation`](automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · not released yet |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

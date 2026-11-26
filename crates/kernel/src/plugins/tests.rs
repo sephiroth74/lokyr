@@ -1036,7 +1036,10 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     assert_eq!(
         asked,
         [
-            Request::OpenWindow(None),
+            Request::OpenWindow {
+                directory: None,
+                environment: Default::default(),
+            },
             Request::Quit,
             Request::FontSize(Some(20.0)),
             Request::FontSize(None),
@@ -2276,6 +2279,7 @@ fn a_call_is_its_own_plugin_s() {
             held_cursors: std::collections::BTreeSet::new(),
             awake: host::Awake::Off,
             popups: BTreeMap::new(),
+            automations: BTreeSet::new(),
             double_tap: None,
             images: (image::Budget::default(), None),
             quick_windows: Vec::new(),

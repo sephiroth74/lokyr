@@ -39,5 +39,7 @@ pub(crate) fn plugins() -> Vec<Registration> {
         lokyr_settings::registration(),
         #[cfg(feature = "plugin-plugin-manager")]
         lokyr_plugin_manager::registration(),
+        #[cfg(feature = "plugin-automation")]
+        lokyr_automation::registration(),
     ]
 }

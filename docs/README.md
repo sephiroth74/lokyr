@@ -21,6 +21,7 @@ Lokyr is a fast terminal for macOS, written in Rust. Every feature that you see,
 - [Sessions](sessions.md): groups of windows, such as one for each project, that you switch between, with the programs of the hidden ones running. · Since 1.5
 - [Layouts](layouts.md): a session saved to a file, which opens again as a new session with new shells. · Since 1.5
 - [Links](links.md): ⌘-click on URLs, paths and programs' links, a path's line in your editor, and hints from the keyboard, with patterns of your own.
+- [Automation](automation.md): AppleScript and the Shortcuts app driving Lokyr, such as a window that opens in a folder and runs a command, and Lokyr's actions in Spotlight. · not released yet
 - [Plugins](plugins/README.md): the plugins that come with Lokyr, a page each, such as the [tab bar](plugins/tabs.md), the [splits](plugins/splits.md), [find](plugins/search.md), [links and hints](plugins/links.md) and the [quick terminal](plugins/quick-terminal.md); and how to install more with Sleip.
 
 ## Reference
