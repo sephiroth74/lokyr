@@ -134,6 +134,8 @@ What a terminal shows may hold passwords and other secrets. The first time a scr
 
 Lokyr remembers your answer for each app, from one start to the next.
 
+While the question waits for your answer, a script's `contents` or `selected text` fails with "Lokyr asks whether this app may read its terminals": answer, then run the script again. A shortcut waits for your answer.
+
 > [!IMPORTANT]
 > An app that may control Lokyr can type into your terminals, and so run any command as you. macOS asks you before an app sends Lokyr its first command: allow only the apps you trust. System Settings › Privacy & Security › Automation lists the apps you allowed.
 

@@ -366,27 +366,35 @@ pub(crate) fn windows(mtm: MainThreadMarker) -> Retained<NSArray<ScriptWindow>> 
     NSArray::from_retained_slice(&windows)
 }
 
-/// The text of the pane `pane`, its selection or its screen: at once, or
-/// none while the script's command is suspended until the answer comes,
-/// which resumes it.
+/// The text of the pane `pane`, its selection or its screen, at once: a
+/// read never suspends the script's command, as a `get` of several
+/// terminals reads each in the one command, which one answer would
+/// resume. While the user has not answered whether the app may read, the
+/// read fails, the question showing, and the script runs again once the
+/// user answers.
 fn text(pane: u64, selection: bool) -> Option<Retained<NSString>> {
     let request = Request::PaneText {
         pane: Some(pane),
         selection,
     };
-    match ask(
-        NSScriptCommand::currentCommand().as_deref(),
-        request,
-        text_result,
-    ) {
+    match ask(None, request, text_result) {
         Asked::Now(Answer::Text(text)) => Some(NSString::from_str(&text)),
         Asked::Now(other) => {
             fail(&other);
             None
         }
-        Asked::Later => None,
+        Asked::Later => {
+            fail_with(ASKING, ASKING_MESSAGE);
+            None
+        }
     }
 }
+
+/// AppleScript's error of a privilege, `errAEPrivilegeError`, and its
+/// message, of a read that waits for the user's answer.
+const ASKING: isize = -10004;
+const ASKING_MESSAGE: &str =
+    "Lokyr asks whether this app may read its terminals: answer, then run the script again";
 
 /// A script's text, as a resumed command returns it: a descriptor, as the
 /// command's reply takes a result of its own type, `any`, of which a
