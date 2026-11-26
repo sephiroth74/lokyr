@@ -18,7 +18,72 @@
             </property>
         </class>
     </suite>
-    <suite name="Lokyr Suite" code="LKyr" description="Lokyr's windows, tabs and terminals.">
+    <suite name="Lokyr Suite" code="LKyr" description="Lokyr's windows, tabs and terminals, and what a script does with them.">
+        <enumeration name="split direction" code="LKsd" description="Where a split's new terminal goes.">
+            <enumerator name="right" code="LKdR" description="On the right."/>
+            <enumerator name="left" code="LKdL" description="On the left."/>
+            <enumerator name="down" code="LKdD" description="Below."/>
+            <enumerator name="up" code="LKdU" description="Above."/>
+        </enumeration>
+        <command name="create window" code="LKyrCrWn" description="Opens a window.">
+            <cocoa class="LokyrCreateWindowCommand"/>
+            <parameter name="with command" code="LKcm" type="text" optional="yes" description="A command line that its shell runs as it starts.">
+                <cocoa key="command"/>
+            </parameter>
+            <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
+                <cocoa key="folder"/>
+            </parameter>
+            <result type="window" description="The window."/>
+        </command>
+        <command name="create tab" code="LKyrCrTb" description="Opens a tab, in the window in front unless another is given.">
+            <cocoa class="LokyrCreateTabCommand"/>
+            <parameter name="in window" code="LKwn" type="window" optional="yes" description="The window of the tab.">
+                <cocoa key="window"/>
+            </parameter>
+            <parameter name="with command" code="LKcm" type="text" optional="yes" description="A command line that its shell runs as it starts.">
+                <cocoa key="command"/>
+            </parameter>
+            <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
+                <cocoa key="folder"/>
+            </parameter>
+            <result type="tab" description="The tab."/>
+        </command>
+        <command name="split" code="LKyrSplt" description="Splits a terminal, the focused one unless another is given, of a new terminal beside it.">
+            <cocoa class="LokyrSplitCommand"/>
+            <direct-parameter type="terminal" optional="yes" description="The terminal to split."/>
+            <parameter name="direction" code="LKdi" type="split direction" optional="yes" description="Where the new terminal goes, on the right unless told.">
+                <cocoa key="direction"/>
+            </parameter>
+            <parameter name="with command" code="LKcm" type="text" optional="yes" description="A command line that its shell runs as it starts.">
+                <cocoa key="command"/>
+            </parameter>
+            <parameter name="in folder" code="LKfd" type="text" optional="yes" description="The folder where its shell starts.">
+                <cocoa key="folder"/>
+            </parameter>
+            <result type="terminal" description="The new terminal."/>
+        </command>
+        <command name="input text" code="LKyrInpt" description="Sends text to a terminal, the focused one unless another is given, as if typed.">
+            <cocoa class="LokyrInputTextCommand"/>
+            <direct-parameter type="text" description="The text, of a return character to run a command line."/>
+            <parameter name="to" code="LKto" type="terminal" optional="yes" description="The terminal.">
+                <cocoa key="terminal"/>
+            </parameter>
+        </command>
+        <command name="focus" code="LKyrFocs" description="Brings a window, a tab or a terminal forward.">
+            <cocoa class="LokyrFocusCommand"/>
+            <direct-parameter type="specifier" description="The window, tab or terminal."/>
+        </command>
+        <command name="close" code="coreclos" description="Closes windows, tabs or terminals; Lokyr asks first where a program other than a shell runs.">
+            <cocoa class="LokyrCloseCommand"/>
+            <direct-parameter type="specifier" description="The windows, tabs or terminals."/>
+        </command>
+        <command name="perform action" code="LKyrPerf" description="Runs one of Lokyr's commands by its name, as the command palette runs it, such as &quot;splits.split&quot;.">
+            <cocoa class="LokyrPerformActionCommand"/>
+            <direct-parameter type="text" description="The command's name."/>
+            <parameter name="with arguments" code="LKar" type="record" optional="yes" description="Its arguments, such as {direction:&quot;right&quot;}.">
+                <cocoa key="arguments"/>
+            </parameter>
+        </command>
         <class-extension extends="application" description="Lokyr's windows.">
             <element type="window" access="r" description="Its windows, the one in front first.">
                 <cocoa key="lokyrWindows"/>
@@ -33,6 +98,8 @@
             <element type="tab" access="r" description="Its tabs, in their order.">
                 <cocoa key="tabs"/>
             </element>
+            <responds-to command="focus"/>
+            <responds-to command="close"/>
         </class>
         <class name="tab" code="LKtb" description="A tab of a window." plural="tabs">
             <cocoa class="LokyrScriptTab"/>
@@ -43,6 +110,8 @@
             <element type="terminal" access="r" description="Its terminals, its panes.">
                 <cocoa key="terminals"/>
             </element>
+            <responds-to command="focus"/>
+            <responds-to command="close"/>
         </class>
         <class name="terminal" code="LKtm" description="A terminal, a pane of a tab." plural="terminals">
             <cocoa class="LokyrScriptTerminal"/>
@@ -59,6 +128,9 @@
             <property name="selected text" code="LKsl" type="text" access="r" description="Its selection's text. Lokyr asks you first whether the app that asks may read it.">
                 <cocoa key="selectedText"/>
             </property>
+            <responds-to command="split"/>
+            <responds-to command="focus"/>
+            <responds-to command="close"/>
         </class>
     </suite>
 </dictionary>

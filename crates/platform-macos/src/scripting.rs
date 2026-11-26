@@ -15,8 +15,8 @@ use lokyr_platform_core::automation::{Answer, Pane, Request, Tab, Window};
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject};
 use objc2::{
-    AllocAnyThread, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, define_class,
-    msg_send,
+    AllocAnyThread, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message,
+    define_class, msg_send,
 };
 use objc2_app_kit::{NSApplication, NSRunningApplication};
 use objc2_foundation::{
@@ -37,13 +37,17 @@ const TERMINALS: &str = "terminals";
 /// `keySenderPIDAttr`.
 const SENDER_PID: u32 = u32::from_be_bytes(*b"spid");
 
-/// AppleScript's errors: a general failure, an object not there, and a
-/// request that the application cannot take now.
+/// AppleScript's errors: a failure, an object not there, a parameter
+/// missing, a value of the wrong kind, and a privilege lacking.
 const FAILED: isize = -10000;
 const NO_SUCH_OBJECT: isize = -1728;
+const PARAMETER_MISSING: isize = -1715;
+const WRONG_KIND: isize = -1703;
+const PRIVILEGE: isize = -10004;
 
-/// The registry's code of a thing not there.
+/// The registry's codes of a thing not there and of an argument missing.
 const NOT_FOUND: u16 = 101;
+const MISSING_ARGUMENT: u16 = 103;
 
 /// What a window holds.
 pub(crate) struct WindowIvars {
@@ -176,15 +180,17 @@ define_class!(
         #[unsafe(method_id(objectSpecifier))]
         fn object_specifier(&self) -> Option<Retained<NSScriptObjectSpecifier>> {
             let ivars = self.ivars();
-            let container = tab_specifier(ivars.window, ivars.tab);
-            container.and_then(|container| {
-                specifier(ScriptTab::class(), Some(&container), TERMINALS, ivars.pane.id)
-            })
+            terminal_specifier(ivars.window, ivars.tab, ivars.pane.id)
         }
     }
 );
 
 impl ScriptWindow {
+    /// The window's id.
+    pub(crate) fn id(&self) -> u64 {
+        self.ivars().window.id
+    }
+
     fn new(mtm: MainThreadMarker, window: Window) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(WindowIvars { window });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -193,6 +199,11 @@ impl ScriptWindow {
 }
 
 impl ScriptTab {
+    /// The tab's id.
+    pub(crate) fn id(&self) -> u64 {
+        self.ivars().tab.id
+    }
+
     fn new(mtm: MainThreadMarker, window: u64, tab: Tab) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TabIvars { window, tab });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -201,6 +212,11 @@ impl ScriptTab {
 }
 
 impl ScriptTerminal {
+    /// The terminal's id, its pane's.
+    pub(crate) fn id(&self) -> u64 {
+        self.ivars().pane.id
+    }
+
     fn new(mtm: MainThreadMarker, window: u64, tab: u64, pane: Pane) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TerminalIvars { window, tab, pane });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -216,6 +232,7 @@ pub(crate) fn register() {
         ScriptTab::class(),
         ScriptTerminal::class(),
     );
+    crate::script_commands::register();
 }
 
 /// The application's windows, of the automation's answer, which comes at
@@ -240,80 +257,114 @@ pub(crate) fn windows(mtm: MainThreadMarker) -> Retained<NSArray<ScriptWindow>> 
 /// none while the script's command is suspended until the answer comes,
 /// which resumes it.
 fn text(pane: u64, selection: bool) -> Option<Retained<NSString>> {
-    let command = NSScriptCommand::currentCommand();
     let request = Request::PaneText {
         pane: Some(pane),
         selection,
     };
+    match ask(
+        NSScriptCommand::currentCommand().as_deref(),
+        request,
+        text_result,
+    ) {
+        Asked::Now(Answer::Text(text)) => Some(NSString::from_str(&text)),
+        Asked::Now(other) => {
+            fail(&other);
+            None
+        }
+        Asked::Later => None,
+    }
+}
+
+/// A script's text, as a resumed command returns it: a descriptor, as the
+/// command's reply takes a result of its own type, `any`, of which a
+/// descriptor is one and a plain text none.
+fn text_result(answer: Answer) -> Converted {
+    match answer {
+        Answer::Text(text) => Ok(Some(object(NSAppleEventDescriptor::descriptorWithString(
+            &NSString::from_str(&text),
+        )))),
+        other => Err(error_of(&other)),
+    }
+}
+
+/// What a command returns of an answer, or its error's number and message.
+pub(crate) type Converted = Result<Option<Retained<AnyObject>>, (isize, String)>;
+
+/// The automation's answer to a script's request.
+pub(crate) enum Asked {
+    /// It came at once.
+    Now(Answer),
+    /// It comes later, the command suspended until then, or it never comes,
+    /// of the command's error.
+    Later,
+}
+
+/// Asks the automation `request` for `command`: its answer, if it comes at
+/// once; or, as it comes later, `command` suspended until then, which then
+/// resumes of `convert`'s result, at the run loop's next turn.
+pub(crate) fn ask(
+    command: Option<&NSScriptCommand>,
+    request: Request,
+    convert: fn(Answer) -> Converted,
+) -> Asked {
+    let command: Option<Retained<NSScriptCommand>> = command.map(Message::retain);
     let slot: Rc<RefCell<Option<Answer>>> = Rc::default();
     let suspended = Rc::new(Cell::new(false));
     let reply = {
         let (slot, suspended, command) = (slot.clone(), suspended.clone(), command.clone());
-        move |answer: Answer| {
-            match (suspended.get(), command) {
-                // The command resumes at the run loop's next turn, out of
-                // the app's call that answers.
-                (true, Some(command)) => resume_later(command, answer),
-                _ => *slot.borrow_mut() = Some(answer),
-            }
+        move |answer: Answer| match (suspended.get(), command) {
+            // The command resumes at the run loop's next turn, out of the
+            // app's call that answers.
+            (true, Some(command)) => resume_later(command, convert(answer)),
+            _ => *slot.borrow_mut() = Some(answer),
         }
     };
     if !crate::app::post_automation(&client(), request, reply) {
         fail_with(FAILED, "Lokyr cannot take the request now");
-        return None;
+        return Asked::Later;
     }
     let answer = slot.borrow_mut().take();
     if let Some(answer) = answer {
-        return text_of(answer);
+        return Asked::Now(answer);
     }
-    // The answer comes later, as the user answers a question: the command
-    // waits for it.
+    // The answer comes later, as a window opens or the user answers a
+    // question: the command waits for it.
     if let Some(command) = &command {
         suspended.set(true);
         command.suspendExecution();
     }
-    None
+    Asked::Later
 }
 
-/// The text of `answer`, or none, of the script command's error.
-fn text_of(answer: Answer) -> Option<Retained<NSString>> {
-    match answer {
-        Answer::Text(text) => Some(NSString::from_str(&text)),
-        other => {
-            fail(&other);
+/// What `command` returns of `converted`, setting its error of one.
+pub(crate) fn finish(
+    command: &NSScriptCommand,
+    converted: Converted,
+) -> Option<Retained<AnyObject>> {
+    match converted {
+        Ok(result) => result,
+        Err((number, message)) => {
+            command.setScriptErrorNumber(number);
+            command.setScriptErrorString(Some(&NSString::from_str(&message)));
             None
         }
     }
 }
 
-/// Resumes `command` at the run loop's next turn, of `answer`'s text or
-/// error.
-fn resume_later(command: Retained<NSScriptCommand>, answer: Answer) {
-    let pending = RefCell::new(Some((command, answer)));
+/// Resumes `command` at the run loop's next turn, of `converted`.
+fn resume_later(command: Retained<NSScriptCommand>, converted: Converted) {
+    let pending = RefCell::new(Some((command, converted)));
     let block = block2::RcBlock::new(move || {
-        let Some((command, answer)) = pending.borrow_mut().take() else {
+        let Some((command, converted)) = pending.borrow_mut().take() else {
             return;
         };
-        // The command's reply takes a result of its own type, `any`, of
-        // which a descriptor is one, and a text is not: the text goes as
-        // its descriptor.
-        let result = match answer {
-            Answer::Text(text) => Some(NSAppleEventDescriptor::descriptorWithString(
-                &NSString::from_str(&text),
-            )),
-            other => {
-                let (number, message) = error_of(&other);
-                command.setScriptErrorNumber(number);
-                command.setScriptErrorString(Some(&NSString::from_str(&message)));
-                None
-            }
-        };
-        let result: Option<&AnyObject> = result.as_deref().map(AsRef::as_ref);
+        let result = finish(&command, converted);
+        let result: Option<&AnyObject> = result.as_deref();
         // An exception of Cocoa Scripting's as it replies, which no Rust
         // frame may unwind through, fails this script alone.
         let resumed = objc2::exception::catch(std::panic::AssertUnwindSafe(|| {
-            // SAFETY: the result is the property's value, a text's
-            // descriptor, or none of an error that the command holds.
+            // SAFETY: the result is the command's, a descriptor of its
+            // reply, or none, of an error that the command holds.
             unsafe { command.resumeExecutionWithResult(result) };
         }));
         if let Err(exception) = resumed {
@@ -323,6 +374,11 @@ fn resume_later(command: Retained<NSScriptCommand>, answer: Answer) {
     // SAFETY: the block runs once, on the main thread, as the main run
     // loop's.
     unsafe { NSRunLoop::mainRunLoop().performBlock(&block) };
+}
+
+/// `descriptor`, as an object of a command's result.
+pub(crate) fn object(descriptor: Retained<NSAppleEventDescriptor>) -> Retained<AnyObject> {
+    Retained::into_super(Retained::into_super(descriptor))
 }
 
 /// The automation's answer to `request`, if it comes at once; none, of the
@@ -350,12 +406,25 @@ fn fail(answer: &Answer) {
     fail_with(number, &message);
 }
 
-/// AppleScript's error of `answer`: its number and its message.
-fn error_of(answer: &Answer) -> (isize, String) {
+/// AppleScript's error of `answer`: its number, of the registry's code,
+/// and its message.
+pub(crate) fn error_of(answer: &Answer) -> (isize, String) {
     match answer {
-        Answer::Error { code, message } if *code == NOT_FOUND => (NO_SUCH_OBJECT, message.clone()),
-        Answer::Error { message, .. } => (FAILED, message.clone()),
+        Answer::Error { code, message } => (error_number(*code), message.clone()),
         other => (FAILED, format!("Lokyr answered otherwise: {other:?}")),
+    }
+}
+
+/// AppleScript's error of the registry's code `code`: an object not there,
+/// a parameter missing, a value of the wrong kind of the other mistakes of
+/// a request, a privilege for what the security refuses, and a failure.
+fn error_number(code: u16) -> isize {
+    match code {
+        NOT_FOUND => NO_SUCH_OBJECT,
+        MISSING_ARGUMENT => PARAMETER_MISSING,
+        100..=199 => WRONG_KIND,
+        300..=399 => PRIVILEGE,
+        _ => FAILED,
     }
 }
 
@@ -410,14 +479,25 @@ fn process_name(pid: i32) -> Option<String> {
 }
 
 /// The specifier of the window `window`, of the application's.
-fn window_specifier(window: u64) -> Option<Retained<NSScriptObjectSpecifier>> {
+pub(crate) fn window_specifier(window: u64) -> Option<Retained<NSScriptObjectSpecifier>> {
     specifier(NSApplication::class(), None, WINDOWS, window)
 }
 
 /// The specifier of the tab `tab` of the window `window`.
-fn tab_specifier(window: u64, tab: u64) -> Option<Retained<NSScriptObjectSpecifier>> {
+pub(crate) fn tab_specifier(window: u64, tab: u64) -> Option<Retained<NSScriptObjectSpecifier>> {
     let container = window_specifier(window)?;
     specifier(ScriptWindow::class(), Some(&container), TABS, tab)
+}
+
+/// The specifier of the terminal `pane` of the tab `tab` of the window
+/// `window`.
+pub(crate) fn terminal_specifier(
+    window: u64,
+    tab: u64,
+    pane: u64,
+) -> Option<Retained<NSScriptObjectSpecifier>> {
+    let container = tab_specifier(window, tab)?;
+    specifier(ScriptTab::class(), Some(&container), TERMINALS, pane)
 }
 
 /// A specifier of the object of the unique id `id` among the elements
