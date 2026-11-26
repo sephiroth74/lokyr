@@ -720,6 +720,17 @@ pub enum Request {
         /// The key and its modifiers.
         keys: String,
     },
+    /// Presses a key in a pane as the user presses it in Lokyr, which takes
+    /// `user-commands` beside `pty-write`: the pane takes its window's
+    /// keyboard, and a binding of `keys` in its context runs its command,
+    /// as `cmd+a` selects all; a key of no binding goes to the program as
+    /// [`Request::SendKey`] sends it.
+    PressKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        keys: String,
+    },
     /// The command line that a pane's shell edits at its prompt, as its
     /// cells show it, if it edits one: after its input's mark and before
     /// its output's (OSC 133), on the primary screen, of no right prompt,
@@ -1418,6 +1429,8 @@ impl Request {
             Self::SetBroadcast { .. } | Self::SetPaneBroadcast { .. } | Self::OpenPopup { .. } => {
                 vec![Capability::WorkspaceWrite, Capability::PtyWrite]
             }
+            // A key as the user presses it, whose binding runs a command.
+            Self::PressKey { .. } => vec![Capability::UserCommands, Capability::PtyWrite],
             // A new pane of environment variables, which can run a command
             // in its shell, as `PROMPT_COMMAND` does.
             Self::OpenWindow { environment, .. }
@@ -1516,6 +1529,7 @@ impl Request {
             | Self::SendTextBroadcast { .. }
             | Self::SendText { .. }
             | Self::SendKey { .. }
+            | Self::PressKey { .. }
             | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
@@ -1789,6 +1803,7 @@ impl Request {
             | Self::CloseColorPanel
             | Self::SaveFile { .. }
             | Self::Notify { .. }
+            | Self::PressKey { .. }
             | Self::AnswerAutomation { .. }
             | Self::Packages(_)
             | Self::CancelPackages(_)
@@ -2429,6 +2444,7 @@ impl Request {
             | Self::Paste { .. }
             | Self::SendText { .. }
             | Self::SendKey { .. }
+            | Self::PressKey { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::SetFontSize { .. }

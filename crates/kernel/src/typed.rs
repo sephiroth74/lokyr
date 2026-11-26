@@ -1,5 +1,5 @@
-//! A key that a plugin sends a pane, pressed and released, as the
-//! keyboard's encoder sends a key typed with its modifiers.
+//! A key that a plugin or a script sends a pane, pressed and released, as
+//! the keyboard's encoder sends a key typed with its modifiers.
 
 use lokyr_plugin_sdk::keys::{Combo, Named, Press};
 use lokyr_vt_core::input::{Key, KeyAction, KeyEvent, KeyOptions, Mods};
@@ -8,7 +8,7 @@ use crate::workspace::Pane;
 
 /// Sends `pane` the key of `combo`, pressed and released, Option acting as
 /// Meta whatever the config says, as a script means `alt+f` as Meta-f.
-pub(super) fn send(pane: &Pane, combo: Combo) {
+pub fn send(pane: &Pane, combo: Combo) {
     let Some(typed) = typed(combo) else {
         return;
     };
@@ -23,6 +23,13 @@ pub(super) fn send(pane: &Pane, combo: Combo) {
         };
         pane.key(&event, KeyOptions::default());
     }
+}
+
+/// What the key of `combo` types, and what it types with Shift alone, as
+/// a US keyboard types them, as the platform tells a key's texts: none of
+/// a click or a wheel's step.
+pub fn texts(combo: Combo) -> Option<(String, String)> {
+    typed(combo).map(|typed| (typed.text, typed.unmodified))
 }
 
 /// A key as the encoder takes it, of the texts that it owns.

@@ -2797,6 +2797,13 @@ fn capabilities(world: &World) -> Scenario {
                 },
                 lacks("pty-write"),
             ),
+            (
+                Request::PressKey {
+                    pane: world.pane,
+                    keys: "cmd+a".to_owned(),
+                },
+                lacks("user-commands"),
+            ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
             (
                 Request::OpenPopup {
@@ -3255,6 +3262,13 @@ fn core_actions(world: &World) -> Scenario {
                     Request::SendKey {
                         pane,
                         keys: "ctrl+c".to_owned(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::PressKey {
+                        pane,
+                        keys: "cmd+a".to_owned(),
                     },
                     Response::Done,
                 ),

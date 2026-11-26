@@ -204,6 +204,52 @@ fn a_new_tab_s_program_takes_the_variables_that_the_request_gives() {
 }
 
 #[test]
+fn a_key_runs_its_binding_s_command_or_goes_to_the_program() {
+    let program = Program::command("/bin/sh", ["-c", "printf hello; exec /bin/cat"]);
+    let mut fake = Fake::default();
+    let mut app = app(Config::default(), program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    assert!(fake.send(&mut app, window, WindowEvent::Focused(true)));
+    let pane = app
+        .workspace
+        .focused(app.windows[&window].window)
+        .unwrap()
+        .id();
+    let text = |app: &App| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::terminal)
+            .map(|terminal| terminal.row_text(0))
+            .unwrap_or_default()
+    };
+    run_until(&mut fake, &mut app, |_, app| text(app).starts_with("hello"));
+    let key = |keys: &str| platform::Request::SendKey {
+        pane: None,
+        keys: keys.to_owned(),
+    };
+    // Command-A, which the keymap binds, selects all.
+    assert_eq!(
+        ask(&mut fake, &mut app, 11, key("cmd+a")),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        app.workspace
+            .pane(pane)
+            .and_then(lokyr_kernel::workspace::Pane::selection_text)
+            .is_some_and(|selected| selected.contains("hello"))
+    });
+    // A key of no binding goes to the program, whose terminal echoes it.
+    assert_eq!(
+        ask(&mut fake, &mut app, 12, key("x")),
+        platform::Answer::Done
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        text(app).starts_with("hellox")
+    });
+}
+
+#[test]
 fn a_pane_s_text_comes_once_the_user_allows_its_app() {
     let (mut fake, mut app) = started();
     let request = || platform::Request::PaneText {

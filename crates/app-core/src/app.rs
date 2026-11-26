@@ -4069,6 +4069,7 @@ impl<B: Backend> App<B> {
                     }
                 }
                 Request::Quit => self.ask_quit(platform, false),
+                Request::PressKey { pane, combo } => self.press_key(platform, pane, combo),
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),

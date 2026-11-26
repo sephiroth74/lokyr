@@ -171,6 +171,43 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Presses the key of `combo` in `pane` as the user presses it, as a
+    /// plugin asks: the pane takes its window's keyboard; the keymap runs
+    /// the command of the key's binding in its context, or holds it as a
+    /// sequence's; else the pane's program takes the key, pressed and
+    /// released, Option acting as Meta, as a script means it. A key that
+    /// no US key types goes to the program alone.
+    pub(super) fn press_key(
+        &mut self,
+        platform: &mut dyn Platform,
+        pane: PaneId,
+        combo: lokyr_kernel::keymap::Combo,
+    ) {
+        let Some(window) = self.window_of(pane) else {
+            return;
+        };
+        self.focus_pane(platform, window, pane);
+        let pressed = platform_key(combo, KeyState::Pressed);
+        let taken = match &pressed {
+            Some(key) => self.resolve_key(window, key),
+            None => Taken::Program(Vec::new()),
+        };
+        // Its release, which the keymap takes as it took the press.
+        if let Some(released) = platform_key(combo, KeyState::Released) {
+            let _ = self.resolve_key(window, &released);
+        }
+        match taken {
+            Taken::Run(invocation) => self.run(platform, &invocation.command, invocation.args),
+            Taken::Held => {}
+            Taken::Program(_) => {
+                if let Some(found) = self.workspace.pane(pane) {
+                    lokyr_kernel::typed::send(found, combo);
+                }
+                platform.request_frame(window);
+            }
+        }
+    }
+
     /// A key of a field that records a shortcut, which has `window`'s
     /// keyboard: whether it took the key. A press, but Tab's and Escape's
     /// of no modifier, which go as elsewhere, records its keys as the
@@ -1714,6 +1751,54 @@ enum Taken {
     Held,
     /// It gives these keys to the program, in their order.
     Program(Vec<KeyEvent>),
+}
+
+/// The platform's key of `combo`, in `state`, as a US keyboard types it;
+/// none of a key that no US key types, a function key past F24, a click or
+/// a wheel's step.
+fn platform_key(combo: lokyr_kernel::keymap::Combo, state: KeyState) -> Option<KeyEvent> {
+    use lokyr_kernel::keymap::{Named, Press};
+    use lokyr_platform_core::KeyCode;
+    let code = match combo.press {
+        Press::Char(c) => KeyCode::from_base_layout(c)?,
+        Press::Named(named) => match named {
+            Named::Enter => KeyCode::Enter,
+            Named::Tab => KeyCode::Tab,
+            Named::Backspace => KeyCode::Backspace,
+            Named::Escape => KeyCode::Escape,
+            Named::Space => KeyCode::Space,
+            Named::Delete => KeyCode::Delete,
+            Named::Insert => KeyCode::Insert,
+            Named::Home => KeyCode::Home,
+            Named::End => KeyCode::End,
+            Named::PageUp => KeyCode::PageUp,
+            Named::PageDown => KeyCode::PageDown,
+            Named::Up => KeyCode::ArrowUp,
+            Named::Down => KeyCode::ArrowDown,
+            Named::Left => KeyCode::ArrowLeft,
+            Named::Right => KeyCode::ArrowRight,
+            Named::F(number) if number <= 24 => KeyCode::F(number),
+            Named::F(_) => return None,
+        },
+        Press::Wheel(_) | Press::Click => return None,
+    };
+    let (text, unmodified) = lokyr_kernel::typed::texts(combo)?;
+    let plain = code.base_layout().map(String::from).unwrap_or_default();
+    Some(KeyEvent {
+        code,
+        state,
+        mods: Modifiers {
+            shift: combo.mods.shift,
+            control: combo.mods.ctrl,
+            left_alt: combo.mods.alt,
+            super_key: combo.mods.cmd,
+            ..Modifiers::default()
+        },
+        text,
+        unmodified,
+        plain,
+        time: None,
+    })
 }
 
 /// The modifiers of `mods`, as bindings name them.

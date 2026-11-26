@@ -5269,7 +5269,7 @@ impl Calling<'_> {
                 self.known_pane(*pane)?;
                 Response::Done
             }
-            Request::SendKey { pane, keys } => {
+            Request::SendKey { pane, keys } | Request::PressKey { pane, keys } => {
                 crate::keys::typed_key(keys)
                     .map_err(|message| Error::new(Code::WrongKind, message))?;
                 self.known_pane(*pane)?;

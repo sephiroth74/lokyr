@@ -360,7 +360,7 @@ fn a_run_s_text_argument_takes_its_parameter_s_kind() {
 }
 
 #[test]
-fn a_key_goes_to_the_focused_pane_and_a_click_is_refused() {
+fn a_key_is_pressed_in_the_focused_pane_and_a_click_is_refused() {
     let (mut host, mut plugin) = host();
     let key = |keys: &str| AutomationRequest::SendKey {
         pane: None,
@@ -368,7 +368,7 @@ fn a_key_goes_to_the_focused_pane_and_a_click_is_refused() {
     };
     ask(&mut host, &mut plugin, 17, key("ctrl+c"));
     assert_eq!(answer(&host, 17), Some(AutomationAnswer::Done));
-    assert!(host.take_done().contains(&Request::SendKey {
+    assert!(host.take_done().contains(&Request::PressKey {
         pane: PaneId(1),
         keys: "ctrl+c".to_owned(),
     }));

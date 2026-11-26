@@ -66,7 +66,6 @@ use crate::workspace::{
 };
 
 mod search;
-mod typed;
 mod worker;
 
 use worker::{Called, Done, FromWorker, Job, Worker};
@@ -97,6 +96,15 @@ pub enum Request {
         /// commands: none for a call of no command's, an event's or a
         /// render's.
         chain: Chain,
+    },
+    /// Press the key of `combo` in `pane` as the user presses it: the pane
+    /// takes its window's keyboard, and the keymap runs the key's command,
+    /// or the program takes it.
+    PressKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        combo: lokyr_plugin_sdk::keys::Combo,
     },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
     /// or in the folder of a file there, if given, its program taking
@@ -5241,7 +5249,7 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 if let (Some(pane), Ok(combo)) =
                     (pane(id), lokyr_plugin_sdk::keys::typed_key(&keys))
                 {
-                    typed::send(pane, combo);
+                    crate::typed::send(pane, combo);
                 }
             }
             // As the user's keys: to the pane and those that its window
@@ -7785,6 +7793,15 @@ impl Host<'_, '_> {
                 Request::CloseWindow(id)
             }
             Asked::Quit => Request::Quit,
+            Asked::PressKey { pane, keys } => {
+                let combo = lokyr_plugin_sdk::keys::typed_key(&keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(pane)?;
+                Request::PressKey {
+                    pane: PaneId::of(pane.0),
+                    combo,
+                }
+            }
             Asked::SetText {
                 view,
                 key,

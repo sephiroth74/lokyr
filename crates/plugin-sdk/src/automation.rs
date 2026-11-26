@@ -80,8 +80,9 @@ pub enum AutomationRequest {
         /// The text.
         text: String,
     },
-    /// Sends `pane`, or the focused one, the key of `keys`, as `ctrl+c`,
-    /// pressed and released, as the keyboard encodes it.
+    /// Presses the key of `keys`, as `cmd+a`, in `pane`, or the focused
+    /// one, as the user presses it: its binding's command, or the
+    /// program's key.
     SendKey {
         /// The pane.
         #[serde(default)]

@@ -1230,6 +1230,16 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Presses the key of `keys` in `pane` as the user presses it, as this
+    /// call returns, as [`Request::PressKey`] says: its binding's command,
+    /// or the program.
+    pub fn press_key(&mut self, pane: PaneId, keys: &str) -> Result<(), Error> {
+        self.done(Request::PressKey {
+            pane,
+            keys: keys.to_owned(),
+        })
+    }
+
     /// The command line that `pane`'s shell edits at its prompt, as its
     /// cells show it, of no right prompt; empty of nothing typed; `None`
     /// while a command runs, a program's own screen shows, or the shell

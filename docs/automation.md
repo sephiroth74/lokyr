@@ -19,7 +19,7 @@ Then open the Shortcuts app, make a new shortcut, and type Lokyr in the search f
 ## What it gives you
 
 - **Windows, tabs and splits**, each in a folder of your choice, with a command line that its shell runs as it starts and environment variables of your own.
-- **Text sent to a terminal**, as if you typed it, such as a command and Return, and **keys**, such as ⌃C or the arrows, as the keyboard sends them.
+- **Text sent to a terminal**, as if you typed it, such as a command and Return, and **keys**, such as ⌃C, the arrows or ⌘A, as you press them.
 - **Any of Lokyr's commands**, run by its name and arguments, as the [command palette](plugins/command-palette.md) runs it.
 - **A window, a tab or a terminal** brought forward or closed, and terminals found by their title or their folder.
 - **The [quick terminal](plugins/quick-terminal.md)** shown or hidden from a shortcut.
@@ -49,7 +49,7 @@ Its commands:
 | `create tab [in window] [with command text] [in folder text] [with environment list]` | Opens a tab, in the window in front unless you give one | the tab |
 | `split [terminal] [direction right/left/down/up] [with command text] [in folder text] [with environment list]` | Splits a terminal, the focused one unless you give one, on the right unless you give a direction | the new terminal |
 | `input text text [to terminal]` | Sends text to a terminal, the focused one unless you give one, as if you typed it | |
-| `send key text [to terminal]` | Sends a key to a terminal, the focused one unless you give one, as the keyboard sends it, such as `"ctrl+c"` | |
+| `send key text [to terminal]` | Presses a key in a terminal, the focused one unless you give one, as you press it in Lokyr, such as `"ctrl+c"` or `"cmd+a"` | |
 | `focus window/tab/terminal` | Brings it forward | |
 | `close window/tab/terminal` | Closes it | |
 | `perform action text [with arguments record]` | Runs one of Lokyr's commands by its name, with its arguments | |
@@ -96,7 +96,7 @@ Script Editor shows the whole dictionary: choose File › Open Dictionary… and
 | New Tab | Folder, Command, Environment Variables | Opens a tab in Lokyr's window in front |
 | Split Pane | Terminal, Direction, Folder, Command, Environment Variables | Splits a terminal, the focused one unless you choose one |
 | Send Text | Text, Terminal | Sends text to a terminal, as if you typed it |
-| Send Keyboard Event | Key, Modifiers, Terminal | Sends a key to a terminal, as the keyboard sends it, such as C with Control to interrupt a program |
+| Send Keyboard Event | Key, Modifiers, Terminal | Presses a key in a terminal as you press it in Lokyr, such as A with Command to select all, or C with Control to interrupt a program |
 | Focus Terminal | Terminal | Brings a terminal forward, with its window and its tab |
 | Close Terminal | Terminal | Closes a terminal |
 | Find Terminal | filters on Title, Folder, Tab ID and Window ID | Returns the terminals that match, such as those whose folder contains `src` |
@@ -146,7 +146,7 @@ enabled = false   # every script and shortcut fails, with a message that says wh
 - **Lokyr's bundled [`automation`](plugins/automation.md) plugin answers** what AppleScript and the Shortcuts app ask. Lokyr hands it each request and waits for its answer.
 - **A new window, tab or split answers once it opens**, with its object, so that the script's next command can use it.
 - **A command line** that you give a new terminal is typed into its shell as it starts, followed by Return.
-- **A key** goes as the keyboard sends it, following the modes that the program asked for: ↑ moves the cursor in an editor that takes the cursor keys in their application mode, and a program of the keyboard protocol gets the key as that protocol encodes it. A key is a character, or a name: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, or `f1` to `f35`. ⌥ acts as Meta, so `alt+f` sends Escape and `f`. ⌘ reaches a program that uses the keyboard protocol, and no other.
+- **A key** goes as you press it in Lokyr. The terminal takes the focus first. A key of one of Lokyr's shortcuts runs its command, as ⌘A selects all and ⌘T opens a tab. Any other key goes to the program as the keyboard sends it, following the modes that the program asked for: ↑ moves the cursor in an editor that takes the cursor keys in their application mode, and a program of the keyboard protocol gets the key as that protocol encodes it. A key is a character, or a name: `enter`, `tab`, `backspace`, `escape`, `space`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `up`, `down`, `left`, `right`, or `f1` to `f35`. ⌥ acts as Meta, so `alt+f` sends Escape and `f`. A ⌘ key of no shortcut reaches a program that uses the keyboard protocol, and no other.
 - **Environment variables** that you give a new terminal come over Lokyr's own, such as `TERM`. [Shell integration](shell-integration.md) keeps the variables that it needs, and takes your `ZDOTDIR` as zsh's own folder. A terminal takes 64 variables at most.
 - **The commands that `perform action` and Run Command run** act as if you chose them, on Lokyr's window in front: closing a tab where a program other than a shell runs asks you first. While Lokyr is behind another app, no window is in front, and a command such as `tabs.next` does nothing. Run Command brings Lokyr forward by itself.
 - **A request waits 10 seconds at most** for Lokyr's answer, then fails.

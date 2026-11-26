@@ -318,7 +318,7 @@ enum KeyModifier: String, AppEnum {
 /// Sends a key to a terminal, as the keyboard sends it.
 struct SendKeyboardEventIntent: AppIntent {
     static let title: LocalizedStringResource = "Send Keyboard Event"
-    static let description = IntentDescription("Sends a key to a terminal of Lokyr's, the focused one unless another is given, pressed and released as the keyboard sends it, such as c with Control to interrupt a program. The key is a character, or a name such as up, enter, tab, escape or f5.")
+    static let description = IntentDescription("Presses a key in a terminal of Lokyr's, the focused one unless another is given, which takes the focus, as you press it in Lokyr: a key of a shortcut runs its command, such as a with Command to select all; another goes to the program as the keyboard sends it, such as c with Control to interrupt it. The key is a character, or a name such as up, enter, tab, escape or f5.")
     static let openAppWhenRun: Bool = false
 
     @Parameter(title: "Key") var key: String

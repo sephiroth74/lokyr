@@ -1259,11 +1259,12 @@ fn kind(request: &Request) -> usize {
         Request::MenuBarItems => 163,
         Request::AnswerAutomation { .. } => 164,
         Request::SendKey { .. } => 165,
+        Request::PressKey { .. } => 166,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 166;
+const KINDS: usize = 167;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {
