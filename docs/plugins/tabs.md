@@ -29,7 +29,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.goto` | | ⌘1 to ⌘9 | Shows the tab of that `index`, from 1 at the left |
 | `tabs.move` | | ⇧⌘←, ⇧⌘→ | Moves the tab a place, `delta` of -1 or 1 |
 | `tabs.rename` | Shell › Rename Tab… | | Gives the tab its `title`; without one, it asks you for it, and an empty one gives the tab its own back |
-| `tabs.set-color` | | | Gives the tab its `color`, as `"#ff8800"`; an empty one gives the program's back |
+| `tabs.set-color` | | | Gives the tab its `color`, such as `"#ff8800"` or `"#f80"`; an empty one gives the program's back |
 | `tabs.detach` | Shell › Move Tab to New Window | | Moves the tab out to a window of its own |
 | `tabs.toggle-pin` | Shell › Pin Tab | | Pins the tab at the start of the bar, or unpins it. The tab's context menu has the same item · Since 1.3 |
 | `tabs.reopen` | Shell › Reopen Closed Tab | ⇧⌘T | Brings back the tab you closed last, at its place, as you left it, what its programs printed meanwhile included; its find bar and copy mode stay closed. Press it again for the one before. A closed tab waits `reopen-seconds`, 10 by default, and 16 wait at most. A tab that you close while a program other than a shell runs there doesn't wait: Lokyr asks first, and closing it ends the program · Since 1.3 |
@@ -37,7 +37,7 @@ Each window's tabs, in a bar at the top, at the bottom, or in a column on the le
 | `tabs.add-to-group` | Shell › Add Tab to Group | | Puts the tab at the end of the group of its `group` id; without one, the nearest group before the tab, or after it · Since 1.3 |
 | `tabs.remove-from-group` | Shell › Remove Tab from Group | | Takes the tab out of its group, right after the group's tabs · Since 1.3 |
 | `tabs.rename-group` | Shell › Rename Group… | | Gives the tab's group its `title`; without one, it asks you for it, and an empty one leaves the group of no name · Since 1.3 |
-| `tabs.set-group-color` | | | Gives the tab's group its `color`, as `"#ff8800"`; an empty one leaves it of none, gray · Since 1.3 |
+| `tabs.set-group-color` | | | Gives the tab's group its `color`, such as `"#ff8800"` or `"#f80"`; an empty one leaves it of none, gray · Since 1.3 |
 | `tabs.fold-group` | Shell › Fold Group | | Folds the tab's group, showing the tab after it · Since 1.3 |
 | `tabs.ungroup` | Shell › Ungroup | | Takes the tab's group apart, its tabs staying where they are · Since 1.3 |
 
