@@ -212,6 +212,20 @@ impl ScriptWindow {
         self.ivars().window.id
     }
 
+    /// The window of the id `id` alone, as a command's result, whose
+    /// specifier the script takes.
+    pub(crate) fn of_id(mtm: MainThreadMarker, id: u64) -> Retained<Self> {
+        Self::new(
+            mtm,
+            Window {
+                id,
+                title: String::new(),
+                focused: false,
+                tabs: Vec::new(),
+            },
+        )
+    }
+
     fn new(mtm: MainThreadMarker, window: Window) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(WindowIvars { window });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -225,6 +239,20 @@ impl ScriptTab {
         self.ivars().tab.id
     }
 
+    /// The tab `tab` of the window `window` alone, as a command's result.
+    pub(crate) fn of_ids(mtm: MainThreadMarker, window: u64, tab: u64) -> Retained<Self> {
+        Self::new(
+            mtm,
+            window,
+            Tab {
+                id: tab,
+                title: String::new(),
+                active: false,
+                panes: Vec::new(),
+            },
+        )
+    }
+
     fn new(mtm: MainThreadMarker, window: u64, tab: Tab) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TabIvars { window, tab });
         // SAFETY: `NSObject`'s `init` has this signature.
@@ -236,6 +264,27 @@ impl ScriptTerminal {
     /// The terminal's id, its pane's.
     pub(crate) fn id(&self) -> u64 {
         self.ivars().pane.id
+    }
+
+    /// The terminal `pane` of the tab `tab` of the window `window` alone,
+    /// as a command's result.
+    pub(crate) fn of_ids(
+        mtm: MainThreadMarker,
+        window: u64,
+        tab: u64,
+        pane: u64,
+    ) -> Retained<Self> {
+        Self::new(
+            mtm,
+            window,
+            tab,
+            Pane {
+                id: pane,
+                title: String::new(),
+                folder: None,
+                focused: false,
+            },
+        )
     }
 
     fn new(mtm: MainThreadMarker, window: u64, tab: u64, pane: Pane) -> Retained<Self> {

@@ -84,9 +84,11 @@
                 <cocoa key="arguments"/>
             </parameter>
         </command>
-        <!-- Each responds-to names a method that no object implements, so
-             that Cocoa Scripting runs the command's own implementation:
-             one of no method would have it call a selector of none. -->
+        <!-- Each responds-to names the method that the classes and the
+             application implement, which runs the command's own
+             implementation; the commands of a text for their direct
+             parameter respond of none, as their receiver is the
+             application of its own. -->
         <class-extension extends="application" description="Lokyr's windows, and the commands that need no object of its own.">
             <element type="window" access="r" description="Its windows, the one in front first.">
                 <cocoa key="lokyrWindows"/>
@@ -98,12 +100,6 @@
                 <cocoa method="lokyrPerformDefault:"/>
             </responds-to>
             <responds-to command="split">
-                <cocoa method="lokyrPerformDefault:"/>
-            </responds-to>
-            <responds-to command="input text">
-                <cocoa method="lokyrPerformDefault:"/>
-            </responds-to>
-            <responds-to command="perform action">
                 <cocoa method="lokyrPerformDefault:"/>
             </responds-to>
         </class-extension>

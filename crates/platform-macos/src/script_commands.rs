@@ -8,14 +8,11 @@
 use lokyr_platform_core::automation::{Answer, Arg, Edge, Request, Target};
 use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
-use objc2::{ClassType, define_class};
-use objc2_foundation::{
-    NSArray, NSDictionary, NSNumber, NSObject, NSScriptCommand, NSScriptObjectSpecifier, NSString,
-};
+use objc2::{ClassType, MainThreadMarker, define_class};
+use objc2_foundation::{NSArray, NSDictionary, NSNumber, NSObject, NSScriptCommand, NSString};
 
 use crate::scripting::{
-    Asked, Converted, ScriptTab, ScriptTerminal, ScriptWindow, ask, error_of, finish, object,
-    tab_specifier, terminal_specifier, window_specifier,
+    Asked, Converted, ScriptTab, ScriptTerminal, ScriptWindow, ask, error_of, finish,
 };
 
 /// The dictionary's codes of a split's directions.
@@ -24,8 +21,10 @@ const LEFT: u32 = u32::from_be_bytes(*b"LKdL");
 const DOWN: u32 = u32::from_be_bytes(*b"LKdD");
 const UP: u32 = u32::from_be_bytes(*b"LKdU");
 
-/// AppleScript's error of a parameter of the wrong kind.
+/// AppleScript's errors of a parameter of the wrong kind and of a
+/// failure.
 const WRONG_KIND: isize = -1703;
+const FAILED: isize = -10000;
 
 define_class!(
     /// `create window`.
@@ -357,33 +356,50 @@ fn number_arg(number: &NSNumber) -> Arg {
     }
 }
 
-/// A window's reference of what a request opened.
+/// The window that a request opened, as the command's result, of which
+/// Cocoa Scripting makes the script's reference, of its specifier.
 fn opened_window(answer: Answer) -> Converted {
-    opened(answer, |window, _, _| window_specifier(window))
+    opened(answer, |mtm, window, _, _| {
+        object_of(ScriptWindow::of_id(mtm, window))
+    })
 }
 
-/// A tab's reference of what a request opened.
+/// The tab that a request opened, as the command's result.
 fn opened_tab(answer: Answer) -> Converted {
-    opened(answer, |window, tab, _| tab_specifier(window, tab))
+    opened(answer, |mtm, window, tab, _| {
+        object_of(ScriptTab::of_ids(mtm, window, tab))
+    })
 }
 
-/// A terminal's reference of what a request opened.
+/// The terminal that a request opened, as the command's result.
 fn opened_terminal(answer: Answer) -> Converted {
-    opened(answer, terminal_specifier)
+    opened(answer, |mtm, window, tab, pane| {
+        object_of(ScriptTerminal::of_ids(mtm, window, tab, pane))
+    })
 }
 
-/// The reference of `specifier` of what `answer` opened, as a descriptor,
-/// which the command's reply takes as it is.
+/// The object that `make` makes of what `answer` opened.
 fn opened(
     answer: Answer,
-    specifier: impl Fn(u64, u64, u64) -> Option<Retained<NSScriptObjectSpecifier>>,
+    make: impl Fn(MainThreadMarker, u64, u64, u64) -> Retained<AnyObject>,
 ) -> Converted {
     match answer {
-        Answer::Opened { window, tab, pane } => Ok(specifier(window, tab, pane)
-            .and_then(|specifier| specifier.descriptor())
-            .map(object)),
+        Answer::Opened { window, tab, pane } => {
+            let mtm = MainThreadMarker::new().ok_or_else(|| {
+                (
+                    FAILED,
+                    "a script's command runs off the main thread".to_owned(),
+                )
+            })?;
+            Ok(Some(make(mtm, window, tab, pane)))
+        }
         other => Err(error_of(&other)),
     }
+}
+
+/// `object` as an object of a command's result.
+fn object_of<T: ClassType<Super = NSObject> + 'static>(object: Retained<T>) -> Retained<AnyObject> {
+    Retained::into_super(Retained::into_super(object))
 }
 
 /// Nothing, of a request done.
