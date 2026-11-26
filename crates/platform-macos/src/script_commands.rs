@@ -26,6 +26,19 @@ const UP: u32 = u32::from_be_bytes(*b"LKdU");
 /// The keyword of a record's fields of the user's, `keyASUserRecordFields`.
 const USER_FIELDS: u32 = u32::from_be_bytes(*b"usrf");
 
+/// The terms of AppleScript's own that the commands' arguments share their
+/// names with, which a script compiles to the terms' codes rather than to
+/// fields of the user's, as `{name:"api"}`: each code and the argument's
+/// name.
+const TERMS: [(u32, &str); 6] = [
+    (u32::from_be_bytes(*b"pnam"), "name"),
+    (u32::from_be_bytes(*b"pidx"), "index"),
+    (u32::from_be_bytes(*b"colr"), "color"),
+    (u32::from_be_bytes(*b"kind"), "kind"),
+    (u32::from_be_bytes(*b"asdr"), "folder"),
+    (u32::from_be_bytes(*b"ctxt"), "text"),
+];
+
 /// AppleScript's errors of a parameter of the wrong kind and of a
 /// failure.
 const WRONG_KIND: isize = -1703;
@@ -238,7 +251,7 @@ fn perform_action(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
             None => {
                 return refuse(
                     command,
-                    "the arguments are a record of texts, numbers and booleans, such as {direction:\"right\"}",
+                    "the arguments are a record of texts, numbers and booleans, such as {direction:\"right\"}; write a field named after a word of AppleScript's between bars, such as {|to|:\"end\"}",
                 );
             }
         },
@@ -325,8 +338,9 @@ fn target_of(object: &AnyObject) -> Option<Target> {
 }
 
 /// The command's arguments of an AppleScript record: a dictionary of its
-/// fields' names, or the record's descriptor, of its user's fields; none
-/// of a value that is no text, number or boolean.
+/// fields' names, or the record's descriptor; none of a value that is no
+/// text, number or boolean, or of a field of a term that no argument is
+/// named after.
 fn arguments_of(record: &AnyObject) -> Option<Vec<(String, Arg)>> {
     if let Some(record) = record.downcast_ref::<NSAppleEventDescriptor>() {
         return record_fields(record);
@@ -345,26 +359,54 @@ fn arguments_of(record: &AnyObject) -> Option<Vec<(String, Arg)>> {
     Some(args)
 }
 
-/// The fields of a record's descriptor, as a script writes them, of its
-/// user's fields, `usrf`: a list of each name and its value in turn.
+/// The fields of a record's descriptor, as a script writes them: those of
+/// the user's, `usrf`, and those of AppleScript's terms in [`TERMS`], by
+/// their arguments' names.
 fn record_fields(record: &NSAppleEventDescriptor) -> Option<Vec<(String, Arg)>> {
+    let mut args = Vec::new();
+    // SAFETY: each call is a method of `NSAppleEventDescriptor`'s of these
+    // arguments and result, on a descriptor that lives through the calls,
+    // of an index from 1 to its count.
+    unsafe {
+        let count: isize = msg_send![record, numberOfItems];
+        for at in 1..=count {
+            let keyword: u32 = msg_send![record, keywordForDescriptorAtIndex: at];
+            let value: Option<Retained<NSAppleEventDescriptor>> =
+                msg_send![record, descriptorAtIndex: at];
+            let value = value?;
+            if keyword == USER_FIELDS {
+                args.extend(user_fields(&value)?);
+            } else {
+                args.push((term_name(keyword)?.to_owned(), descriptor_arg(&value)?));
+            }
+        }
+    }
+    Some(args)
+}
+
+/// The argument's name of AppleScript's term of `code`, if one of
+/// [`TERMS`].
+fn term_name(code: u32) -> Option<&'static str> {
+    TERMS
+        .iter()
+        .find(|(term, _)| *term == code)
+        .map(|(_, name)| *name)
+}
+
+/// A record's fields of the user's, of their list: each name and its value
+/// in turn.
+fn user_fields(fields: &NSAppleEventDescriptor) -> Option<Vec<(String, Arg)>> {
     // SAFETY: each call is a method of `NSAppleEventDescriptor`'s of these
     // arguments and result, on a descriptor that lives through the calls.
     unsafe {
-        let fields: Option<Retained<NSAppleEventDescriptor>> =
-            msg_send![record, descriptorForKeyword: USER_FIELDS];
-        let Some(fields) = fields else {
-            // A record of no field of the user's.
-            return Some(Vec::new());
-        };
-        let count: isize = msg_send![&*fields, numberOfItems];
+        let count: isize = msg_send![fields, numberOfItems];
         let mut args = Vec::new();
         let mut at = 1;
         while at < count {
             let name: Option<Retained<NSAppleEventDescriptor>> =
-                msg_send![&*fields, descriptorAtIndex: at];
+                msg_send![fields, descriptorAtIndex: at];
             let value: Option<Retained<NSAppleEventDescriptor>> =
-                msg_send![&*fields, descriptorAtIndex: at + 1];
+                msg_send![fields, descriptorAtIndex: at + 1];
             let name = name?.stringValue()?.to_string();
             let value = value?;
             args.push((name, descriptor_arg(&value)?));
@@ -476,5 +518,51 @@ fn done(answer: Answer) -> Converted {
     match answer {
         Answer::Done => Ok(None),
         other => Err(error_of(&other)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A descriptor of `text`.
+    fn text(text: &str) -> Retained<NSAppleEventDescriptor> {
+        NSAppleEventDescriptor::descriptorWithString(&NSString::from_str(text))
+    }
+
+    #[test]
+    fn a_record_s_fields_of_applescript_s_terms_are_its_arguments() {
+        // As AppleScript compiles `{direction:"right", name:"api",
+        // index:2}`: a field of the user's, and two of its own terms.
+        let record = NSAppleEventDescriptor::recordDescriptor();
+        let fields = NSAppleEventDescriptor::listDescriptor();
+        // SAFETY: methods of `NSAppleEventDescriptor`'s of these arguments,
+        // a descriptor, an index from 1 or a keyword, on descriptors that
+        // live through the calls.
+        unsafe {
+            let _: () =
+                msg_send![&*fields, insertDescriptor: &*text("direction"), atIndex: 1_isize];
+            let _: () = msg_send![&*fields, insertDescriptor: &*text("right"), atIndex: 2_isize];
+            let _: () = msg_send![&*record, setDescriptor: &*fields, forKeyword: USER_FIELDS];
+            let _: () = msg_send![&*record, setDescriptor: &*text("api"), forKeyword: u32::from_be_bytes(*b"pnam")];
+            let index = NSAppleEventDescriptor::descriptorWithInt32(2);
+            let _: () = msg_send![&*record, setDescriptor: &*index, forKeyword: u32::from_be_bytes(*b"pidx")];
+        }
+        let mut args = record_fields(&record).unwrap();
+        args.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            args,
+            [
+                ("direction".to_owned(), Arg::Text("right".to_owned())),
+                ("index".to_owned(), Arg::Integer(2)),
+                ("name".to_owned(), Arg::Text("api".to_owned())),
+            ]
+        );
+        // A term that no argument is named after refuses the record.
+        // SAFETY: as above.
+        unsafe {
+            let _: () = msg_send![&*record, setDescriptor: &*text("x"), forKeyword: u32::from_be_bytes(*b"ID  ")];
+        }
+        assert_eq!(record_fields(&record), None);
     }
 }
