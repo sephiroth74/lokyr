@@ -5,8 +5,8 @@
 //!
 //! The bundle goes to Apple's notary service as a zip, through `notarytool`,
 //! with an App Store Connect API key where `LOKYR_NOTARY_KEY` (the `.p8`
-//! file's path), `LOKYR_NOTARY_KEY_ID` and `LOKYR_NOTARY_ISSUER` name one,
-//! as a release's CI does, or else the credentials of the keychain's
+//! file's path) and `LOKYR_NOTARY_KEY_ID` name one, of `LOKYR_NOTARY_ISSUER`
+//! for a team's key, none for an individual key, as a release's CI does, or else the credentials of the keychain's
 //! profile `lokyr-notary`, or of the one that `LOKYR_NOTARY_PROFILE` names,
 //! in the environment or in the untracked `private/lokyr.env`; the keys
 //! stay outside the repository. Apple's log tells why a bundle that it
@@ -28,7 +28,8 @@ const PROFILE: &str = "lokyr-notary";
 const PROFILE_VARIABLE: &str = "LOKYR_NOTARY_PROFILE";
 
 /// The variables of an App Store Connect API key: the `.p8` file's path,
-/// the key's id and its issuer's.
+/// the key's id and its issuer's, which a team's key has and an individual
+/// key has not.
 const KEY_VARIABLES: [&str; 3] = [
     "LOKYR_NOTARY_KEY",
     "LOKYR_NOTARY_KEY_ID",
@@ -147,25 +148,24 @@ pub(crate) fn submit(file: &Path) -> Result<()> {
     Ok(())
 }
 
-/// `notarytool`'s arguments of the credentials: the API key of its three
-/// values, `key`, each given or none; or else the keychain's `profile`, or
-/// [`PROFILE`] of none.
+/// `notarytool`'s arguments of the credentials: the API key of its file
+/// and its id, of its issuer for a team's key, of `key`; or else, of none
+/// of them, the keychain's `profile`, or [`PROFILE`] of none.
 fn credentials(key: [Option<String>; 3], profile: Option<String>) -> Result<Vec<String>> {
     match key {
-        [Some(path), Some(id), Some(issuer)] => Ok(vec![
-            "--key".to_owned(),
-            path,
-            "--key-id".to_owned(),
-            id,
-            "--issuer".to_owned(),
-            issuer,
-        ]),
+        [Some(path), Some(id), issuer] => {
+            let mut arguments = vec!["--key".to_owned(), path, "--key-id".to_owned(), id];
+            if let Some(issuer) = issuer {
+                arguments.extend(["--issuer".to_owned(), issuer]);
+            }
+            Ok(arguments)
+        }
         [None, None, None] => Ok(vec![
             "--keychain-profile".to_owned(),
             profile.unwrap_or_else(|| PROFILE.to_owned()),
         ]),
         _ => bail!(
-            "the notary's API key takes {}, {} and {}, all three",
+            "the notary's API key takes {} and {}, and {} of a team's key",
             KEY_VARIABLES[0],
             KEY_VARIABLES[1],
             KEY_VARIABLES[2]
@@ -250,7 +250,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_credentials_are_an_api_key_of_its_three_values_or_a_profile() {
+    fn the_credentials_are_an_api_key_or_a_profile() {
         let some = |text: &str| Some(text.to_owned());
         assert_eq!(
             credentials([some("/k.p8"), some("KEY"), some("ISSUER")], some("other")).unwrap(),
@@ -264,7 +264,13 @@ mod tests {
             credentials([None, None, None], some("other")).unwrap(),
             ["--keychain-profile", "other"]
         );
+        // An individual key has no issuer.
+        assert_eq!(
+            credentials([some("/k.p8"), some("KEY"), None], None).unwrap(),
+            ["--key", "/k.p8", "--key-id", "KEY"]
+        );
         assert!(credentials([some("/k.p8"), None, some("ISSUER")], None).is_err());
+        assert!(credentials([None, None, some("ISSUER")], None).is_err());
     }
 
     #[test]

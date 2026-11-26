@@ -148,6 +148,7 @@ jobs:
       - name: Build, sign and notarize the release
         env:
           LOKYR_NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          # A team's key's issuer; empty, of no secret, for an individual key.
           LOKYR_NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
         run: cargo xtask release build "$RELEASE_VERSION"
       - name: Check the DMG as Gatekeeper does
