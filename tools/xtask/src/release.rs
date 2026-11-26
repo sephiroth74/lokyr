@@ -11,7 +11,7 @@
 //!   the feeds' latest, as Sparkle tells a newer version by it: the feed
 //!   of tests, if it is there, and the public one, the latest release's
 //!   asset, of which a feed's first release goes `--without-feed`; of no
-//!   version, the crate's;
+//!   version, the crate's, as `build`'s;
 //! - `build`, of the signing identity and Apple's notary: the bundle built
 //!   as that version, through `LOKYR_RELEASE`, its number checked again,
 //!   the binary's dSYM of the binary's UUID, the bill of materials, and the
@@ -40,7 +40,7 @@ const REPOSITORY: &str = "sephiroth74/lokyr";
 const APPCAST: &str = "private/feed/appcast.xml";
 
 /// What `release` takes.
-const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` without one), and `--without-feed`";
+const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`";
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let args: Vec<String> = args.collect();
@@ -101,7 +101,7 @@ fn parse(args: &[String], crate_version: &str) -> Result<(Option<Step>, String, 
     }
     let version = match (version, step) {
         (Some(version), _) => version,
-        (None, Some(Step::Check)) => crate_version.to_owned(),
+        (None, Some(Step::Check | Step::Build)) => crate_version.to_owned(),
         (None, _) => bail!("{USAGE}"),
     };
     Ok((step, version, without_feed))
@@ -535,6 +535,10 @@ mod tests {
             (Some(Step::Build), "1.6.0-rc.1".to_owned(), true)
         );
         // A step of no version but `check`, and anything else, refused.
+        assert_eq!(
+            parse(&args("build"), "1.6.0").unwrap(),
+            (Some(Step::Build), "1.6.0".to_owned(), false)
+        );
         assert!(parse(&args("draft"), "1.6.0").is_err());
         assert!(parse(&args(""), "1.6.0").is_err());
         assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());

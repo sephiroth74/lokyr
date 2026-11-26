@@ -6,6 +6,7 @@ mod changelog;
 mod check_comments;
 mod check_deps;
 mod check_links;
+mod ci;
 mod config_guide;
 mod dmg;
 mod docs;
