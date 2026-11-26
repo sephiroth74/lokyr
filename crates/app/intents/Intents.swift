@@ -77,8 +77,9 @@ private func ask(
     }
 }
 
-/// A terminal of Lokyr's, a pane, by the app's id, of the properties that
-/// Find Terminal filters on and Get Details of Terminal gives.
+/// A terminal of Lokyr's, a pane, by its start's token and the app's id of
+/// it, of the properties that Find Terminal filters on and Get Details of
+/// Terminal gives.
 struct TerminalEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Terminal"
     static let defaultQuery = TerminalQuery()
@@ -109,8 +110,10 @@ struct TerminalEntity: AppEntity {
         DisplayRepresentation(title: "\(title)", subtitle: "\(folder)")
     }
 
-    /// The app's id of the pane.
-    var pane: UInt64 { UInt64(id) ?? 0 }
+    /// The app's id of the pane: after the start's token, which Lokyr gives
+    /// each start anew, so that a terminal kept of another start resolves to
+    /// none, rather than to another pane of its number.
+    var pane: UInt64 { UInt64(id.split(separator: ".").last ?? "") ?? 0 }
 }
 
 /// Lokyr's terminals, as the app lists them, every one of them, so that
