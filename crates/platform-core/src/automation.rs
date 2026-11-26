@@ -53,6 +53,14 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Sends `pane`, or the focused one, the key of `keys`, as `ctrl+c`,
+    /// pressed and released.
+    SendKey {
+        /// The pane.
+        pane: Option<u64>,
+        /// The key and its modifiers, as a binding writes them.
+        keys: String,
+    },
     /// Brings a window, a tab or a pane forward.
     Focus(Target),
     /// Closes a window, a tab or a pane.

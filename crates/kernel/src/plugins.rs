@@ -66,6 +66,7 @@ use crate::workspace::{
 };
 
 mod search;
+mod typed;
 mod worker;
 
 use worker::{Called, Done, FromWorker, Job, Worker};
@@ -5235,6 +5236,14 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                     pane.send_text(&text);
                 }
             }
+            // Its combination, which the request's check read.
+            Asked::SendKey { pane: id, keys } => {
+                if let (Some(pane), Ok(combo)) =
+                    (pane(id), lokyr_plugin_sdk::keys::typed_key(&keys))
+                {
+                    typed::send(pane, combo);
+                }
+            }
             // As the user's keys: to the pane and those that its window
             // broadcasts to.
             Asked::SendTextBroadcast { pane: id, text } => {
@@ -6930,6 +6939,11 @@ impl Host<'_, '_> {
             | Asked::SetPaneBroadcast { pane, .. }
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
+                self.known_pane(*pane)?;
+            }
+            Asked::SendKey { pane, keys } => {
+                lokyr_plugin_sdk::keys::typed_key(keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
                 self.known_pane(*pane)?;
             }
             Asked::SetBroadcast { window, .. } => {

@@ -81,6 +81,13 @@
                 <cocoa key="terminal"/>
             </parameter>
         </command>
+        <command name="send key" code="LKyrSKey" description="Sends a key to a terminal, the focused one unless another is given, pressed and released as the keyboard sends it, of the modes that its program asked for. Option acts as Meta.">
+            <cocoa class="LokyrSendKeyCommand"/>
+            <direct-parameter type="text" description="The key and its modifiers, as a binding writes them, such as &quot;ctrl+c&quot;, &quot;up&quot; or &quot;shift+tab&quot;."/>
+            <parameter name="to" code="LKto" type="terminal" optional="yes" description="The terminal.">
+                <cocoa key="terminal"/>
+            </parameter>
+        </command>
         <command name="focus" code="LKyrFocs" description="Brings a window, a tab or a terminal forward.">
             <cocoa class="LokyrFocusCommand"/>
             <direct-parameter type="specifier" description="The window, tab or terminal."/>

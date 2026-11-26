@@ -80,6 +80,15 @@ pub enum AutomationRequest {
         /// The text.
         text: String,
     },
+    /// Sends `pane`, or the focused one, the key of `keys`, as `ctrl+c`,
+    /// pressed and released, as the keyboard encodes it.
+    SendKey {
+        /// The pane.
+        #[serde(default)]
+        pane: Option<PaneId>,
+        /// The key and its modifiers, as a binding writes them.
+        keys: String,
+    },
     /// Brings a window, a tab or a pane forward.
     Focus(AutomationTarget),
     /// Closes a window, a tab or a pane.
@@ -138,6 +147,7 @@ impl AutomationRequest {
                 .filter_map(|text| text.as_deref())
                 .collect(),
             Self::SendText { text, .. } => vec![text.as_str()],
+            Self::SendKey { keys, .. } => vec![keys.as_str()],
             Self::Run { command, .. } => vec![command.as_str()],
             Self::SwitchSession { name } => vec![name.as_str()],
             Self::Workspace

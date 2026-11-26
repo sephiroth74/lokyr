@@ -171,6 +171,10 @@ fn request_of(request: platform::Request) -> AutomationRequest {
             pane: pane.map(PaneId),
             text,
         },
+        platform::Request::SendKey { pane, keys } => AutomationRequest::SendKey {
+            pane: pane.map(PaneId),
+            keys,
+        },
         platform::Request::Focus(target) => AutomationRequest::Focus(target_of(target)),
         platform::Request::Close(target) => AutomationRequest::Close(target_of(target)),
         platform::Request::Run { command, args } => AutomationRequest::Run {

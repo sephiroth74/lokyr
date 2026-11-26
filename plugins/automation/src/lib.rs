@@ -4,7 +4,8 @@
 //! has. It opens windows, tabs and splits, in a folder and running a
 //! command line at their shells' start; it sends text, brings a window, a
 //! tab or a pane forward and closes it; it runs a command of the registry
-//! as the user's own; it switches to a session of a name, which it makes
+//! as the user's own; it sends a pane a key as the keyboard does; it
+//! switches to a session of a name, which it makes
 //! of none; and it tells the windows, their tabs and their panes,
 //! by the host's ids, which stay the same between a script's requests.
 //!
@@ -178,6 +179,11 @@ impl Automation {
             AutomationRequest::SendText { pane, text } => {
                 let pane = pane_or_focused(cx, pane)?;
                 cx.send_text(pane, &text)?;
+                AutomationAnswer::Done
+            }
+            AutomationRequest::SendKey { pane, keys } => {
+                let pane = pane_or_focused(cx, pane)?;
+                cx.send_key(pane, &keys)?;
                 AutomationAnswer::Done
             }
             AutomationRequest::Focus(target) => {

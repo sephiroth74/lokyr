@@ -101,6 +101,20 @@ define_class!(
 );
 
 define_class!(
+    /// `send key`.
+    #[unsafe(super(NSScriptCommand, NSObject))]
+    #[name = "LokyrSendKeyCommand"]
+    struct SendKeyCommand;
+
+    impl SendKeyCommand {
+        #[unsafe(method_id(performDefaultImplementation))]
+        fn perform(&self) -> Option<Retained<AnyObject>> {
+            send_key(self)
+        }
+    }
+);
+
+define_class!(
     /// `focus`.
     #[unsafe(super(NSScriptCommand, NSObject))]
     #[name = "LokyrFocusCommand"]
@@ -204,6 +218,23 @@ fn split(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     run(command, request, opened_terminal)
 }
 
+/// What `send key` does.
+fn send_key(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+    let Some(keys) = command
+        .directParameter()
+        .and_then(|keys| keys.downcast::<NSString>().ok())
+    else {
+        return refuse(command, "`send key` takes a key, such as \"ctrl+c\"");
+    };
+    let request = Request::SendKey {
+        pane: argument(command, "terminal")
+            .and_then(|terminal| terminal.downcast::<ScriptTerminal>().ok())
+            .map(|terminal| terminal.id()),
+        keys: keys.to_string(),
+    };
+    run(command, request, done)
+}
+
 /// What `input text` does.
 fn input_text(command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
     let Some(text) = command
@@ -286,6 +317,7 @@ pub(crate) fn register() {
         CreateTabCommand::class(),
         SplitCommand::class(),
         InputTextCommand::class(),
+        SendKeyCommand::class(),
         FocusCommand::class(),
         CloseCommand::class(),
         PerformActionCommand::class(),

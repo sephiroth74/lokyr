@@ -709,6 +709,17 @@ pub enum Request {
         /// The text.
         text: String,
     },
+    /// Sends a pane's program a key, pressed and released, as the app's
+    /// keyboard encodes it of the modes that the program asked for:
+    /// `keys`, one combination as a binding writes it, as `ctrl+c`, `up`
+    /// or `shift+tab`, of no click nor wheel. Option acts as Meta; Command
+    /// reaches a program of the keyboard protocol alone.
+    SendKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        keys: String,
+    },
     /// The command line that a pane's shell edits at its prompt, as its
     /// cells show it, if it edits one: after its input's mark and before
     /// its output's (OSC 133), on the primary screen, of no right prompt,
@@ -1504,6 +1515,7 @@ impl Request {
             | Self::PasteBroadcast { .. }
             | Self::SendTextBroadcast { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
             | Self::RunLine { .. } => Some(Capability::PtyWrite),
             // The windows, the tabs and the panes, and where the keys go.
             Self::OpenWindow { .. }
@@ -1700,6 +1712,7 @@ impl Request {
             | Self::Clear(_)
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::Decorate { .. }
@@ -2415,6 +2428,7 @@ impl Request {
             | Self::Clear { .. }
             | Self::Paste { .. }
             | Self::SendText { .. }
+            | Self::SendKey { .. }
             | Self::RunLine { .. }
             | Self::Scroll { .. }
             | Self::SetFontSize { .. }

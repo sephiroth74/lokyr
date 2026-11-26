@@ -28,7 +28,7 @@ private func lokyrIntentRequest(
 /// The kinds of the requests, as the app's function takes them.
 private enum Kind: Int32 {
     case newWindow = 1, newTab, split, sendText, run, paneText, workspace, switchSession, close, focus,
-        commands
+        commands, sendKey
 }
 
 /// An error that the app answered, of its message.
@@ -291,6 +291,45 @@ struct SendTextIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         _ = try await ask(.sendText, first: terminal?.pane ?? 0, text: text)
+        return .result()
+    }
+}
+
+/// A modifier held with a key.
+enum KeyModifier: String, AppEnum {
+    case control, option, shift, command
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Modifier"
+    static let caseDisplayRepresentations: [KeyModifier: DisplayRepresentation] = [
+        .control: "Control", .option: "Option", .shift: "Shift", .command: "Command",
+    ]
+
+    /// The modifier as a binding writes it.
+    var binding: String {
+        switch self {
+        case .control: "ctrl"
+        case .option: "alt"
+        case .shift: "shift"
+        case .command: "cmd"
+        }
+    }
+}
+
+/// Sends a key to a terminal, as the keyboard sends it.
+struct SendKeyboardEventIntent: AppIntent {
+    static let title: LocalizedStringResource = "Send Keyboard Event"
+    static let description = IntentDescription("Sends a key to a terminal of Lokyr's, the focused one unless another is given, pressed and released as the keyboard sends it, such as c with Control to interrupt a program. The key is a character, or a name such as up, enter, tab, escape or f5.")
+    static let openAppWhenRun: Bool = false
+
+    @Parameter(title: "Key") var key: String
+    @Parameter(title: "Modifiers") var modifiers: [KeyModifier]?
+    @Parameter(title: "Terminal") var terminal: TerminalEntity?
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        let held = (modifiers ?? []).map(\.binding)
+        let keys = (held + [key.trimmingCharacters(in: .whitespaces).lowercased()]).joined(separator: "+")
+        _ = try await ask(.sendKey, first: terminal?.pane ?? 0, text: keys)
         return .result()
     }
 }

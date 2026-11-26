@@ -105,6 +105,7 @@ export type Cx = {
     clear: (pane: PaneId) -> (true?, string?, number?),
     paste: (pane: PaneId, text: string) -> (true?, string?, number?),
     send_text: (pane: PaneId, text: string) -> (true?, string?, number?),
+    send_key: (pane: PaneId, keys: string) -> (true?, string?, number?),
     edited_line: (pane: PaneId) -> (string?, string?, number?),
     run_line: (pane: PaneId, line: string) -> (true?, string?, number?),
     scroll: (pane: PaneId, scroll: Scroll) -> (true?, string?, number?),
@@ -500,6 +501,7 @@ export type AutomationRequest =
     | { new_tab: { window: WindowId?, folder: string?, command: string?, environment: { [string]: string }? } }
     | { split: { pane: PaneId?, edge: AutomationEdge, folder: string?, command: string?, environment: { [string]: string }? } }
     | { send_text: { pane: PaneId?, text: string } }
+    | { send_key: { pane: PaneId?, keys: string } }
     | { focus: AutomationTarget }
     | { close: AutomationTarget }
     | { run: { command: string, args: { [string]: Value }? } }

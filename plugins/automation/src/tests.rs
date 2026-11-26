@@ -358,3 +358,24 @@ fn a_run_s_text_argument_takes_its_parameter_s_kind() {
         host.automation_answers()
     );
 }
+
+#[test]
+fn a_key_goes_to_the_focused_pane_and_a_click_is_refused() {
+    let (mut host, mut plugin) = host();
+    let key = |keys: &str| AutomationRequest::SendKey {
+        pane: None,
+        keys: keys.to_owned(),
+    };
+    ask(&mut host, &mut plugin, 17, key("ctrl+c"));
+    assert_eq!(answer(&host, 17), Some(AutomationAnswer::Done));
+    assert!(host.take_done().contains(&Request::SendKey {
+        pane: PaneId(1),
+        keys: "ctrl+c".to_owned(),
+    }));
+    ask(&mut host, &mut plugin, 18, key("click"));
+    assert!(
+        matches!(answer(&host, 18), Some(AutomationAnswer::Error { code, .. }) if code == Code::WrongKind.number()),
+        "{:?}",
+        host.automation_answers()
+    );
+}

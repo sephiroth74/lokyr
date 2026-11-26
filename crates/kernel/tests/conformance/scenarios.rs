@@ -2790,6 +2790,13 @@ fn capabilities(world: &World) -> Scenario {
                 },
                 lacks("pty-write"),
             ),
+            (
+                Request::SendKey {
+                    pane: world.pane,
+                    keys: "up".to_owned(),
+                },
+                lacks("pty-write"),
+            ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
             (
                 Request::OpenPopup {
@@ -3243,6 +3250,23 @@ fn core_actions(world: &World) -> Scenario {
                         text: "y".to_owned(),
                     },
                     Response::Done,
+                ),
+                (
+                    Request::SendKey {
+                        pane,
+                        keys: "ctrl+c".to_owned(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SendKey {
+                        pane,
+                        keys: "wheel-up".to_owned(),
+                    },
+                    failed(
+                        Code::WrongKind,
+                        "`wheel-up` is a click or a wheel's step, not a key that a pane takes",
+                    ),
                 ),
                 (
                     Request::Scroll {
