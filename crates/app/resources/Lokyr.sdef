@@ -84,15 +84,28 @@
                 <cocoa key="arguments"/>
             </parameter>
         </command>
+        <!-- Each responds-to names a method that no object implements, so
+             that Cocoa Scripting runs the command's own implementation:
+             one of no method would have it call a selector of none. -->
         <class-extension extends="application" description="Lokyr's windows, and the commands that need no object of its own.">
             <element type="window" access="r" description="Its windows, the one in front first.">
                 <cocoa key="lokyrWindows"/>
             </element>
-            <responds-to command="create window"/>
-            <responds-to command="create tab"/>
-            <responds-to command="split"/>
-            <responds-to command="input text"/>
-            <responds-to command="perform action"/>
+            <responds-to command="create window">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="create tab">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="split">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="input text">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="perform action">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
         </class-extension>
         <class name="window" code="cwin" description="A window of Lokyr's." plural="windows">
             <cocoa class="LokyrScriptWindow"/>
@@ -103,8 +116,12 @@
             <element type="tab" access="r" description="Its tabs, in their order.">
                 <cocoa key="tabs"/>
             </element>
-            <responds-to command="focus"/>
-            <responds-to command="close"/>
+            <responds-to command="focus">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="close">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
         </class>
         <class name="tab" code="LKtb" description="A tab of a window." plural="tabs">
             <cocoa class="LokyrScriptTab"/>
@@ -115,8 +132,12 @@
             <element type="terminal" access="r" description="Its terminals, its panes.">
                 <cocoa key="terminals"/>
             </element>
-            <responds-to command="focus"/>
-            <responds-to command="close"/>
+            <responds-to command="focus">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="close">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
         </class>
         <class name="terminal" code="LKtm" description="A terminal, a pane of a tab." plural="terminals">
             <cocoa class="LokyrScriptTerminal"/>
@@ -133,9 +154,15 @@
             <property name="selected text" code="LKsl" type="text" access="r" description="Its selection's text. Lokyr asks you first whether the app that asks may read it.">
                 <cocoa key="selectedText"/>
             </property>
-            <responds-to command="split"/>
-            <responds-to command="focus"/>
-            <responds-to command="close"/>
+            <responds-to command="split">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="focus">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
+            <responds-to command="close">
+                <cocoa method="lokyrPerformDefault:"/>
+            </responds-to>
         </class>
     </suite>
 </dictionary>

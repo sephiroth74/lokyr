@@ -13,7 +13,7 @@ use std::rc::Rc;
 
 use lokyr_platform_core::automation::{Answer, Pane, Request, Tab, Window};
 use objc2::rc::Retained;
-use objc2::runtime::{AnyClass, AnyObject};
+use objc2::runtime::{AnyClass, AnyObject, Sel};
 use objc2::{
     AllocAnyThread, ClassType, DefinedClass, MainThreadMarker, MainThreadOnly, Message,
     define_class, msg_send,
@@ -101,6 +101,13 @@ define_class!(
         fn object_specifier(&self) -> Option<Retained<NSScriptObjectSpecifier>> {
             window_specifier(self.ivars().window.id)
         }
+
+        // The commands that the dictionary says it responds to, of their
+        // own implementations.
+        #[unsafe(method_id(lokyrPerformDefault:))]
+        fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+            command.performDefaultImplementation()
+        }
     }
 );
 
@@ -139,6 +146,13 @@ define_class!(
         fn object_specifier(&self) -> Option<Retained<NSScriptObjectSpecifier>> {
             let ivars = self.ivars();
             tab_specifier(ivars.window, ivars.tab.id)
+        }
+
+        // The commands that the dictionary says it responds to, of their
+        // own implementations.
+        #[unsafe(method_id(lokyrPerformDefault:))]
+        fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+            command.performDefaultImplementation()
         }
     }
 );
@@ -181,6 +195,13 @@ define_class!(
         fn object_specifier(&self) -> Option<Retained<NSScriptObjectSpecifier>> {
             let ivars = self.ivars();
             terminal_specifier(ivars.window, ivars.tab, ivars.pane.id)
+        }
+
+        // The commands that the dictionary says it responds to, of their
+        // own implementations.
+        #[unsafe(method_id(lokyrPerformDefault:))]
+        fn perform_default(&self, command: &NSScriptCommand) -> Option<Retained<AnyObject>> {
+            command.performDefaultImplementation()
         }
     }
 );
@@ -233,6 +254,49 @@ pub(crate) fn register() {
         ScriptTerminal::class(),
     );
     crate::script_commands::register();
+    // The application responds to the commands of no object of their
+    // own, of the method that the dictionary names, which runs each
+    // command's own implementation.
+    let imp: unsafe extern "C-unwind" fn(
+        *mut AnyObject,
+        Sel,
+        *mut NSScriptCommand,
+    ) -> *mut AnyObject = application_perform_default;
+    // SAFETY: a method of the selector's arguments, an object and a
+    // command, and of an object's result, as its types say, added once to
+    // a class that has none of that name.
+    unsafe {
+        objc2::ffi::class_addMethod(
+            std::ptr::from_ref(NSApplication::class()).cast_mut(),
+            objc2::sel!(lokyrPerformDefault:),
+            std::mem::transmute::<
+                unsafe extern "C-unwind" fn(
+                    *mut AnyObject,
+                    Sel,
+                    *mut NSScriptCommand,
+                ) -> *mut AnyObject,
+                objc2::runtime::Imp,
+            >(imp),
+            c"@@:@".as_ptr(),
+        );
+    }
+}
+
+/// The application's method of the commands that it responds to: the
+/// command's own implementation, its result autoreleased.
+unsafe extern "C-unwind" fn application_perform_default(
+    _this: *mut AnyObject,
+    _selector: Sel,
+    command: *mut NSScriptCommand,
+) -> *mut AnyObject {
+    // SAFETY: Cocoa Scripting gives the command that it runs, alive
+    // through the call.
+    let Some(command) = (unsafe { command.as_ref() }) else {
+        return std::ptr::null_mut();
+    };
+    command
+        .performDefaultImplementation()
+        .map_or(std::ptr::null_mut(), Retained::autorelease_return)
 }
 
 /// The application's windows, of the automation's answer, which comes at
