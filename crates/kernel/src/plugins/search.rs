@@ -118,13 +118,15 @@ pub(super) struct Search {
 /// What a search follows new output of: the pane's reader and the query;
 /// the number of the row from which it reads again, the screen's first as
 /// it looked last, whose rows a program may have written over since; the
-/// number past the list's last row then; and the rows' epoch, past which
-/// its numbers mean nothing.
+/// number past the list's last row then, and the slices of output parsed,
+/// as output that the screen's empty rows take adds no row; and the rows'
+/// epoch, past which its numbers mean nothing.
 struct Follow {
     reader: Reader,
     query: Query,
     from: i64,
     end: i64,
+    slices: u64,
     epoch: u64,
 }
 
@@ -142,6 +144,7 @@ impl Search {
                 query: query.clone(),
                 from: terminal.row_number(rows.scrollback_rows()),
                 end: terminal.row_number(rows.total_rows()),
+                slices: reader.slices(),
                 epoch: terminal.origin().epoch,
             }
         };
@@ -178,8 +181,8 @@ impl Search {
     }
 
     /// Searches, while its filter shows and once its thread went to its
-    /// end, the rows that new output brought since its last look, and the
-    /// screen's again, a part at most, under the pane's lock: the matches
+    /// end, of output parsed since its last look, the rows that it brought,
+    /// and the screen's again, a part at most, under the pane's lock: the matches
     /// there before go, as a program may have written over them, and those
     /// found now come. The part found, of the count of the matches that the
     /// terminal keeps and of no match, as its plugin knows the rest of
@@ -196,7 +199,8 @@ impl Search {
         }
         let total = terminal.screen_rows().total_rows();
         let end = terminal.row_number(total);
-        if end == follow.end {
+        let slices = follow.reader.slices();
+        if end == follow.end && slices == follow.slices {
             return None;
         }
         let from = follow.from.max(terminal.row_number(0));
@@ -232,6 +236,7 @@ impl Search {
             let rows = terminal.screen_rows();
             follow.from = terminal.row_number(rows.scrollback_rows()).min(to);
             follow.end = end;
+            follow.slices = slices;
         }
         lock(&self.found).count = count;
         Some(Part {
@@ -256,6 +261,12 @@ impl Search {
     /// Whether more of its parts may come.
     pub(super) fn is_busy(&self) -> bool {
         self.parts.is_some()
+    }
+
+    /// Whether it follows new output, as its filter shows, which each turn
+    /// of the host's looks at.
+    pub(super) fn follows(&self) -> bool {
+        self.filtering
     }
 
     /// The parts that came since the last look; the last of them done.

@@ -1085,6 +1085,70 @@ fn the_find_bar_searches_its_pane_steps_and_leaves_its_match_selected_as_it_clos
 }
 
 #[test]
+fn the_find_bar_s_filter_shows_the_matching_lines_alone_as_output_comes_and_escape_gives_the_view_back()
+ {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nnothing\\nmore\\nneedle two\\nlast\\n'; echo ready; read line; echo 'late needle'; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    // The lines of its rows that hold text, in the view's order.
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    // The filter's toggle: the matches' lines alone.
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two"]
+    });
+    // New output's matching line comes in as it is printed, the count of
+    // it too.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two", "late needle"]
+    });
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| count.ends_with(" of 3"))
+    });
+    // Escape: the view as it was, every line again.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        let shown = lines(app);
+        shown.iter().any(|line| line == "nothing") && shown.iter().any(|line| line == "ready")
+    });
+    assert!(panel_frame(&app, window, "find").is_none());
+}
+
+#[test]
 fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_its_choice() {
     let none = Modifiers::NONE;
     let drawing = Drawing::new(FontConfig::default()).unwrap();

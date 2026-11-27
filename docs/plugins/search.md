@@ -12,6 +12,11 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 - **The scroll bar** marks every match along it, the current one in its own color, and stays shown while the bar's search shows them, as [`scrollbar`](../CONFIGURATION.md#scrollbar) tells.
 - **It goes from the bottom up**, as the newest output is at the bottom: the first match is the one nearest the bottom, the next one the one above it, the previous one the one below it. The view follows the current match, and stays there while the program prints on.
 - **The toggles** at the field's end count case, take whole words alone, and read the text as a regular expression, of the syntax of Rust's `regex`; they keep their states for the next search.
+- **The filter**, the last toggle, shows only the lines that match, and a blank line where it hides others · not released yet.
+  - The lines scroll like the scrollback, a whole line at a time, and the prompt hides while the filter is on.
+  - New output's matching lines come in as the program prints them, and the count grows with them. While the filter is on, Lokyr searches each new batch of output, at most 1000 lines at a time.
+  - Turn it off, or close the bar, and the pane shows every line again, at the current match.
+  - It works on the main screen. A full-screen program, such as vim or less, keeps its own screen.
 - **The magnifying glass** at the field's start lists your last twenty searches, which Lokyr keeps.
 - **The clear button**, a cross in a disc at the field's end while it holds text, empties it, and the search ends · Since 1.4.
 - **Escape**, or its close button, closes it: the highlights go, and the current match is selected, ready for ⌘C.

@@ -50,6 +50,7 @@ const COUNT: &str = "count";
 const CASE: &str = "case";
 const REGEX: &str = "regex";
 const WORD: &str = "word";
+const FILTER: &str = "filter";
 const UP: &str = "up";
 const DOWN: &str = "down";
 const PAST: &str = "recent";
@@ -68,10 +69,11 @@ const STATE_RECENT: &str = "recent";
 const STATE_CASE: &str = "case-sensitive";
 const STATE_REGEX: &str = "regex";
 const STATE_WORD: &str = "whole-word";
+const STATE_FILTER: &str = "filter";
 
 /// The width of the search field, its glass, its text and its toggles, in
-/// points.
-const FIELD_WIDTH: f32 = 260.0;
+/// points: of 260 for its text beside three toggles, and of the filter's.
+const FIELD_WIDTH: f32 = 281.0;
 
 /// The width of the count, which its text never changes, in points: of
 /// `9999 of 9999`, the longest of its numbers, which go short past it,
@@ -99,13 +101,14 @@ static CATALOGS: [(&str, &str); 2] = [
 ];
 
 /// The texts of the bar, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 13] = [
+const ENGLISH: [(&str, &str); 14] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-invalid", "Invalid regex"),
     ("find-case", "Match Case"),
     ("find-regex", "Regular Expression"),
     ("find-word", "Whole Words"),
+    ("find-filter", "Show Matching Lines Only"),
     ("find-next", "Find Next"),
     ("find-previous", "Find Previous"),
     ("find-history", "Recent Searches"),
@@ -247,6 +250,8 @@ pub struct Options {
     pub regex: bool,
     /// Whether matches take whole words alone.
     pub whole_word: bool,
+    /// Whether the pane's view shows the matches' lines alone.
+    pub filter: bool,
 }
 
 /// Which way a step goes.
@@ -386,6 +391,8 @@ pub struct BarTexts {
     pub regex: String,
     /// The whole words toggle's label.
     pub word: String,
+    /// The filter toggle's label.
+    pub filter: String,
     /// The next match's button's label.
     pub next: String,
     /// The previous match's button's label.
@@ -412,6 +419,7 @@ impl Default for BarTexts {
             case: english("find-case"),
             regex: english("find-regex"),
             word: english("find-word"),
+            filter: english("find-filter"),
             next: english("find-next"),
             previous: english("find-previous"),
             recent: english("find-history"),
@@ -533,6 +541,12 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             options.regex,
             &texts.regex,
         ),
+        plain(
+            Node::toggle("filter", options.filter).key(FILTER),
+            IN_FIELD,
+            options.filter,
+            &texts.filter,
+        ),
         clear(view.filled, &texts.clear),
     ])
     .layout(Layout {
@@ -648,6 +662,7 @@ impl Plugin for Search {
                 sensitive: on(STATE_CASE),
                 regex: on(STATE_REGEX),
                 whole_word: on(STATE_WORD),
+                filter: on(STATE_FILTER),
             };
         }
         self.settings = Settings::of(&cx.config()?);
@@ -780,6 +795,17 @@ impl Plugin for Search {
                 self.keep(cx);
                 self.search(cx)
             }
+            // The pane's view of the matches' lines alone, or as it was, of
+            // the search there is, which no new search needs.
+            (UiEventKind::Toggle { on }, FILTER) => {
+                find.options.filter = *on;
+                self.options = find.options;
+                if let (true, Some(search)) = (find.told, find.search) {
+                    cx.filter_matches(search, *on)?;
+                }
+                self.keep(cx);
+                cx.request_render(bar())
+            }
             // Emptied by its button, as typing would empty it.
             (UiEventKind::Click, CLEAR) => {
                 find.text.clear();
@@ -860,6 +886,7 @@ fn texts(cx: &mut Cx<'_>) -> BarTexts {
         case: text("find-case"),
         regex: text("find-regex"),
         word: text("find-word"),
+        filter: text("find-filter"),
         next: text("find-next"),
         previous: text("find-previous"),
         recent: text("find-history"),
@@ -1005,6 +1032,10 @@ impl Search {
         }
         if show {
             cx.show_matches(id, all, find.current)?;
+            // Its lines alone from its first part, as the filter shows.
+            if find.options.filter {
+                cx.filter_matches(id, true)?;
+            }
         }
         cx.request_render(bar())
     }
@@ -1051,6 +1082,10 @@ impl Search {
         let Some(find) = self.find.take() else {
             return Ok(());
         };
+        // The view as it was, at the current match, before the search ends.
+        if let (true, true, Some(search)) = (find.options.filter, find.told, find.search) {
+            cx.filter_matches(search, false)?;
+        }
         if let (Some(_), Some(search)) = (find.current, find.search)
             && let Some((_, now)) = cx.current_match(search)?.current
         {
@@ -1091,6 +1126,7 @@ impl Search {
                 STATE_WORD.to_owned(),
                 Data::Boolean(self.options.whole_word),
             ),
+            (STATE_FILTER.to_owned(), Data::Boolean(self.options.filter)),
         ]));
         // Without a state directory, they stay for this run.
         let _ = cx.set_state(state);

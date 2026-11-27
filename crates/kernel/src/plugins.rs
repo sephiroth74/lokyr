@@ -3960,10 +3960,13 @@ impl Plugins {
     /// main thread.
     pub fn waiting(&self) -> bool {
         !self.out.reads.is_empty()
-            || self
-                .entries
-                .iter()
-                .any(|entry| entry.state.searches.iter().any(search::Search::is_busy))
+            || self.entries.iter().any(|entry| {
+                entry
+                    .state
+                    .searches
+                    .iter()
+                    .any(|search| search.is_busy() || search.follows())
+            })
             || self
                 .entries
                 .iter()
