@@ -93,7 +93,7 @@ Lokyr against Ghostty, Alacritty, kitty and iTerm2, under the same conditions: M
 ## What works today
 
 <p align="center">
-  <img src="docs/images/lokyr-htop.png" alt="htop in a Lokyr window of 100 by 30 cells, with the tree of the window's own processes: lokyr, login, bash and htop" width="760">
+  <img src="docs/images/lokyr-tabs.png" alt="A Lokyr window of two tabs, the first running a build whose progress fills its tab, showing Rust source by bat between two prompts" width="760">
 </p>
 
 - ✔ Windows drawn with Metal, at the display's refresh rate, their frames only when something changed.
