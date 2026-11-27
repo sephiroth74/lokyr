@@ -18,11 +18,14 @@
 //!   DMG, the bundle and the image notarized and stapled, all in
 //!   `target/releases/<version>`;
 //! - `draft`, of the EdDSA key: the draft, `v<version>`, of the commit, a
-//!   candidate's a pre-release, of the DMG, the dSYM and the bill, its
-//!   notes `docs/releases/<X.Y.Z>.md`; the DMG in the feed of tests, if it
-//!   is there; a release's DMG in the public feed, its deltas and the
-//!   appcast assets of the draft, which the site serves once the release
-//!   is the latest; a release's Homebrew cask, of the DMG's SHA-256;
+//!   candidate's a pre-release, in place of a draft of that tag, never of a
+//!   published release, of the DMG, the dSYM and the bill, its notes
+//!   `docs/releases/<X.Y.Z>.md`; the DMG in the feed of tests, if it is
+//!   there; a release's DMG in the public feed, its deltas and the appcast
+//!   assets of the draft, which the site serves once the release is the
+//!   latest; a release's Homebrew cask, of the DMG's SHA-256; and
+//!   `target/releases/<version>/draft.md`, the draft's address, the DMG's
+//!   size and the deltas', which the CI tells the release's pull request;
 //! - `publish`: the draft published, a release the latest.
 
 use std::fs;
@@ -328,6 +331,7 @@ impl Release {
         }
         let commit = self.commit()?;
         let tag = self.tag();
+        self.replace_draft()?;
         status(
             Command::new("gh").args(draft_arguments(
                 &self.version,
@@ -350,6 +354,7 @@ impl Release {
         // A candidate stays out of the public feed and has no cask: Homebrew
         // takes the releases alone.
         if self.is_candidate() {
+            self.summarize(&dmg, &[])?;
             println!(
                 "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
             );
@@ -367,10 +372,60 @@ impl Release {
         for written in cask::write(root, &self.version, None)? {
             println!("release: the cask, {}", written.display());
         }
+        self.summarize(&dmg, &published.deltas)?;
         println!(
             "release: {tag}'s draft is on GitHub, of {commit}, of its appcast; publish it, then deploy the site, `git fetch --tags`, and push the tap's cask"
         );
         Ok(())
+    }
+
+    /// Deletes the draft of the release's tag, if any, which a new draft
+    /// replaces, as a pull request's new commit drafts the release again;
+    /// fails of a published release of that tag.
+    fn replace_draft(&self) -> Result<()> {
+        let tag = self.tag();
+        let told = Command::new("gh")
+            .args(["release", "view", &tag, "--repo", REPOSITORY])
+            .args(["--json", "isDraft", "--jq", ".isDraft"])
+            .output()
+            .context("looking for the release on GitHub")?;
+        // None of that tag: `gh` fails, as it finds no release.
+        if !told.status.success() {
+            return Ok(());
+        }
+        let draft = String::from_utf8_lossy(&told.stdout).trim() == "true";
+        ensure!(draft, "{tag} is released already: release another version");
+        println!("release: replacing {tag}'s draft");
+        status(
+            Command::new("gh").args(["release", "delete", &tag, "--repo", REPOSITORY, "--yes"]),
+            "deleting the release's former draft",
+        )
+    }
+
+    /// Writes `draft.md` beside the release's assets: the draft's address,
+    /// the size of its `dmg` and of its `deltas`, which the CI tells the
+    /// release's pull request.
+    fn summarize(&self, dmg: &Path, deltas: &[PathBuf]) -> Result<()> {
+        let tag = self.tag();
+        let address = output(
+            Command::new("gh")
+                .args(["release", "view", &tag, "--repo", REPOSITORY])
+                .args(["--json", "url", "--jq", ".url"]),
+            "reading the draft's address",
+        )?;
+        let deltas: Vec<(String, u64)> = deltas
+            .iter()
+            .map(|delta| {
+                let name = delta
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (name, bundle::size_of(delta))
+            })
+            .collect();
+        let text = summary(&tag, address.trim(), bundle::size_of(dmg), &deltas);
+        let file = self.out().join("draft.md");
+        fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
     }
 
     /// The draft published: a candidate a pre-release, a release the
@@ -393,6 +448,24 @@ impl Release {
         println!("release: {tag} published");
         Ok(())
     }
+}
+
+/// The draft's summary, in Markdown, of its `tag`, its `address`, its DMG's
+/// size `dmg` and its `deltas`, each of its name and size.
+fn summary(tag: &str, address: &str, dmg: u64, deltas: &[(String, u64)]) -> String {
+    let mut text = format!(
+        "**{tag}** is drafted: [its draft]({address}).\n\n- The DMG: {}.\n",
+        bundle::megabytes(dmg)
+    );
+    if deltas.is_empty() {
+        text.push_str("- No deltas: a candidate stays out of the public feed.\n");
+    } else {
+        text.push_str(&format!("- {} deltas:\n", deltas.len()));
+        for (name, size) in deltas {
+            text.push_str(&format!("  - `{name}`, {}\n", bundle::megabytes(*size)));
+        }
+    }
+    text
 }
 
 /// Whether `list`, the release notes' list, `docs/releases/README.md`'s,
@@ -517,6 +590,22 @@ fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_draft_s_summary_tells_its_address_and_sizes() {
+        let text = summary(
+            "v1.6.0",
+            "https://github.com/o/r/releases/tag/untagged-1",
+            19_200_000,
+            &[("Lokyr2-1.delta".to_owned(), 2_500_000)],
+        );
+        assert!(text.contains(
+            "**v1.6.0** is drafted: [its draft](https://github.com/o/r/releases/tag/untagged-1)"
+        ));
+        assert!(text.contains("- The DMG: 19.2 MB."));
+        assert!(text.contains("- 1 deltas:\n  - `Lokyr2-1.delta`, 2.5 MB"));
+        assert!(summary("v1.6.0-rc.1", "a", 1, &[]).contains("No deltas"));
+    }
 
     #[test]
     fn a_release_takes_a_step_alone_or_all_of_them_and_check_the_crate_s_version() {

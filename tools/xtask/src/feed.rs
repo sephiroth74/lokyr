@@ -16,16 +16,18 @@
 //!   `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the
 //!   builds their own feed back.
 //!
-//! - `feed publish <dmg>` puts a release's DMG into the public feed, the
-//!   site's `site/public/appcast.xml`, which `lokyr.dev/appcast.xml` serves
-//!   and the bundle's `SUFeedURL` names: `generate_appcast` writes it in
-//!   the untracked `private/public-feed`, which keeps the released DMGs,
-//!   of which it makes the deltas, from the site's appcast; each item's
-//!   DMG and deltas at its own GitHub release, `v<X.Y.Z>`, which
+//! - `feed publish <dmg>` puts a release's DMG into the public feed, which
+//!   `lokyr.dev/appcast.xml` serves of the latest release's asset and the
+//!   bundle's `SUFeedURL` names: `generate_appcast` writes it in the
+//!   untracked `private/public-feed`, of the published appcast, and of the
+//!   last five released DMGs, downloaded from their GitHub releases where
+//!   the folder lacks them, of which it makes the release's deltas; each
+//!   item's DMG and deltas at its own GitHub release, `v<X.Y.Z>`, which
 //!   `generate_appcast`'s one prefix cannot tell, and the appcast signed
-//!   again. `just release` publishes each release's, and uploads its
-//!   deltas to its release; the appcast is committed and pushed once the
-//!   release is published, as its DMG is not public before.
+//!   again, into `target/releases/<X.Y.Z>/appcast.xml`. `cargo xtask
+//!   release draft` uploads the deltas and the appcast to the release's
+//!   draft, the feed once the release is published, as its DMG is not
+//!   public before.
 //!
 //! The key is the keychain's, of the account `lokyr` of Sparkle's
 //! `generate_keys`, or the file that `LOKYR_SPARKLE_KEY_FILE` names, in
@@ -58,6 +60,13 @@ const LATEST_APPCAST: &str =
 /// Where the releases' assets are downloaded from, each of its tag,
 /// `v<X.Y.Z>/`.
 const RELEASES: &str = "https://github.com/sephiroth74/lokyr/releases/download/";
+
+/// The repository of the releases.
+const REPOSITORY: &str = "sephiroth74/lokyr";
+
+/// How many released versions a release's deltas are made from, the
+/// latest before it, as `generate_appcast`'s `--maximum-deltas` takes.
+const DELTAS_FROM: usize = 5;
 
 /// The release notes, `<X.Y.Z>.md`, relative to the workspace root.
 const NOTES: &str = "docs/releases";
@@ -287,11 +296,13 @@ pub fn publish(root: &Path, dmg: &Path, previous: Option<&str>) -> Result<Publis
         }
         None => {}
     }
+    fetch_released(&directory, version)?;
     let tools = crate::sparkle::release(&root.join("target"))?.join("bin");
     let key = key_arguments(root)?;
     status(
         Command::new(tools.join("generate_appcast"))
             .args(&key)
+            .args(["--maximum-deltas", &DELTAS_FROM.to_string()])
             .args(["--embed-release-notes", "--download-url-prefix"])
             .arg(format!("{RELEASES}v{version}/"))
             .arg(&directory),
@@ -336,6 +347,72 @@ pub fn publish(root: &Path, dmg: &Path, previous: Option<&str>) -> Result<Publis
         deltas,
         appcast: asset,
     })
+}
+
+/// Downloads into `directory` the DMGs of the [`DELTAS_FROM`] latest
+/// published releases before `version` that it lacks, of their GitHub
+/// releases, which `generate_appcast` makes the release's deltas of: the
+/// maintainer's Mac keeps them, a runner of the CI has none.
+fn fetch_released(directory: &Path, version: &str) -> Result<()> {
+    let listed = crate::notarize::output(
+        Command::new("gh").args([
+            "release",
+            "list",
+            "--repo",
+            REPOSITORY,
+            "--exclude-drafts",
+            "--exclude-pre-releases",
+            "--limit",
+            "100",
+            "--json",
+            "tagName",
+            "--jq",
+            ".[].tagName",
+        ]),
+        "listing the published releases",
+    )?;
+    let tags: Vec<&str> = listed.lines().map(str::trim).collect();
+    for released in released_before(&tags, version, DELTAS_FROM) {
+        let name = format!("{}-{released}.dmg", bundle::NAME);
+        if directory.join(&name).is_file() {
+            continue;
+        }
+        println!("feed: downloading {name} of v{released}, for the deltas");
+        status(
+            Command::new("gh")
+                .args(["release", "download", &format!("v{released}")])
+                .args(["--repo", REPOSITORY, "--pattern", &name, "--dir"])
+                .arg(directory),
+            &format!("downloading {name}"),
+        )?;
+    }
+    Ok(())
+}
+
+/// The versions of the releases of `tags`, `vX.Y.Z`, before `version`, the
+/// latest `count` of them, the latest first.
+fn released_before(tags: &[&str], version: &str, count: usize) -> Vec<String> {
+    let numbers = |version: &str| -> Option<(u64, u64, u64)> {
+        let mut parts = version.split('.').map(|part| part.parse::<u64>().ok());
+        let numbers = (parts.next()??, parts.next()??, parts.next()??);
+        parts.next().is_none().then_some(numbers)
+    };
+    let Some(before) = numbers(version) else {
+        return Vec::new();
+    };
+    let mut released: Vec<((u64, u64, u64), &str)> = tags
+        .iter()
+        .filter_map(|tag| tag.strip_prefix('v'))
+        .filter_map(|released| Some((numbers(released)?, released)))
+        .filter(|(numbers, _)| *numbers < before)
+        .collect();
+    released.sort_unstable_by_key(|&(numbers, _)| std::cmp::Reverse(numbers));
+    released.dedup();
+    released
+        .into_iter()
+        .take(count)
+        .map(|(_, released)| released.to_owned())
+        .collect()
 }
 
 /// The appcast's `text` of each item's DMG and deltas at the item's own
@@ -444,6 +521,29 @@ fn status(command: &mut Command, what: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_deltas_are_made_of_the_latest_releases_before() {
+        let tags = [
+            "v1.5.0",
+            "v1.4.0",
+            "v1.10.0",
+            "v1.3.0",
+            "v1.2.0",
+            "v1.1.0",
+            "v1.0.0",
+            "v0.9.0",
+            "v1.6.0-rc.1",
+            "nightly",
+        ];
+        assert_eq!(
+            released_before(&tags, "1.6.0", 5),
+            ["1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0"]
+        );
+        assert_eq!(released_before(&tags, "1.11.0", 2), ["1.10.0", "1.5.0"]);
+        assert_eq!(released_before(&tags, "1.0.0", 5), ["0.9.0"]);
+        assert!(released_before(&tags, "1.6.0-rc.1", 5).is_empty());
+    }
 
     #[test]
     fn a_dmg_s_name_gives_its_version_and_its_release() {
