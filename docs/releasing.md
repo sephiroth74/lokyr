@@ -62,7 +62,7 @@ Merge the pull request with a merge commit. Once you approve it, `publish`:
 1. Checks that the merge holds the tree that `build` built, which holds when `main` has nothing that the release's branch lacks.
 2. Checks that the draft was made of the pull request's last commit, and that it holds its DMG and its feed. A draft of an earlier push, or of a `draft` that failed or still runs, is refused: run `build` and `draft` again, then publish. A `publish` waits for a `draft` that runs.
 3. Moves the draft to the merge commit and publishes it as the latest release. Its tag is made there.
-4. Asks for a run of the site of `main`, which serves the new release's feed. The merge's own push deploys nothing, so that no copy of the app sees an update before its DMG is public.
+4. Asks for a run of the site of `main`, which serves the new release's feed. The merge's own push deploys nothing, so that no copy of the app sees an update before its DMG is public. The site's build, and the release's steps that read the feed, fail rather than go on with an older feed when GitHub doesn't answer, or when the latest release lacks its feed.
 5. Pushes the cask to the Homebrew tap.
 
 A step that fails stops the rest, and the run's summary lists what is left to do by hand.

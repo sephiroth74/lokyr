@@ -243,14 +243,14 @@ impl Release {
     }
 
     /// The feeds' appcasts, the tests' if it is there and the public one,
-    /// as one text; none of neither.
-    fn appcasts(&self) -> Option<String> {
+    /// as one text; none of neither. Fails as the public one's fetch does.
+    fn appcasts(&self) -> Result<Option<String>> {
         let appcasts: Vec<String> = fs::read_to_string(self.root.join(APPCAST))
             .ok()
             .into_iter()
-            .chain(feed::published_appcast(&self.root))
+            .chain(feed::published_appcast(&self.root)?)
             .collect();
-        (!appcasts.is_empty()).then(|| appcasts.join("\n"))
+        Ok((!appcasts.is_empty()).then(|| appcasts.join("\n")))
     }
 
     /// What a release takes before anything is built, of no secret.
@@ -319,7 +319,7 @@ impl Release {
         let number: u64 = bundle::version::stamp(bundle::build_moment(&self.root)?)
             .parse()
             .context("the build's number")?;
-        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        above_the_feed(number, self.appcasts()?.as_deref(), self.without_feed)?;
         println!("release: {tag} of {commit}, build {number}, passes its checks");
         Ok(())
     }
@@ -342,7 +342,7 @@ impl Release {
         let number: u64 = plist_string(&info, "CFBundleVersion")
             .and_then(|number| number.parse().ok())
             .context("the bundle's CFBundleVersion")?;
-        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        above_the_feed(number, self.appcasts()?.as_deref(), self.without_feed)?;
         let out = self.out();
         if out.exists() {
             fs::remove_dir_all(&out).with_context(|| format!("removing {}", out.display()))?;
@@ -430,7 +430,7 @@ impl Release {
             );
             return Ok(());
         }
-        let previous = feed::published_appcast(root);
+        let previous = feed::published_appcast(root)?;
         let published = feed::publish(root, &dmg, previous.as_deref())?;
         status(
             Command::new("gh")
