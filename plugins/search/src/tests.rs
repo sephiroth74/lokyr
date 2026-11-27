@@ -516,6 +516,28 @@ fn the_filter_shows_the_matches_lines_alone_and_escape_gives_the_view_back() {
 }
 
 #[test]
+fn a_text_and_a_match_given_open_the_bar_of_them_the_match_the_current_one() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    let given = |host: &mut FakeHost, plugin: &mut Search, column: i64, row: i64| {
+        host.take_done();
+        let mut args = Args::new();
+        args.insert("text".to_owned(), Value::String("needle".to_owned()));
+        args.insert("column".to_owned(), Value::Integer(column));
+        args.insert("row".to_owned(), Value::Integer(row));
+        host.command(plugin, OPEN, args).unwrap();
+        host.deliver(plugin).unwrap();
+        host.take_done()
+    };
+    // Of the middle match, which the last does not take the place of.
+    let opened = given(&mut host, &mut plugin, 0, 2);
+    assert_eq!(current(&opened), [((0, 2), (5, 2))]);
+    assert_eq!(plugin.find.as_ref().unwrap().text, "needle");
+    // Open, of another match, searched anew.
+    let again = given(&mut host, &mut plugin, 2, 0);
+    assert_eq!(current(&again), [((2, 0), (7, 0))]);
+}
+
+#[test]
 fn command_f_on_an_open_bar_gives_its_field_the_keys_and_a_step_opens_a_closed_one() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     // A step of no bar opens it, of no text yet.

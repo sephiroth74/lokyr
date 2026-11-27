@@ -27,7 +27,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
-| `search.open` | Edit › Find… | ⌘F | Opens the bar at the pane that has the keyboard |
+| `search.open` | Edit › Find… | ⌘F | Opens the bar at the pane that has the keyboard; of its arguments `text`, `column` and `row`, of that text, the match at that cell its current one, as Find in All Tabs opens it · not released yet |
 | `search.next` | Edit › Find Next | ⌘G | Makes the next match, the one above, the current one; it opens the bar while it is closed. Return in the bar does the same |
 | `search.previous` | Edit › Find Previous | ⇧⌘G | Makes the previous match, the one below, the current one. ⇧Return in the bar does the same |
 

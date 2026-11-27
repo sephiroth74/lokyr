@@ -106,6 +106,8 @@ fn starting_opens_a_window_under_the_menus_of_the_commands() {
             "Find Next cmd+g",
             "Find Previous shift+cmd+g",
             "-",
+            "Find in All Tabs… shift+cmd+f",
+            "-",
             "Emoji & Symbols ctrl+cmd+ "
         ]
     );
@@ -236,6 +238,8 @@ fn the_menus_follow_the_keys_of_the_config() {
             "Find Next cmd+g",
             "Find Previous shift+cmd+g",
             "-",
+            "Find in All Tabs… shift+cmd+f",
+            "-",
             "Emoji & Symbols ctrl+cmd+ "
         ]
     );
@@ -325,7 +329,7 @@ fn the_built_in_plugins_bind_the_commands_that_are_there_alone() {
         .filter(|command| app.commands.get(command).is_none())
         .collect();
     assert_eq!(missing, Vec::<&str>::new());
-    assert_eq!(app.keymap.bindings().len(), 145);
+    assert_eq!(app.keymap.bindings().len(), 146);
 }
 
 #[test]
@@ -616,6 +620,8 @@ fn the_menus_take_the_config_s_language_and_change_with_it() {
             "Trova… cmd+f",
             "Trova successivo cmd+g",
             "Trova precedente shift+cmd+g",
+            "-",
+            "Trova in tutte le schede… shift+cmd+f",
             "-",
             "Emoji e simboli ctrl+cmd+ "
         ]

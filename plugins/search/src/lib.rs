@@ -17,7 +17,9 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind as ParamKind, Param, Value,
+};
 use lokyr_plugin_sdk::host::{PaneId, SearchCase, SearchMatch, SearchQuery};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -298,6 +300,9 @@ struct Find {
     /// The count's text as the bar showed it last, which a new search
     /// leaves until it tells something sure.
     shown: String,
+    /// The first cell of the match that its search makes the current one,
+    /// as the command that opened it asked, until a part tells it.
+    wanted: Option<(u16, i64)>,
 }
 
 impl Find {
@@ -318,6 +323,7 @@ impl Find {
             invalid: false,
             filling: false,
             shown: String::new(),
+            wanted: None,
         }
     }
 
@@ -671,6 +677,30 @@ impl Plugin for Search {
             (NEXT, "Find Next"),
             (PREVIOUS, "Find Previous"),
         ] {
+            // The bar's text, and the first cell of the match that its
+            // search makes the current one, of a column of 0 or more, as
+            // Find in All Tabs opens it.
+            let params = if name == OPEN {
+                vec![
+                    Param {
+                        name: "text".to_owned(),
+                        kind: ParamKind::String,
+                        default: Some(Value::String(String::new())),
+                    },
+                    Param {
+                        name: "column".to_owned(),
+                        kind: ParamKind::Integer,
+                        default: Some(Value::Integer(-1)),
+                    },
+                    Param {
+                        name: "row".to_owned(),
+                        kind: ParamKind::Integer,
+                        default: Some(Value::Integer(0)),
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
@@ -682,7 +712,7 @@ impl Plugin for Search {
                     Capability::Decorate,
                     Capability::PaneView,
                 ],
-                params: Vec::new(),
+                params,
                 when: None,
             })?;
         }
@@ -697,9 +727,21 @@ impl Plugin for Search {
         Some(include_str!("../search.schema.json").into())
     }
 
-    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         match name {
-            OPEN => self.open(cx),
+            OPEN => {
+                let text = match args.get("text") {
+                    Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+                    _ => None,
+                };
+                let wanted = match (args.get("column"), args.get("row")) {
+                    (Some(Value::Integer(column)), Some(Value::Integer(row))) => {
+                        u16::try_from(*column).ok().map(|column| (column, *row))
+                    }
+                    _ => None,
+                };
+                self.open(cx, text, wanted)
+            }
             NEXT => self.step(cx, Step::Up),
             PREVIOUS => self.step(cx, Step::Down),
             _ => Ok(()),
@@ -931,12 +973,29 @@ impl Search {
     /// it searches again, of its options; open already at the pane, its
     /// field takes the keys again, its text selected; at another pane, it
     /// moves there, its search ending.
-    fn open(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+    fn open(
+        &mut self,
+        cx: &mut Cx<'_>,
+        text: Option<String>,
+        wanted: Option<(u16, i64)>,
+    ) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
-        if let Some(find) = &self.find {
+        if let Some(find) = &mut self.find {
             if find.pane == pane {
+                // Of a text given, searched anew in place of its own.
+                // Of a text given, searched anew in place of its own, its
+                // field filled as it takes the keys, or at once where its
+                // view is there.
+                if let Some(text) = text {
+                    find.text.clone_from(&text);
+                    find.wanted = wanted;
+                    find.filling = true;
+                    find.revision += 1;
+                    let _ = cx.set_text(bar(), FIELD, &text, find.revision);
+                    self.search(cx)?;
+                }
                 return cx.focus_node(bar(), FIELD);
             }
             cx.close_panel(BAR)?;
@@ -960,7 +1019,8 @@ impl Search {
         // Its field, of no revision yet, takes its text as it takes the
         // keys, once the bar's view is there.
         let mut find = Find::new(pane, self.options);
-        find.text = self.recent.first().cloned().unwrap_or_default();
+        find.text = text.unwrap_or_else(|| self.recent.first().cloned().unwrap_or_default());
+        find.wanted = wanted;
         find.filling = true;
         self.find = Some(find);
         self.search(cx)
@@ -1024,7 +1084,15 @@ impl Search {
         find.done = done;
         let mut show = !find.told;
         find.told = true;
-        if find.current.is_none()
+        // The match that the command that opened the bar asked for, as its
+        // part comes; else the last of the first part of any.
+        if let Some(wanted) = find.wanted
+            && let Some(found) = matches.iter().find(|found| found.first == wanted)
+        {
+            find.current = Some(*found);
+            find.wanted = None;
+            show = true;
+        } else if find.current.is_none()
             && let Some(last) = matches.last()
         {
             find.current = Some(*last);
@@ -1049,7 +1117,7 @@ impl Search {
     fn step(&mut self, cx: &mut Cx<'_>, toward: Step) -> Result<(), Error> {
         let (wrap, all) = (self.settings.wrap_around, self.settings.highlight_all);
         let Some(find) = &mut self.find else {
-            return self.open(cx);
+            return self.open(cx, None, None);
         };
         let Some(search) = find.search else {
             return Ok(());
