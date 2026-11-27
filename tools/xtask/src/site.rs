@@ -2480,7 +2480,7 @@ mod tests {
     }
 
     #[test]
-    fn the_home_s_structured_data_is_of_the_latest_release() {
+    fn the_home_s_structured_data_is_of_the_workspace_s_version() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let home = fs::read_to_string(root.join("site/public/index.html")).unwrap();
         let start = r#"<script type="application/ld+json">"#;
@@ -2494,23 +2494,19 @@ mod tests {
             .iter()
             .find(|node| node["@type"] == "SoftwareApplication")
             .expect("a SoftwareApplication");
-        // The feed's latest release, which `just release` writes as the
-        // release is published.
-        let feed = fs::read_to_string(root.join("site/public/appcast.xml")).unwrap();
-        let version = regex::Regex::new(r"<sparkle:shortVersionString>([^<]+)<")
-            .unwrap()
-            .captures_iter(&feed)
-            .map(|found| found[1].to_owned())
-            .max_by_key(|version| {
-                version
-                    .split('.')
-                    .map(|part| part.parse::<u64>().unwrap_or(0))
-                    .collect::<Vec<_>>()
-            })
-            .expect("a release in the feed");
+        // The workspace's version, the latest release's until the commit
+        // that prepares the next one raises it with the home, as the
+        // release's merge deploys the site.
+        let version = env!("CARGO_PKG_VERSION");
         assert_eq!(
             app["softwareVersion"], version,
-            "the home's JSON-LD names another version than the feed's latest"
+            "the home's JSON-LD names another version than the workspace's"
+        );
+        assert!(
+            home.contains(&format!(
+                r#"<a class="pill" href="docs/releases/{version}.html">"#
+            )),
+            "the home's pill tells another release than the workspace's version"
         );
         assert_eq!(
             app["releaseNotes"],
