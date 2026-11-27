@@ -1207,6 +1207,89 @@ fn the_find_bar_s_filter_follows_output_after_a_resize_and_a_reset() {
 }
 
 #[test]
+fn a_search_of_the_alternate_screen_shows_no_filter_and_leaves_the_shell_s_view_whole() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nother line\\n'; echo ready; read line; printf '\\033[?1049h'; echo 'alt needle'; read line; printf '\\033[?1049l'; echo done; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    // The filter turned on of a search of the shell's lines, which the
+    // plugin keeps, then the bar closed.
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["a needle"]);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app).iter().any(|line| line == "other line")
+    });
+    // A program's own screen: the bar of its recent text searches it, of
+    // no filter's toggle.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "alt needle")
+    });
+    command(&mut fake, &mut app, window, "search.open");
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    frames(&mut fake, &mut app, window);
+    let has_toggle = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+            .is_some_and(|view| view.surface.tree.by_key(&"filter".into()).is_some())
+    };
+    assert!(
+        !has_toggle(&app),
+        "the filter's toggle on the alternate screen"
+    );
+    // The program ends, the bar open: the shell's lines all show, none
+    // hidden by a filter of the other screen's matches.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+    frames(&mut fake, &mut app, window);
+    let shown = lines(&app);
+    assert!(
+        ["a needle", "other line", "ready", "done"]
+            .iter()
+            .all(|line| shown.iter().any(|shown| shown == line)),
+        "{shown:?}"
+    );
+}
+
+#[test]
 fn a_search_that_a_resize_cuts_short_starts_again_to_its_whole_count() {
     let drawing = Drawing::new(FontConfig::default()).unwrap();
     let mut fake = Fake::default();

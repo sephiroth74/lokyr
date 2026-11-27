@@ -276,10 +276,19 @@ impl Search {
 
     /// Shows its matches' rows alone in its pane's view of `terminal`,
     /// locked, or the view as it was, as `filter` says, the rows that new
-    /// output brings searched as they come meanwhile. Whether the view
-    /// changed.
+    /// output brings searched as they come meanwhile. A search of the
+    /// alternate screen shows no filter, as the filter shows the primary
+    /// screen's rows, which its matches are none of, so that the pane's
+    /// view is not emptied as the program ends; off, it leaves another
+    /// search's filter as it is. Whether the view changed.
     pub(super) fn filter(&mut self, terminal: &mut Terminal, filter: bool) -> bool {
+        if filter && self.follow.alternate {
+            return false;
+        }
         self.filtering = filter;
+        if !filter && terminal.filter() != Some(self.id) {
+            return false;
+        }
         terminal.set_filter(filter.then_some(self.id))
     }
 

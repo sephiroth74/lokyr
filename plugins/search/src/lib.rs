@@ -382,6 +382,10 @@ pub struct BarView {
     pub count: String,
     /// Whether its field holds text, which its clear button empties.
     pub filled: bool,
+    /// Whether its pane shows the alternate screen, as a full-screen
+    /// program's, of no scrollback, whose rows the filter shows none of:
+    /// its toggle hidden.
+    pub alternate: bool,
 }
 
 /// The texts of the find bar, in the language shown: its field's
@@ -521,7 +525,7 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             text_size: Some(TextSize::Small),
             ..Style::default()
         });
-    let field = Node::container(vec![
+    let mut parts = vec![
         plain(
             Node::icon_button("magnifying-glass").key(PAST),
             IN_FIELD,
@@ -547,37 +551,42 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             options.regex,
             &texts.regex,
         ),
-        plain(
+    ];
+    // The filter, of the primary screen's rows, does nothing on the
+    // alternate screen's.
+    if !view.alternate {
+        parts.push(plain(
             Node::toggle("filter", options.filter).key(FILTER),
             IN_FIELD,
             options.filter,
             &texts.filter,
-        ),
-        clear(view.filled, &texts.clear),
-    ])
-    .layout(Layout {
-        width: Length::Points(FIELD_WIDTH),
-        min_width: Length::Points(FIELD_WIDTH),
-        gap: 1.0,
-        padding: Edges::all(2.0),
-        align: Align::Center,
-        ..Layout::default()
-    })
-    .style(Style {
-        background: Some(Token::from("field.bg")),
-        border: Some(Border {
-            color: Token::from("field.border"),
-            width: 1.0,
-        }),
-        // Of a text field's rounded corners, rather than a search field's
-        // capsule, within the bar's own rounded box.
-        radius: 6.0,
-        // The ring of its text's focus round the whole field, and the
-        // I-beam over it, but over its buttons.
-        holds_ring: true,
-        pointer: Some(PointerShape::Text),
-        ..Style::default()
-    });
+        ));
+    }
+    parts.push(clear(view.filled, &texts.clear));
+    let field = Node::container(parts)
+        .layout(Layout {
+            width: Length::Points(FIELD_WIDTH),
+            min_width: Length::Points(FIELD_WIDTH),
+            gap: 1.0,
+            padding: Edges::all(2.0),
+            align: Align::Center,
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("field.bg")),
+            border: Some(Border {
+                color: Token::from("field.border"),
+                width: 1.0,
+            }),
+            // Of a text field's rounded corners, rather than a search field's
+            // capsule, within the bar's own rounded box.
+            radius: 6.0,
+            // The ring of its text's focus round the whole field, and the
+            // I-beam over it, but over its buttons.
+            holds_ring: true,
+            pointer: Some(PointerShape::Text),
+            ..Style::default()
+        });
     let count = Node::container(vec![Node::text(view.count.as_str()).key(COUNT).style(
         Style {
             color: Some(Token::from("text.secondary")),
@@ -757,10 +766,14 @@ impl Plugin for Search {
             if let Some(count) = count(cx, find) {
                 find.shown = count;
             }
+            let alternate = cx
+                .viewport(find.pane)
+                .is_ok_and(|viewport| viewport.alternate);
             let view = BarView {
                 options: find.options,
                 count: find.shown.clone(),
                 filled: !find.text.is_empty(),
+                alternate,
             };
             let texts = texts(cx);
             return Some(find_bar(&view, &texts));
@@ -984,7 +997,6 @@ impl Search {
         };
         if let Some(find) = &mut self.find {
             if find.pane == pane {
-                // Of a text given, searched anew in place of its own.
                 // Of a text given, searched anew in place of its own, its
                 // field filled as it takes the keys, or at once where its
                 // view is there.
