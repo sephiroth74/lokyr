@@ -1149,6 +1149,93 @@ fn the_find_bar_s_filter_shows_the_matching_lines_alone_as_output_comes_and_esca
 }
 
 #[test]
+fn the_find_bar_s_filter_follows_output_after_a_resize_and_a_reset() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nnothing\\nneedle two\\n'; echo ready; read line; echo 'late needle'; read line; printf '\\033c'; echo 'reset needle'; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two"]
+    });
+    // A resize renumbers the rows: the filter follows new output still.
+    fake.send(&mut app, window, WindowEvent::Resized(points(560.0, 420.0)));
+    frames(&mut fake, &mut app, window);
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two", "late needle"]
+    });
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| count.ends_with(" of 3"))
+    });
+    // A reset takes the rows and the matches: the search starts again, its
+    // filter on, of the new output.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["reset needle"]);
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| count.ends_with(" of 1"))
+    });
+}
+
+#[test]
+fn a_search_that_a_resize_cuts_short_starts_again_to_its_whole_count() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("seq 1 6000 | sed 's/^/needle /'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    // Resized while its parts come: the rows renumbered, it searches them
+    // all again rather than stop at the parts that it found.
+    fake.send(&mut app, window, WindowEvent::Resized(points(560.0, 420.0)));
+    fake.send(&mut app, window, WindowEvent::Resized(points(620.0, 460.0)));
+    let whole = |count: &str| count.replace(',', "").ends_with(" of 6000");
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| whole(&count))
+    });
+}
+
+#[test]
 fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_its_choice() {
     let none = Modifiers::NONE;
     let drawing = Drawing::new(FontConfig::default()).unwrap();

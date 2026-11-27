@@ -287,6 +287,12 @@ impl Terminal {
         self.filter
     }
 
+    /// Whether the terminal keeps the matches of the search `id`, of none
+    /// too, since its first part: a reset, as RIS's, lets them go.
+    pub fn keeps_matches(&self, id: u64) -> bool {
+        self.matches.iter().any(|kept| kept.id == id)
+    }
+
     /// The runs of the primary screen's rows that the filter of the search
     /// `id` hides, by their indexes, in their order: those between the rows
     /// that its matches cover, from their first rows to their last, of the
