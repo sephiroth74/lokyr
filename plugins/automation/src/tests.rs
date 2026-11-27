@@ -716,3 +716,76 @@ fn a_window_that_never_opened_lets_another_s_window_go_of_its_command() {
     );
     assert_eq!(answer(&host, 24), None);
 }
+
+#[test]
+fn a_shortcut_s_request_past_its_deadline_fails_and_a_later_answer_does_it_not() {
+    let (mut host, mut plugin) = asking_host();
+    let shortcuts = AutomationClient {
+        waits: true,
+        ..client()
+    };
+    let typed = || AutomationRequest::SendText {
+        pane: None,
+        text: "ls\r".to_owned(),
+    };
+    ask_of(&mut host, &mut plugin, 30, &shortcuts, typed());
+    assert_eq!(answer(&host, 30), None);
+    host.take_done();
+    // Its deadline, a second before the host's, passes: it fails.
+    host.advance(std::time::Duration::from_millis(WAITS_FOR_ANSWER_MS + 1));
+    host.deliver(&mut plugin).unwrap();
+    assert!(
+        matches!(answer(&host, 30), Some(AutomationAnswer::Error { ref message, .. }) if message.contains("waited too long")),
+        "{:?}",
+        answer(&host, 30)
+    );
+    // The user allows the shortcuts later: the request that failed types
+    // nothing, a new one runs.
+    choose(&mut host, &mut plugin, ALLOW);
+    assert!(
+        host.take_done()
+            .iter()
+            .all(|done| !matches!(done, Request::SendText { .. })),
+        "the late request typed"
+    );
+    ask_of(&mut host, &mut plugin, 31, &shortcuts, typed());
+    assert!(
+        host.take_done()
+            .iter()
+            .any(|done| matches!(done, Request::SendText { .. }))
+    );
+}
+
+#[test]
+fn the_requests_that_wait_for_the_answer_are_bounded_and_an_answer_ends_their_timers() {
+    let (mut host, mut plugin) = asking_host();
+    let shortcuts = AutomationClient {
+        waits: true,
+        ..client()
+    };
+    let read = || AutomationRequest::PaneText {
+        pane: Some(PaneId(1)),
+        selection: false,
+    };
+    for id in 0..MOST_WAITING as u64 {
+        ask_of(&mut host, &mut plugin, id, &shortcuts, read());
+        assert_eq!(answer(&host, id), None);
+    }
+    assert_eq!(host.timers().len(), MOST_WAITING);
+    // One more fails at once.
+    let past = MOST_WAITING as u64;
+    ask_of(&mut host, &mut plugin, past, &shortcuts, read());
+    assert!(matches!(
+        answer(&host, past),
+        Some(AutomationAnswer::Error { .. })
+    ));
+    // The answer does them all, their timers ended.
+    choose(&mut host, &mut plugin, ALLOW);
+    for id in 0..past {
+        assert_eq!(
+            answer(&host, id),
+            Some(AutomationAnswer::Text("hello".to_owned()))
+        );
+    }
+    assert!(host.timers().is_empty());
+}

@@ -140,7 +140,7 @@ Lokyr tells apps apart by their code signature, not by the names that they give,
 - **A program that runs in one of Lokyr's own terminals** asks for itself, and Lokyr's answer holds in that terminal until its shell exits, without being remembered after Lokyr quits. The same program run again from the same place, such as `osascript` typed at the prompt or run by the same kind of script, takes the answer. Another terminal, or a program that another program runs, asks again, so that a script in one terminal can't drive your other terminals, a root shell or an ssh session, without your answer.
 - **Shortcuts** asks once for all your shortcuts, Siri and Spotlight.
 
-While the question waits for your answer, a script's request fails with "Lokyr asks whether … may control it": answer, then run the script again. A shortcut waits for your answer.
+While the question waits for your answer, a script's request fails with "Lokyr asks whether … may control it": answer, then run the script again. A shortcut waits for your answer for close to two minutes, then fails, and your later answer doesn't run it: run the shortcut again.
 
 > [!IMPORTANT]
 > Allow only the apps you trust: an app that controls Lokyr can run any command as you. For an app of another developer's, macOS asks you too before its first command, and System Settings › Privacy & Security › Automation lists the apps you allowed there.

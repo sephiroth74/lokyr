@@ -26,7 +26,7 @@ use std::time::Duration;
 use lokyr_plugin_sdk::automation::{
     ANSWER_WITHIN_MS, AutomationAnswer, AutomationClient, AutomationCommand, AutomationEdge,
     AutomationPane, AutomationRequest, AutomationTab, AutomationTarget, AutomationWindow,
-    LONGEST_TEXT,
+    LONGEST_TEXT, QUESTION_WITHIN_MS,
 };
 use lokyr_plugin_sdk::command::{Args, Code, Error, Kind, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
@@ -57,6 +57,15 @@ const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
 /// The most answers of programs in Lokyr's own terminals kept, past which
 /// the oldest is forgotten, and its program asked again.
 const MOST_TERMINAL_ANSWERS: usize = 256;
+
+/// The most requests that wait for their clients' answers to the question,
+/// past which a new one fails at once, as each holds a timer of its own.
+const MOST_WAITING: usize = 16;
+
+/// How long a request waits for its client's answer, in milliseconds: a
+/// second less than the host waits, past which the host fails it, so that
+/// an answer that comes later never does it.
+const WAITS_FOR_ANSWER_MS: u64 = QUESTION_WITHIN_MS - 1_000;
 
 /// The plugin of the automation.
 #[derive(Debug, Default)]
@@ -96,13 +105,15 @@ struct Opening {
 }
 
 /// A request that waits for its client's answer to the question: its id,
-/// its client, what it asks and the window in front as it came.
+/// its client, what it asks, the window in front as it came, and the timer
+/// of its deadline, past which it fails and an answer does it no more.
 #[derive(Clone, Debug, PartialEq)]
 struct Waiting {
     id: u64,
     client: AutomationClient,
     request: AutomationRequest,
     front: Option<WindowId>,
+    timer: u64,
 }
 
 impl Plugin for Automation {
@@ -130,8 +141,12 @@ impl Plugin for Automation {
                     }
                 }
                 // A window that never opened, as the host failed its request:
-                // the next window that opens is none of its.
-                Event::Timer { id } => self.opening.retain(|opening| opening.timer != *id),
+                // the next window that opens is none of its; a request that
+                // waited for its client's answer past its deadline fails.
+                Event::Timer { id } => {
+                    self.opening.retain(|opening| opening.timer != *id);
+                    self.late(cx, *id);
+                }
                 Event::Chosen { id, button }
                     if self.question.as_ref().is_some_and(|(asked, _)| asked == id) =>
                 {
@@ -169,12 +184,10 @@ impl Automation {
             Some(false) => answer_once(cx, id, AutomationAnswer::of_error(&refused(client))),
             None => {
                 if client.waits {
-                    self.waiting.push(Waiting {
-                        id,
-                        client: client.clone(),
-                        request: request.clone(),
-                        front,
-                    });
+                    if let Err(error) = self.wait(cx, id, client, request, front) {
+                        answer_once(cx, id, AutomationAnswer::of_error(&error));
+                        return;
+                    }
                 } else {
                     answer_once(cx, id, AutomationAnswer::of_error(&asking(client)));
                 }
@@ -191,6 +204,58 @@ impl Automation {
                 }
             }
         }
+    }
+
+    /// Keeps `request` of the id `id`, of `client`, waiting for the client's
+    /// answer to the question, until its deadline; refused past
+    /// [`MOST_WAITING`] requests that wait, or of no timer.
+    fn wait(
+        &mut self,
+        cx: &mut Cx<'_>,
+        id: u64,
+        client: &AutomationClient,
+        request: &AutomationRequest,
+        front: Option<WindowId>,
+    ) -> Result<(), Error> {
+        if self.waiting.len() >= MOST_WAITING {
+            return Err(Error::new(
+                Code::Unavailable,
+                format!(
+                    "{MOST_WAITING} requests wait for the answer whether they may control Lokyr: answer, then try again"
+                ),
+            ));
+        }
+        let timer = cx.start_timer(Duration::from_millis(WAITS_FOR_ANSWER_MS), false)?;
+        self.waiting.push(Waiting {
+            id,
+            client: client.clone(),
+            request: request.clone(),
+            front,
+            timer,
+        });
+        Ok(())
+    }
+
+    /// Fails the request that waited for its client's answer of the timer
+    /// `timer`, its deadline passed: an answer that comes later does it no
+    /// more.
+    fn late(&mut self, cx: &mut Cx<'_>, timer: u64) {
+        let Some(at) = self
+            .waiting
+            .iter()
+            .position(|waiting| waiting.timer == timer)
+        else {
+            return;
+        };
+        let waiting = self.waiting.remove(at);
+        let error = Error::new(
+            Code::Failed,
+            format!(
+                "“{}” waited too long for the answer whether it may control Lokyr",
+                waiting.client.name
+            ),
+        );
+        answer_once(cx, waiting.id, AutomationAnswer::of_error(&error));
     }
 
     /// Does what `request` of the id `id` asks, of a client that the user
@@ -396,6 +461,7 @@ impl Automation {
             .partition(|waiting| waiting.client.id == client.id);
         self.waiting = later;
         for waiting in now {
+            let _ = cx.cancel_timer(waiting.timer);
             if allowed {
                 self.front = waiting.front;
                 self.run(cx, waiting.id, waiting.request);
@@ -412,6 +478,7 @@ impl Automation {
             .partition(|waiting| waiting.client.id == client.id);
         self.waiting = later;
         for waiting in now {
+            let _ = cx.cancel_timer(waiting.timer);
             answer_once(cx, waiting.id, AutomationAnswer::of_error(error));
         }
     }
