@@ -65,7 +65,7 @@ Merge the pull request with a merge commit. Once you approve it, `publish`:
 4. Asks for a run of the site of `main`, which serves the new release's feed. The merge's own push deploys nothing, so that no copy of the app sees an update before its DMG is public. The site's build, and the release's steps that read the feed, fail rather than go on with an older feed when GitHub doesn't answer, or when the latest release lacks its feed.
 5. Pushes the cask to the Homebrew tap.
 
-A step that fails stops the rest, and the run's summary lists what is left to do by hand.
+A step that fails stops the rest, and the run's summary lists what is left to do by hand. You can also run the failed jobs again: a release already published at the merge, and a cask already pushed, pass unchanged.
 
 ## Rehearse a release
 
@@ -107,4 +107,4 @@ just release X.Y.Z
 cargo xtask release publish X.Y.Z --target <the merge commit> --built <the release's last commit>
 ```
 
-`just release` runs `check`, `build` and `draft`, and each one runs alone as `cargo xtask release <step> X.Y.Z`. Then deploy the site, `gh workflow run site.yml --ref main`, and update the cask: `cargo xtask cask X.Y.Z`, then commit and push the tap.
+`just release` runs `check`, `build` and `draft`, and each one runs alone as `cargo xtask release <step> X.Y.Z`. A draft that the CI made is replaced. Then deploy the site, `gh workflow run site.yml --ref main`, and update the cask: `cargo xtask cask X.Y.Z`, then commit and push the tap.

@@ -385,6 +385,11 @@ jobs:
           git -C tap config user.name "github-actions[bot]"
           git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C tap add Casks/lokyr.rb
+          # A run again after the cask was pushed finds it as it is.
+          if git -C tap diff --cached --quiet; then
+            echo "The tap's cask is the release's already."
+            exit 0
+          fi
           git -C tap commit --message "lokyr $RELEASE_VERSION"
           if [ -n "${REHEARSAL:-}" ]; then
             git -C tap push origin "HEAD:refs/heads/test/lokyr-$RELEASE_VERSION-$GITHUB_RUN_ID"
@@ -411,13 +416,17 @@ jobs:
             echo "### v$RELEASE_VERSION: what is left by hand"
             echo
             if [ "$TREE" != success ]; then
-              echo "- The merge does not hold the release's build: draft it again of the merge, \`cargo xtask release draft $RELEASE_VERSION\`, then publish it."
+              echo "- The merge does not hold the release's build, as $BASE holds changes that the release's branch lacks: check out the merge, \`git checkout $MERGE\`, build and draft the release again of it, \`cargo xtask release build $RELEASE_VERSION\` then \`cargo xtask release draft $RELEASE_VERSION\`, and publish it, \`cargo xtask release publish $RELEASE_VERSION --target $MERGE --built $MERGE${REHEARSAL:+ --rehearsal}\`."
             fi
             if [ "$RELEASE" != success ]; then
-              echo "- Publish the draft of the head that the release built, once its \`build\` and \`draft\` ran of it: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE --built $HEAD_SHA\`. The step's log tells why it was refused."
+              echo "- Publish the draft of the head that the release built, once its \`build\` and \`draft\` ran of it: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE --built $HEAD_SHA${REHEARSAL:+ --rehearsal}\`. The step's log tells why it was refused. Or run the failed jobs again: a release published already at the merge passes."
             fi
             if [ "$SITE" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
-              echo "- Deploy the site: \`gh workflow run site.yml --ref main\`."
+              if [ -n "${REHEARSAL:-}" ]; then
+                echo "- Build the site of the rehearsal, which deploys nothing: \`gh workflow run site.yml --ref $BASE -f deploy=false\`."
+              else
+                echo "- Deploy the site: \`gh workflow run site.yml --ref main\`."
+              fi
             fi
             if [ "$TAP" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
               echo "- The cask: \`cargo xtask cask $RELEASE_VERSION\` of the release's DMG in target, then commit and push the tap."

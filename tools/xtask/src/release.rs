@@ -306,15 +306,15 @@ impl Release {
                 .is_ok_and(|status| status.success()),
             "GitHub does not have the commit {commit}: push it first"
         );
+        // A draft, as the CI's, which the release's draft replaces, may be
+        // there; a published release may not.
         let tag = self.tag();
-        let released = Command::new("gh")
-            .args(["release", "view", &tag, "--repo", REPOSITORY])
-            .output()
-            .context("asking GitHub for the release")?;
-        ensure!(
-            !released.status.success(),
-            "{tag} has a release on GitHub already"
-        );
+        if let Some(viewed) = release_of(&tag)? {
+            ensure!(
+                viewed.is_draft,
+                "{tag} has a release on GitHub already: release another version"
+            );
+        }
         // The number that the build will take, of the commit's moment.
         let number: u64 = bundle::version::stamp(bundle::build_moment(&self.root)?)
             .parse()
@@ -454,17 +454,13 @@ impl Release {
     /// fails of a published release of that tag.
     fn replace_draft(&self) -> Result<()> {
         let tag = self.tag();
-        let told = Command::new("gh")
-            .args(["release", "view", &tag, "--repo", REPOSITORY])
-            .args(["--json", "isDraft", "--jq", ".isDraft"])
-            .output()
-            .context("looking for the release on GitHub")?;
-        // None of that tag: `gh` fails, as it finds no release.
-        if !told.status.success() {
+        let Some(viewed) = release_of(&tag)? else {
             return Ok(());
-        }
-        let draft = String::from_utf8_lossy(&told.stdout).trim() == "true";
-        ensure!(draft, "{tag} is released already: release another version");
+        };
+        ensure!(
+            viewed.is_draft,
+            "{tag} is released already: release another version"
+        );
         println!("release: replacing {tag}'s draft");
         status(
             Command::new("gh").args(["release", "delete", &tag, "--repo", REPOSITORY, "--yes"]),
@@ -531,17 +527,20 @@ impl Release {
     /// The draft, a draft alone, of the built commit if told and of its
     /// assets, moved to the target if any, and published, its tag made
     /// there: a candidate a pre-release, a release the latest; a
-    /// rehearsal's a pre-release, never the latest.
+    /// rehearsal's a pre-release, never the latest. A release published at
+    /// the target already passes, unchanged, as a publishing run again
+    /// after a later step failed.
     fn publish(&self) -> Result<()> {
         let tag = self.tag();
-        let told = output(
-            Command::new("gh")
-                .args(["release", "view", &tag, "--repo", REPOSITORY])
-                .args(["--json", "isDraft,targetCommitish,assets"]),
-            "looking for the release's draft",
-        )?;
-        let viewed: Viewed =
-            serde_json::from_str(&told).context("reading what GitHub tells of the draft")?;
+        let viewed = release_of(&tag)?
+            .with_context(|| format!("{tag} has no draft: draft the release first"))?;
+        if !viewed.is_draft && self.target.as_deref() == Some(viewed.target_commitish.as_str()) {
+            println!(
+                "release: {tag} is published already, at {}: nothing to do",
+                viewed.target_commitish
+            );
+            return Ok(());
+        }
         publishable(
             &viewed,
             &self.version,
@@ -567,7 +566,8 @@ impl Release {
         ]);
         command.args(publish_flags(self.is_candidate(), self.rehearsal));
         status(&mut command, "publishing the release")?;
-        if !self.is_candidate() {
+        // A rehearsal's leaves the real release's candidates as they are.
+        if !self.is_candidate() && !self.rehearsal {
             self.delete_candidates_drafts();
         }
         println!(
@@ -580,6 +580,38 @@ impl Release {
         );
         Ok(())
     }
+}
+
+/// The release of `tag` on GitHub, as [`Viewed`] tells it; none where
+/// GitHub has none of that tag. Fails of `gh`'s other failures, as of the
+/// network, rather than take them for no release.
+fn release_of(tag: &str) -> Result<Option<Viewed>> {
+    let told = Command::new("gh")
+        .args(["release", "view", tag, "--repo", REPOSITORY])
+        .args(["--json", "isDraft,targetCommitish,assets"])
+        .output()
+        .context("running gh")?;
+    viewed_of(
+        told.status.success(),
+        &String::from_utf8_lossy(&told.stdout),
+        &String::from_utf8_lossy(&told.stderr),
+    )
+}
+
+/// The release that `gh release view` told, of whether it `succeeded`, its
+/// `stdout` and its `stderr`, as [`release_of`] gives it.
+fn viewed_of(succeeded: bool, stdout: &str, stderr: &str) -> Result<Option<Viewed>> {
+    if succeeded {
+        return serde_json::from_str(stdout)
+            .map(Some)
+            .context("reading what GitHub tells of the release");
+    }
+    ensure!(
+        stderr.trim() == "release not found",
+        "asking GitHub for the release failed: {}",
+        stderr.trim()
+    );
+    Ok(None)
 }
 
 /// What `gh release view --json isDraft,targetCommitish,assets` tells of
@@ -912,6 +944,23 @@ mod tests {
         assert!(parse(&args(""), "1.6.0").is_err());
         assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());
         assert!(parse(&args("check --fast"), "1.6.0").is_err());
+    }
+
+    #[test]
+    fn gh_s_failure_is_told_apart_from_no_release() {
+        let told =
+            r#"{"assets":[{"name":"Lokyr-1.6.0.dmg"}],"isDraft":true,"targetCommitish":"abc"}"#;
+        let viewed = viewed_of(true, told, "").unwrap().unwrap();
+        assert!(viewed.is_draft);
+        assert_eq!(viewed.target_commitish, "abc");
+        assert_eq!(viewed.assets[0].name, "Lokyr-1.6.0.dmg");
+        assert!(
+            viewed_of(false, "", "release not found\n")
+                .unwrap()
+                .is_none()
+        );
+        assert!(viewed_of(false, "", "HTTP 502: Bad Gateway").is_err());
+        assert!(viewed_of(false, "", "error connecting to api.github.com").is_err());
     }
 
     #[test]
