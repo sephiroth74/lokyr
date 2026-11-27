@@ -126,6 +126,41 @@ impl Terminal {
         }
     }
 
+    /// Lets go of the matches of the search `id` that start at the row
+    /// numbered `from` or below it, as a search reads those rows again, the
+    /// screen's that a program may have written over among them; how many
+    /// of its matches it keeps. Its parts are looked at from the last up,
+    /// as far as one whose matches start above `from`, as the others' do.
+    pub fn drop_matches_from(&mut self, id: u64, from: i64) -> usize {
+        let Some(at) = self.matches.iter().position(|kept| kept.id == id) else {
+            return 0;
+        };
+        let mut parts = std::mem::take(&mut self.matches[at].parts);
+        let mut gone = Vec::new();
+        for spans in parts.values_mut().rev() {
+            let Some(last) = spans.last() else {
+                continue;
+            };
+            if self.order(last).0 < from {
+                break;
+            }
+            let (kept, below): (Vec<Span>, Vec<Span>) = std::mem::take(spans)
+                .into_iter()
+                .partition(|span| self.order(span).0 < from);
+            *spans = kept;
+            gone.extend(below);
+        }
+        parts.retain(|_, spans| !spans.is_empty());
+        for (start, end, _) in gone {
+            self.unpin_cell(&start);
+            self.unpin_cell(&end);
+        }
+        let kept = parts.values().map(Vec::len).sum();
+        self.matches[at].parts = parts;
+        self.matches_revision += 1;
+        kept
+    }
+
     /// The matches of the search `id`, in reading order, from the one at
     /// `first`, `count` at most, where their cells are now, those whose
     /// cells left gone.
@@ -758,6 +793,24 @@ mod tests {
         let found = terminal.row_number(0) + 4;
         add(&mut terminal, 1, found, &[((0, found), (4, found))]);
         assert_eq!(texts(&mut terminal), ["[⋯ 4]", "found", "[⋯ 1]"]);
+    }
+
+    #[test]
+    fn the_matches_from_a_row_go_and_their_pins_with_them() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "a\r\nb\r\nc\r\nd\r\ne");
+        let first = terminal.row_number(0);
+        let row = |n: i64| ((0, first + n), (0, first + n));
+        add(&mut terminal, 1, first, &[row(0), row(1)]);
+        add(&mut terminal, 1, first + 2, &[row(2), row(3), row(4)]);
+        let pins = terminal.screen_rows().pins();
+        assert_eq!(terminal.drop_matches_from(1, first + 3), 3);
+        assert_eq!(terminal.screen_rows().pins(), pins - 4);
+        assert_eq!(terminal.matches_of(1, 0, 10), [row(0), row(1), row(2)]);
+        // Of every one, and of a search of none.
+        assert_eq!(terminal.drop_matches_from(1, first), 0);
+        assert!(terminal.matches_of(1, 0, 10).is_empty());
+        assert_eq!(terminal.drop_matches_from(9, first), 0);
     }
 
     #[test]

@@ -3689,7 +3689,10 @@ impl Plugins {
         for entry in &mut self.entries {
             let name = &entry.state.name;
             for search in &mut entry.state.searches {
-                for part in search.take() {
+                // Its parts, then, while its filter shows, the rows that new
+                // output brought, as its count.
+                let parts = search.take().into_iter().chain(search.follow());
+                for part in parts.collect::<Vec<_>>() {
                     let event = Event::Searched {
                         id: search.id,
                         pane: search.pane,
@@ -5221,6 +5224,23 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 }
                 let shown = kept.pane;
                 end_lingering(&mut state.lingering, shown, context.workspace);
+            }
+            // The view of the matches' rows alone, or as it was, at the
+            // current match.
+            Asked::FilterMatches { search, filter } => {
+                let Some(kept) = state.searches.iter_mut().find(|kept| kept.id == search) else {
+                    continue;
+                };
+                let Some(found) = context.workspace.pane(PaneId::of(kept.pane.0)) else {
+                    continue;
+                };
+                let current = found.terminal().and_then(|mut terminal| {
+                    kept.filter(&mut terminal, filter);
+                    terminal.current_match(search).0
+                });
+                if let Some((_, (first, _))) = current {
+                    found.show_row(first.1);
+                }
             }
             Asked::ClearScrollback(id) => {
                 if let Some(pane) = pane(id) {
@@ -6976,7 +6996,7 @@ impl Host<'_, '_> {
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
         self.within_writes()?;
         match &request {
-            Asked::ShowMatches { search, .. } => {
+            Asked::ShowMatches { search, .. } | Asked::FilterMatches { search, .. } => {
                 if !self.state.searches.iter().any(|kept| kept.id == *search) {
                     return Err(Error::new(
                         Code::NotFound,

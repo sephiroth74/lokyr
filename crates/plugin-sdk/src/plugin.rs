@@ -625,6 +625,15 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Shows the rows of the plugin's search `search`'s matches alone in its
+    /// pane's view, each run of the rows between them a blank row, the rows
+    /// that new output brings searched as they come, or, of `filter`
+    /// false, the view as it was, at the search's current match: until the
+    /// search ends, which gives the view back too.
+    pub fn filter_matches(&mut self, search: u64, filter: bool) -> Result<(), Error> {
+        self.done(Request::FilterMatches { search, filter })
+    }
+
     /// Ends the plugin's search `search`, at once: it stops, and its
     /// matches go.
     pub fn end_search(&mut self, search: u64) -> Result<(), Error> {
