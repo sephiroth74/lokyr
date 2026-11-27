@@ -30,7 +30,8 @@
 //!   alone, moved to `<commit>`, as the merge of the release's pull request,
 //!   and published, its tag made there, a release the latest; a rehearsal's
 //!   a pre-release, never the latest, so that the feed, the site and the
-//!   updates keep the latest release.
+//!   updates keep the latest release; a release's candidates' drafts left
+//!   deleted.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -454,6 +455,36 @@ impl Release {
         )
     }
 
+    /// Deletes the drafts of the release's candidates, `v<version>-rc.N`,
+    /// that a pull request in draft made and no one published; told and
+    /// passed over of a failure, as the release is out.
+    fn delete_candidates_drafts(&self) {
+        let listed = output(
+            Command::new("gh")
+                .args(["release", "list", "--repo", REPOSITORY, "--limit", "100"])
+                .args(["--json", "tagName,isDraft"])
+                .args(["--jq", ".[] | select(.isDraft) | .tagName"]),
+            "listing the drafts",
+        );
+        let listed = match listed {
+            Ok(listed) => listed,
+            Err(error) => {
+                eprintln!("release: the candidates' drafts are left: {error:#}");
+                return;
+            }
+        };
+        let drafts: Vec<&str> = listed.lines().map(str::trim).collect();
+        for tag in candidates_of(&drafts, &self.version) {
+            match status(
+                Command::new("gh").args(["release", "delete", tag, "--repo", REPOSITORY, "--yes"]),
+                "deleting a candidate's draft",
+            ) {
+                Ok(()) => println!("release: {tag}'s draft deleted"),
+                Err(error) => eprintln!("release: {tag}'s draft is left: {error:#}"),
+            }
+        }
+    }
+
     /// Writes `draft.md` beside the release's assets: the draft's address,
     /// the size of its `dmg` and of its `deltas`, which the CI tells the
     /// release's pull request.
@@ -514,6 +545,9 @@ impl Release {
         ]);
         command.args(publish_flags(self.is_candidate(), self.rehearsal));
         status(&mut command, "publishing the release")?;
+        if !self.is_candidate() {
+            self.delete_candidates_drafts();
+        }
         println!(
             "release: {tag} published{}",
             if self.rehearsal {
@@ -524,6 +558,20 @@ impl Release {
         );
         Ok(())
     }
+}
+
+/// The tags of `tags` that are candidates of the release `version`,
+/// `v<version>-rc.N`.
+fn candidates_of<'a>(tags: &[&'a str], version: &str) -> Vec<&'a str> {
+    let prefix = format!("v{version}-rc.");
+    tags.iter()
+        .copied()
+        .filter(|tag| {
+            tag.strip_prefix(&prefix).is_some_and(|number| {
+                !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+        .collect()
 }
 
 /// The flags of `gh release edit` that publish a release: a rehearsal's a
@@ -677,6 +725,23 @@ fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_s_candidates_are_told_by_their_tags() {
+        let tags = [
+            "v1.6.0-rc.1",
+            "v1.6.0-rc.12",
+            "v1.6.0",
+            "v1.6.0-rc.",
+            "v1.6.0-rc.2x",
+            "v1.60.0-rc.1",
+        ];
+        assert_eq!(
+            candidates_of(&tags, "1.6.0"),
+            ["v1.6.0-rc.1", "v1.6.0-rc.12"]
+        );
+        assert!(candidates_of(&tags, "1.7.0").is_empty());
+    }
 
     #[test]
     fn a_rehearsal_is_never_the_latest() {

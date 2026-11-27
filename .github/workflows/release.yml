@@ -28,6 +28,10 @@ name: Release
 #   failed step stops the rest, and the run's summary tells what is left by
 #   hand.
 #
+# A release's pull request in draft builds and drafts the next candidate,
+# `X.Y.Z-rc.N`, of N one above the last candidate published, in place of its
+# draft at each push, of no feed nor cask; ready for review, the release.
+#
 # A release's pull request into `test/main`, a branch of tests, rehearses
 # it all: the release a pre-release, never the latest, the site built and
 # not deployed, the cask pushed to a branch of tests of the tap, so that the
@@ -35,7 +39,7 @@ name: Release
 on:
   pull_request:
     branches: [main, test/main]
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
   workflow_dispatch:
     inputs:
       version:
@@ -106,15 +110,24 @@ jobs:
       - name: Install the toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      # The version asked, or the crate's.
+      # The version asked, or the crate's; of a pull request in draft, the
+      # crate's next candidate, one above the last one published.
       - name: Tell the version
         id: version
         env:
           VERSION: ${{ inputs.version }}
+          CANDIDATE: ${{ github.event.pull_request.draft }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -z "$VERSION" ]; then
             VERSION="$(cargo metadata --no-deps --format-version 1 \
               | jq -r '.packages[] | select(.name == "xtask") | .version')"
+            if [ "$CANDIDATE" = true ] && [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              last="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+                --json tagName --jq '.[].tagName' \
+                | sed -n "s/^v${VERSION//./\\.}-rc\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -n 1)"
+              VERSION="$VERSION-rc.$(( ${last:-0} + 1 ))"
+            fi
           fi
           # A version's form alone, the whole text, which the environment's
           # file takes.
