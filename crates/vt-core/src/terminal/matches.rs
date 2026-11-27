@@ -446,9 +446,11 @@ impl Terminal {
     }
 
     /// Whether a search shows its current match, which holds the view where
-    /// it is.
+    /// it is; not while a filter shows, whose view follows the list's end
+    /// while it is there, as new output's matching rows come, and stays
+    /// where a scroll or a step to a match put it otherwise.
     pub(super) fn holds_view(&self) -> bool {
-        self.matches.iter().any(|kept| kept.current.is_some())
+        self.filter.is_none() && self.matches.iter().any(|kept| kept.current.is_some())
     }
 
     /// Whether output brings the view back to the screen now: as
@@ -866,6 +868,38 @@ mod tests {
         terminal.drop_matches(1);
         assert_eq!(terminal.filter(), None);
         assert_eq!(texts(&mut terminal), ["r8", "r9", "r10", "r11"]);
+    }
+
+    #[test]
+    fn a_filter_of_a_current_match_follows_new_matches_past_a_screenful() {
+        let mut terminal = Terminal::new(20, 4, Options::default());
+        feed(&mut terminal, "hit0\r\na\r\nhit1\r\nb");
+        let first = terminal.row_number(0);
+        let row = |n: i64| ((0, first + n), (3, first + n));
+        add(&mut terminal, 1, first, &[row(0), row(2)]);
+        // The current match, as a find bar's, which holds an unfiltered
+        // view where it is.
+        terminal.show_matches(1, true, Some(row(0)));
+        assert!(terminal.set_filter(Some(1)));
+        assert_eq!(texts(&mut terminal), ["hit0", "[⋯ 1]", "hit1", "[⋯ 1]"]);
+        // Eight new matching rows, more than the view shows: it follows
+        // them, the newest at its end.
+        for n in 2..10 {
+            feed(&mut terminal, &format!("\r\nhit{n}"));
+            let at = terminal.row_number(terminal.screen_rows().total_rows()) - 1;
+            add(&mut terminal, 1, at, &[((0, at), (3, at))]);
+        }
+        assert_eq!(texts(&mut terminal), ["hit6", "hit7", "hit8", "hit9"]);
+        // Scrolled up, it stays as new rows come.
+        terminal.scroll_viewport(Scroll::Up(2));
+        let held = texts(&mut terminal);
+        feed(&mut terminal, "\r\nhit10");
+        let at = terminal.row_number(terminal.screen_rows().total_rows()) - 1;
+        add(&mut terminal, 1, at, &[((0, at), (4, at))]);
+        assert_eq!(texts(&mut terminal), held);
+        // Off, the current match holds the view again.
+        assert!(terminal.set_filter(None));
+        assert!(terminal.holds_view());
     }
 
     #[test]

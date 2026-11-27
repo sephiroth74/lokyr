@@ -14,7 +14,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 - **The toggles** at the field's end count case, take whole words alone, and read the text as a regular expression, of the syntax of Rust's `regex`; they keep their states for the next search.
 - **The filter**, the last toggle, shows only the lines that match, and a blank line where it hides others · not released yet.
   - The lines scroll like the scrollback, a whole line at a time, and the prompt hides while the filter is on.
-  - New output's matching lines come in as the program prints them, and the count grows with them. While the filter is on, Lokyr searches each new batch of output, at most 1000 lines at a time.
+  - New output's matching lines come in as the program prints them, and the count grows with them. While the filter is on, Lokyr searches each new batch of output, at most 1000 lines at a time. The view follows them while it shows the last line; scrolled up, or at a match that you stepped to, it stays where it is.
   - A full-screen program's own screen, such as less's or vim's, has no filter: its toggle is hidden there, and the filter of a search of the shell's lines comes back once the program ends.
   - Turn it off, or close the bar, and the pane shows every line again, at the current match.
   - It works on the main screen. A full-screen program, such as vim or less, keeps its own screen.

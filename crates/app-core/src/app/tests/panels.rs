@@ -1207,6 +1207,52 @@ fn the_find_bar_s_filter_follows_output_after_a_resize_and_a_reset() {
 }
 
 #[test]
+fn the_find_bar_s_filter_follows_more_new_matches_than_the_view_holds() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nother\\n'; echo ready; sleep 3; seq 1 200 | sed 's/^/late needle /'; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["a needle"]);
+    // More matching lines than the view's rows, of no key typed, which
+    // would bring the view down: it follows them, the newest at its end.
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app)
+            .last()
+            .is_some_and(|line| line == "late needle 200")
+    });
+}
+
+#[test]
 fn a_search_of_the_alternate_screen_shows_no_filter_and_leaves_the_shell_s_view_whole() {
     let none = Modifiers::NONE;
     let drawing = Drawing::new(FontConfig::default()).unwrap();

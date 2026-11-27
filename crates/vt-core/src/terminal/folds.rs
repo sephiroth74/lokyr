@@ -572,9 +572,9 @@ impl Terminal {
     }
 
     /// The view of the primary screen's folds, if it keeps any: its rows
-    /// from its pinned first row, as far as they fill it, or else, as the
-    /// view follows the screen or meets its end, the rows that end at the
-    /// list's last; none of no fold, or on the alternate screen, whose view
+    /// from its pinned first row, as far as they fill it short of the
+    /// list's end, or else, as the view follows the screen or meets its
+    /// end, the rows that end at the list's last; none of no fold, or on the alternate screen, whose view
     /// is the list's rows from its top.
     pub(super) fn folded_view(&self) -> Option<FoldedView> {
         if self.alternate_active || (self.folds.is_empty() && self.filter.is_none()) {
@@ -591,9 +591,12 @@ impl Terminal {
             let position = rows.pin_position(pin)?;
             rows.row_index(position.page, position.row)
         });
+        // Its rows from its pinned row, where they fill it short of the
+        // list's end: one that meets the end follows it, as the view of no
+        // fold does at the screen.
         let below = pinned
             .map(|top| down_from(starting(&spans, top), &spans, total, height))
-            .filter(|(rows, _)| rows.len() == height);
+            .filter(|(rows, end)| rows.len() == height && *end < total);
         let (top, mut rows, following) = match below {
             Some((rows, _)) => (starting(&spans, pinned.unwrap_or(0)), rows, false),
             None => {
