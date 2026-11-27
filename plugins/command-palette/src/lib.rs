@@ -19,17 +19,25 @@
 //! then the layouts, then the folders of the config's `[sessions] folders`
 //! and the recent ones, those of no session; Return switches to the
 //! session, opens the layout as a new session, or opens one in the folder,
-//! named after it.
+//! named after it. Find in All Tabs searches every pane of the session's
+//! windows as the user types, of `terminal-read`, each match a row of its
+//! line and its tab's title; Return brings its pane forward, the match
+//! selected, and opens the find bar there of the text, the match the
+//! current one.
 //! Like every built-in plugin, it depends only on the plugin SDK.
 
 #![forbid(unsafe_code)]
 
+mod find_all;
 mod rank;
 
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{Args, Category, Command, Error, Kind, Param, Value};
-use lokyr_plugin_sdk::host::{AgentInfo, AgentState, CommandInfo, SessionId};
+use lokyr_plugin_sdk::command::{Args, Capability, Category, Command, Error, Kind, Param, Value};
+use lokyr_plugin_sdk::host::{
+    AgentInfo, AgentState, CommandInfo, MOST_SEARCHES, PaneId, SearchCase, SearchQuery, SessionId,
+    TabId, WindowId,
+};
 use lokyr_plugin_sdk::message::{Data, Event, THEMES_CHANGED};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
 use lokyr_plugin_sdk::theme::ThemeVariant;
@@ -56,6 +64,13 @@ const AGENTS: &str = "command-palette.agents";
 
 /// Opens the sessions' switcher.
 const SESSIONS: &str = "command-palette.sessions";
+
+/// Opens Find in All Tabs.
+const FIND_ALL: &str = "command-palette.find-all";
+
+/// Opens the find bar, of a text and a match, as Find in All Tabs goes to
+/// one.
+const SEARCH_OPEN: &str = "search.open";
 
 /// The starts of the names of a switcher's entries: a session's, of its
 /// id, a layout's, of its name, and a folder's, of its path.
@@ -187,6 +202,7 @@ enum Mode {
     Themes(ThemeVariant),
     Agents,
     Sessions,
+    FindAll,
 }
 
 /// An open palette: its commands, as the registry gave them as it opened,
@@ -200,6 +216,14 @@ struct Open {
     calls: BTreeMap<String, Args>,
     /// The agents of the agents' list, each of its entry's place.
     agents: Vec<AgentInfo>,
+    /// Of Find in All Tabs, the panes that it searches, its searches, each
+    /// of its pane's place, the places whose searches wait for a call of
+    /// their own, as a call starts a few at most, and the matches that they
+    /// found so far.
+    places: Vec<find_all::Place>,
+    searches: BTreeMap<u64, usize>,
+    pending: Vec<usize>,
+    found: Vec<find_all::Found>,
     query: String,
     ranked: Vec<usize>,
     selected: usize,
@@ -214,6 +238,10 @@ impl Open {
             commands,
             calls: BTreeMap::new(),
             agents: Vec::new(),
+            places: Vec::new(),
+            searches: BTreeMap::new(),
+            pending: Vec::new(),
+            found: Vec::new(),
             query: String::new(),
             ranked: Vec::new(),
             selected: 0,
@@ -229,6 +257,9 @@ impl Open {
     fn rank(&mut self, recent: &[String]) {
         self.ranked = if self.mode == Mode::Sessions {
             rank::rank_switcher(&self.commands, &self.query)
+        } else if self.mode == Mode::FindAll {
+            // Its matches as the searches found them, in their order.
+            (0..self.commands.len()).collect()
         } else {
             rank::rank(&self.commands, &self.query, recent)
         };
@@ -315,6 +346,14 @@ impl Plugin for Palette {
             when: None,
         })?;
         cx.register_command(Command {
+            name: FIND_ALL.to_owned(),
+            title: "Find in All Tabs…".to_owned(),
+            category: Category::Find,
+            capabilities: vec![Capability::TerminalRead],
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
             name: MOVE.to_owned(),
             title: "Move in the Command Palette".to_owned(),
             category: Category::View,
@@ -339,6 +378,7 @@ impl Plugin for Palette {
             THEME => self.open_themes(cx),
             AGENTS => self.open_agents(cx),
             SESSIONS => self.open_sessions(cx),
+            FIND_ALL => self.open_find_all(cx),
             MOVE => {
                 let delta = match args.get("delta") {
                     Some(Value::Integer(delta)) => *delta,
@@ -376,6 +416,11 @@ impl Plugin for Palette {
                 none: message(cx, "palette-sessions-none"),
                 commands: message(cx, "palette-sessions"),
             },
+            Mode::FindAll => Texts {
+                placeholder: message(cx, "palette-find-placeholder"),
+                none: message(cx, "palette-find-none"),
+                commands: message(cx, "palette-find"),
+            },
         };
         Some(palette(open, &texts))
     }
@@ -391,11 +436,17 @@ impl Plugin for Palette {
             return Ok(());
         };
         match (&event.kind, event.key.0.as_str()) {
+            // Of Find in All Tabs, the panes searched anew.
+            (UiEventKind::InputChanged { text, .. }, FIELD) if open.mode == Mode::FindAll => {
+                open.query.clone_from(text);
+                search_all(cx, open)?;
+                cx.request_render(panel())
+            }
             (UiEventKind::InputChanged { text, .. }, FIELD) => {
                 open.query.clone_from(text);
                 let recent: &[String] = match open.mode {
                     Mode::Commands => &self.recent,
-                    Mode::Themes(_) | Mode::Agents | Mode::Sessions => &[],
+                    Mode::Themes(_) | Mode::Agents | Mode::Sessions | Mode::FindAll => &[],
                 };
                 open.rank(recent);
                 open.selected = 0;
@@ -425,6 +476,23 @@ impl Plugin for Palette {
     /// The palette's closing, as Escape or a click outside it closes it.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
+            // A part of a search of Find in All Tabs: its matches in the
+            // list, of their lines.
+            if let Event::Searched {
+                id, pane, matches, ..
+            } = event
+                && let Some(open) = &mut self.open
+                && open.mode == Mode::FindAll
+                && let Some(&place) = open.searches.get(id)
+            {
+                find_all::take(cx, &mut open.found, (place, *pane), matches)?;
+                start_pending(cx, open)?;
+                open.commands = find_all::entries(&open.found, &open.places);
+                open.rank(&[]);
+                open.selected = open.selected.min(open.ranked.len().saturating_sub(1));
+                cx.request_render(panel())?;
+                continue;
+            }
             // The themes' list read, or anew: the picker that shows takes
             // it, of its text as typed.
             if *event == Event::ThemesChanged
@@ -445,13 +513,19 @@ impl Plugin for Palette {
                     self.closing -= 1;
                     continue;
                 }
-                // Closed without a choice, a theme's preview ends.
-                if let Some(Open {
-                    mode: Mode::Themes(_),
-                    ..
-                }) = self.open.take()
-                {
-                    cx.preview_theme(None)?;
+                // Closed without a choice, a theme's preview ends, and Find in
+                // All Tabs' searches.
+                match self.open.take() {
+                    Some(Open {
+                        mode: Mode::Themes(_),
+                        ..
+                    }) => cx.preview_theme(None)?,
+                    Some(Open {
+                        mode: Mode::FindAll,
+                        searches,
+                        ..
+                    }) => end_searches(cx, &searches)?,
+                    _ => {}
                 }
             }
         }
@@ -568,6 +642,20 @@ impl Palette {
         Ok(())
     }
 
+    /// Opens Find in All Tabs, of no text yet, of the panes of the
+    /// session's windows; open, its field takes the keys again.
+    fn open_find_all(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.open.is_some() {
+            return cx.focus_node(panel(), FIELD);
+        }
+        let places = find_all::places(cx)?;
+        self.show(cx, Mode::FindAll, Vec::new())?;
+        if let Some(open) = &mut self.open {
+            open.places = places;
+        }
+        Ok(())
+    }
+
     /// Opens the sessions' switcher: the sessions open, in the order of
     /// their use, the active one marked, then the folders of the config's
     /// `[sessions] folders` and the recent ones, those of no session, each
@@ -670,7 +758,7 @@ impl Palette {
         )?;
         let recent: &[String] = match mode {
             Mode::Commands => &self.recent,
-            Mode::Themes(_) | Mode::Agents | Mode::Sessions => &[],
+            Mode::Themes(_) | Mode::Agents | Mode::Sessions | Mode::FindAll => &[],
         };
         self.open = Some(Open::new(mode, entries, recent));
         Ok(())
@@ -739,6 +827,21 @@ impl Palette {
         if mode == Mode::Sessions {
             return switch_to(cx, &name);
         }
+        // Of Find in All Tabs, the match's pane, selected, and the find bar
+        // of its text there.
+        if mode == Mode::FindAll {
+            let Some(open) = open else {
+                return Ok(());
+            };
+            end_searches(cx, &open.searches)?;
+            let Some(found) = name.parse::<usize>().ok().and_then(|at| open.found.get(at)) else {
+                return Ok(());
+            };
+            let Some(place) = open.places.get(found.place) else {
+                return Ok(());
+            };
+            return go_to_match(cx, place, found, &open.query);
+        }
         self.recent.retain(|kept| *kept != key);
         self.recent.insert(0, key);
         self.recent.truncate(MOST_RECENT);
@@ -776,15 +879,92 @@ fn elapsed(since: u64) -> String {
 /// Brings `agent`'s pane forward: its tab, the pane, and its window,
 /// unless it has the focus.
 fn bring_forward(cx: &mut Cx<'_>, agent: &AgentInfo) -> Result<(), Error> {
-    cx.activate_tab(agent.tab)?;
-    cx.focus_pane(agent.pane)?;
-    if cx.focused_window() == Some(agent.window) {
+    bring(cx, agent.window, agent.tab, agent.pane)
+}
+
+/// Searches every pane of Find in All Tabs `open` of its text, the
+/// searches before ending, their matches going: none of no text.
+fn search_all(cx: &mut Cx<'_>, open: &mut Open) -> Result<(), Error> {
+    end_searches(cx, &open.searches)?;
+    open.searches.clear();
+    open.found.clear();
+    open.commands.clear();
+    open.ranked.clear();
+    open.selected = 0;
+    open.pending.clear();
+    if open.query.is_empty() {
+        return Ok(());
+    }
+    // The last place first out, as they wait.
+    open.pending = (0..open.places.len()).rev().collect();
+    start_pending(cx, open)
+}
+
+/// Starts the searches of Find in All Tabs `open` that wait, of its text,
+/// as many as a call starts at most, the others waiting for the next call,
+/// which a search's part brings.
+fn start_pending(cx: &mut Cx<'_>, open: &mut Open) -> Result<(), Error> {
+    let query = SearchQuery {
+        text: open.query.clone(),
+        regex: false,
+        case: SearchCase::Smart,
+        whole_word: false,
+    };
+    for _ in 0..MOST_SEARCHES {
+        let Some(at) = open.pending.pop() else {
+            break;
+        };
+        // A pane that went meanwhile is searched no more.
+        if let Some(place) = open.places.get(at)
+            && let Ok(id) = cx.search(place.pane, query.clone())
+        {
+            open.searches.insert(id, at);
+        }
+    }
+    Ok(())
+}
+
+/// Ends the searches `searches` of Find in All Tabs.
+fn end_searches(cx: &mut Cx<'_>, searches: &BTreeMap<u64, usize>) -> Result<(), Error> {
+    for &id in searches.keys() {
+        cx.end_search(id)?;
+    }
+    Ok(())
+}
+
+/// Goes to the match `found` of Find in All Tabs, of the pane at `place`:
+/// the pane forward, its tab and its window, the match selected, and the
+/// find bar there of `text`, the match its current one.
+fn go_to_match(
+    cx: &mut Cx<'_>,
+    place: &find_all::Place,
+    found: &find_all::Found,
+    text: &str,
+) -> Result<(), Error> {
+    bring(cx, place.window, place.tab, place.pane)?;
+    cx.select_cells(place.pane, found.found.first, found.found.last)?;
+    let mut args = Args::new();
+    args.insert("text".to_owned(), Value::String(text.to_owned()));
+    args.insert(
+        "column".to_owned(),
+        Value::Integer(i64::from(found.found.first.0)),
+    );
+    args.insert("row".to_owned(), Value::Integer(found.found.first.1));
+    cx.run_command(SEARCH_OPEN, args)
+}
+
+/// Brings the pane `pane` of the tab `tab` of the window `window` forward:
+/// its tab, the pane, and its window, unless it has the focus.
+fn bring(cx: &mut Cx<'_>, window: WindowId, tab: TabId, pane: PaneId) -> Result<(), Error> {
+    cx.activate_tab(tab)?;
+    cx.focus_pane(pane)?;
+    if cx.focused_window() == Some(window) {
         return Ok(());
     }
     let number = cx
         .windows()?
         .into_iter()
-        .find(|window| window.id == agent.window)
+        .find(|each| each.id == window)
         .and_then(|window| window.number);
     if let Some(number) = number {
         let mut args = Args::new();
@@ -912,7 +1092,7 @@ fn palette(open: &Open, texts: &Texts) -> Node {
             text_size: Some(TextSize::Small),
             ..Style::default()
         }),
-        Mode::Themes(_) | Mode::Agents | Mode::Sessions => secondary(""),
+        Mode::Themes(_) | Mode::Agents | Mode::Sessions | Mode::FindAll => secondary(""),
     };
     let row = Node::container(vec![Node::text(""), Node::spacer(), end]).layout(Layout {
         gap: 8.0,

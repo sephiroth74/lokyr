@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 55] = [
+pub const BINDINGS: [(&str, &str); 56] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -80,8 +80,9 @@ pub const BINDINGS: [(&str, &str); 55] = [
     ("cmd+f", "search.open"),
     ("cmd+g", "search.next"),
     ("cmd+shift+g", "search.previous"),
-    // The command palette's.
+    // The command palette's, and its Find in All Tabs.
     ("cmd+shift+p", "command-palette.open"),
+    ("cmd+shift+f", "command-palette.find-all"),
     // The copy mode's, as iTerm2's.
     ("cmd+shift+c", "copy-mode.toggle"),
     // The hints of the links, of what the pane shows.

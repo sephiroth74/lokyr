@@ -388,6 +388,17 @@
     "when": null
   },
   {
+    "capabilities": [
+      "terminal-read"
+    ],
+    "category": "find",
+    "name": "command-palette.find-all",
+    "params": [],
+    "plugin": "lokyr/command-palette",
+    "title": "Find in All Tabs…",
+    "when": null
+  },
+  {
     "capabilities": [],
     "category": "view",
     "name": "command-palette.move",
@@ -1068,7 +1079,29 @@
     ],
     "category": "find",
     "name": "search.open",
-    "params": [],
+    "params": [
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "text"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": 0
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
     "plugin": "lokyr/search",
     "title": "Find…",
     "when": null

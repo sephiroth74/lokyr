@@ -32,6 +32,14 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 - **As you type**, it finds the sessions by their names, the layouts by theirs, and the folders by their names and paths, the best match first: `ui` finds the folder `ui` before Untitled Session. When two match as well, the sessions come first, then the layouts, then the folders.
 - **Return**, or a click, switches to the session you chose. A folder opens a session there, named after it, its first window's shell in the folder; a folder that a session was opened in already switches to that session instead, and doesn't show among the folders.
 
+## Find in All Tabs
+
+- **Edit › Find in All Tabs…**, ⇧⌘F, opens the palette as a search of every pane of the session's windows, the hidden tabs' too · not released yet
+- **As you type**, it searches them all, nearest the bottom of each pane first, and lists each match as a row: the line that holds it, and its tab's title at the row's end. The rows go in the order of the windows, their tabs and their panes, then of the lines. It lists 1000 matches at most.
+- **Case counts** when your text has a capital letter, as in the find bar.
+- **Return**, or a click, brings the match's pane forward, with its tab and its window, selects the match, and opens the [find bar](search.md) there with your text, the match its current one, so that ⌘G goes on from it.
+- **Escape**, or a click outside it, closes it, and the searches end.
+
 ## Commands
 
 <!-- commands: lokyr/command-palette -->
@@ -42,6 +50,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 | `command-palette.theme` | View › Choose Theme… | | Opens the theme picker, of the themes of the appearance in force |
 | `command-palette.agents` | Window › Show Agents… | ⌥⇧⌘A | Opens the agents' list, of every window's AI agents, the most urgent first |
 | `command-palette.sessions` | Window › Sessions › Switch Session… | ⌃⌘S | Opens the sessions' switcher, of the sessions open, then the folders of your config and your shells · Since 1.5 |
+| `command-palette.find-all` | Edit › Find in All Tabs… | ⇧⌘F | Opens Find in All Tabs, which searches every pane of the session's windows as you type · not released yet |
 | `command-palette.move` | — | ↑, ↓ while `command-palette.focused` | Moves the list's selection, by its argument `delta`, a whole number of items |
 
 <!-- commands end -->
@@ -57,4 +66,4 @@ The palette and its commands go, with their keys: ⇧⌘P then does nothing in L
 
 ## Permissions
 
-It runs any command as yours, as the menus and the keys do, and reads the whole list of the commands, with each one's plugin, keys and context, and the menu bar's items: the capability `user-commands`, of a very high risk, as running any command can type into the shell. A palette of a third party would ask for it when you install it. Its theme picker previews and names a theme, of `appearance-write`. Its agents' list reads the agents of the panes, which tell the programs that run, of `process-read`, and brings a pane, its tab and its window forward, of `workspace-write`. Its sessions' switcher reads the folders where your shells worked, of `process-read`, and switches sessions or opens one, of `workspace-write`.
+It runs any command as yours, as the menus and the keys do, and reads the whole list of the commands, with each one's plugin, keys and context, and the menu bar's items: the capability `user-commands`, of a very high risk, as running any command can type into the shell. A palette of a third party would ask for it when you install it. Its theme picker previews and names a theme, of `appearance-write`. Its agents' list reads the agents of the panes, which tell the programs that run, of `process-read`, and brings a pane, its tab and its window forward, of `workspace-write`. Its sessions' switcher reads the folders where your shells worked, of `process-read`, and switches sessions or opens one, of `workspace-write`. Find in All Tabs reads the panes' text, of `terminal-read`, and selects the match that you choose, of `pane-view` · not released yet.
