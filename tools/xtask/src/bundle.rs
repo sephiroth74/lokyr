@@ -618,7 +618,7 @@ pub(crate) fn told_version(binary: &Path) -> Result<String> {
 /// The moment of the build, in seconds since the epoch, as the app's build
 /// script takes it: `SOURCE_DATE_EPOCH`'s, when it is set, or else the time
 /// of HEAD's commit, or else, for a source without git, now.
-fn build_moment(root: &Path) -> Result<u64> {
+pub(crate) fn build_moment(root: &Path) -> Result<u64> {
     if let Ok(given) = std::env::var("SOURCE_DATE_EPOCH") {
         return given
             .trim()
@@ -1039,9 +1039,17 @@ fn localized_plist(catalog: &Catalog, source: &Catalog) -> String {
 /// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
 /// names, in the environment or in `private/lokyr.env`, or `-`, ad hoc.
 pub(crate) fn identity() -> Result<String> {
-    Ok(crate::private::variable(IDENTITY_VARIABLE)?
+    let identity = crate::private::variable(IDENTITY_VARIABLE)?
         .filter(|named| !named.is_empty())
-        .unwrap_or_else(|| "-".to_owned()))
+        .unwrap_or_else(|| "-".to_owned());
+    // On GitHub's runners, the log tells neither the identity nor its team.
+    if identity != "-" {
+        crate::ci::mask(&identity);
+        if let Some(team) = crate::ci::team_of(&identity) {
+            crate::ci::mask(team);
+        }
+    }
+    Ok(identity)
 }
 
 /// The plist of `entitlements`, each granted, as [`ENTITLEMENTS`], the

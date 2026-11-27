@@ -4,11 +4,14 @@
 //! a downloaded copy without its warning.
 //!
 //! The bundle goes to Apple's notary service as a zip, through `notarytool`,
-//! with the credentials of the keychain's profile `lokyr-notary`, or of the
-//! one that `LOKYR_NOTARY_PROFILE` names, in the environment or in the
-//! untracked `private/lokyr.env`; the key stays in the keychain,
-//! outside the repository. Apple's log tells why a bundle that it refuses
-//! was refused.
+//! with an App Store Connect API key where `LOKYR_NOTARY_KEY` (the `.p8`
+//! file's path) and `LOKYR_NOTARY_KEY_ID` name one, of `LOKYR_NOTARY_ISSUER`
+//! for a team's key, none for an individual key, as a release's CI does, or else the credentials of the keychain's
+//! profile `lokyr-notary`, or of the one that `LOKYR_NOTARY_PROFILE` names,
+//! in the environment or in the untracked `private/lokyr.env`; the keys
+//! stay outside the repository. Apple's log tells why a bundle that it
+//! refuses was refused. On GitHub's runners, the submission's id is masked
+//! in the log.
 
 use std::path::Path;
 use std::process::{Command, ExitCode};
@@ -23,6 +26,15 @@ const PROFILE: &str = "lokyr-notary";
 
 /// The variable that names another profile.
 const PROFILE_VARIABLE: &str = "LOKYR_NOTARY_PROFILE";
+
+/// The variables of an App Store Connect API key: the `.p8` file's path,
+/// the key's id and its issuer's, which a team's key has and an individual
+/// key has not.
+const KEY_VARIABLES: [&str; 3] = [
+    "LOKYR_NOTARY_KEY",
+    "LOKYR_NOTARY_KEY_ID",
+    "LOKYR_NOTARY_ISSUER",
+];
 
 pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     if let Some(arg) = args.next() {
@@ -92,36 +104,86 @@ pub(crate) fn notarize_app(app: &Path) -> Result<()> {
 /// waits for its answer; fails, with Apple's log of why, if Apple refuses
 /// it.
 pub(crate) fn submit(file: &Path) -> Result<()> {
-    let profile = crate::private::variable(PROFILE_VARIABLE)?
-        .filter(|named| !named.is_empty())
-        .unwrap_or_else(|| PROFILE.to_owned());
+    let named = |name: &str| -> Result<Option<String>> {
+        Ok(crate::private::variable(name)?.filter(|named| !named.is_empty()))
+    };
+    let key = [
+        named(KEY_VARIABLES[0])?,
+        named(KEY_VARIABLES[1])?,
+        named(KEY_VARIABLES[2])?,
+    ];
+    let credentials = credentials(key, named(PROFILE_VARIABLE)?)?;
     println!(
         "notarize: sending {} to Apple's notary service",
         file.display()
     );
+    // The answer, whose id the log masks before anything tells it, is
+    // read whole, not written as it comes.
     let submitted = output(
         Command::new("xcrun")
             .args(["notarytool", "submit"])
             .arg(file)
-            .args([
-                "--keychain-profile",
-                &profile,
-                "--wait",
-                "--output-format",
-                "json",
-            ]),
+            .args(&credentials)
+            .args(["--wait", "--output-format", "json"]),
         "sending it to the notary service",
-    )?;
+    );
+    let submitted = match submitted {
+        Ok(submitted) => submitted,
+        Err(error) => {
+            mask_of(&error.to_string());
+            return Err(error);
+        }
+    };
+    mask_of(&submitted);
     let (id, outcome) = submission(&submitted)
         .with_context(|| format!("the notary service's answer: {submitted}"))?;
     println!("notarize: submission {id}: {outcome}");
     if outcome != "Accepted" {
         let _ = Command::new("xcrun")
-            .args(["notarytool", "log", &id, "--keychain-profile", &profile])
+            .args(["notarytool", "log", &id])
+            .args(&credentials)
             .status();
         bail!("Apple did not notarize {}: {outcome}", file.display());
     }
     Ok(())
+}
+
+/// `notarytool`'s arguments of the credentials: the API key of its file
+/// and its id, of its issuer for a team's key, of `key`; or else, of none
+/// of them, the keychain's `profile`, or [`PROFILE`] of none.
+fn credentials(key: [Option<String>; 3], profile: Option<String>) -> Result<Vec<String>> {
+    match key {
+        [Some(path), Some(id), issuer] => {
+            let mut arguments = vec!["--key".to_owned(), path, "--key-id".to_owned(), id];
+            if let Some(issuer) = issuer {
+                arguments.extend(["--issuer".to_owned(), issuer]);
+            }
+            Ok(arguments)
+        }
+        [None, None, None] => Ok(vec![
+            "--keychain-profile".to_owned(),
+            profile.unwrap_or_else(|| PROFILE.to_owned()),
+        ]),
+        _ => bail!(
+            "the notary's API key takes {} and {}, and {} of a team's key",
+            KEY_VARIABLES[0],
+            KEY_VARIABLES[1],
+            KEY_VARIABLES[2]
+        ),
+    }
+}
+
+/// Masks the ids of `text`, as `notarytool` gives a submission's, in a log
+/// of GitHub's runners, before anything tells them.
+fn mask_of(text: &str) {
+    let Ok(ids) =
+        Regex::new(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+    else {
+        return;
+    };
+    for id in ids.find_iter(text) {
+        crate::ci::mask(id.as_str());
+    }
 }
 
 /// Staples the ticket of Apple's notarization to `path`, a bundle or a disk
@@ -186,6 +248,30 @@ pub(crate) fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_credentials_are_an_api_key_or_a_profile() {
+        let some = |text: &str| Some(text.to_owned());
+        assert_eq!(
+            credentials([some("/k.p8"), some("KEY"), some("ISSUER")], some("other")).unwrap(),
+            ["--key", "/k.p8", "--key-id", "KEY", "--issuer", "ISSUER"]
+        );
+        assert_eq!(
+            credentials([None, None, None], None).unwrap(),
+            ["--keychain-profile", PROFILE]
+        );
+        assert_eq!(
+            credentials([None, None, None], some("other")).unwrap(),
+            ["--keychain-profile", "other"]
+        );
+        // An individual key has no issuer.
+        assert_eq!(
+            credentials([some("/k.p8"), some("KEY"), None], None).unwrap(),
+            ["--key", "/k.p8", "--key-id", "KEY"]
+        );
+        assert!(credentials([some("/k.p8"), None, some("ISSUER")], None).is_err());
+        assert!(credentials([None, None, some("ISSUER")], None).is_err());
+    }
 
     #[test]
     fn the_signature_of_a_developer_id_is_told_from_an_ad_hoc_one() {

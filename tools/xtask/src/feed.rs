@@ -16,16 +16,18 @@
 //!   `defaults delete io.github.sephiroth74.lokyr SUFeedURL` gives the
 //!   builds their own feed back.
 //!
-//! - `feed publish <dmg>` puts a release's DMG into the public feed, the
-//!   site's `site/public/appcast.xml`, which `lokyr.dev/appcast.xml` serves
-//!   and the bundle's `SUFeedURL` names: `generate_appcast` writes it in
-//!   the untracked `private/public-feed`, which keeps the released DMGs,
-//!   of which it makes the deltas, from the site's appcast; each item's
-//!   DMG and deltas at its own GitHub release, `v<X.Y.Z>`, which
+//! - `feed publish <dmg>` puts a release's DMG into the public feed, which
+//!   `lokyr.dev/appcast.xml` serves of the latest release's asset and the
+//!   bundle's `SUFeedURL` names: `generate_appcast` writes it in the
+//!   untracked `private/public-feed`, of the published appcast, and of the
+//!   last five released DMGs, downloaded from their GitHub releases where
+//!   the folder lacks them, of which it makes the release's deltas; each
+//!   item's DMG and deltas at its own GitHub release, `v<X.Y.Z>`, which
 //!   `generate_appcast`'s one prefix cannot tell, and the appcast signed
-//!   again. `just release` publishes each release's, and uploads its
-//!   deltas to its release; the appcast is committed and pushed once the
-//!   release is published, as its DMG is not public before.
+//!   again, into `target/releases/<X.Y.Z>/appcast.xml`. `cargo xtask
+//!   release draft` uploads the deltas and the appcast to the release's
+//!   draft, the feed once the release is published, as its DMG is not
+//!   public before.
 //!
 //! The key is the keychain's, of the account `lokyr` of Sparkle's
 //! `generate_keys`, or the file that `LOKYR_SPARKLE_KEY_FILE` names, in
@@ -47,12 +49,24 @@ const DIRECTORY: &str = "private/feed";
 /// relative to the workspace root.
 const PUBLIC_DIRECTORY: &str = "private/public-feed";
 
-/// The public feed's appcast, in the site, relative to the workspace root.
+/// The public feed's appcast that the site kept before each release held
+/// its own, relative to the workspace root: the feed of a release of none.
 pub(crate) const PUBLIC_APPCAST: &str = "site/public/appcast.xml";
+
+/// The latest published release's appcast, an asset of the release.
+const LATEST_APPCAST: &str =
+    "https://github.com/sephiroth74/lokyr/releases/latest/download/appcast.xml";
 
 /// Where the releases' assets are downloaded from, each of its tag,
 /// `v<X.Y.Z>/`.
 const RELEASES: &str = "https://github.com/sephiroth74/lokyr/releases/download/";
+
+/// The repository of the releases.
+const REPOSITORY: &str = "sephiroth74/lokyr";
+
+/// How many released versions a release's deltas are made from, the
+/// latest before it, as `generate_appcast`'s `--maximum-deltas` takes.
+const DELTAS_FROM: usize = 5;
 
 /// The release notes, `<X.Y.Z>.md`, relative to the workspace root.
 const NOTES: &str = "docs/releases";
@@ -112,8 +126,10 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             if let Some(arg) = args.next() {
                 bail!("feed publish takes the DMG alone, not `{arg}`");
             }
-            for delta in publish(&root, &dmg)? {
-                println!("feed: {} to upload to its release", delta.display());
+            let previous = published_appcast(&root);
+            let published = publish(&root, &dmg, previous.as_deref())?;
+            for asset in published.deltas.iter().chain([&published.appcast]) {
+                println!("feed: {} to upload to its release", asset.display());
             }
         }
         _ => bail!(
@@ -212,11 +228,40 @@ fn serve(root: &Path) -> Result<()> {
     )
 }
 
-/// Puts the release's `dmg` into the public feed, of the site's appcast and
-/// the released DMGs that `private/public-feed` keeps, writes the site's
-/// appcast again, each item at its own release and signed, and gives the
-/// deltas made for the release, to upload to it.
-pub fn publish(root: &Path, dmg: &Path) -> Result<Vec<PathBuf>> {
+/// The public feed's appcast as it is now: the latest published release's
+/// asset, or, of a release of none, as before the releases held it, the
+/// site's; none of neither.
+pub(crate) fn published_appcast(root: &Path) -> Option<String> {
+    latest_release_appcast().or_else(|| fs::read_to_string(root.join(PUBLIC_APPCAST)).ok())
+}
+
+/// The latest published release's appcast, an asset of the release, as
+/// GitHub serves it; none of a release of none, or offline.
+pub(crate) fn latest_release_appcast() -> Option<String> {
+    Command::new("curl")
+        .args(["--fail", "--silent", "--location", "--max-time", "60"])
+        .arg(LATEST_APPCAST)
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .filter(|text| text.contains("<rss"))
+}
+
+/// A release put into the public feed: the deltas made for it, and the
+/// appcast, signed, both assets of its release.
+pub(crate) struct Published {
+    pub(crate) deltas: Vec<PathBuf>,
+    pub(crate) appcast: PathBuf,
+}
+
+/// Puts the release's `dmg` into the public feed, of `previous`, the feed's
+/// appcast before it, and the released DMGs that `private/public-feed`
+/// keeps; writes the appcast again, each item at its own release and
+/// signed, into `target/releases/<version>/appcast.xml`, an asset of the
+/// release, which the site serves once the release is the latest; and
+/// gives the deltas made for the release, to upload to it.
+pub fn publish(root: &Path, dmg: &Path, previous: Option<&str>) -> Result<Published> {
     let name = dmg
         .file_name()
         .and_then(|name| name.to_str())
@@ -240,19 +285,24 @@ pub fn publish(root: &Path, dmg: &Path) -> Result<Vec<PathBuf>> {
         &notes,
         &directory.join(format!("{}.md", name.trim_end_matches(".dmg"))),
     )?;
-    // The site's appcast is the feed's, whatever the directory kept.
+    // The published feed is the one to add to, whatever the directory
+    // kept.
     let appcast = directory.join("appcast.xml");
-    let site = root.join(PUBLIC_APPCAST);
-    if site.is_file() {
-        fs::copy(&site, &appcast).with_context(|| format!("copying {}", site.display()))?;
-    } else if appcast.exists() {
-        fs::remove_file(&appcast).with_context(|| format!("removing {}", appcast.display()))?;
+    match previous {
+        Some(previous) => fs::write(&appcast, previous)
+            .with_context(|| format!("writing {}", appcast.display()))?,
+        None if appcast.exists() => {
+            fs::remove_file(&appcast).with_context(|| format!("removing {}", appcast.display()))?;
+        }
+        None => {}
     }
+    fetch_released(&directory, version)?;
     let tools = crate::sparkle::release(&root.join("target"))?.join("bin");
     let key = key_arguments(root)?;
     status(
         Command::new(tools.join("generate_appcast"))
             .args(&key)
+            .args(["--maximum-deltas", &DELTAS_FROM.to_string()])
             .args(["--embed-release-notes", "--download-url-prefix"])
             .arg(format!("{RELEASES}v{version}/"))
             .arg(&directory),
@@ -278,7 +328,10 @@ pub fn publish(root: &Path, dmg: &Path) -> Result<Vec<PathBuf>> {
             .arg(&appcast),
         "checking the public appcast's signature",
     )?;
-    fs::copy(&appcast, &site).with_context(|| format!("writing {}", site.display()))?;
+    let out = root.join("target/releases").join(version);
+    fs::create_dir_all(&out).with_context(|| format!("making {}", out.display()))?;
+    let asset = out.join("appcast.xml");
+    fs::copy(&appcast, &asset).with_context(|| format!("writing {}", asset.display()))?;
     let deltas = deltas_of(&text, version)
         .into_iter()
         .map(|delta| directory.join(delta))
@@ -287,10 +340,79 @@ pub fn publish(root: &Path, dmg: &Path) -> Result<Vec<PathBuf>> {
         ensure!(delta.is_file(), "{} is not there", delta.display());
     }
     println!(
-        "feed: {name} in {}, signed; commit it once the release is published",
-        site.display()
+        "feed: {name} in {}, signed, an asset of its release",
+        asset.display()
     );
-    Ok(deltas)
+    Ok(Published {
+        deltas,
+        appcast: asset,
+    })
+}
+
+/// Downloads into `directory` the DMGs of the [`DELTAS_FROM`] latest
+/// published releases before `version` that it lacks, of their GitHub
+/// releases, which `generate_appcast` makes the release's deltas of: the
+/// maintainer's Mac keeps them, a runner of the CI has none.
+fn fetch_released(directory: &Path, version: &str) -> Result<()> {
+    let listed = crate::notarize::output(
+        Command::new("gh").args([
+            "release",
+            "list",
+            "--repo",
+            REPOSITORY,
+            "--exclude-drafts",
+            "--exclude-pre-releases",
+            "--limit",
+            "100",
+            "--json",
+            "tagName",
+            "--jq",
+            ".[].tagName",
+        ]),
+        "listing the published releases",
+    )?;
+    let tags: Vec<&str> = listed.lines().map(str::trim).collect();
+    for released in released_before(&tags, version, DELTAS_FROM) {
+        let name = format!("{}-{released}.dmg", bundle::NAME);
+        if directory.join(&name).is_file() {
+            continue;
+        }
+        println!("feed: downloading {name} of v{released}, for the deltas");
+        status(
+            Command::new("gh")
+                .args(["release", "download", &format!("v{released}")])
+                .args(["--repo", REPOSITORY, "--pattern", &name, "--dir"])
+                .arg(directory),
+            &format!("downloading {name}"),
+        )?;
+    }
+    Ok(())
+}
+
+/// The versions of the releases of `tags`, `vX.Y.Z`, before `version`, the
+/// latest `count` of them, the latest first.
+fn released_before(tags: &[&str], version: &str, count: usize) -> Vec<String> {
+    let numbers = |version: &str| -> Option<(u64, u64, u64)> {
+        let mut parts = version.split('.').map(|part| part.parse::<u64>().ok());
+        let numbers = (parts.next()??, parts.next()??, parts.next()??);
+        parts.next().is_none().then_some(numbers)
+    };
+    let Some(before) = numbers(version) else {
+        return Vec::new();
+    };
+    let mut released: Vec<((u64, u64, u64), &str)> = tags
+        .iter()
+        .filter_map(|tag| tag.strip_prefix('v'))
+        .filter_map(|released| Some((numbers(released)?, released)))
+        .filter(|(numbers, _)| *numbers < before)
+        .collect();
+    released.sort_unstable_by_key(|&(numbers, _)| std::cmp::Reverse(numbers));
+    released.dedup();
+    released
+        .into_iter()
+        .take(count)
+        .map(|(_, released)| released.to_owned())
+        .collect()
 }
 
 /// The appcast's `text` of each item's DMG and deltas at the item's own
@@ -401,6 +523,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_deltas_are_made_of_the_latest_releases_before() {
+        let tags = [
+            "v1.5.0",
+            "v1.4.0",
+            "v1.10.0",
+            "v1.3.0",
+            "v1.2.0",
+            "v1.1.0",
+            "v1.0.0",
+            "v0.9.0",
+            "v1.6.0-rc.1",
+            "nightly",
+        ];
+        assert_eq!(
+            released_before(&tags, "1.6.0", 5),
+            ["1.5.0", "1.4.0", "1.3.0", "1.2.0", "1.1.0"]
+        );
+        assert_eq!(released_before(&tags, "1.11.0", 2), ["1.10.0", "1.5.0"]);
+        assert_eq!(released_before(&tags, "1.0.0", 5), ["0.9.0"]);
+        assert!(released_before(&tags, "1.6.0-rc.1", 5).is_empty());
+    }
+
+    #[test]
     fn a_dmg_s_name_gives_its_version_and_its_release() {
         assert_eq!(
             version_of("Lokyr-0.3.0-20261102.dmg"),
@@ -508,17 +653,20 @@ mod tests {
                 .join(format!("v{version}"))
                 .join(format!("{}-{version}.dmg", bundle::NAME))
         };
-        assert!(publish(&root, &dmg("0.8.0")).unwrap().is_empty());
-        let deltas = publish(&root, &dmg("0.9.0")).unwrap();
+        let first = publish(&root, &dmg("0.8.0"), None).unwrap();
+        assert!(first.deltas.is_empty());
+        let previous = fs::read_to_string(&first.appcast).unwrap();
+        let second = publish(&root, &dmg("0.9.0"), Some(&previous)).unwrap();
+        let deltas = second.deltas;
         assert_eq!(deltas.len(), 1, "{deltas:?}");
-        let site = fs::read_to_string(root.join(PUBLIC_APPCAST)).unwrap();
+        let site = fs::read_to_string(&second.appcast).unwrap();
         assert!(site.contains(&format!("{RELEASES}v0.9.0/Lokyr-0.9.0.dmg")));
         assert!(site.contains(&format!("{RELEASES}v0.8.0/Lokyr-0.8.0.dmg")));
         let delta = deltas[0].file_name().unwrap().to_str().unwrap();
         assert!(site.contains(&format!("{RELEASES}v0.9.0/{delta}")));
         assert!(signed(&site));
         // A candidate stays out.
-        assert!(publish(&root, Path::new("Lokyr-1.0.0-rc.1.dmg")).is_err());
+        assert!(publish(&root, Path::new("Lokyr-1.0.0-rc.1.dmg"), None).is_err());
         fs::remove_dir_all(&root).unwrap();
     }
 

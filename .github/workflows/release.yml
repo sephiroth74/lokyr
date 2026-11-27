@@ -1,0 +1,418 @@
+name: Release
+
+# A release's steps on GitHub, of `cargo xtask release`:
+#
+# - `check`, on a release's pull request, of `release/X.Y` into main: the
+#   release's checks, of no secret, of the pull request's head (its notes
+#   and their listing, the changelog's section, no mark of what no release
+#   has, the version not released, the build's number above the feed's
+#   latest); the result shows on the pull request.
+# - `build`, on a release's pull request beside `check`, or asked by hand
+#   of a version once this workflow is on main: the bundle signed with the
+#   Developer ID, the DMG, both notarized and stapled, the dSYM and the bill
+#   of materials, an artifact of the run. Its secrets are the environment
+#   `release`'s, which waits for the maintainer's approval, of main,
+#   `release/*` and the pull requests' merge refs; the log tells neither
+#   the identity, its team nor a notarization's id.
+# - `draft`, after `build`, in the same environment, of Sparkle's EdDSA
+#   key: the release's draft, `v<version>`, of the pull request's head, in
+#   place of a draft of that tag, of the DMG, the dSYM and the bill; a
+#   release's deltas, of the last five released DMGs, its appcast signed and
+#   its cask; the draft's address, the DMG's size and the deltas' told on
+#   the pull request.
+# - `publish`, at the merge of a release's pull request, in the same
+#   environment, of the tap's token: the merge checked to hold the tree
+#   that the release built; the draft moved to the merge and published, its
+#   tag made there, a release the latest; the site deployed of the new feed,
+#   by a run of its own of main; the tap's cask of the DMG's SHA-256. A
+#   failed step stops the rest, and the run's summary tells what is left by
+#   hand.
+#
+# A release's pull request in draft builds and drafts the next candidate,
+# `X.Y.Z-rc.N`, of N one above the last candidate published, in place of its
+# draft at each push, of no feed nor cask; ready for review, the release.
+#
+# A release's pull request into `test/main`, a branch of tests, rehearses
+# it all: the release a pre-release, never the latest, the site built and
+# not deployed, the cask pushed to a branch of tests of the tap, so that the
+# feed, the site and Homebrew keep the latest release.
+on:
+  pull_request:
+    branches: [main, test/main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, closed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "The version, X.Y.Z or X.Y.Z-rc.N, of the crate's numbers (the crate's if empty)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Actions are pinned by commit SHA; the comment after each one names its tag.
+jobs:
+  check:
+    name: check
+    # A release's branch alone, of no secret: a fork's pull request of that
+    # name reads what any reader does.
+    if: github.event.action != 'closed' && startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    # A few minutes with its cache.
+    timeout-minutes: 30
+    steps:
+      # The pull request's head, whose commit the release is built of, not
+      # the merge that GitHub makes of it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Check the release
+        env:
+          # The repository's commits and releases, read with the run's own
+          # token.
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask release check
+
+  build:
+    name: build
+    # A release's branch of this repository, whose secrets a fork's pull
+    # request never reads, or a run asked by hand.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (github.event.action != 'closed'
+          && startsWith(github.head_ref, 'release/')
+          && github.event.pull_request.head.repo.full_name == github.repository)
+    # The oldest macOS that Lokyr supports, as the CI's.
+    runs-on: macos-26
+    environment: release
+    # One release's build at a time of a branch, a new push's in place of
+    # the one that waits or runs.
+    concurrency:
+      group: release-build-${{ github.head_ref || github.ref }}
+      cancel-in-progress: true
+    # The build of everything without a cache, and two notarizations.
+    timeout-minutes: 90
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      # The pull request's head, as `check`'s, or the branch asked.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The version asked, or the crate's; of a pull request in draft, the
+      # crate's next candidate, one above the last one published.
+      - name: Tell the version
+        id: version
+        env:
+          VERSION: ${{ inputs.version }}
+          CANDIDATE: ${{ github.event.pull_request.draft }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            VERSION="$(cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[] | select(.name == "xtask") | .version')"
+            if [ "$CANDIDATE" = true ] && [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              last="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --limit 100 \
+                --json tagName --jq '.[].tagName' \
+                | sed -n "s/^v${VERSION//./\\.}-rc\.\([0-9][0-9]*\)$/\1/p" | sort -n | tail -n 1)"
+              VERSION="$VERSION-rc.$(( ${last:-0} + 1 ))"
+            fi
+          fi
+          # A version's form alone, the whole text, which the environment's
+          # file takes.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::'$VERSION' is no version, X.Y.Z or X.Y.Z-rc.N."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      # The renderer's shaders build with the Metal toolchain, a download
+      # of its own since Xcode 26, which a runner's image may lack.
+      - name: Install the Metal toolchain where the runner lacks it
+        run: xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+      # A keychain of the run's own, of a password that the run makes, of
+      # the Developer ID's certificate and key, which codesign finds; the
+      # identity and its team masked before anything tells them.
+      - name: Import the Developer ID into a keychain of the run
+        env:
+          DEVELOPER_ID_P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -hex 24)"
+          echo "::add-mask::$password"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "RELEASE_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          umask 077
+          printf '%s' "$DEVELOPER_ID_P12" | base64 --decode > "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" -k "$keychain" -f pkcs12 \
+            -P "$DEVELOPER_ID_P12_PASSWORD" -T /usr/bin/codesign > /dev/null
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity="$(security find-identity -v -p codesigning "$keychain" \
+            | sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p' | head -n 1)"
+          if [ -z "$identity" ]; then
+            echo "::error::The certificate holds no Developer ID Application identity."
+            exit 1
+          fi
+          team="$(printf '%s' "$identity" | sed -n 's/.*(\([A-Z0-9]*\))$/\1/p')"
+          echo "::add-mask::$identity"
+          if [ -n "$team" ]; then echo "::add-mask::$team"; fi
+          echo "LOKYR_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+      # The App Store Connect API key, which notarytool takes, as a file of
+      # the run's.
+      - name: Write the notary's API key
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          umask 077
+          printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          # The secrets' forms, told without their values, as a wrong one
+          # has Apple answer 401 alone.
+          if [ "$(head -n 1 "$RUNNER_TEMP/notary.p8")" != '-----BEGIN PRIVATE KEY-----' ]; then
+            echo "::error::NOTARY_KEY is not a .p8 file's private key."
+            exit 1
+          fi
+          if ! [[ "$NOTARY_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::NOTARY_KEY_ID is not a key's id of ten capitals and digits."
+            exit 1
+          fi
+          uuid='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          if [ -n "$NOTARY_ISSUER" ] && ! [[ "$NOTARY_ISSUER" =~ $uuid ]]; then
+            echo "::error::NOTARY_ISSUER is not an issuer's UUID, which an individual key has none of."
+            exit 1
+          fi
+          echo "LOKYR_NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+      - name: Build, sign and notarize the release
+        env:
+          LOKYR_NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          # A team's key's issuer; empty, of no secret, for an individual key.
+          LOKYR_NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: cargo xtask release build "$RELEASE_VERSION"
+      - name: Check the DMG as Gatekeeper does
+        run: |
+          dmg="target/Lokyr-$RELEASE_VERSION.dmg"
+          spctl -a -t open --context context:primary-signature "$dmg"
+          xcrun stapler validate "$dmg"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-${{ env.RELEASE_VERSION }}
+          # The DMG, then the dSYM and the bill, under `releases/`.
+          path: |
+            target/Lokyr-${{ env.RELEASE_VERSION }}.dmg
+            target/releases/${{ env.RELEASE_VERSION }}/
+          if-no-files-found: error
+          retention-days: 14
+      # The keychain and the key go whatever happened.
+      - name: Remove the keychain and the notary's key
+        if: always()
+        run: |
+          if [ -n "${RELEASE_KEYCHAIN:-}" ]; then security delete-keychain "$RELEASE_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/developer-id.p12"
+
+  draft:
+    name: draft
+    needs: build
+    runs-on: macos-26
+    environment: release
+    permissions:
+      # The release's draft and its assets, and the pull request's comment.
+      contents: write
+      pull-requests: write
+    # One draft at a time of a branch, a new push's in place of the one that
+    # waits or runs.
+    concurrency:
+      group: release-draft-${{ github.head_ref || github.ref }}
+      cancel-in-progress: true
+    # Five released DMGs downloaded, the deltas made.
+    timeout-minutes: 45
+    env:
+      RELEASE_VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The DMG into `target`, the dSYM and the bill into
+      # `target/releases/<version>`, where `build` made them.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-${{ needs.build.outputs.version }}
+          path: target
+      # Sparkle's private EdDSA key, as `generate_keys -x` writes it, a
+      # file of the run's.
+      - name: Write Sparkle's EdDSA key
+        env:
+          SPARKLE_EDDSA_KEY: ${{ secrets.SPARKLE_EDDSA_KEY }}
+        run: |
+          umask 077
+          if ! [[ "$SPARKLE_EDDSA_KEY" =~ ^[A-Za-z0-9+/]{40,100}=*$ ]]; then
+            echo "::error::SPARKLE_EDDSA_KEY is not an EdDSA key in base64, as generate_keys -x writes it."
+            exit 1
+          fi
+          printf '%s' "$SPARKLE_EDDSA_KEY" > "$RUNNER_TEMP/sparkle.key"
+          echo "LOKYR_SPARKLE_KEY_FILE=$RUNNER_TEMP/sparkle.key" >> "$GITHUB_ENV"
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: cargo xtask release draft "$RELEASE_VERSION"
+      # One comment of the run's, edited at each draft.
+      - name: Tell the pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: >-
+          gh pr comment "$NUMBER" --repo "$GITHUB_REPOSITORY" --edit-last --create-if-none
+          --body-file "target/releases/$RELEASE_VERSION/draft.md"
+      - name: Remove the EdDSA key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sparkle.key"
+
+  publish:
+    name: publish
+    # The merge of a release's pull request of this repository.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.merged
+      && startsWith(github.head_ref, 'release/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # The release published, and the site's run asked.
+      contents: write
+      actions: write
+    # One publishing at a time, each to its end.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
+    timeout-minutes: 30
+    env:
+      MERGE: ${{ github.event.pull_request.merge_commit_sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE: ${{ github.base_ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The merge's version, and whether it rehearses, of a base of tests.
+      - name: Tell the version
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "xtask") | .version')"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::'$version' is no version, X.Y.Z or X.Y.Z-rc.N."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          if [ "$BASE" != main ]; then
+            echo "REHEARSAL=true" >> "$GITHUB_ENV"
+            echo "::notice title=Rehearsal::A pull request into $BASE: the release a pre-release, never the latest; the site built alone; the cask on a branch of tests."
+          fi
+      # The build was of the pull request's head: the merge holds its tree,
+      # as main holds nothing that the release's branch lacks.
+      - name: Check that the merge holds what the release built
+        id: tree
+        run: |
+          merged="$(git rev-parse "$MERGE^{tree}")"
+          built="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$HEAD_SHA" --jq .tree.sha)"
+          if [ "$merged" != "$built" ]; then
+            echo "::error::The merge's tree is not the one that the release built: $BASE holds changes that the release's branch lacks."
+            exit 1
+          fi
+      - name: Publish the release
+        id: release
+        run: cargo xtask release publish "$RELEASE_VERSION" --target "$MERGE" ${REHEARSAL:+--rehearsal}
+      # A run of the site of its own, of main, which the environment of
+      # GitHub Pages takes, once the release is the latest; a rehearsal's of
+      # its base, built alone. A candidate leaves the latest as it was.
+      - name: Deploy the site of the new feed
+        id: site
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        run: |
+          if [ -n "${REHEARSAL:-}" ]; then
+            gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref "$BASE" -f deploy=false
+          else
+            gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
+      # The tap's cask, of a release alone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        with:
+          repository: sephiroth74/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+      - name: Update the tap's cask
+        id: tap
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        run: |
+          gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern "Lokyr-$RELEASE_VERSION.dmg" --dir target
+          cargo xtask cask "$RELEASE_VERSION" --tap "$GITHUB_WORKSPACE/tap"
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Casks/lokyr.rb
+          git -C tap commit --message "lokyr $RELEASE_VERSION"
+          if [ -n "${REHEARSAL:-}" ]; then
+            git -C tap push origin "HEAD:refs/heads/test/lokyr-$RELEASE_VERSION-$GITHUB_RUN_ID"
+          else
+            git -C tap push origin HEAD:main
+          fi
+      - name: Tell what was done
+        run: |
+          {
+            echo "### v$RELEASE_VERSION published${REHEARSAL:+ as a pre-release, of a rehearsal}"
+            echo
+            echo "- The release: https://github.com/$GITHUB_REPOSITORY/releases/tag/v$RELEASE_VERSION"
+            echo "- Locally: \`git fetch --tags\`, and check the update through Sparkle."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tell what is left by hand
+        if: failure()
+        env:
+          TREE: ${{ steps.tree.outcome }}
+          RELEASE: ${{ steps.release.outcome }}
+          SITE: ${{ steps.site.outcome }}
+          TAP: ${{ steps.tap.outcome }}
+        run: |
+          {
+            echo "### v$RELEASE_VERSION: what is left by hand"
+            echo
+            if [ "$TREE" != success ]; then
+              echo "- The merge does not hold the release's build: draft it again of the merge, \`cargo xtask release draft $RELEASE_VERSION\`, then publish it."
+            fi
+            if [ "$RELEASE" != success ]; then
+              echo "- Publish the draft: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE\`."
+            fi
+            if [ "$SITE" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
+              echo "- Deploy the site: \`gh workflow run site.yml --ref main\`."
+            fi
+            if [ "$TAP" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
+              echo "- The cask: \`cargo xtask cask $RELEASE_VERSION\` of the release's DMG in target, then commit and push the tap."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

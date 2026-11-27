@@ -1,32 +1,37 @@
-//! `cargo xtask release <version>`: a candidate, `X.Y.Z-rc.N`, or a
-//! release, `X.Y.Z`, of the crate's numbers, from the commit checked out,
-//! which GitHub has, to a draft of its GitHub release, which the
-//! maintainer publishes; on the maintainer's Mac, which signs and has
-//! Apple notarize:
+//! `cargo xtask release [<step>] <version>`: a candidate, `X.Y.Z-rc.N`, or
+//! a release, `X.Y.Z`, of the crate's numbers, from the commit checked out,
+//! which GitHub has, in steps that the CI runs apart and `just release`
+//! runs in a row, `check`, `build` and `draft`, the maintainer publishing:
 //!
-//! 1. the bundle, built as that version, through `LOKYR_RELEASE`;
-//! 2. its build's number above the feed's latest, as Sparkle tells a newer
-//!    version by it, and a release built of its last candidate's commit
-//!    would have the candidate's: the feed of tests must be there, unless
-//!    `--without-feed`, as a feed's first release; a `SOURCE_DATE_EPOCH`
-//!    set, which would give the number, is refused;
-//! 3. the binary's dSYM, of the binary's UUID, and the bill of materials,
-//!    kept in `target/releases/<version>`;
-//! 4. the DMG, the bundle and the image notarized and stapled;
-//! 5. the draft, `v<version>`, of the commit, a candidate's a pre-release,
-//!    with the DMG, the dSYM and the bill, its notes
-//!    `docs/releases/<X.Y.Z>.md`, and `CHANGELOG.md` its section, of the
-//!    format that `check-changelog` checks; a release's pages of no mark
-//!    of what no release has yet, which `cargo xtask since` made the
-//!    release's;
-//! 6. the DMG in the feed of tests;
-//! 7. a release's DMG in the public feed, `site/public/appcast.xml`, its
-//!    deltas uploaded to the draft, the appcast to commit and push once the
-//!    release is published, as its DMG is not public before; a candidate
-//!    stays out of it;
-//! 8. a release's Homebrew cask, of the DMG's SHA-256, in
-//!    `target/releases/<version>` and the tap's folder beside the workspace,
-//!    to commit and push once the release is published.
+//! - `check`, of no secret, as a release's pull request runs it: its notes
+//!   and their listing, `CHANGELOG.md`'s section of the format that
+//!   `check-changelog` checks, a release's pages of no mark of what no
+//!   release has yet, the checkout as committed and on GitHub, the version
+//!   not released, and the build's number, of the commit's moment, above
+//!   the feeds' latest, as Sparkle tells a newer version by it: the feed
+//!   of tests, if it is there, and the public one, the latest release's
+//!   asset, of which a feed's first release goes `--without-feed`; of no
+//!   version, the crate's, as `build`'s;
+//! - `build`, of the signing identity and Apple's notary: the bundle built
+//!   as that version, through `LOKYR_RELEASE`, its number checked again,
+//!   the binary's dSYM of the binary's UUID, the bill of materials, and the
+//!   DMG, the bundle and the image notarized and stapled, all in
+//!   `target/releases/<version>`;
+//! - `draft`, of the EdDSA key: the draft, `v<version>`, of the commit, a
+//!   candidate's a pre-release, in place of a draft of that tag, never of a
+//!   published release, of the DMG, the dSYM and the bill, its notes
+//!   `docs/releases/<X.Y.Z>.md`; the DMG in the feed of tests, if it is
+//!   there; a release's DMG in the public feed, its deltas and the appcast
+//!   assets of the draft, which the site serves once the release is the
+//!   latest; a release's Homebrew cask, of the DMG's SHA-256; and
+//!   `target/releases/<version>/draft.md`, the draft's address, the DMG's
+//!   size and the deltas', which the CI tells the release's pull request;
+//! - `publish [--target <commit>] [--rehearsal]`: the draft, a draft
+//!   alone, moved to `<commit>`, as the merge of the release's pull request,
+//!   and published, its tag made there, a release the latest; a rehearsal's
+//!   a pre-release, never the latest, so that the feed, the site and the
+//!   updates keep the latest release; a release's candidates' drafts left
+//!   deleted.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,19 +47,18 @@ const REPOSITORY: &str = "sephiroth74/lokyr";
 /// The feed's appcast, relative to the workspace root.
 const APPCAST: &str = "private/feed/appcast.xml";
 
-pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
-    let version = args
-        .next()
-        .context("release takes the version: a candidate's, X.Y.Z-rc.N, or a release's, X.Y.Z")?;
-    let without_feed = match args.next().as_deref() {
-        None => false,
-        Some("--without-feed") => true,
-        Some(arg) => bail!("release takes the version and `--without-feed`, not `{arg}`"),
-    };
-    if let Some(arg) = args.next() {
-        bail!("release takes the version and `--without-feed`, not `{arg}`");
-    }
-    epoch_unset(std::env::var_os("SOURCE_DATE_EPOCH").as_deref())?;
+/// What `release` takes.
+const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`; `publish` takes `--target <commit>` and `--rehearsal`";
+
+pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
+    let args: Vec<String> = args.collect();
+    let Options {
+        step,
+        version,
+        without_feed,
+        target,
+        rehearsal,
+    } = parse(&args, env!("CARGO_PKG_VERSION"))?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -62,174 +66,541 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
     // The version is of the crate's numbers, as the build takes it.
     bundle::version::version(env!("CARGO_PKG_VERSION"), Some(&version), 0)
         .map_err(anyhow::Error::msg)?;
-    let notes = root
-        .join("docs/releases")
-        .join(format!("{}.md", feed::release_of(&version)));
-    ensure!(
-        notes.is_file(),
-        "{} is not there: write the release's notes first",
-        notes.display()
-    );
-    let release = feed::release_of(&version);
-    let listed = fs::read_to_string(root.join("docs/releases/README.md"))
-        .context("reading docs/releases/README.md")?;
-    ensure!(
-        lists_notes(&listed, release),
-        "docs/releases/README.md does not list {release}'s notes: add `- [{release}]({release}.md), <date>: <what it brought>` at the top of its list"
-    );
-    let changelog =
-        fs::read_to_string(root.join("CHANGELOG.md")).context("reading CHANGELOG.md")?;
-    ensure!(
-        crate::changelog::has_release(&changelog, release),
-        "CHANGELOG.md has no `## [{release}] - YYYY-MM-DD`: move its Unreleased entries there first"
-    );
-    crate::changelog::check(&changelog).map_err(anyhow::Error::msg)?;
-    // A release's pages tell what it has as released: a candidate's keep
-    // their marks, as the release is still to come.
-    if !version.contains('-') {
-        let left = crate::since::left(&root)?;
-        ensure!(
-            left.is_empty(),
-            "these still say `not released yet`: {}; run `cargo xtask since {version}` first, in the commit that prepares the release",
-            left.join(", ")
-        );
-    }
-    let changed = output(
-        Command::new("git").args(["status", "--porcelain"]),
-        "reading the checkout's state",
-    )?;
-    ensure!(
-        changed.trim().is_empty(),
-        "the checkout has changes: a release is of a commit, as it is"
-    );
-    let commit = output(
-        Command::new("git").args(["rev-parse", "HEAD"]),
-        "reading the commit",
-    )?
-    .trim()
-    .to_owned();
-    ensure!(
-        Command::new("gh")
-            .args(["api", "--silent"])
-            .arg(format!("repos/{REPOSITORY}/commits/{commit}"))
-            .status()
-            .is_ok_and(|status| status.success()),
-        "GitHub does not have the commit {commit}: push it first"
-    );
-    let tag = format!("v{version}");
-    let released = Command::new("gh")
-        .args(["release", "view", &tag, "--repo", REPOSITORY])
-        .output()
-        .context("asking GitHub for the release")?;
-    ensure!(
-        !released.status.success(),
-        "{tag} has a release on GitHub already"
-    );
-
-    status(
-        Command::new(env!("CARGO"))
-            .args(["xtask", "bundle"])
-            .env("LOKYR_RELEASE", &version)
-            .current_dir(&root),
-        "building the bundle",
-    )?;
-    let app = root.join("target").join(format!("{}.app", bundle::NAME));
-    let info =
-        fs::read_to_string(app.join("Contents/Info.plist")).context("reading the Info.plist")?;
-    let number: u64 = plist_string(&info, "CFBundleVersion")
-        .and_then(|number| number.parse().ok())
-        .context("the bundle's CFBundleVersion")?;
-    // Above both feeds' latest: the tests' and the public one.
-    let appcasts: Vec<String> = [APPCAST, feed::PUBLIC_APPCAST]
-        .iter()
-        .filter_map(|appcast| fs::read_to_string(root.join(appcast)).ok())
-        .collect();
-    let appcast = (!appcasts.is_empty()).then(|| appcasts.join("\n"));
-    above_the_feed(number, appcast.as_deref(), without_feed)?;
-
-    let out = root.join("target/releases").join(&version);
-    if out.exists() {
-        fs::remove_dir_all(&out).with_context(|| format!("removing {}", out.display()))?;
-    }
-    fs::create_dir_all(&out).with_context(|| format!("making {}", out.display()))?;
-    let dsym = root
-        .join("target/release")
-        .join(format!("{}.dSYM", bundle::EXECUTABLE));
-    let binary = app.join("Contents/MacOS").join(bundle::EXECUTABLE);
-    let (dsym_uuid, binary_uuid) = (uuid(&dsym)?, uuid(&binary)?);
-    ensure!(
-        dsym_uuid == binary_uuid,
-        "{} is of {dsym_uuid}, not of the bundle's binary, {binary_uuid}",
-        dsym.display()
-    );
-    let symbols = out.join(format!("{}-{version}.dSYM.zip", bundle::NAME));
-    status(
-        Command::new("ditto")
-            .args(["-c", "-k", "--keepParent"])
-            .arg(&dsym)
-            .arg(&symbols),
-        "zipping the dSYM",
-    )?;
-    let bill = out.join(format!("{}-{version}.cdx.json", bundle::NAME));
-    let crates = sbom::crates(&root)?;
-    fs::write(
-        &bill,
-        serde_json::to_string_pretty(&sbom::bill(&version, &crates, sparkle::VERSION))?,
-    )
-    .context("writing the bill of materials")?;
-
-    status(
-        Command::new(env!("CARGO"))
-            .args(["xtask", "dmg"])
-            .current_dir(&root),
-        "building the DMG",
-    )?;
-    let dmg = root
-        .join("target")
-        .join(format!("{}-{version}.dmg", bundle::NAME));
-    ensure!(dmg.is_file(), "{} is not there", dmg.display());
-
-    status(
-        Command::new("gh").args(draft_arguments(
-            &version,
-            &commit,
-            &notes,
-            &[dmg.clone(), symbols, bill],
-        )),
-        "making the draft of the release",
-    )?;
-    status(
-        Command::new(env!("CARGO"))
-            .args(["xtask", "feed", "add"])
-            .arg(&dmg)
-            .current_dir(&root),
-        "adding the DMG to the feed of tests",
-    )?;
-    // A candidate stays out of the public feed and has no cask: Homebrew
-    // takes the releases alone.
-    if version.contains('-') {
-        println!(
-            "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
-        );
-    } else {
-        let deltas = feed::publish(&root, &dmg)?;
-        if !deltas.is_empty() {
-            status(
-                Command::new("gh")
-                    .args(["release", "upload", &tag, "--repo", REPOSITORY])
-                    .args(&deltas),
-                "uploading the deltas to the draft",
-            )?;
+    let release = Release {
+        root,
+        version,
+        without_feed,
+        target,
+        rehearsal,
+    };
+    match step {
+        Some(Step::Check) => release.check()?,
+        Some(Step::Build) => release.build()?,
+        Some(Step::Draft) => release.draft()?,
+        Some(Step::Publish) => release.publish()?,
+        None => {
+            release.check()?;
+            release.build()?;
+            release.draft()?;
         }
-        for written in cask::write(&root, &version, None)? {
-            println!("release: the cask, {}", written.display());
-        }
-        println!(
-            "release: {tag}'s draft is on GitHub, of {commit}; publish it, then commit {} and push it, `git fetch --tags`, and push the tap's cask",
-            feed::PUBLIC_APPCAST
-        );
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// A step of a release.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Step {
+    Check,
+    Build,
+    Draft,
+    Publish,
+}
+
+/// What `release` was asked.
+#[derive(Debug, PartialEq, Eq)]
+struct Options {
+    /// The step, if one alone.
+    step: Option<Step>,
+    /// The version.
+    version: String,
+    /// Whether it goes without the feed, as a feed's first release.
+    without_feed: bool,
+    /// The commit that `publish` moves the draft to.
+    target: Option<String>,
+    /// Whether `publish` rehearses, of a pre-release never the latest.
+    rehearsal: bool,
+}
+
+/// What `args` ask: of `check` and `build` without a version, the crate's,
+/// `crate_version`; `--target` and `--rehearsal` of `publish` alone.
+fn parse(args: &[String], crate_version: &str) -> Result<Options> {
+    let (step, rest) = match args.first().map(String::as_str) {
+        Some("check") => (Some(Step::Check), &args[1..]),
+        Some("build") => (Some(Step::Build), &args[1..]),
+        Some("draft") => (Some(Step::Draft), &args[1..]),
+        Some("publish") => (Some(Step::Publish), &args[1..]),
+        _ => (None, args),
+    };
+    let publishing = step == Some(Step::Publish);
+    let mut version = None;
+    let mut without_feed = false;
+    let mut target = None;
+    let mut rehearsal = false;
+    let mut rest = rest.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--without-feed" => without_feed = true,
+            "--target" if publishing => {
+                let commit = rest
+                    .next()
+                    .with_context(|| format!("{USAGE}: `--target` of no commit"))?;
+                ensure!(
+                    !commit.is_empty() && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                    "{USAGE}: `{commit}` is no commit's hash"
+                );
+                target = Some(commit.to_owned());
+            }
+            "--rehearsal" if publishing => rehearsal = true,
+            other if other.starts_with('-') || version.is_some() => bail!("{USAGE}, not `{other}`"),
+            other => version = Some(other.to_owned()),
+        }
+    }
+    let version = match (version, step) {
+        (Some(version), _) => version,
+        (None, Some(Step::Check | Step::Build)) => crate_version.to_owned(),
+        (None, _) => bail!("{USAGE}"),
+    };
+    Ok(Options {
+        step,
+        version,
+        without_feed,
+        target,
+        rehearsal,
+    })
+}
+
+/// A release, or a candidate, of its version, from the workspace at
+/// `root`.
+struct Release {
+    root: PathBuf,
+    version: String,
+    without_feed: bool,
+    /// The commit that `publish` moves the draft to.
+    target: Option<String>,
+    /// Whether `publish` rehearses, of a pre-release never the latest.
+    rehearsal: bool,
+}
+
+impl Release {
+    /// Its tag, `v<version>`.
+    fn tag(&self) -> String {
+        format!("v{}", self.version)
+    }
+
+    /// Whether it is a candidate, of a suffix.
+    fn is_candidate(&self) -> bool {
+        self.version.contains('-')
+    }
+
+    /// The folder of its assets, `target/releases/<version>`.
+    fn out(&self) -> PathBuf {
+        self.root.join("target/releases").join(&self.version)
+    }
+
+    /// Its DMG, which `build` makes.
+    fn dmg(&self) -> PathBuf {
+        self.root
+            .join("target")
+            .join(format!("{}-{}.dmg", bundle::NAME, self.version))
+    }
+
+    /// Its dSYM's archive, which `build` makes.
+    fn symbols(&self) -> PathBuf {
+        self.out()
+            .join(format!("{}-{}.dSYM.zip", bundle::NAME, self.version))
+    }
+
+    /// Its bill of materials, which `build` makes.
+    fn bill(&self) -> PathBuf {
+        self.out()
+            .join(format!("{}-{}.cdx.json", bundle::NAME, self.version))
+    }
+
+    /// Its notes, `docs/releases/<X.Y.Z>.md`.
+    fn notes(&self) -> PathBuf {
+        self.root
+            .join("docs/releases")
+            .join(format!("{}.md", feed::release_of(&self.version)))
+    }
+
+    /// The commit checked out, as GitHub has it.
+    fn commit(&self) -> Result<String> {
+        Ok(output(
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(&self.root),
+            "reading the commit",
+        )?
+        .trim()
+        .to_owned())
+    }
+
+    /// The feeds' appcasts, the tests' if it is there and the public one,
+    /// as one text; none of neither.
+    fn appcasts(&self) -> Option<String> {
+        let appcasts: Vec<String> = fs::read_to_string(self.root.join(APPCAST))
+            .ok()
+            .into_iter()
+            .chain(feed::published_appcast(&self.root))
+            .collect();
+        (!appcasts.is_empty()).then(|| appcasts.join("\n"))
+    }
+
+    /// What a release takes before anything is built, of no secret.
+    fn check(&self) -> Result<()> {
+        epoch_unset(std::env::var_os("SOURCE_DATE_EPOCH").as_deref())?;
+        let notes = self.notes();
+        ensure!(
+            notes.is_file(),
+            "{} is not there: write the release's notes first",
+            notes.display()
+        );
+        let release = feed::release_of(&self.version);
+        let listed = fs::read_to_string(self.root.join("docs/releases/README.md"))
+            .context("reading docs/releases/README.md")?;
+        ensure!(
+            lists_notes(&listed, release),
+            "docs/releases/README.md does not list {release}'s notes: add `- [{release}]({release}.md), <date>: <what it brought>` at the top of its list"
+        );
+        let changelog =
+            fs::read_to_string(self.root.join("CHANGELOG.md")).context("reading CHANGELOG.md")?;
+        ensure!(
+            crate::changelog::has_release(&changelog, release),
+            "CHANGELOG.md has no `## [{release}] - YYYY-MM-DD`: move its Unreleased entries there first"
+        );
+        crate::changelog::check(&changelog).map_err(anyhow::Error::msg)?;
+        // A release's pages tell what it has as released: a candidate's keep
+        // their marks, as the release is still to come.
+        if !self.is_candidate() {
+            let left = crate::since::left(&self.root)?;
+            ensure!(
+                left.is_empty(),
+                "these still say `not released yet`: {}; run `cargo xtask since {}` first, in the commit that prepares the release",
+                left.join(", "),
+                self.version
+            );
+        }
+        let changed = output(
+            Command::new("git")
+                .args(["status", "--porcelain"])
+                .current_dir(&self.root),
+            "reading the checkout's state",
+        )?;
+        ensure!(
+            changed.trim().is_empty(),
+            "the checkout has changes: a release is of a commit, as it is"
+        );
+        let commit = self.commit()?;
+        ensure!(
+            Command::new("gh")
+                .args(["api", "--silent"])
+                .arg(format!("repos/{REPOSITORY}/commits/{commit}"))
+                .status()
+                .is_ok_and(|status| status.success()),
+            "GitHub does not have the commit {commit}: push it first"
+        );
+        let tag = self.tag();
+        let released = Command::new("gh")
+            .args(["release", "view", &tag, "--repo", REPOSITORY])
+            .output()
+            .context("asking GitHub for the release")?;
+        ensure!(
+            !released.status.success(),
+            "{tag} has a release on GitHub already"
+        );
+        // The number that the build will take, of the commit's moment.
+        let number: u64 = bundle::version::stamp(bundle::build_moment(&self.root)?)
+            .parse()
+            .context("the build's number")?;
+        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        println!("release: {tag} of {commit}, build {number}, passes its checks");
+        Ok(())
+    }
+
+    /// The bundle, the DMG, the dSYM and the bill, of the signing identity
+    /// and Apple's notary.
+    fn build(&self) -> Result<()> {
+        epoch_unset(std::env::var_os("SOURCE_DATE_EPOCH").as_deref())?;
+        let root = &self.root;
+        status(
+            Command::new(env!("CARGO"))
+                .args(["xtask", "bundle"])
+                .env("LOKYR_RELEASE", &self.version)
+                .current_dir(root),
+            "building the bundle",
+        )?;
+        let app = root.join("target").join(format!("{}.app", bundle::NAME));
+        let info = fs::read_to_string(app.join("Contents/Info.plist"))
+            .context("reading the Info.plist")?;
+        let number: u64 = plist_string(&info, "CFBundleVersion")
+            .and_then(|number| number.parse().ok())
+            .context("the bundle's CFBundleVersion")?;
+        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        let out = self.out();
+        if out.exists() {
+            fs::remove_dir_all(&out).with_context(|| format!("removing {}", out.display()))?;
+        }
+        fs::create_dir_all(&out).with_context(|| format!("making {}", out.display()))?;
+        let dsym = root
+            .join("target/release")
+            .join(format!("{}.dSYM", bundle::EXECUTABLE));
+        let binary = app.join("Contents/MacOS").join(bundle::EXECUTABLE);
+        let (dsym_uuid, binary_uuid) = (uuid(&dsym)?, uuid(&binary)?);
+        ensure!(
+            dsym_uuid == binary_uuid,
+            "{} is of {dsym_uuid}, not of the bundle's binary, {binary_uuid}",
+            dsym.display()
+        );
+        status(
+            Command::new("ditto")
+                .args(["-c", "-k", "--keepParent"])
+                .arg(&dsym)
+                .arg(self.symbols()),
+            "zipping the dSYM",
+        )?;
+        let crates = sbom::crates(root)?;
+        fs::write(
+            self.bill(),
+            serde_json::to_string_pretty(&sbom::bill(&self.version, &crates, sparkle::VERSION))?,
+        )
+        .context("writing the bill of materials")?;
+        status(
+            Command::new(env!("CARGO"))
+                .args(["xtask", "dmg"])
+                .current_dir(root),
+            "building the DMG",
+        )?;
+        let dmg = self.dmg();
+        ensure!(dmg.is_file(), "{} is not there", dmg.display());
+        println!(
+            "release: {}'s DMG, dSYM and bill, of build {number}, in {}",
+            self.tag(),
+            out.display()
+        );
+        Ok(())
+    }
+
+    /// The draft of the release, of what `build` made, of the EdDSA key.
+    fn draft(&self) -> Result<()> {
+        let root = &self.root;
+        let (dmg, symbols, bill) = (self.dmg(), self.symbols(), self.bill());
+        for asset in [&dmg, &symbols, &bill] {
+            ensure!(
+                asset.is_file(),
+                "{} is not there: run `cargo xtask release build {}` first",
+                asset.display(),
+                self.version
+            );
+        }
+        let commit = self.commit()?;
+        let tag = self.tag();
+        self.replace_draft()?;
+        status(
+            Command::new("gh").args(draft_arguments(
+                &self.version,
+                &commit,
+                &self.notes(),
+                &[dmg.clone(), symbols, bill],
+            )),
+            "making the draft of the release",
+        )?;
+        // The feed of tests, of the maintainer's Mac alone.
+        if root.join(APPCAST).is_file() {
+            status(
+                Command::new(env!("CARGO"))
+                    .args(["xtask", "feed", "add"])
+                    .arg(&dmg)
+                    .current_dir(root),
+                "adding the DMG to the feed of tests",
+            )?;
+        }
+        // A candidate stays out of the public feed and has no cask: Homebrew
+        // takes the releases alone.
+        if self.is_candidate() {
+            self.summarize(&dmg, &[])?;
+            println!(
+                "release: {tag}'s draft is on GitHub, of {commit}; publish it, then `git fetch --tags`"
+            );
+            return Ok(());
+        }
+        let previous = feed::published_appcast(root);
+        let published = feed::publish(root, &dmg, previous.as_deref())?;
+        status(
+            Command::new("gh")
+                .args(["release", "upload", &tag, "--repo", REPOSITORY])
+                .args(&published.deltas)
+                .arg(&published.appcast),
+            "uploading the deltas and the appcast to the draft",
+        )?;
+        for written in cask::write(root, &self.version, None)? {
+            println!("release: the cask, {}", written.display());
+        }
+        self.summarize(&dmg, &published.deltas)?;
+        println!(
+            "release: {tag}'s draft is on GitHub, of {commit}, of its appcast; publish it, then deploy the site, `git fetch --tags`, and push the tap's cask"
+        );
+        Ok(())
+    }
+
+    /// Deletes the draft of the release's tag, if any, which a new draft
+    /// replaces, as a pull request's new commit drafts the release again;
+    /// fails of a published release of that tag.
+    fn replace_draft(&self) -> Result<()> {
+        let tag = self.tag();
+        let told = Command::new("gh")
+            .args(["release", "view", &tag, "--repo", REPOSITORY])
+            .args(["--json", "isDraft", "--jq", ".isDraft"])
+            .output()
+            .context("looking for the release on GitHub")?;
+        // None of that tag: `gh` fails, as it finds no release.
+        if !told.status.success() {
+            return Ok(());
+        }
+        let draft = String::from_utf8_lossy(&told.stdout).trim() == "true";
+        ensure!(draft, "{tag} is released already: release another version");
+        println!("release: replacing {tag}'s draft");
+        status(
+            Command::new("gh").args(["release", "delete", &tag, "--repo", REPOSITORY, "--yes"]),
+            "deleting the release's former draft",
+        )
+    }
+
+    /// Deletes the drafts of the release's candidates, `v<version>-rc.N`,
+    /// that a pull request in draft made and no one published; told and
+    /// passed over of a failure, as the release is out.
+    fn delete_candidates_drafts(&self) {
+        let listed = output(
+            Command::new("gh")
+                .args(["release", "list", "--repo", REPOSITORY, "--limit", "100"])
+                .args(["--json", "tagName,isDraft"])
+                .args(["--jq", ".[] | select(.isDraft) | .tagName"]),
+            "listing the drafts",
+        );
+        let listed = match listed {
+            Ok(listed) => listed,
+            Err(error) => {
+                eprintln!("release: the candidates' drafts are left: {error:#}");
+                return;
+            }
+        };
+        let drafts: Vec<&str> = listed.lines().map(str::trim).collect();
+        for tag in candidates_of(&drafts, &self.version) {
+            match status(
+                Command::new("gh").args(["release", "delete", tag, "--repo", REPOSITORY, "--yes"]),
+                "deleting a candidate's draft",
+            ) {
+                Ok(()) => println!("release: {tag}'s draft deleted"),
+                Err(error) => eprintln!("release: {tag}'s draft is left: {error:#}"),
+            }
+        }
+    }
+
+    /// Writes `draft.md` beside the release's assets: the draft's address,
+    /// the size of its `dmg` and of its `deltas`, which the CI tells the
+    /// release's pull request.
+    fn summarize(&self, dmg: &Path, deltas: &[PathBuf]) -> Result<()> {
+        let tag = self.tag();
+        let address = output(
+            Command::new("gh")
+                .args(["release", "view", &tag, "--repo", REPOSITORY])
+                .args(["--json", "url", "--jq", ".url"]),
+            "reading the draft's address",
+        )?;
+        let deltas: Vec<(String, u64)> = deltas
+            .iter()
+            .map(|delta| {
+                let name = delta
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                (name, bundle::size_of(delta))
+            })
+            .collect();
+        let text = summary(&tag, address.trim(), bundle::size_of(dmg), &deltas);
+        let file = self.out().join("draft.md");
+        fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
+    }
+
+    /// The draft, a draft alone, moved to the target if any, and
+    /// published, its tag made there: a candidate a pre-release, a release
+    /// the latest; a rehearsal's a pre-release, never the latest.
+    fn publish(&self) -> Result<()> {
+        let tag = self.tag();
+        let draft = output(
+            Command::new("gh")
+                .args(["release", "view", &tag, "--repo", REPOSITORY])
+                .args(["--json", "isDraft", "--jq", ".isDraft"]),
+            "looking for the release's draft",
+        )?;
+        ensure!(
+            draft.trim() == "true",
+            "{tag} is no draft: published already, or of no draft"
+        );
+        if let Some(target) = &self.target {
+            status(
+                Command::new("gh")
+                    .args(["release", "edit", &tag, "--repo", REPOSITORY])
+                    .args(["--target", target]),
+                "moving the draft to its commit",
+            )?;
+        }
+        let mut command = Command::new("gh");
+        command.args([
+            "release",
+            "edit",
+            &tag,
+            "--repo",
+            REPOSITORY,
+            "--draft=false",
+        ]);
+        command.args(publish_flags(self.is_candidate(), self.rehearsal));
+        status(&mut command, "publishing the release")?;
+        if !self.is_candidate() {
+            self.delete_candidates_drafts();
+        }
+        println!(
+            "release: {tag} published{}",
+            if self.rehearsal {
+                ", a rehearsal's pre-release"
+            } else {
+                ""
+            }
+        );
+        Ok(())
+    }
+}
+
+/// The tags of `tags` that are candidates of the release `version`,
+/// `v<version>-rc.N`.
+fn candidates_of<'a>(tags: &[&'a str], version: &str) -> Vec<&'a str> {
+    let prefix = format!("v{version}-rc.");
+    tags.iter()
+        .copied()
+        .filter(|tag| {
+            tag.strip_prefix(&prefix).is_some_and(|number| {
+                !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        })
+        .collect()
+}
+
+/// The flags of `gh release edit` that publish a release: a rehearsal's a
+/// pre-release that is never the latest, a candidate a pre-release, a
+/// release the latest.
+fn publish_flags(candidate: bool, rehearsal: bool) -> &'static [&'static str] {
+    match (rehearsal, candidate) {
+        (true, _) => &["--prerelease", "--latest=false"],
+        (false, true) => &["--prerelease"],
+        (false, false) => &["--latest"],
+    }
+}
+
+/// The draft's summary, in Markdown, of its `tag`, its `address`, its DMG's
+/// size `dmg` and its `deltas`, each of its name and size.
+fn summary(tag: &str, address: &str, dmg: u64, deltas: &[(String, u64)]) -> String {
+    let mut text = format!(
+        "**{tag}** is drafted: [its draft]({address}).\n\n- The DMG: {}.\n",
+        bundle::megabytes(dmg)
+    );
+    if deltas.is_empty() {
+        text.push_str("- No deltas: a candidate stays out of the public feed.\n");
+    } else {
+        text.push_str(&format!("- {} deltas:\n", deltas.len()));
+        for (name, size) in deltas {
+            text.push_str(&format!("  - `{name}`, {}\n", bundle::megabytes(*size)));
+        }
+    }
+    text
 }
 
 /// Whether `list`, the release notes' list, `docs/releases/README.md`'s,
@@ -354,6 +725,103 @@ fn output(command: &mut Command, what: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_release_s_candidates_are_told_by_their_tags() {
+        let tags = [
+            "v1.6.0-rc.1",
+            "v1.6.0-rc.12",
+            "v1.6.0",
+            "v1.6.0-rc.",
+            "v1.6.0-rc.2x",
+            "v1.60.0-rc.1",
+        ];
+        assert_eq!(
+            candidates_of(&tags, "1.6.0"),
+            ["v1.6.0-rc.1", "v1.6.0-rc.12"]
+        );
+        assert!(candidates_of(&tags, "1.7.0").is_empty());
+    }
+
+    #[test]
+    fn a_rehearsal_is_never_the_latest() {
+        assert_eq!(publish_flags(false, false), ["--latest"]);
+        assert_eq!(publish_flags(true, false), ["--prerelease"]);
+        assert_eq!(
+            publish_flags(false, true),
+            ["--prerelease", "--latest=false"]
+        );
+        assert_eq!(
+            publish_flags(true, true),
+            ["--prerelease", "--latest=false"]
+        );
+    }
+
+    #[test]
+    fn the_draft_s_summary_tells_its_address_and_sizes() {
+        let text = summary(
+            "v1.6.0",
+            "https://github.com/o/r/releases/tag/untagged-1",
+            19_200_000,
+            &[("Lokyr2-1.delta".to_owned(), 2_500_000)],
+        );
+        assert!(text.contains(
+            "**v1.6.0** is drafted: [its draft](https://github.com/o/r/releases/tag/untagged-1)"
+        ));
+        assert!(text.contains("- The DMG: 19.2 MB."));
+        assert!(text.contains("- 1 deltas:\n  - `Lokyr2-1.delta`, 2.5 MB"));
+        assert!(summary("v1.6.0-rc.1", "a", 1, &[]).contains("No deltas"));
+    }
+
+    #[test]
+    fn a_release_takes_a_step_alone_or_all_of_them_and_check_the_crate_s_version() {
+        let args =
+            |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        let options = |step, version: &str, without_feed| Options {
+            step,
+            version: version.to_owned(),
+            without_feed,
+            target: None,
+            rehearsal: false,
+        };
+        assert_eq!(
+            parse(&args("1.6.0"), "1.6.0").unwrap(),
+            options(None, "1.6.0", false)
+        );
+        assert_eq!(
+            parse(&args("check"), "1.6.0").unwrap(),
+            options(Some(Step::Check), "1.6.0", false)
+        );
+        assert_eq!(
+            parse(&args("build 1.6.0-rc.1 --without-feed"), "1.6.0").unwrap(),
+            options(Some(Step::Build), "1.6.0-rc.1", true)
+        );
+        // A step of no version but `check` and `build`, and anything else,
+        // refused.
+        assert_eq!(
+            parse(&args("build"), "1.6.0").unwrap(),
+            options(Some(Step::Build), "1.6.0", false)
+        );
+        assert_eq!(
+            parse(
+                &args("publish 1.6.0 --target 0123abcd --rehearsal"),
+                "1.6.0"
+            )
+            .unwrap(),
+            Options {
+                target: Some("0123abcd".to_owned()),
+                rehearsal: true,
+                ..options(Some(Step::Publish), "1.6.0", false)
+            }
+        );
+        assert!(parse(&args("publish 1.6.0 --target"), "1.6.0").is_err());
+        assert!(parse(&args("publish 1.6.0 --target main;rm"), "1.6.0").is_err());
+        assert!(parse(&args("draft 1.6.0 --rehearsal"), "1.6.0").is_err());
+        assert!(parse(&args("draft"), "1.6.0").is_err());
+        assert!(parse(&args(""), "1.6.0").is_err());
+        assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());
+        assert!(parse(&args("check --fast"), "1.6.0").is_err());
+    }
 
     #[test]
     fn the_notes_list_names_a_release_of_its_item() {
