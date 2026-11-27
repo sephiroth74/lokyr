@@ -43,6 +43,11 @@ type Span = (CellPin, CellPin, u64);
 /// those whose text left.
 const KEPT: (i64, u16) = (i64::MIN, 1);
 
+/// The most parts that a search's matches keep apart, past which the last
+/// ones are joined into one, so that a search that follows output, of a
+/// part a look, walks no more parts than these.
+const MOST_PARTS: usize = 64;
+
 /// The rows that a search's filter shows, which the view finds of its
 /// matches' pins once a change of them, or of the rows' numbering, and of
 /// those the runs that it hides once a change of the list's rows.
@@ -128,7 +133,8 @@ impl Terminal {
 
     /// Lets go of the matches of the search `id` that start at the row
     /// numbered `from` or below it, as a search reads those rows again, the
-    /// screen's that a program may have written over among them; how many
+    /// screen's that a program may have written over among them, and of
+    /// those whose text left, as [`Terminal::trim_matches`] does; how many
     /// of its matches it keeps. Its parts are looked at from the last up,
     /// as far as one whose matches start above `from`, as the others' do.
     pub fn drop_matches_from(&mut self, id: u64, from: i64) -> usize {
@@ -155,10 +161,65 @@ impl Terminal {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
         }
-        let kept = parts.values().map(Vec::len).sum();
         self.matches[at].parts = parts;
         self.matches_revision += 1;
-        kept
+        self.trim(at, usize::MAX)
+    }
+
+    /// Lets go of the first matches of the search `id`: those whose text
+    /// left, as the scrollback's limit takes the oldest rows, then the
+    /// oldest past `most`, their pins going, so that a search that follows
+    /// output keeps the newest matches and counts those that keep their
+    /// text alone; how many it keeps.
+    pub fn trim_matches(&mut self, id: u64, most: usize) -> usize {
+        match self.matches.iter().position(|kept| kept.id == id) {
+            Some(at) => self.trim(at, most),
+            None => 0,
+        }
+    }
+
+    /// [`Terminal::trim_matches`] of the matches at `at`, which lie in
+    /// reading order, those whose text left first; the parts left empty
+    /// go, and past [`MOST_PARTS`] the last ones are joined.
+    fn trim(&mut self, at: usize, most: usize) -> usize {
+        let mut parts = std::mem::take(&mut self.matches[at].parts);
+        let mut total: usize = parts.values().map(Vec::len).sum();
+        let mut gone = Vec::new();
+        for spans in parts.values_mut() {
+            let lost = spans
+                .iter()
+                .take_while(|span| self.text_left(&span.0) || self.text_left(&span.1))
+                .count();
+            let cut = lost.max(total.saturating_sub(most).min(spans.len()));
+            total -= cut;
+            gone.extend(spans.drain(..cut));
+            // Those after a match kept keep their text, and fit.
+            if !spans.is_empty() {
+                break;
+            }
+        }
+        parts.retain(|_, spans| !spans.is_empty());
+        join_last_parts(&mut parts);
+        self.matches[at].parts = parts;
+        if !gone.is_empty() {
+            self.matches_revision += 1;
+        }
+        for (start, end, _) in gone {
+            self.unpin_cell(&start);
+            self.unpin_cell(&end);
+        }
+        total
+    }
+
+    /// Whether `pin`'s cell left its screen's list, as the scrollback's
+    /// limit takes the oldest rows, whichever screen shows.
+    fn text_left(&self, pin: &CellPin) -> bool {
+        let rows = if pin.is_alternate() {
+            &self.alternate.rows
+        } else {
+            &self.primary.rows
+        };
+        rows.pin_position(pin.pin()).is_none()
     }
 
     /// The matches of the search `id`, in reading order, from the one at
@@ -610,6 +671,10 @@ impl Terminal {
                 gone.extend(kept.current.take());
             }
         }
+        // The filter's rows, of the matches, change with them.
+        if !gone.is_empty() {
+            self.matches_revision += 1;
+        }
         for (start, end, _) in gone {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
@@ -670,6 +735,23 @@ impl Terminal {
                 current,
             });
         }
+    }
+}
+
+/// Joins the last of `parts` into one, past [`MOST_PARTS`], as parts that
+/// follow each other in their order lie in reading order whole: the parts
+/// past the half of them into the one before.
+fn join_last_parts(parts: &mut BTreeMap<i64, Vec<Span>>) {
+    if parts.len() <= MOST_PARTS {
+        return;
+    }
+    let keys: Vec<i64> = parts.keys().copied().collect();
+    let mut joined = Vec::new();
+    for key in &keys[MOST_PARTS / 2..] {
+        joined.extend(parts.remove(key).unwrap_or_default());
+    }
+    if let Some(into) = parts.get_mut(&keys[MOST_PARTS / 2 - 1]) {
+        into.extend(joined);
     }
 }
 
@@ -1015,6 +1097,79 @@ mod tests {
         assert_eq!(count, kept.len());
         // The reads skip those whose text left alike.
         assert_eq!(terminal.matches_of(1, kept.len() - 1, 5), [cells[1999]]);
+    }
+
+    #[test]
+    fn the_matches_whose_text_left_go_and_count_no_more_and_the_oldest_past_a_bound() {
+        let options = Options {
+            scrollback: Scrollback {
+                limit: 64 << 20,
+                ..Scrollback::default()
+            },
+            ..Options::default()
+        };
+        let mut terminal = Terminal::new(500, 4, options);
+        let text: Vec<String> = (0..2000).map(|n| format!("m{n}")).collect();
+        feed(&mut terminal, &text.join("\r\n"));
+        let first = terminal.row_number(0);
+        let cells: Vec<MatchCells> = (0..2000)
+            .map(|n| ((0, first + n), (1, first + n)))
+            .collect();
+        add(&mut terminal, 1, first, &cells);
+        let pins = terminal.screen_rows().pins();
+        terminal.set_scrollback_limit(0);
+        let kept = terminal.matches_of(1, 0, usize::MAX).len();
+        assert!((4..2000).contains(&kept), "{kept} kept");
+        // Those whose text left go, their pins too, and count no more, so
+        // that a search that follows output finds room for new ones.
+        let end = terminal.row_number(terminal.screen_rows().total_rows());
+        assert_eq!(terminal.drop_matches_from(1, end), kept);
+        assert_eq!(terminal.screen_rows().pins(), pins - 2 * 2000 + 2 * kept);
+        assert_eq!(terminal.current_match(1).1, kept);
+        // Past a bound, the oldest go, the newest kept.
+        let newest = terminal.matches_of(1, kept - 2, 2);
+        assert_eq!(terminal.trim_matches(1, 2), 2);
+        assert_eq!(terminal.matches_of(1, 0, 10), newest);
+        assert_eq!(terminal.trim_matches(9, 2), 0);
+    }
+
+    #[test]
+    fn the_parts_of_a_search_that_follows_output_are_joined_past_a_bound() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        let text: Vec<String> = (0..200).map(|n| format!("x{n}")).collect();
+        feed(&mut terminal, &text.join("\r\n"));
+        let first = terminal.row_number(0);
+        // A part a row, as a follow's looks bring them.
+        for n in 0..200 {
+            add(
+                &mut terminal,
+                1,
+                first + n,
+                &[((0, first + n), (0, first + n))],
+            );
+        }
+        terminal.trim_matches(1, usize::MAX);
+        let kept = terminal.matches.iter().find(|kept| kept.id == 1).unwrap();
+        assert!(kept.parts.len() <= MOST_PARTS, "{} parts", kept.parts.len());
+        // In reading order still, every one.
+        let all = terminal.matches_of(1, 0, usize::MAX);
+        assert_eq!(all.len(), 200);
+        assert!(all.windows(2).all(|pair| pair[0].0.1 < pair[1].0.1));
+    }
+
+    #[test]
+    fn a_filter_s_row_whose_match_a_program_writes_over_hides() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "needle here\r\nother\r\nneedle too");
+        let found = [((0, 0), (5, 0)), ((0, 2), (5, 2))];
+        add(&mut terminal, 1, 0, &found);
+        terminal.show_matches(1, true, None);
+        assert!(terminal.set_filter(Some(1)));
+        assert_eq!(texts(&mut terminal), ["needle here", "[⋯ 1]", "needle too"]);
+        // The first written over: its row leaves the filter's view at once.
+        feed(&mut terminal, "\x1b[1;1H\x1b[2Ksomething");
+        texts(&mut terminal);
+        assert_eq!(texts(&mut terminal), ["[⋯ 2]", "needle too", "[past]"]);
     }
 
     #[test]

@@ -334,13 +334,13 @@ impl Search {
             ..start
                 .saturating_add(usize::try_from(to - from).unwrap_or(0))
                 .min(total);
-        let kept = terminal.drop_matches_from(self.id, from);
+        terminal.drop_matches_from(self.id, from);
         let cancel = AtomicBool::new(false);
         let all = lokyr_search::find_all(
             terminal.screen_rows_mut(),
             &follow.query,
             rows,
-            MOST_MATCHES.saturating_sub(kept),
+            MOST_MATCHES,
             &cancel,
         )
         .ok()?;
@@ -350,7 +350,9 @@ impl Search {
             .map(|found| (terminal.cell_pin(found.start), terminal.cell_pin(found.end)))
             .collect();
         terminal.add_matches(self.id, from, pins);
-        let count = terminal.current_match(self.id).1;
+        // The newest kept past the bound, the oldest let go, so that new
+        // output's matches show however many came before.
+        let count = terminal.trim_matches(self.id, MOST_MATCHES);
         // A part's rows past the screen's stay as they are; the screen's
         // are read again at the next look.
         let next = if to < end {
