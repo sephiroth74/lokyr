@@ -95,7 +95,7 @@ jobs:
     # One release's build at a time of a branch, a new push's in place of
     # the one that waits or runs.
     concurrency:
-      group: release-build-${{ github.head_ref || github.ref }}
+      group: release-build-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: true
     # The build of everything without a cache, and two notarizations.
     timeout-minutes: 90
@@ -236,9 +236,11 @@ jobs:
       contents: write
       pull-requests: write
     # One draft at a time of a branch, a new push's in place of the one that
-    # waits or runs.
+    # waits or runs; of the publishing's group, which waits for it to end,
+    # so that no release is published of a draft half made. Of the head's
+    # repository too, as a fork's branch may have the same name.
     concurrency:
-      group: release-draft-${{ github.head_ref || github.ref }}
+      group: release-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: true
     # Five released DMGs downloaded, the deltas made.
     timeout-minutes: 45
@@ -303,9 +305,10 @@ jobs:
       # The release published, and the site's run asked.
       contents: write
       actions: write
-    # One publishing at a time, each to its end.
+    # The draft's group: the publishing waits for a draft that runs, and
+    # runs to its end.
     concurrency:
-      group: release-publish
+      group: release-${{ github.event.pull_request.head.repo.full_name || github.repository }}-${{ github.head_ref || github.ref_name }}
       cancel-in-progress: false
     timeout-minutes: 30
     env:
@@ -346,9 +349,13 @@ jobs:
             echo "::error::The merge's tree is not the one that the release built: $BASE holds changes that the release's branch lacks."
             exit 1
           fi
+      # The draft of the head that the release built, of its DMG and feed:
+      # one of a former push, or of a draft that failed, is refused.
       - name: Publish the release
         id: release
-        run: cargo xtask release publish "$RELEASE_VERSION" --target "$MERGE" ${REHEARSAL:+--rehearsal}
+        run: >-
+          cargo xtask release publish "$RELEASE_VERSION" --target "$MERGE" --built "$HEAD_SHA"
+          ${REHEARSAL:+--rehearsal}
       # A run of the site of its own, of main, which the environment of
       # GitHub Pages takes, once the release is the latest; a rehearsal's of
       # its base, built alone. A candidate leaves the latest as it was.
@@ -407,7 +414,7 @@ jobs:
               echo "- The merge does not hold the release's build: draft it again of the merge, \`cargo xtask release draft $RELEASE_VERSION\`, then publish it."
             fi
             if [ "$RELEASE" != success ]; then
-              echo "- Publish the draft: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE\`."
+              echo "- Publish the draft of the head that the release built, once its \`build\` and \`draft\` ran of it: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE --built $HEAD_SHA\`. The step's log tells why it was refused."
             fi
             if [ "$SITE" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
               echo "- Deploy the site: \`gh workflow run site.yml --ref main\`."
