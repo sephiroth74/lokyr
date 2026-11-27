@@ -54,8 +54,9 @@ const GOTO_WINDOW: &str = "window.goto";
 /// The command that shows the quick terminal.
 const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
 
-/// The most answers of programs in Lokyr's own terminals kept, past which
-/// the oldest is forgotten, and its program asked again.
+/// The most answers kept in memory alone, of programs in Lokyr's own
+/// terminals and of programs of no app above them, past which the oldest
+/// is forgotten, and its program asked again.
 const MOST_TERMINAL_ANSWERS: usize = 256;
 
 /// The most requests that wait for their clients' answers to the question,
@@ -73,9 +74,11 @@ pub struct Automation {
     /// The clients' answers to the question, by their ids, of its state,
     /// once read.
     answers: Option<BTreeMap<String, bool>>,
-    /// The answers of programs in Lokyr's own terminals, by their ids (a
-    /// pane's shell and the programs down to the sender), oldest first,
-    /// which no state keeps.
+    /// The answers kept in memory alone, by their clients' ids, oldest
+    /// first, which no state keeps: of programs in Lokyr's own terminals (a
+    /// pane's shell and the programs down to the sender), and of clients
+    /// whose answer holds while Lokyr runs alone, as a program of no app
+    /// above it.
     in_terminals: VecDeque<(String, bool)>,
     /// The question that waits for its answer, of its client.
     question: Option<(u64, AutomationClient)>,
@@ -377,7 +380,7 @@ impl Automation {
     /// in Lokyr's terminals, of this run; of another, of the plugin's
     /// state.
     fn answer_of(&mut self, cx: &mut Cx<'_>, client: &AutomationClient) -> Option<bool> {
-        if client.terminal {
+        if client.terminal || client.fleeting {
             return self
                 .in_terminals
                 .iter()
@@ -415,6 +418,8 @@ impl Automation {
         )?;
         let detail = if client.terminal {
             "automation-control-terminal-detail"
+        } else if client.fleeting {
+            "automation-control-fleeting-detail"
         } else {
             "automation-control-detail"
         };
@@ -436,7 +441,7 @@ impl Automation {
         };
         let allowed = button == Some(ALLOW);
         if matches!(button, Some(DENY | ALLOW)) {
-            if client.terminal {
+            if client.terminal || client.fleeting {
                 self.in_terminals.retain(|(id, _)| *id != client.id);
                 self.in_terminals.push_back((client.id.clone(), allowed));
                 while self.in_terminals.len() > MOST_TERMINAL_ANSWERS {

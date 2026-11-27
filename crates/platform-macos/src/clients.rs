@@ -3,7 +3,12 @@
 //! and identifier; a command-line program, as `osascript`, by the app that
 //! it runs in and its own path; a program in one of the app's own
 //! terminals, by its pane's first process and the programs from it down to
-//! the sender, whose answer holds in that pane while its shell runs.
+//! the sender, whose answer holds in that pane while its shell runs, its
+//! pane found of its terminal's session where it left its parents; a
+//! program of no app above it, as in a tmux or an ssh session, by its
+//! path, whose answer holds while the app runs alone. Each named by its
+//! executable's whole path, so that a program that takes another's name
+//! shows as itself.
 
 use std::ffi::{CStr, c_char, c_void};
 
@@ -18,7 +23,9 @@ const MOST_PARENTS: usize = 64;
 pub(crate) fn of_pid(pid: i32) -> Client {
     let own = i32::try_from(std::process::id()).unwrap_or(0);
     let chain = ancestors(pid);
-    let program = program_name(pid).unwrap_or_else(|| "a program".to_owned());
+    let path = program_path(pid);
+    let program = path.clone().unwrap_or_else(|| "a program".to_owned());
+    let in_lokyr = format!("{program}, in a Lokyr terminal");
     // A program of one of the app's own terminals, whose shell the app
     // started: macOS asks nothing of it.
     if pid != own
@@ -26,15 +33,62 @@ pub(crate) fn of_pid(pid: i32) -> Client {
     {
         return Client {
             id: in_terminal(&chain[..index]),
-            name: format!("{program}, in a Lokyr terminal"),
+            name: in_lokyr,
             terminal: true,
             waits: false,
+            fleeting: false,
         };
     }
+    let path_or_process = || {
+        path.clone()
+            .unwrap_or_else(|| format!("{pid}:{}", start_time(pid)))
+    };
+    // One that left its parents, as by a double fork, or past the parents
+    // looked at: of its pane still, its terminal's session, whose leader is
+    // the pane's first process, the app's child.
+    if pid != own
+        && let Some(leader) = session_of(pid)
+        && leader != own
+        && parent_of(leader) == Some(own)
+    {
+        return Client {
+            id: format!(
+                "terminal:{leader}:{}>detached>{}",
+                start_time(leader),
+                path_or_process()
+            ),
+            name: in_lokyr,
+            terminal: true,
+            waits: false,
+            fleeting: false,
+        };
+    }
+    // One that the app is responsible for, of no pane that tells it, as in
+    // a tmux that one of its terminals started: its answer held while the
+    // app runs alone.
+    if pid != own && responsible_of(pid) == Some(own) {
+        return Client {
+            id: format!("terminal:lokyr>{}", path_or_process()),
+            name: in_lokyr,
+            terminal: false,
+            waits: false,
+            fleeting: true,
+        };
+    }
+    // Past the parents looked at, the app that runs it unknown.
+    let cut = chain.len() >= MOST_PARENTS;
     // The app responsible: the sender, or the first of its parents that is
     // an app, as the terminal app that ran `osascript`.
     let app = chain.iter().find_map(|&process| app_of(process));
     match app {
+        // Past the parents looked at, of no app among them: as of no app.
+        None if cut => Client {
+            id: format!("program:{}", path_or_process()),
+            name: program,
+            terminal: false,
+            waits: false,
+            fleeting: true,
+        },
         Some((app_pid, name)) => {
             let signed = signature(app_pid)
                 .or_else(|| program_path(app_pid).map(|path| format!("path:{path}")))
@@ -45,28 +99,64 @@ pub(crate) fn of_pid(pid: i32) -> Client {
                     name,
                     terminal: false,
                     waits: false,
+                    fleeting: false,
                 }
             } else {
-                let path = program_path(pid).unwrap_or_else(|| program.clone());
                 Client {
-                    id: format!("app:{signed}:{path}"),
+                    id: format!("app:{signed}:{program}"),
                     name: format!("{program} in {name}"),
                     terminal: false,
                     waits: false,
+                    fleeting: false,
                 }
             }
         }
-        // No app: a program of no app's, as of `cron` or `ssh`.
+        // No app: a program of no app's, as of `cron`, `ssh` or a tmux,
+        // whose path any of them shares: its answer held while the app
+        // runs alone.
         None => Client {
-            id: format!(
-                "program:{}",
-                program_path(pid).unwrap_or_else(|| format!("{pid}:{}", start_time(pid)))
-            ),
+            id: format!("program:{}", path_or_process()),
             name: program,
             terminal: false,
             waits: false,
+            fleeting: true,
         },
     }
+}
+
+/// The leader of the process `pid`'s session, of its terminal: a pane's
+/// first process, for the programs of its shell that kept its session.
+fn session_of(pid: i32) -> Option<i32> {
+    // SAFETY: `getsid` reads the session of a process, of no memory.
+    let leader = unsafe { libc::getsid(pid) };
+    (leader > 1).then_some(leader)
+}
+
+/// The process responsible for `pid`, as macOS's privacy prompts take it:
+/// the app that started it, of its children too, unless one disclaimed it.
+/// Of the system's library, looked up as it runs, as no header declares
+/// it; none where it is not there.
+fn responsible_of(pid: i32) -> Option<i32> {
+    type Responsible = unsafe extern "C" fn(i32) -> i32;
+    static FUNCTION: std::sync::OnceLock<Option<Responsible>> = std::sync::OnceLock::new();
+    let function = FUNCTION.get_or_init(|| {
+        // SAFETY: the name is a C string, which `dlsym` looks up in the
+        // libraries loaded, of a function of this signature where it is
+        // there.
+        let symbol = unsafe {
+            libc::dlsym(
+                libc::RTLD_DEFAULT,
+                c"responsibility_get_pid_responsible_for_pid".as_ptr(),
+            )
+        };
+        // SAFETY: the symbol, where found, is the function of this
+        // signature.
+        (!symbol.is_null())
+            .then(|| unsafe { std::mem::transmute::<*mut c_void, Responsible>(symbol) })
+    });
+    // SAFETY: the function reads a process's responsible one, of no memory.
+    let responsible = unsafe { (*function)?(pid) };
+    (responsible > 0).then_some(responsible)
 }
 
 /// The id of a program in one of the app's own terminals, of `chain`, the
@@ -100,6 +190,7 @@ pub(crate) fn shortcuts() -> Client {
         name: "Shortcuts".to_owned(),
         terminal: false,
         waits: true,
+        fleeting: false,
     }
 }
 
@@ -436,8 +527,98 @@ mod tests {
             client.id.starts_with(&format!("terminal:{pid}:")),
             "{client:?}"
         );
-        assert_eq!(client.name, "sleep, in a Lokyr terminal");
-        assert!(!client.waits);
+        assert_eq!(client.name, "/bin/sleep, in a Lokyr terminal");
+        assert!(!client.waits && !client.fleeting);
+    }
+
+    #[test]
+    fn a_program_that_left_its_pane_s_shell_is_of_its_pane_still() {
+        use std::os::unix::process::CommandExt;
+        // The pane's first process, the app's child of a session of its
+        // own, as a terminal's; its program forks twice, launchd its
+        // parent then.
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "( /bin/sleep 7 & ); /bin/sleep 7"]);
+        // SAFETY: `setsid` is safe to call after the fork, of no memory.
+        unsafe {
+            command.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+        let mut shell = command.spawn().unwrap();
+        let leader = i32::try_from(shell.id()).unwrap();
+        let mut detached = None;
+        for _ in 0..200 {
+            detached = processes()
+                .into_iter()
+                .find(|&pid| session_of(pid) == Some(leader) && parent_of(pid) == Some(1));
+            if detached.is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let detached = detached.expect("the program of no parent but launchd");
+        let client = of_pid(detached);
+        // SAFETY: a signal to the processes of the session, which the test
+        // made.
+        unsafe {
+            libc::kill(-leader, libc::SIGKILL);
+        }
+        let _ = shell.wait();
+        assert!(client.terminal && !client.fleeting, "{client:?}");
+        assert!(
+            client.id.starts_with(&format!("terminal:{leader}:"))
+                && client.id.ends_with(">detached>/bin/sleep"),
+            "{client:?}"
+        );
+    }
+
+    #[test]
+    fn a_program_of_no_app_above_it_is_answered_while_the_app_runs_alone() {
+        // A program of a session of its own and no parent but launchd, as
+        // a tmux server's: its path, its answer of no state.
+        let mut perl = std::process::Command::new("/usr/bin/perl")
+            .args([
+                "-e",
+                "use POSIX; my $pid = fork; if ($pid) { print \"$pid\\n\"; exit 0 } POSIX::setsid(); open STDOUT, '>', '/dev/null'; exec '/bin/sleep', '7';",
+            ])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut told = String::new();
+        std::io::Read::read_to_string(perl.stdout.as_mut().unwrap(), &mut told).unwrap();
+        let _ = perl.wait();
+        let pid: i32 = told.trim().parse().unwrap();
+        for _ in 0..200 {
+            if parent_of(pid) == Some(1) && program_path(pid).as_deref() == Some("/bin/sleep") {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let client = of_pid(pid);
+        // SAFETY: a signal to the process that the test started.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+        }
+        assert_eq!(client.id, "program:/bin/sleep", "{client:?}");
+        assert_eq!(client.name, "/bin/sleep");
+        assert!(client.fleeting && !client.terminal, "{client:?}");
+    }
+
+    /// Every process's pid.
+    fn processes() -> Vec<i32> {
+        let mut pids = vec![0i32; 8192];
+        let size = i32::try_from(pids.len() * std::mem::size_of::<i32>()).unwrap();
+        // SAFETY: the buffer holds `size` bytes of pids, which the call
+        // fills with the processes that it lists.
+        let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast(), size) };
+        let count = usize::try_from(listed).unwrap_or(0).min(pids.len());
+        pids[..count]
+            .iter()
+            .copied()
+            .filter(|&pid| pid > 0)
+            .collect()
     }
 
     #[test]

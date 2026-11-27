@@ -4,5 +4,6 @@
 automation-control-message = Allow “{ $client }” to control Lokyr?
 automation-control-detail = It can open windows and tabs, type into your terminals, press keys, run Lokyr's commands and read what your terminals show, which may hold passwords and other secrets. Lokyr remembers your answer.
 automation-control-terminal-detail = A program running in one of Lokyr's terminals asks to control Lokyr: it could type into your other terminals, run commands there and read what they show. Your answer holds for this program in this terminal until its shell exits.
+automation-control-fleeting-detail = It can open windows and tabs, type into your terminals, press keys, run Lokyr's commands and read what your terminals show, which may hold passwords and other secrets. It runs in no app that Lokyr can name, as in tmux or an ssh session: your answer holds for this program until Lokyr quits.
 automation-control-deny = Don't Allow
 automation-control-allow = Allow

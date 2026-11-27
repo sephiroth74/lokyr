@@ -44,6 +44,11 @@ pub struct AutomationClient {
     /// fails at once while the question waits.
     #[serde(default)]
     pub waits: bool,
+    /// Whether its answer holds while Lokyr runs alone, and is not kept,
+    /// as of a program of no app above it, such as one in a tmux or an ssh
+    /// session, whose path others share, or of no process told.
+    #[serde(default)]
+    pub fleeting: bool,
 }
 
 /// What a script or a shortcut asks of the app.

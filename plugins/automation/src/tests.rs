@@ -17,6 +17,7 @@ fn client() -> AutomationClient {
         name: "Acme Script".to_owned(),
         terminal: false,
         waits: false,
+        fleeting: false,
     }
 }
 
@@ -325,6 +326,7 @@ fn in_pane(pane: u32, chain: &str) -> AutomationClient {
         name: "osascript, in a Lokyr terminal".to_owned(),
         terminal: true,
         waits: false,
+        fleeting: false,
     }
 }
 
@@ -788,4 +790,57 @@ fn the_requests_that_wait_for_the_answer_are_bounded_and_an_answer_ends_their_ti
         );
     }
     assert!(host.timers().is_empty());
+}
+
+#[test]
+fn a_program_of_no_app_above_it_is_answered_while_lokyr_runs_and_never_kept() {
+    let (mut host, mut plugin) = asking_host();
+    host.take_done();
+    let in_tmux = AutomationClient {
+        id: "program:/usr/bin/osascript".to_owned(),
+        name: "/usr/bin/osascript".to_owned(),
+        terminal: false,
+        waits: false,
+        fleeting: true,
+    };
+    ask_of(
+        &mut host,
+        &mut plugin,
+        40,
+        &in_tmux,
+        AutomationRequest::Workspace,
+    );
+    // Its question tells that the answer holds until Lokyr quits.
+    assert!(
+        host.take_done().iter().any(|done| matches!(
+            done,
+            Request::AskChoice { detail, .. } if detail == "automation-control-fleeting-detail"
+        )),
+        "its question's detail"
+    );
+    choose(&mut host, &mut plugin, ALLOW);
+    ask_of(
+        &mut host,
+        &mut plugin,
+        41,
+        &in_tmux,
+        AutomationRequest::Workspace,
+    );
+    assert_eq!(host.question(), None);
+    assert!(matches!(
+        answer(&host, 41),
+        Some(AutomationAnswer::Workspace(_))
+    ));
+    // No state keeps it: a plugin that starts again asks again.
+    assert!(!matches!(host.state(), Data::Map(map) if map.contains_key(CLIENTS)));
+    let mut again = Automation::default();
+    host.activate(&mut again).unwrap();
+    ask_of(
+        &mut host,
+        &mut again,
+        42,
+        &in_tmux,
+        AutomationRequest::Workspace,
+    );
+    assert!(host.question().is_some());
 }

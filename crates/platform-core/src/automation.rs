@@ -20,6 +20,9 @@ pub struct Client {
     /// Whether it waits for the user's answer to a question, as a shortcut
     /// does, rather than failing while it waits, as a script does.
     pub waits: bool,
+    /// Whether its answer holds while the app runs alone, and is not kept,
+    /// as of a program of no app above it, or of no process told.
+    pub fleeting: bool,
 }
 
 /// What a script or a shortcut asks of the app.

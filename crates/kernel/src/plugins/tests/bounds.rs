@@ -662,6 +662,7 @@ fn a_failed_call_s_automation_answer_waits_again_and_a_forgotten_request_none() 
         name: "Acme".to_owned(),
         terminal: false,
         waits: false,
+        fleeting: false,
     };
     assert!(plugins.automation(7, client.clone(), workspace.clone(), None));
     assert!(plugins.automation(8, client, workspace, None));

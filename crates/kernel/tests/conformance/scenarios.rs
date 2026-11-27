@@ -655,6 +655,7 @@ fn automation(allowed: bool) -> Scenario {
             name: "Script Editor".to_owned(),
             terminal: false,
             waits: false,
+            fleeting: false,
         },
         request: automation::AutomationRequest::Workspace,
     };

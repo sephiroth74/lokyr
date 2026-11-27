@@ -184,6 +184,7 @@ fn every() -> Vec<Event> {
                 name: "Shortcuts".to_owned(),
                 terminal: false,
                 waits: true,
+                fleeting: false,
             },
             request: lokyr_plugin_sdk::automation::AutomationRequest::Split {
                 environment: Default::default(),

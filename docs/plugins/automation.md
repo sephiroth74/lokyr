@@ -20,7 +20,7 @@ The first time that an app sends Lokyr a request, of any kind, Lokyr asks you wh
 - **Don't Allow**, the default button, refuses this request and the app's next ones.
 - **Allow** answers this request and the app's next ones, reading the panes' text among them.
 
-Lokyr tells apps apart by their code signature, remembers your answer for each app from one start to the next, and asks for each program that runs in one of its own terminals, an answer that holds in that terminal until its shell exits. [Allow an app to control Lokyr](../automation.md#allow-an-app-to-control-lokyr) tells more.
+Lokyr tells apps apart by their code signature, remembers your answer for each app from one start to the next, and asks for each program that runs in one of its own terminals, an answer that holds in that terminal until its shell exits, and for a program of no app that it can name, such as one in tmux, an answer that holds until Lokyr quits. [Allow an app to control Lokyr](../automation.md#allow-an-app-to-control-lokyr) tells more.
 
 ## Turning it off
 
