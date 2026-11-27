@@ -26,7 +26,11 @@
 //!   latest; a release's Homebrew cask, of the DMG's SHA-256; and
 //!   `target/releases/<version>/draft.md`, the draft's address, the DMG's
 //!   size and the deltas', which the CI tells the release's pull request;
-//! - `publish`: the draft published, a release the latest.
+//! - `publish [--target <commit>] [--rehearsal]`: the draft, a draft
+//!   alone, moved to `<commit>`, as the merge of the release's pull request,
+//!   and published, its tag made there, a release the latest; a rehearsal's
+//!   a pre-release, never the latest, so that the feed, the site and the
+//!   updates keep the latest release.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,11 +47,17 @@ const REPOSITORY: &str = "sephiroth74/lokyr";
 const APPCAST: &str = "private/feed/appcast.xml";
 
 /// What `release` takes.
-const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`";
+const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`; `publish` takes `--target <commit>` and `--rehearsal`";
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let args: Vec<String> = args.collect();
-    let (step, version, without_feed) = parse(&args, env!("CARGO_PKG_VERSION"))?;
+    let Options {
+        step,
+        version,
+        without_feed,
+        target,
+        rehearsal,
+    } = parse(&args, env!("CARGO_PKG_VERSION"))?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -59,6 +69,8 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         root,
         version,
         without_feed,
+        target,
+        rehearsal,
     };
     match step {
         Some(Step::Check) => release.check()?,
@@ -83,9 +95,24 @@ enum Step {
     Publish,
 }
 
-/// The step, if one alone, the version and whether it goes without the
-/// feed, of `args`: of `check` without a version, the crate's, `crate_version`.
-fn parse(args: &[String], crate_version: &str) -> Result<(Option<Step>, String, bool)> {
+/// What `release` was asked.
+#[derive(Debug, PartialEq, Eq)]
+struct Options {
+    /// The step, if one alone.
+    step: Option<Step>,
+    /// The version.
+    version: String,
+    /// Whether it goes without the feed, as a feed's first release.
+    without_feed: bool,
+    /// The commit that `publish` moves the draft to.
+    target: Option<String>,
+    /// Whether `publish` rehearses, of a pre-release never the latest.
+    rehearsal: bool,
+}
+
+/// What `args` ask: of `check` and `build` without a version, the crate's,
+/// `crate_version`; `--target` and `--rehearsal` of `publish` alone.
+fn parse(args: &[String], crate_version: &str) -> Result<Options> {
     let (step, rest) = match args.first().map(String::as_str) {
         Some("check") => (Some(Step::Check), &args[1..]),
         Some("build") => (Some(Step::Build), &args[1..]),
@@ -93,11 +120,26 @@ fn parse(args: &[String], crate_version: &str) -> Result<(Option<Step>, String, 
         Some("publish") => (Some(Step::Publish), &args[1..]),
         _ => (None, args),
     };
+    let publishing = step == Some(Step::Publish);
     let mut version = None;
     let mut without_feed = false;
-    for arg in rest {
+    let mut target = None;
+    let mut rehearsal = false;
+    let mut rest = rest.iter();
+    while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--without-feed" => without_feed = true,
+            "--target" if publishing => {
+                let commit = rest
+                    .next()
+                    .with_context(|| format!("{USAGE}: `--target` of no commit"))?;
+                ensure!(
+                    !commit.is_empty() && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                    "{USAGE}: `{commit}` is no commit's hash"
+                );
+                target = Some(commit.to_owned());
+            }
+            "--rehearsal" if publishing => rehearsal = true,
             other if other.starts_with('-') || version.is_some() => bail!("{USAGE}, not `{other}`"),
             other => version = Some(other.to_owned()),
         }
@@ -107,7 +149,13 @@ fn parse(args: &[String], crate_version: &str) -> Result<(Option<Step>, String, 
         (None, Some(Step::Check | Step::Build)) => crate_version.to_owned(),
         (None, _) => bail!("{USAGE}"),
     };
-    Ok((step, version, without_feed))
+    Ok(Options {
+        step,
+        version,
+        without_feed,
+        target,
+        rehearsal,
+    })
 }
 
 /// A release, or a candidate, of its version, from the workspace at
@@ -116,6 +164,10 @@ struct Release {
     root: PathBuf,
     version: String,
     without_feed: bool,
+    /// The commit that `publish` moves the draft to.
+    target: Option<String>,
+    /// Whether `publish` rehearses, of a pre-release never the latest.
+    rehearsal: bool,
 }
 
 impl Release {
@@ -428,10 +480,29 @@ impl Release {
         fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
     }
 
-    /// The draft published: a candidate a pre-release, a release the
-    /// latest.
+    /// The draft, a draft alone, moved to the target if any, and
+    /// published, its tag made there: a candidate a pre-release, a release
+    /// the latest; a rehearsal's a pre-release, never the latest.
     fn publish(&self) -> Result<()> {
         let tag = self.tag();
+        let draft = output(
+            Command::new("gh")
+                .args(["release", "view", &tag, "--repo", REPOSITORY])
+                .args(["--json", "isDraft", "--jq", ".isDraft"]),
+            "looking for the release's draft",
+        )?;
+        ensure!(
+            draft.trim() == "true",
+            "{tag} is no draft: published already, or of no draft"
+        );
+        if let Some(target) = &self.target {
+            status(
+                Command::new("gh")
+                    .args(["release", "edit", &tag, "--repo", REPOSITORY])
+                    .args(["--target", target]),
+                "moving the draft to its commit",
+            )?;
+        }
         let mut command = Command::new("gh");
         command.args([
             "release",
@@ -441,12 +512,28 @@ impl Release {
             REPOSITORY,
             "--draft=false",
         ]);
-        if !self.is_candidate() {
-            command.arg("--latest");
-        }
+        command.args(publish_flags(self.is_candidate(), self.rehearsal));
         status(&mut command, "publishing the release")?;
-        println!("release: {tag} published");
+        println!(
+            "release: {tag} published{}",
+            if self.rehearsal {
+                ", a rehearsal's pre-release"
+            } else {
+                ""
+            }
+        );
         Ok(())
+    }
+}
+
+/// The flags of `gh release edit` that publish a release: a rehearsal's a
+/// pre-release that is never the latest, a candidate a pre-release, a
+/// release the latest.
+fn publish_flags(candidate: bool, rehearsal: bool) -> &'static [&'static str] {
+    match (rehearsal, candidate) {
+        (true, _) => &["--prerelease", "--latest=false"],
+        (false, true) => &["--prerelease"],
+        (false, false) => &["--latest"],
     }
 }
 
@@ -592,6 +679,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_rehearsal_is_never_the_latest() {
+        assert_eq!(publish_flags(false, false), ["--latest"]);
+        assert_eq!(publish_flags(true, false), ["--prerelease"]);
+        assert_eq!(
+            publish_flags(false, true),
+            ["--prerelease", "--latest=false"]
+        );
+        assert_eq!(
+            publish_flags(true, true),
+            ["--prerelease", "--latest=false"]
+        );
+    }
+
+    #[test]
     fn the_draft_s_summary_tells_its_address_and_sizes() {
         let text = summary(
             "v1.6.0",
@@ -611,23 +712,46 @@ mod tests {
     fn a_release_takes_a_step_alone_or_all_of_them_and_check_the_crate_s_version() {
         let args =
             |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        let options = |step, version: &str, without_feed| Options {
+            step,
+            version: version.to_owned(),
+            without_feed,
+            target: None,
+            rehearsal: false,
+        };
         assert_eq!(
             parse(&args("1.6.0"), "1.6.0").unwrap(),
-            (None, "1.6.0".to_owned(), false)
+            options(None, "1.6.0", false)
         );
         assert_eq!(
             parse(&args("check"), "1.6.0").unwrap(),
-            (Some(Step::Check), "1.6.0".to_owned(), false)
+            options(Some(Step::Check), "1.6.0", false)
         );
         assert_eq!(
             parse(&args("build 1.6.0-rc.1 --without-feed"), "1.6.0").unwrap(),
-            (Some(Step::Build), "1.6.0-rc.1".to_owned(), true)
+            options(Some(Step::Build), "1.6.0-rc.1", true)
         );
-        // A step of no version but `check`, and anything else, refused.
+        // A step of no version but `check` and `build`, and anything else,
+        // refused.
         assert_eq!(
             parse(&args("build"), "1.6.0").unwrap(),
-            (Some(Step::Build), "1.6.0".to_owned(), false)
+            options(Some(Step::Build), "1.6.0", false)
         );
+        assert_eq!(
+            parse(
+                &args("publish 1.6.0 --target 0123abcd --rehearsal"),
+                "1.6.0"
+            )
+            .unwrap(),
+            Options {
+                target: Some("0123abcd".to_owned()),
+                rehearsal: true,
+                ..options(Some(Step::Publish), "1.6.0", false)
+            }
+        );
+        assert!(parse(&args("publish 1.6.0 --target"), "1.6.0").is_err());
+        assert!(parse(&args("publish 1.6.0 --target main;rm"), "1.6.0").is_err());
+        assert!(parse(&args("draft 1.6.0 --rehearsal"), "1.6.0").is_err());
         assert!(parse(&args("draft"), "1.6.0").is_err());
         assert!(parse(&args(""), "1.6.0").is_err());
         assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());
