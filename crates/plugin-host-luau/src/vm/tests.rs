@@ -335,7 +335,19 @@ return {
     end,
 }
 "#;
-    let made = vm(&[(ENTRY, bomb)], Execution::Native).unwrap();
+    // Time is not its subject: filling the memory may take a slow machine
+    // past the short deadline.
+    let deadlines = Deadlines {
+        activate: std::time::Duration::from_secs(5),
+        ..short()
+    };
+    let made = Vm::new(
+        &Arc::new(package(&[(ENTRY, bomb)])),
+        "acme/test",
+        Execution::Native,
+        deadlines,
+    )
+    .unwrap();
     let failed = call(&made, Callback::Activate);
     assert!(matches!(failed, Err(Failure::OutOfMemory)), "{failed:?}");
     // Its memory freed, it runs on.
