@@ -11,6 +11,7 @@
 </p>
 
 <p align="center">
+  <a href="#install">Install</a> ·
   <a href="#why-lokyr">Why Lokyr</a> ·
   <a href="#status">Status</a> ·
   <a href="#performance">Performance</a> ·
@@ -33,11 +34,21 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.5.0 is out**, of sessions and layouts, input broadcast to every pane, floating panes and popups, and the scrollback kept when you quit: [the disk image](https://github.com/sephiroth74/lokyr/releases/latest), or `brew install --cask sephiroth74/tap/lokyr`, as [Install](#install) tells, and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.5.0 is out**, of sessions and layouts, input broadcast to every pane, floating panes and popups, and the scrollback kept when you quit: [install it](#install), and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
-  <img src="docs/images/lokyr-code.png" alt="A Lokyr window of 100 by 30 cells, showing Rust source with syntax highlighting, by bat" width="760">
+  <img src="docs/images/lokyr-floating-pane.png" alt="A Lokyr window of two panes, Rust source by bat beside a system monitor, and a floating pane over them running lazygit" width="760">
 </p>
+
+## Install
+
+Lokyr runs on macOS 26 or later, on Apple Silicon. Download the DMG of the latest release from [the releases](https://github.com/sephiroth74/lokyr/releases), or install it with Homebrew:
+
+```sh
+brew install --cask sephiroth74/tap/lokyr
+```
+
+The cask links `lokyr` and `sleip` into Homebrew's `bin`, and leaves Lokyr's updates to Lokyr, which takes them through Sparkle. `brew uninstall --zap --cask lokyr` takes away the app, its config, its plugins and its caches.
 
 ## Why Lokyr
 
@@ -59,9 +70,9 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F3 | The macOS MVP: tabs, splits, search, themes, the command palette, the agents' state on the tabs; then 1.0.0, the first release | ✔ |
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F3b | The settings window, then themes made in the app and the Keys page | ✔ |
-| F5a | The programs' and agents' status of OSC 7501, a click at the prompt, the tabs' groups, hints; blocks of commands, ssh integration | |
-| F5b | Sessions and power features: the scrollback restored, named sessions, broadcast, floating panes; tmux -CC, triggers, profiles | |
-| F5c | Graphics and feel: kitty graphics, sixel, smooth scrolling, the cursor's trail | |
+| F5a | As 1.3 and 1.4: the programs' and agents' status of OSC 7501, a click at the prompt, the tabs' groups, hints; blocks of commands, smooth scrolling | ✔ |
+| F5b | As 1.5 to 1.7: the scrollback restored, named sessions and layouts, broadcast, floating panes and popups; Shortcuts, AppleScript and the search's filter; tmux -CC, triggers and profiles | 1.5 ✔ |
+| F5c | As 1.8: all of kitty's graphics and sixel, the cursor's trail, drag and drop | |
 | F6 | Plugin API 1.0 and hardening | |
 | F7 | After 1.0: Linux, a mux daemon, Windows | |
 
@@ -128,16 +139,6 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 
 To write a plugin of your own, in Luau, and publish it on [pkg.lokyr.dev](https://pkg.lokyr.dev), follow [Writing a plugin](docs/plugins/authoring.md).
-
-## Install
-
-Lokyr runs on macOS 26 or later, on Apple Silicon. Download the DMG of the latest release from [the releases](https://github.com/sephiroth74/lokyr/releases), or install it with Homebrew:
-
-```sh
-brew install --cask sephiroth74/tap/lokyr
-```
-
-The cask links `lokyr` and `sleip` into Homebrew's `bin`, and leaves Lokyr's updates to Lokyr, which takes them through Sparkle. `brew uninstall --zap --cask lokyr` takes away the app, its config, its plugins and its caches.
 
 ## Building
 
