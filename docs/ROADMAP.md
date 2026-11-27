@@ -206,10 +206,14 @@ Of no version, planned for 1.4 before: `ssh` in your shell installing Lokyr's te
 - **The plugin API 0.1.7**: the sessions, the broadcast's state, a tab's floating panes, and popups that plugins open of `workspace-write` and `pty-write` together.
 
 **1.6, automation and the search**:
-- **Shortcuts and AppleScript**: Lokyr's actions in the Shortcuts app and Spotlight (a new window, tab or split of a folder and a command, text sent to a pane, a command run, a session switched, a layout opened, a pane's text read) and a scripting dictionary of windows, tabs and terminals and their commands, each running a command of the registry, within macOS's own permissions, of no socket.
-- **Search**: filter mode, and a search of every tab.
-- **Memory**: a hidden session's windows give their surfaces back until they show again.
-- **Releases**: each made by the CI as its branch merges into `main`, which tags it there.
+- **Shortcuts and AppleScript**, of a first-party plugin that the host bridges, of no socket:
+  - Lokyr's actions in the Shortcuts app and Spotlight: a new window, tab or split of a folder, a command and environment variables; a command line run at the prompt, text sent, a key pressed as the user presses it, mouse clicks, moves and scrolls over a cell; a terminal focused, closed, found by its title or folder and its details read; the quick terminal shown or hidden; a command of the registry, or an entry of the palette, run; a session switched to, a layout opened, a pane's text or selection read.
+  - A scripting dictionary of windows, tabs and terminals, of their ids, names, folders and contents, and of commands that create, split, send text and keys, execute a command line, focus, close, count, test and perform any command.
+  - A consent to control: each app, by its code signature, asks once before its first request, Shortcuts once, and a program in one of Lokyr's own terminals once a pane, Don't Allow by default.
+- **Search**: the find bar's filter, the matching lines alone, of new output's too as it comes, a blank line between their runs; and Find in All Tabs, ⇧⌘F, a search of every pane of the session's windows from the palette, Return going to the match with the find bar there.
+- **The plugin API 0.1.8**: the menu bar's items, a new pane's folder and environment variables, keys and mouse events sent to a pane, a search's matches' rows alone in a pane's view, and the automation's requests for Lokyr's own plugins.
+- **Memory and startup**: a hidden session's windows give their surfaces back until they show again; the first window shows some 7 to 11 ms sooner.
+- **Releases**: each made by the CI as its branch merges into `main`, which tags it there, of a release's pull request that drafts it, of the maintainer's approvals ([Releasing](releasing.md)).
 
 **1.7, tmux and iTerm2's power features**:
 - **tmux -CC**: tmux windows and panes become native tabs and splits, of tmux 3.2 or later, local or over ssh. Lokyr's actions on tabs and splits act on tmux, and tmux's own show in Lokyr; detached as the window closes or Lokyr quits, and a local session attached again at the next start.
