@@ -141,9 +141,26 @@ jobs:
       - name: Write the notary's API key
         env:
           NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
         run: |
           umask 077
           printf '%s\n' "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          # The secrets' forms, told without their values, as a wrong one
+          # has Apple answer 401 alone.
+          if [ "$(head -n 1 "$RUNNER_TEMP/notary.p8")" != '-----BEGIN PRIVATE KEY-----' ]; then
+            echo "::error::NOTARY_KEY is not a .p8 file's private key."
+            exit 1
+          fi
+          if ! [[ "$NOTARY_KEY_ID" =~ ^[A-Z0-9]{10}$ ]]; then
+            echo "::error::NOTARY_KEY_ID is not a key's id of ten capitals and digits."
+            exit 1
+          fi
+          uuid='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          if [ -n "$NOTARY_ISSUER" ] && ! [[ "$NOTARY_ISSUER" =~ $uuid ]]; then
+            echo "::error::NOTARY_ISSUER is not an issuer's UUID, which an individual key has none of."
+            exit 1
+          fi
           echo "LOKYR_NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
       - name: Build, sign and notarize the release
         env:
