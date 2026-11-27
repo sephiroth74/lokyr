@@ -368,7 +368,7 @@ impl Terminal {
     /// holds it at its current match; none of no fold.
     #[inline]
     pub(super) fn settle_folded(&mut self) -> Option<super::folds::FoldedView> {
-        if self.folds.is_empty() || self.alternate_active {
+        if (self.folds.is_empty() && self.filter.is_none()) || self.alternate_active {
             return None;
         }
         self.settle_folds()

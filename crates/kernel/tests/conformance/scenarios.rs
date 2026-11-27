@@ -4205,6 +4205,13 @@ fn state_and_rows(world: &World) -> Scenario {
                         failed(Code::NotFound, "there is no search 999999"),
                     ),
                     (
+                        Request::FilterMatches {
+                            search: NO_SEARCH,
+                            filter: true,
+                        },
+                        failed(Code::NotFound, "there is no search 999999"),
+                    ),
+                    (
                         Request::CurrentMatch(NO_SEARCH),
                         failed(Code::NotFound, "there is no search 999999"),
                     ),

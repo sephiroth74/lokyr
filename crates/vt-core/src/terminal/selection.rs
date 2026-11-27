@@ -143,6 +143,11 @@ pub struct CellPin {
 }
 
 impl CellPin {
+    /// Its pin in the primary screen's list, of a cell of that screen.
+    pub(super) fn primary_pin(&self) -> Option<PinId> {
+        (!self.alternate).then_some(self.pin)
+    }
+
     /// Whether it is of the alternate screen.
     pub(super) fn is_alternate(&self) -> bool {
         self.alternate

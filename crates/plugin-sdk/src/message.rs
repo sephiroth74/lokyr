@@ -526,6 +526,17 @@ pub enum Request {
         /// The current match, if one.
         current: Option<SearchMatch>,
     },
+    /// Shows the rows of one of the plugin's searches' matches alone in its
+    /// pane's view of the primary screen, each run of the rows between them
+    /// a blank row, scrolled by whole rows, the rows that new output brings
+    /// searched as they come, until the search ends; or, of `filter` false,
+    /// the view as it was, at the search's current match.
+    FilterMatches {
+        /// The search's id.
+        search: u64,
+        /// Whether the view shows the matches' rows alone.
+        filter: bool,
+    },
     /// The matches of one of the plugin's searches, in the rows' order,
     /// from the one at `first`, `count` at most, as their cells are now: a
     /// match whose cells left the scrollback is no more.
@@ -1590,7 +1601,8 @@ impl Request {
             | Self::SetInactiveDim(_)
             | Self::SetFocusFollowsMouse(_)
             | Self::SetBlockLooks(_)
-            | Self::SelectBlock { .. } => Some(Capability::PaneView),
+            | Self::SelectBlock { .. }
+            | Self::FilterMatches { .. } => Some(Capability::PaneView),
             // What a plugin draws over a pane.
             Self::Decorate { .. }
             | Self::Undecorate { .. }
@@ -1732,6 +1744,7 @@ impl Request {
             | Self::Deselect(_)
             | Self::ShowCursor { .. }
             | Self::ShowMatches { .. }
+            | Self::FilterMatches { .. }
             | Self::SelectAll(_)
             | Self::ClearScrollback(_)
             | Self::Clear(_)
@@ -2451,6 +2464,7 @@ impl Request {
             | Self::Deselect { .. }
             | Self::ShowCursor { .. }
             | Self::ShowMatches { .. }
+            | Self::FilterMatches { .. }
             | Self::Undecorate { .. }
             | Self::UnmarkGutter { .. }
             | Self::Open { .. }

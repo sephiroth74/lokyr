@@ -13,6 +13,7 @@ card-never = Don't show again
 # The tips of a command's keys, as the keymap binds them now: `$keys`.
 tip-palette = Press { $keys } for the command palette, which runs any command or menu item by its name, as Split Right.
 tip-search = Press { $keys } to find text in the pane, its scrollback with it.
+tip-search-filter = In the find bar, the filter toggle shows only the lines that match, new output's too as it comes.
 tip-split = Press { $keys } to split the pane; drag the divider to resize it, double-click it to even the halves.
 tip-prompts = Press { $keys } to jump back to the previous command's prompt.
 tip-copy-mode = Press { $keys } for copy mode: vi's keys move and select, without the mouse.

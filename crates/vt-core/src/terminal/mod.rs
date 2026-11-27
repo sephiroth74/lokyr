@@ -558,6 +558,16 @@ pub struct Terminal {
     block_spacing: bool,
     /// The matches of the searches that the embedder keeps, few at once.
     matches: Vec<matches::Matches>,
+    /// The search whose matches' rows alone the primary screen's view
+    /// shows, each run of the rows between them a blank row, as a view of
+    /// folds shows a fold; none of the view as it is.
+    filter: Option<u64>,
+    /// The rows that the filter shows, as the view last found them, which
+    /// a change of the matches or of the rows' numbering finds anew.
+    filter_cache: std::cell::RefCell<matches::FilterCache>,
+    /// A count of the changes of the matches that the terminal keeps, which
+    /// tells the filter's cache stale.
+    matches_revision: u64,
     /// The inline images that programs sent, and their placements.
     images: images::Images,
     /// kitty's graphics protocol's APC string and transmission under way.
@@ -683,6 +693,9 @@ impl Terminal {
             sticky_prompts: false,
             block_spacing: false,
             matches: Vec::new(),
+            filter: None,
+            filter_cache: std::cell::RefCell::default(),
+            matches_revision: 0,
             images: images::Images::new(options.image_memory),
             graphics: kitty::Graphics::default(),
         }

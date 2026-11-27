@@ -15,6 +15,7 @@ find-invalid = Regex non valida
 find-case = Maiuscole/minuscole
 find-regex = Espressione regolare
 find-word = Parole intere
+find-filter = Mostra solo le righe trovate
 find-next = Trova successivo
 find-previous = Trova precedente
 find-history = Ricerche recenti

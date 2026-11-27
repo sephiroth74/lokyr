@@ -2,7 +2,10 @@
 //! on a thread of the host's, a part of its rows at a time under the
 //! pane's lock, from the rows of its view outward, whose matches the
 //! terminal keeps, of its pins, through new output, scrolls and reflows,
-//! and shows over its cells as its plugin asks.
+//! and shows over its cells as its plugin asks. While its filter shows, it
+//! follows: the rows that new output brings, and the screen's, which a
+//! program writes over, searched again as they come, a part at most each
+//! look, on the main thread.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, mpsc};
@@ -104,6 +107,27 @@ pub(super) struct Search {
     parts: Option<mpsc::Receiver<Part>>,
     /// Whether its plugin showed its matches, or its current one.
     shown: bool,
+    /// Whether its pane's view shows its matches' rows alone, as its plugin
+    /// asked.
+    filtering: bool,
+    /// What it follows the rows that new output brings of, once its thread
+    /// went to its end.
+    follow: Follow,
+}
+
+/// What a search follows new output of: the pane's reader and the query;
+/// the number of the row from which it reads again, the screen's first as
+/// it looked last, whose rows a program may have written over since; the
+/// number past the list's last row then, and the slices of output parsed,
+/// as output that the screen's empty rows take adds no row; and the rows'
+/// epoch, past which its numbers mean nothing.
+struct Follow {
+    reader: Reader,
+    query: Query,
+    from: i64,
+    end: i64,
+    slices: u64,
+    epoch: u64,
 }
 
 impl Search {
@@ -112,6 +136,18 @@ impl Search {
     /// at each part. A thread that does not start tells the search done,
     /// of no match.
     pub(super) fn start(id: u64, pane: host::PaneId, reader: Reader, query: Query) -> Self {
+        let follow = {
+            let terminal = reader.lock();
+            let rows = terminal.screen_rows();
+            Follow {
+                reader: reader.clone(),
+                query: query.clone(),
+                from: terminal.row_number(rows.scrollback_rows()),
+                end: terminal.row_number(rows.total_rows()),
+                slices: reader.slices(),
+                epoch: terminal.origin().epoch,
+            }
+        };
         let cancel = Arc::new(AtomicBool::new(false));
         let found = Arc::new(Mutex::new(Found::default()));
         let (sender, receiver) = mpsc::channel();
@@ -130,7 +166,84 @@ impl Search {
             found,
             parts: Some(receiver),
             shown: false,
+            filtering: false,
+            follow,
         }
+    }
+
+    /// Shows its matches' rows alone in its pane's view of `terminal`,
+    /// locked, or the view as it was, as `filter` says, the rows that new
+    /// output brings searched as they come meanwhile. Whether the view
+    /// changed.
+    pub(super) fn filter(&mut self, terminal: &mut Terminal, filter: bool) -> bool {
+        self.filtering = filter;
+        terminal.set_filter(filter.then_some(self.id))
+    }
+
+    /// Searches, while its filter shows and once its thread went to its
+    /// end, of output parsed since its last look, the rows that it brought,
+    /// and the screen's again, a part at most, under the pane's lock: the matches
+    /// there before go, as a program may have written over them, and those
+    /// found now come. The part found, of the count of the matches that the
+    /// terminal keeps and of no match, as its plugin knows the rest of
+    /// the host's; none of no new row, or of rows renumbered since, as by a
+    /// resize, which its plugin searches again.
+    pub(super) fn follow(&mut self) -> Option<Part> {
+        if !self.filtering || self.parts.is_some() {
+            return None;
+        }
+        let follow = &mut self.follow;
+        let mut terminal = follow.reader.lock();
+        if terminal.filter() != Some(self.id) || terminal.origin().epoch != follow.epoch {
+            return None;
+        }
+        let total = terminal.screen_rows().total_rows();
+        let end = terminal.row_number(total);
+        let slices = follow.reader.slices();
+        if end == follow.end && slices == follow.slices {
+            return None;
+        }
+        let from = follow.from.max(terminal.row_number(0));
+        let part = i64::try_from(PART).unwrap_or(i64::MAX);
+        let to = end.min(from.saturating_add(part));
+        let start = terminal.row_index(from)?;
+        let rows = start
+            ..start
+                .saturating_add(usize::try_from(to - from).unwrap_or(0))
+                .min(total);
+        let kept = terminal.drop_matches_from(self.id, from);
+        let cancel = AtomicBool::new(false);
+        let all = lokyr_search::find_all(
+            terminal.screen_rows_mut(),
+            &follow.query,
+            rows,
+            MOST_MATCHES.saturating_sub(kept),
+            &cancel,
+        )
+        .ok()?;
+        let pins: Vec<(CellPin, CellPin)> = all
+            .pinned
+            .into_iter()
+            .map(|found| (terminal.cell_pin(found.start), terminal.cell_pin(found.end)))
+            .collect();
+        terminal.add_matches(self.id, from, pins);
+        let count = terminal.current_match(self.id).1;
+        // A part's rows past the screen's stay as they are; the screen's
+        // are read again at the next look.
+        if to < end {
+            follow.from = to;
+        } else {
+            let rows = terminal.screen_rows();
+            follow.from = terminal.row_number(rows.scrollback_rows()).min(to);
+            follow.end = end;
+            follow.slices = slices;
+        }
+        lock(&self.found).count = count;
+        Some(Part {
+            matches: Vec::new(),
+            count,
+            done: true,
+        })
     }
 
     /// Whether its plugin showed its matches, or its current one, last.
@@ -148,6 +261,12 @@ impl Search {
     /// Whether more of its parts may come.
     pub(super) fn is_busy(&self) -> bool {
         self.parts.is_some()
+    }
+
+    /// Whether it follows new output, as its filter shows, which each turn
+    /// of the host's looks at.
+    pub(super) fn follows(&self) -> bool {
+        self.filtering
     }
 
     /// The parts that came since the last look; the last of them done.

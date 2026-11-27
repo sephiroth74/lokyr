@@ -80,6 +80,7 @@ export type Cx = {
     show_cursor: (pane: PaneId, at: { number }?) -> (true?, string?, number?),
     cursor_cell: (pane: PaneId) -> ({ number }?, string?, number?),
     show_matches: (search: number, all: boolean, current: SearchMatch?) -> (true?, string?, number?),
+    filter_matches: (search: number, filter: boolean) -> (true?, string?, number?),
     search_matches: (search: number, first: number, count: number) -> (Found?, string?, number?),
     current_match: (search: number) -> (Current?, string?, number?),
     shell_commands: (pane: PaneId, top: number, bottom: number) -> ({ ShellCommand }?, string?, number?),

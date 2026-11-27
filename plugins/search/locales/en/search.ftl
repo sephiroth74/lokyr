@@ -16,6 +16,7 @@ find-invalid = Invalid regex
 find-case = Match Case
 find-regex = Regular Expression
 find-word = Whole Words
+find-filter = Show Matching Lines Only
 find-next = Find Next
 find-previous = Find Previous
 find-history = Recent Searches

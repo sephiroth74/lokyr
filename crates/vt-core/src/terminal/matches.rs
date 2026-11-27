@@ -12,8 +12,9 @@ use std::collections::BTreeMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use super::Terminal;
-use super::folds::ViewMap;
+use super::folds::{self, ViewMap};
 use super::selection::{CellPin, row_at};
+use crate::page::PinId;
 use crate::page::{Content, Width};
 
 /// A span of a search's matches, as the view shows it: the cells of a row
@@ -41,6 +42,23 @@ type Span = (CellPin, CellPin, u64);
 /// The first place in reading order of a match that keeps its text, after
 /// those whose text left.
 const KEPT: (i64, u16) = (i64::MIN, 1);
+
+/// The rows that a search's filter shows, which the view finds of its
+/// matches' pins once a change of them, or of the rows' numbering, and of
+/// those the runs that it hides once a change of the list's rows.
+#[derive(Debug, Default)]
+pub(super) struct FilterCache {
+    /// The search, the matches' revision and the rows' epoch of `rows`.
+    rows_of: Option<(u64, u64, u64)>,
+    /// The runs of rows that its matches cover, by their numbers, in their
+    /// order, apart.
+    rows: Vec<(i64, i64)>,
+    /// What `spans` is of: `rows_of`'s, the list's first row's number and
+    /// its rows.
+    spans_of: Option<((u64, u64, u64), i64, usize)>,
+    /// The runs of the list's rows that it hides, by their indexes.
+    spans: Vec<folds::Span>,
+}
 
 /// The matches of a search that the terminal keeps.
 #[derive(Debug)]
@@ -89,6 +107,7 @@ impl Terminal {
             .entry(part)
             .or_default()
             .extend(spans);
+        self.matches_revision += 1;
     }
 
     /// Lets the matches of the search `id` go, and its current match.
@@ -97,10 +116,49 @@ impl Terminal {
             return;
         };
         let gone = self.matches.swap_remove(at);
+        self.matches_revision += 1;
+        if self.filter == Some(id) {
+            self.filter = None;
+        }
         for (start, end, _) in gone.parts.into_values().flatten().chain(gone.current) {
             self.unpin_cell(&start);
             self.unpin_cell(&end);
         }
+    }
+
+    /// Lets go of the matches of the search `id` that start at the row
+    /// numbered `from` or below it, as a search reads those rows again, the
+    /// screen's that a program may have written over among them; how many
+    /// of its matches it keeps. Its parts are looked at from the last up,
+    /// as far as one whose matches start above `from`, as the others' do.
+    pub fn drop_matches_from(&mut self, id: u64, from: i64) -> usize {
+        let Some(at) = self.matches.iter().position(|kept| kept.id == id) else {
+            return 0;
+        };
+        let mut parts = std::mem::take(&mut self.matches[at].parts);
+        let mut gone = Vec::new();
+        for spans in parts.values_mut().rev() {
+            let Some(last) = spans.last() else {
+                continue;
+            };
+            if self.order(last).0 < from {
+                break;
+            }
+            let (kept, below): (Vec<Span>, Vec<Span>) = std::mem::take(spans)
+                .into_iter()
+                .partition(|span| self.order(span).0 < from);
+            *spans = kept;
+            gone.extend(below);
+        }
+        parts.retain(|_, spans| !spans.is_empty());
+        for (start, end, _) in gone {
+            self.unpin_cell(&start);
+            self.unpin_cell(&end);
+        }
+        let kept = parts.values().map(Vec::len).sum();
+        self.matches[at].parts = parts;
+        self.matches_revision += 1;
+        kept
     }
 
     /// The matches of the search `id`, in reading order, from the one at
@@ -208,6 +266,109 @@ impl Terminal {
             self.pin_viewport();
         }
         true
+    }
+
+    /// Shows the primary screen's rows that the matches of the search
+    /// `search` cover alone, each run of the rows between them a blank row,
+    /// as a fold's, which the view scrolls by whole rows; of `None`, the
+    /// view as it was. Whether it changed: a search whose matches the
+    /// terminal does not keep shows no filter.
+    pub fn set_filter(&mut self, search: Option<u64>) -> bool {
+        let search = search.filter(|&id| self.matches.iter().any(|kept| kept.id == id));
+        if self.filter == search {
+            return false;
+        }
+        self.filter = search;
+        true
+    }
+
+    /// The search whose filter the view shows, if one.
+    pub fn filter(&self) -> Option<u64> {
+        self.filter
+    }
+
+    /// The runs of the primary screen's rows that the filter of the search
+    /// `id` hides, by their indexes, in their order: those between the rows
+    /// that its matches cover, from their first rows to their last, of the
+    /// matches that keep their text, and those before the first and after
+    /// the last; the whole list of no match.
+    pub(super) fn filter_spans(&self, id: u64) -> Vec<folds::Span> {
+        let rows = &self.primary.rows;
+        let total = rows.total_rows();
+        // Fewer rows, and scrolls, than an `i64` holds.
+        let first_number = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        let rows_of = (id, self.matches_revision, rows.epoch());
+        let mut cache = self.filter_cache.borrow_mut();
+        if cache.spans_of == Some((rows_of, first_number, total)) {
+            return cache.spans.clone();
+        }
+        if cache.rows_of != Some(rows_of) {
+            cache.rows = self.filter_rows(id);
+            cache.rows_of = Some(rows_of);
+        }
+        let gap = |first: usize, last: usize| folds::Span {
+            first,
+            last,
+            command: folds::FILTERED,
+            whole: false,
+        };
+        let mut spans = Vec::new();
+        // The first row that no match covered yet.
+        let mut next = 0;
+        for &(first, last) in &cache.rows {
+            // Of the list's rows still, as its limit takes the oldest.
+            let Ok(last) = usize::try_from(last - first_number) else {
+                continue;
+            };
+            let first = usize::try_from(first - first_number).unwrap_or(0);
+            if first >= total {
+                break;
+            }
+            if first > next {
+                spans.push(gap(next, first - 1));
+            }
+            next = next.max(last.min(total - 1) + 1);
+        }
+        if next < total {
+            spans.push(gap(next, total - 1));
+        }
+        cache.spans_of = Some((rows_of, first_number, total));
+        cache.spans.clone_from(&spans);
+        spans
+    }
+
+    /// The runs of the primary screen's rows that the matches of the search
+    /// `id` cover, from their first cells' rows to their last's, by their
+    /// numbers, in their order, apart: of their pins alone, a match whose
+    /// text a program wrote over too, as a read of their cells for each of
+    /// many would cost the view a frame.
+    fn filter_rows(&self, id: u64) -> Vec<(i64, i64)> {
+        let Some(kept) = self.matches.iter().find(|kept| kept.id == id) else {
+            return Vec::new();
+        };
+        let rows = &self.primary.rows;
+        let index = rows.row_indexes();
+        let first_number = rows.scrolled() as i64 - rows.scrollback_rows() as i64;
+        let row_of = |pin: &CellPin| {
+            let pin: PinId = pin.primary_pin()?;
+            let position = rows.pin_position(pin)?;
+            Some(first_number.saturating_add(index(position.page, position.row)? as i64))
+        };
+        let mut covered: Vec<(i64, i64)> = kept
+            .parts
+            .values()
+            .flatten()
+            .filter_map(|(start, end, _)| Some((row_of(start)?, row_of(end)?)))
+            .collect();
+        covered.sort_unstable();
+        let mut runs: Vec<(i64, i64)> = Vec::with_capacity(covered.len());
+        for (first, last) in covered {
+            match runs.last_mut() {
+                Some(run) if first <= run.1 + 1 => run.1 = run.1.max(last),
+                _ => runs.push((first, last)),
+            }
+        }
+        runs
     }
 
     /// Whether a search shows its matches, or its current one.
@@ -557,6 +718,99 @@ mod tests {
             })
             .collect();
         terminal.add_matches(id, part, pins);
+    }
+
+    /// The rows of a snapshot updated now, by their texts, a placeholder's
+    /// as `[⋯ N]`, a row past the list's last as `[past]`.
+    fn texts(terminal: &mut Terminal) -> Vec<String> {
+        use crate::page::Content;
+        use crate::terminal::ViewRow;
+        let mut snapshot = Snapshot::default();
+        terminal.snapshot(&mut snapshot);
+        (0..snapshot.rows())
+            .map(|y| match snapshot.view_row(y) {
+                ViewRow::Folded { rows, .. } => format!("[⋯ {rows}]"),
+                ViewRow::Past => "[past]".to_owned(),
+                ViewRow::Row(_) => {
+                    let text: String = snapshot
+                        .line(y)
+                        .cells()
+                        .iter()
+                        .map(|cell| match cell.content() {
+                            Content::Char(c) if c != '\0' => c,
+                            _ => ' ',
+                        })
+                        .collect();
+                    text.trim_end().to_owned()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_filter_shows_its_matches_rows_alone_a_blank_row_between_their_runs() {
+        let mut terminal = Terminal::new(20, 4, Options::default());
+        let text: Vec<String> = (0..12).map(|n| format!("r{n}")).collect();
+        feed(&mut terminal, &text.join("\r\n"));
+        let first = terminal.row_number(0);
+        let row = |n: i64| ((0, first + n), (1, first + n));
+        add(&mut terminal, 1, first, &[row(2), row(3), row(7)]);
+        // A search of none, and the view as it was, change nothing.
+        assert!(!terminal.set_filter(Some(9)));
+        assert!(!terminal.set_filter(None));
+        assert!(terminal.set_filter(Some(1)));
+        assert_eq!(terminal.filter(), Some(1));
+        // The rows of matches, at the list's end as the view follows it,
+        // each run of the others a blank row, which no fold's mark tells.
+        assert_eq!(texts(&mut terminal), ["r3", "[⋯ 3]", "r7", "[⋯ 4]"]);
+        assert!(terminal.shown_folds().is_empty());
+        // Scrolled by whole rows, a run of hidden rows one.
+        terminal.scroll_viewport(Scroll::Up(1));
+        assert_eq!(texts(&mut terminal), ["r2", "r3", "[⋯ 3]", "r7"]);
+        terminal.scroll_viewport(Scroll::Top);
+        assert_eq!(texts(&mut terminal), ["[⋯ 2]", "r2", "r3", "[⋯ 3]"]);
+        // Off, the view as it was, of the list's rows.
+        terminal.scroll_viewport(Scroll::Bottom);
+        assert!(terminal.set_filter(None));
+        assert_eq!(texts(&mut terminal), ["r8", "r9", "r10", "r11"]);
+        // Its search's end takes it away.
+        assert!(terminal.set_filter(Some(1)));
+        terminal.drop_matches(1);
+        assert_eq!(terminal.filter(), None);
+        assert_eq!(texts(&mut terminal), ["r8", "r9", "r10", "r11"]);
+    }
+
+    #[test]
+    fn a_filter_of_no_match_shows_one_blank_row_and_new_matches_as_they_come() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "a\r\nb\r\nc\r\nd");
+        let first = terminal.row_number(0);
+        add(&mut terminal, 1, first, &[]);
+        assert!(terminal.set_filter(Some(1)));
+        assert_eq!(texts(&mut terminal), ["[⋯ 4]", "[past]", "[past]"]);
+        // A part found of new rows shows at once.
+        feed(&mut terminal, "\r\nfound\r\ne");
+        let found = terminal.row_number(0) + 4;
+        add(&mut terminal, 1, found, &[((0, found), (4, found))]);
+        assert_eq!(texts(&mut terminal), ["[⋯ 4]", "found", "[⋯ 1]"]);
+    }
+
+    #[test]
+    fn the_matches_from_a_row_go_and_their_pins_with_them() {
+        let mut terminal = Terminal::new(20, 3, Options::default());
+        feed(&mut terminal, "a\r\nb\r\nc\r\nd\r\ne");
+        let first = terminal.row_number(0);
+        let row = |n: i64| ((0, first + n), (0, first + n));
+        add(&mut terminal, 1, first, &[row(0), row(1)]);
+        add(&mut terminal, 1, first + 2, &[row(2), row(3), row(4)]);
+        let pins = terminal.screen_rows().pins();
+        assert_eq!(terminal.drop_matches_from(1, first + 3), 3);
+        assert_eq!(terminal.screen_rows().pins(), pins - 4);
+        assert_eq!(terminal.matches_of(1, 0, 10), [row(0), row(1), row(2)]);
+        // Of every one, and of a search of none.
+        assert_eq!(terminal.drop_matches_from(1, first), 0);
+        assert!(terminal.matches_of(1, 0, 10).is_empty());
+        assert_eq!(terminal.drop_matches_from(9, first), 0);
     }
 
     #[test]

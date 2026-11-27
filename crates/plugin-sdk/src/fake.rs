@@ -565,6 +565,8 @@ struct FakeSearch {
     matches: Vec<host::SearchMatch>,
     /// Its current match, as the plugin showed it.
     current: Option<host::SearchMatch>,
+    /// Whether its pane's view shows its matches' rows alone.
+    filter: bool,
 }
 
 /// The host of a plugin's unit tests.
@@ -1790,6 +1792,12 @@ impl FakeHost {
     /// order, as their ends take them away.
     pub fn searches(&self) -> Vec<u64> {
         self.searches.keys().copied().collect()
+    }
+
+    /// Whether the pane's view of the search `search` shows its matches'
+    /// rows alone, as the plugin asked last; false of a search that ended.
+    pub fn filtered(&self, search: u64) -> bool {
+        self.searches.get(&search).is_some_and(|kept| kept.filter)
     }
 
     /// Moves the matches of the search `search`, its current one too, as
@@ -4818,6 +4826,7 @@ impl Calling<'_> {
                         pane,
                         matches,
                         current: None,
+                        filter: false,
                     },
                 );
                 Response::Searching(id)
@@ -5341,6 +5350,16 @@ impl Calling<'_> {
                     ));
                 };
                 kept.current = *current;
+                Response::Done
+            }
+            Request::FilterMatches { search, filter } => {
+                let Some(kept) = self.host.searches.get_mut(search) else {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no search {search}"),
+                    ));
+                };
+                kept.filter = *filter;
                 Response::Done
             }
             Request::SetWindowTabBarPlace { window, place } => {
