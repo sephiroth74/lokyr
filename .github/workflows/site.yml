@@ -3,11 +3,20 @@ name: Site
 # lokyr.dev on GitHub Pages: the home page, the documentation's site of the
 # public Markdown, its search, and the updates' feed, `appcast.xml`, the
 # latest published release's asset, or `site/public`'s of a release of
-# none; a push of main publishes it.
+# none; a push of main publishes it, but a release's merge, whose site the
+# release's workflow has deployed once the release is published, of its
+# feed, by a run of its own of main; a run asked of `deploy` false builds
+# the site alone, as a release's rehearsal does.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy the site once built"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -33,7 +42,23 @@ jobs:
     timeout-minutes: 30
     outputs:
       pages: ${{ steps.changed.outputs.pages }}
+      release: ${{ steps.release.outputs.merge }}
     steps:
+      # A release's merge into main has its site deployed by the release's
+      # workflow once the release is published, of its new feed: this push
+      # deploys nothing of its own.
+      - name: Tell whether the push is a release's merge
+        id: release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0].head.ref // ""')"
+          if [[ "$head" == release/* ]]; then
+            echo "merge=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Site::A release's merge: the release's workflow deploys the site once the release is published."
+          fi
       # The whole history, as the sitemap dates each page of its document's
       # last commit, which a shallow clone would make the push's.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,6 +104,9 @@ jobs:
   deploy:
     name: deploy
     needs: build
+    if: >-
+      needs.build.outputs.release != 'true'
+      && (github.event_name != 'workflow_dispatch' || inputs.deploy)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

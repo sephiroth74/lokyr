@@ -20,9 +20,22 @@ name: Release
 #   release's deltas, of the last five released DMGs, its appcast signed and
 #   its cask; the draft's address, the DMG's size and the deltas' told on
 #   the pull request.
+# - `publish`, at the merge of a release's pull request, in the same
+#   environment, of the tap's token: the merge checked to hold the tree
+#   that the release built; the draft moved to the merge and published, its
+#   tag made there, a release the latest; the site deployed of the new feed,
+#   by a run of its own of main; the tap's cask of the DMG's SHA-256. A
+#   failed step stops the rest, and the run's summary tells what is left by
+#   hand.
+#
+# A release's pull request into `test/main`, a branch of tests, rehearses
+# it all: the release a pre-release, never the latest, the site built and
+# not deployed, the cask pushed to a branch of tests of the tap, so that the
+# feed, the site and Homebrew keep the latest release.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test/main]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       version:
@@ -42,7 +55,7 @@ jobs:
     name: check
     # A release's branch alone, of no secret: a fork's pull request of that
     # name reads what any reader does.
-    if: startsWith(github.head_ref, 'release/')
+    if: github.event.action != 'closed' && startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     # A few minutes with its cache.
     timeout-minutes: 30
@@ -69,7 +82,8 @@ jobs:
     # request never reads, or a run asked by hand.
     if: >-
       github.event_name == 'workflow_dispatch'
-      || (startsWith(github.head_ref, 'release/')
+      || (github.event.action != 'closed'
+          && startsWith(github.head_ref, 'release/')
           && github.event.pull_request.head.repo.full_name == github.repository)
     # The oldest macOS that Lokyr supports, as the CI's.
     runs-on: macos-26
@@ -260,3 +274,132 @@ jobs:
       - name: Remove the EdDSA key
         if: always()
         run: rm -f "$RUNNER_TEMP/sparkle.key"
+
+  publish:
+    name: publish
+    # The merge of a release's pull request of this repository.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.action == 'closed'
+      && github.event.pull_request.merged
+      && startsWith(github.head_ref, 'release/')
+      && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      # The release published, and the site's run asked.
+      contents: write
+      actions: write
+    # One publishing at a time, each to its end.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
+    timeout-minutes: 30
+    env:
+      MERGE: ${{ github.event.pull_request.merge_commit_sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      BASE: ${{ github.base_ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
+      - name: Install the toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The merge's version, and whether it rehearses, of a base of tests.
+      - name: Tell the version
+        run: |
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "xtask") | .version')"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::'$version' is no version, X.Y.Z or X.Y.Z-rc.N."
+            exit 1
+          fi
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          if [ "$BASE" != main ]; then
+            echo "REHEARSAL=true" >> "$GITHUB_ENV"
+            echo "::notice title=Rehearsal::A pull request into $BASE: the release a pre-release, never the latest; the site built alone; the cask on a branch of tests."
+          fi
+      # The build was of the pull request's head: the merge holds its tree,
+      # as main holds nothing that the release's branch lacks.
+      - name: Check that the merge holds what the release built
+        id: tree
+        run: |
+          merged="$(git rev-parse "$MERGE^{tree}")"
+          built="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$HEAD_SHA" --jq .tree.sha)"
+          if [ "$merged" != "$built" ]; then
+            echo "::error::The merge's tree is not the one that the release built: $BASE holds changes that the release's branch lacks."
+            exit 1
+          fi
+      - name: Publish the release
+        id: release
+        run: cargo xtask release publish "$RELEASE_VERSION" --target "$MERGE" ${REHEARSAL:+--rehearsal}
+      # A run of the site of its own, of main, which the environment of
+      # GitHub Pages takes, once the release is the latest; a rehearsal's of
+      # its base, built alone. A candidate leaves the latest as it was.
+      - name: Deploy the site of the new feed
+        id: site
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        run: |
+          if [ -n "${REHEARSAL:-}" ]; then
+            gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref "$BASE" -f deploy=false
+          else
+            gh workflow run site.yml --repo "$GITHUB_REPOSITORY" --ref main
+          fi
+      # The tap's cask, of a release alone.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        with:
+          repository: sephiroth74/homebrew-tap
+          token: ${{ secrets.TAP_TOKEN }}
+          path: tap
+      - name: Update the tap's cask
+        id: tap
+        if: ${{ !contains(env.RELEASE_VERSION, '-') }}
+        run: |
+          gh release download "v$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" \
+            --pattern "Lokyr-$RELEASE_VERSION.dmg" --dir target
+          cargo xtask cask "$RELEASE_VERSION" --tap "$GITHUB_WORKSPACE/tap"
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Casks/lokyr.rb
+          git -C tap commit --message "lokyr $RELEASE_VERSION"
+          if [ -n "${REHEARSAL:-}" ]; then
+            git -C tap push origin "HEAD:refs/heads/test/lokyr-$RELEASE_VERSION-$GITHUB_RUN_ID"
+          else
+            git -C tap push origin HEAD:main
+          fi
+      - name: Tell what was done
+        run: |
+          {
+            echo "### v$RELEASE_VERSION published${REHEARSAL:+ as a pre-release, of a rehearsal}"
+            echo
+            echo "- The release: https://github.com/$GITHUB_REPOSITORY/releases/tag/v$RELEASE_VERSION"
+            echo "- Locally: \`git fetch --tags\`, and check the update through Sparkle."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Tell what is left by hand
+        if: failure()
+        env:
+          TREE: ${{ steps.tree.outcome }}
+          RELEASE: ${{ steps.release.outcome }}
+          SITE: ${{ steps.site.outcome }}
+          TAP: ${{ steps.tap.outcome }}
+        run: |
+          {
+            echo "### v$RELEASE_VERSION: what is left by hand"
+            echo
+            if [ "$TREE" != success ]; then
+              echo "- The merge does not hold the release's build: draft it again of the merge, \`cargo xtask release draft $RELEASE_VERSION\`, then publish it."
+            fi
+            if [ "$RELEASE" != success ]; then
+              echo "- Publish the draft: \`cargo xtask release publish $RELEASE_VERSION --target $MERGE\`."
+            fi
+            if [ "$SITE" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
+              echo "- Deploy the site: \`gh workflow run site.yml --ref main\`."
+            fi
+            if [ "$TAP" != success ] && [[ "$RELEASE_VERSION" != *-* ]]; then
+              echo "- The cask: \`cargo xtask cask $RELEASE_VERSION\` of the release's DMG in target, then commit and push the tap."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
