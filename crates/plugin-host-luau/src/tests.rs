@@ -429,7 +429,12 @@ return {
     end,
 }
 "#;
-    let mut plugin = plugin(entry);
+    // A render's deadline of a busy machine, as its conversion of megabytes
+    // is what it tells, not its time.
+    let mut plugin = plugin(entry).with_deadlines(Deadlines {
+        render: std::time::Duration::from_secs(2),
+        ..Deadlines::default()
+    });
     let mut host = FakeHost::new("acme/test");
     host.activate(&mut plugin).unwrap();
     // A message of megabytes, cut.
