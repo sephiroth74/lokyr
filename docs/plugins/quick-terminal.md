@@ -25,8 +25,8 @@ A window that a global key slides in from an edge of the screen, over every app,
 | Command | Menu | Default keys | What it does |
 |---|---|---|---|
 | `window.toggle-quick-terminal` | Shell › Quick Terminal | | Shows the quick terminal, opening it first, or hides it, as above |
-| `window.show-quick-terminal` | | | Shows the quick terminal, opening it first, and never hides it, for a shortcut or a key of your own · not released yet |
-| `window.hide-quick-terminal` | | | Hides the quick terminal, its shell running, and never shows it · not released yet |
+| `window.show-quick-terminal` | | | Shows the quick terminal, opening it first, and never hides it, for a shortcut or a key of your own · Since 1.6 |
+| `window.hide-quick-terminal` | | | Hides the quick terminal, its shell running, and never shows it · Since 1.6 |
 
 <!-- commands end -->
 

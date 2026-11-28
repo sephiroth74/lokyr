@@ -8,7 +8,7 @@ A panel near the top of the window that lists Lokyr's commands, the plugins' too
 
 - **⇧⌘P** opens it, its field taking the keys; ⇧⌘P on an open palette gives its field the keys again.
 - **It lists** the commands that run without an argument and that the menus enable now: Copy shows only where there is a selection, as its menu item does. Each shows its title, and its keys at its end, as key caps · Since 1.4.
-- **It lists the menu bar's items too** that run a command with an argument, as the Shell menu's Split Right, Split Down and Select Pane Above, each with its title and keys as the menu shows them: `split right` finds Split Right, ⌘D. An item that the menu dims is left out, as are the context menu's items, which act on the cell that you click. · not released yet
+- **It lists the menu bar's items too** that run a command with an argument, as the Shell menu's Split Right, Split Down and Select Pane Above, each with its title and keys as the menu shows them: `split right` finds Split Right, ⌘D. An item that the menu dims is left out, as are the context menu's items, which act on the cell that you click. · Since 1.6
 - **As you type**, it ranks them by a fuzzy match of your letters in their order, by each command's title first, then its name, as `tabs.new`, its keys, as `⌘T`, and its plugin: `nt` finds New Tab, `⌘F` finds Find…. A word's first letters and letters in a row count more.
 - **The commands that you ran last** come first while the field is empty, and before the others of the same match as you type; Lokyr keeps the last twenty.
 - **The first command is selected** as it opens; **↑ and ↓** move through the list while you type; **Return**, or a click on a command, runs it and closes the palette. The command under the pointer is highlighted.

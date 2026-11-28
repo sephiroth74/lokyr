@@ -1,6 +1,6 @@
 # Automation
 
-<sub>macOS · not released yet · on by default · the [`automation`](plugins/automation.md) plugin · [`[plugins.automation] enabled`](CONFIGURATION.md#pluginsnamespace)</sub>
+<sub>macOS · Since 1.6 · on by default · the [`automation`](plugins/automation.md) plugin · [`[plugins.automation] enabled`](CONFIGURATION.md#pluginsnamespace)</sub>
 
 Scripts and shortcuts can drive Lokyr: open windows, tabs and splits in a folder, run a command in them, send them text, switch sessions, and read what a terminal shows. AppleScript sees Lokyr's windows, their tabs and each tab's terminals, and the Shortcuts app has Lokyr's actions, which Spotlight can run too.
 

@@ -2,6 +2,7 @@
 
 What each release of Lokyr brought, the newest first. The [changelog](../../CHANGELOG.md) lists every change of each release.
 
+- [1.6.0](1.6.0.md), 28 November 2026: Shortcuts and AppleScript, the find bar's filter, and Find in All Tabs.
 - [1.5.0](1.5.0.md), 25 November 2026: sessions and layouts, input broadcast to every pane, floating panes and popups, and the scrollback kept when you quit.
 - [1.4.0](1.4.0.md), 22 November 2026: commands as blocks, smooth scrolling, and controls as macOS 27's.
 - [1.3.0](1.3.0.md), 18 November 2026: the programs' status on their tabs, a click in the command line, pinned and grouped tabs, a closed tab reopened, and hints.

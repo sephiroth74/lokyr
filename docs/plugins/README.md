@@ -39,7 +39,7 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`links`](links.md) | ⌘-click opens a link, a URL or a path |
 | [`tabs`](tabs.md) | The tab bar, and the tabs' commands |
 | [`splits`](splits.md) | Split panes, and the commands that move between them, resize and zoom them |
-| [`search`](search.md) | The find bar: a pane's search, its matches highlighted; and Find in All Tabs, a search of every pane · not released yet |
+| [`search`](search.md) | The find bar: a pane's search, its matches highlighted; and Find in All Tabs, a search of every pane · Since 1.6 |
 | [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
 | [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
 | [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |
@@ -49,7 +49,7 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`quick-tips`](quick-tips.md) | A tip at the start, once a week at most, in a card at the window's bottom right |
 | [`settings`](settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |
 | [`plugin-manager`](plugin-manager.md) | The settings window's Plugins page: every plugin, its state and its capabilities, to disable, enable or remove |
-| [`automation`](automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · not released yet |
+| [`automation`](automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · Since 1.6 |
 
 The order of the table is the order in which they start, which matters for the keys alone: a later plugin's key wins over an earlier one's, and your own `[keys]` win over all of them.
 

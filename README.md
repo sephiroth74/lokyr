@@ -34,7 +34,7 @@
 </p>
 
 > [!NOTE]
-> **Lokyr 1.5.0 is out**, of sessions and layouts, input broadcast to every pane, floating panes and popups, and the scrollback kept when you quit: [install it](#install), and Lokyr updates itself. See the [status](#status) for what comes next.
+> **Lokyr 1.6.0 is out**, of Shortcuts and AppleScript, the find bar's filter, and a search of every tab: [install it](#install), and Lokyr updates itself. See the [status](#status) for what comes next.
 
 <p align="center">
   <img src="docs/images/lokyr-floating-pane.png" alt="A Lokyr window of two panes, Rust source by bat beside a system monitor, and a floating pane over them running lazygit" width="760">
@@ -71,7 +71,7 @@ Lokyr is built in phases, each with exit criteria that are measured, not assumed
 | F4 | Third-party plugins in Luau, Sleip and its registry | ✔ |
 | F3b | The settings window, then themes made in the app and the Keys page | ✔ |
 | F5a | As 1.3 and 1.4: the programs' and agents' status of OSC 7501, a click at the prompt, the tabs' groups, hints; blocks of commands, smooth scrolling | ✔ |
-| F5b | As 1.5 to 1.7: the scrollback restored, named sessions and layouts, broadcast, floating panes and popups; Shortcuts, AppleScript and the search's filter; tmux -CC, triggers and profiles | 1.5 ✔ |
+| F5b | As 1.5 to 1.7: the scrollback restored, named sessions and layouts, broadcast, floating panes and popups; Shortcuts, AppleScript and the search's filter; tmux -CC, triggers and profiles | 1.5, 1.6 ✔ |
 | F5c | As 1.8: all of kitty's graphics and sixel, the cursor's trail, drag and drop | |
 | F6 | Plugin API 1.0 and hardening | |
 | F7 | After 1.0: Linux, a mux daemon, Windows | |
@@ -124,7 +124,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`links`](docs/plugins/links.md) | ⌘-click opens a link, a URL or a path, as a compiler's `src/main.rs:42` |
 | [`tabs`](docs/plugins/tabs.md) | The tab bar: new, close, select, move, rename, color, and out to a window of its own |
 | [`splits`](docs/plugins/splits.md) | Split panes: split, focus by direction, resize, zoom, equalize, swap |
-| [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted; and Find in All Tabs, a search of every pane · not released yet |
+| [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted; and Find in All Tabs, a search of every pane · Since 1.6 |
 | [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 | [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |
@@ -134,7 +134,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`quick-tips`](docs/plugins/quick-tips.md) | A tip at the start, once a week at most: a shortcut as your keymap binds it, or a feature that shows in no menu |
 | [`settings`](docs/plugins/settings.md) | The settings window's Settings page: every key of the config and of the plugins, by section, of its value in force |
 | [`plugin-manager`](docs/plugins/plugin-manager.md) | The settings window's Plugins page: every plugin, its state and its capabilities, to disable, enable or remove |
-| [`automation`](docs/plugins/automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · not released yet |
+| [`automation`](docs/plugins/automation.md) | What scripts and shortcuts of other apps ask of Lokyr: windows, tabs and splits opened, text sent, commands run, and a pane's text once you allow the app · Since 1.6 |
 
 Each page tells the plugin's commands, their keys, its config and what turning it off takes away; [the plugins' index](docs/plugins/README.md) tells how they fit together.
 

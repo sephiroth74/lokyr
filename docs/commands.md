@@ -50,7 +50,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.close` | Close Window |  | ⇧⌘W (`cmd+shift+w`) |
 | `window.close-session` | Close Session |  |  |
 | `window.goto` | Go to Window | `index`, whole number | ⌥⌘1 to ⌥⌘9 (`cmd+alt+1` to `cmd+alt+9`), `index` 1 to 9 |
-| [`window.hide-quick-terminal`](plugins/quick-terminal.md) | Hide Quick Terminal |  | · not released yet |
+| [`window.hide-quick-terminal`](plugins/quick-terminal.md) | Hide Quick Terminal |  |  |
 | `window.new` | New Window |  | ⌘N (`cmd+n`) |
 | `window.new-session` | New Session |  |  |
 | `window.next` | Cycle Through Windows |  | ⌘\` (`` cmd+` ``) |
@@ -60,7 +60,7 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 | `window.rename-session` | Rename Session… |  |  |
 | `window.save-layout` | Save Session as Layout… |  |  |
 | `window.set-title` | Set Title… |  | ⇧⌘I (`cmd+shift+i`) |
-| [`window.show-quick-terminal`](plugins/quick-terminal.md) | Show Quick Terminal |  | · not released yet |
+| [`window.show-quick-terminal`](plugins/quick-terminal.md) | Show Quick Terminal |  |  |
 | `window.switch-session` | Switch to Session | `name`, text |  |
 | `window.switch-to-last-session` | Switch to Last Session |  | ⌃⌘L (`cmd+ctrl+l`) |
 | `window.toggle-float-on-top` | Float on Top |  |  |
@@ -152,8 +152,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
-| [`search.find-all`](plugins/search.md) | Find in All Tabs… |  | ⇧⌘F (`cmd+shift+f`) · not released yet |
-| [`search.move`](plugins/search.md) | Move in Find in All Tabs | `delta`, whole number | ↑ (`up`), `delta = -1`, while `search.find-all.focused`; ↓ (`down`), `delta = 1`, while `search.find-all.focused` · not released yet |
+| [`search.find-all`](plugins/search.md) | Find in All Tabs… |  | ⇧⌘F (`cmd+shift+f`) |
+| [`search.move`](plugins/search.md) | Move in Find in All Tabs | `delta`, whole number | ↑ (`up`), `delta = -1`, while `search.find-all.focused`; ↓ (`down`), `delta = 1`, while `search.find-all.focused` |
 | [`search.next`](plugins/search.md) | Find Next |  | ⌘G (`cmd+g`) |
 | [`search.open`](plugins/search.md) | Find… | `text`, text, `""` by default; `column`, whole number, `-1` by default; `row`, whole number, `0` by default | ⌘F (`cmd+f`) |
 | [`search.previous`](plugins/search.md) | Find Previous |  | ⇧⌘G (`cmd+shift+g`) |
