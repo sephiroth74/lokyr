@@ -15,6 +15,21 @@ pub(crate) struct Entry {
     pub(crate) keys: Option<String>,
     /// The plugin that registered it, if one did.
     pub(crate) plugin: Option<String>,
+    /// What the recent commands keep of it, of a menu bar's item that runs
+    /// its command of arguments: its name and them; empty of the others,
+    /// which their names name.
+    pub(crate) id: String,
+}
+
+impl Entry {
+    /// What the recent commands keep of it: its id, or its name.
+    pub(crate) fn recent_key(&self) -> &str {
+        if self.id.is_empty() {
+            &self.name
+        } else {
+            &self.id
+        }
+    }
 }
 
 /// What a character of the query matched scores.
@@ -146,11 +161,11 @@ pub(crate) fn rank_switcher(entries: &[Entry], query: &str) -> Vec<usize> {
 /// recent commands' names `recent`, the latest first, scoring more; of no
 /// query, the recent ones first, then the others in their order.
 pub(crate) fn rank(entries: &[Entry], query: &str, recent: &[String]) -> Vec<usize> {
-    let recency = |entry: &Entry| recent.iter().position(|name| *name == entry.name);
+    let recency = |entry: &Entry| recent.iter().position(|key| key == entry.recent_key());
     if query.trim().is_empty() {
         let mut ranked: Vec<usize> = recent
             .iter()
-            .filter_map(|name| entries.iter().position(|entry| entry.name == *name))
+            .filter_map(|key| entries.iter().position(|entry| entry.recent_key() == key))
             .collect();
         ranked.extend((0..entries.len()).filter(|at| recency(&entries[*at]).is_none()));
         return ranked;
@@ -178,6 +193,7 @@ mod tests {
             title: title.to_owned(),
             keys: keys.map(str::to_owned),
             plugin: plugin.map(str::to_owned),
+            ..Entry::default()
         }
     }
 

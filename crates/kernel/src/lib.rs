@@ -20,4 +20,5 @@ pub mod plugins;
 pub mod session_folders;
 pub mod state;
 pub mod themes;
+pub mod typed;
 pub mod workspace;

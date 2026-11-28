@@ -1939,8 +1939,8 @@ fn panes_headers_draw_as_their_golden_images() {
 fn the_find_bar_draws_as_its_golden_images() {
     use lokyr_search_plugin::{BarTexts, BarView, Options, find_bar};
     // Of no option, of no result, its field's placeholder showing; then
-    // of case and regex, a count, its clear button, the pointer over the
-    // up arrow.
+    // of case, regex and the filter, a count, its clear button, the
+    // pointer over the up arrow.
     let quiet = find_bar(
         &BarView {
             count: "No results".to_owned(),
@@ -1954,9 +1954,11 @@ fn the_find_bar_draws_as_its_golden_images() {
                 sensitive: true,
                 regex: true,
                 whole_word: false,
+                filter: true,
             },
             count: "3 of 12".to_owned(),
             filled: true,
+            alternate: false,
         },
         &BarTexts::default(),
     );

@@ -9,7 +9,7 @@ use lokyr_kernel::keymap;
 use lokyr_kernel::keymap::{Context, Invocation, Keymap, When};
 use lokyr_kernel::l10n::{Arg, Texts};
 use lokyr_kernel::plugins::MenuEntry;
-use lokyr_kernel::plugins::host::MenuPlace;
+use lokyr_kernel::plugins::host::{MenuBarItem, MenuPlace};
 use lokyr_kernel::workspace::Pane;
 use lokyr_pkg_model::is_hidden;
 use lokyr_platform_core::{
@@ -508,19 +508,24 @@ impl<B: Backend> App<B> {
     /// pane settles them.
     pub(super) fn set_menu(&mut self, platform: &mut dyn Platform) {
         self.menu_items = self.plugins.menu_items_in(self.texts.language());
-        platform.set_main_menu(&main_menu(
+        let menu = main_menu(&self.commands, &self.keymap, &self.texts, &self.menu_items);
+        // A read of the plugins' items gives those that the menu bar shows
+        // alone, as it leaves out those of the app's titles.
+        let shown = menu_commands(&menu.menus);
+        self.menu_bar = menu_bar(
             &self.commands,
             &self.keymap,
-            &self.texts,
             &self.menu_items,
-        ));
+            platform.shortcut_writer(),
+        )
+        .into_iter()
+        .filter(|(id, _)| shown.contains(id.as_str()))
+        .collect();
+        platform.set_main_menu(&menu);
         // The windows' keys follow the keymap's too, and the plugins learn
         // that the keys may be others, as they are.
         self.window_keys(platform);
-        if self.keys_told.as_ref() != Some(&self.keymap) {
-            self.keys_told = Some(self.keymap.clone());
-            self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
-        }
+        self.tell_keys_changed();
         for (command, enabled) in std::mem::take(&mut self.menu_enabled) {
             if !enabled {
                 platform.set_command_enabled(&command, true);
@@ -539,6 +544,15 @@ impl<B: Backend> App<B> {
             if matches!(entry.place, MenuPlace::Bar(_)) {
                 platform.set_command_checked(&item_id(at), entry.ticked);
             }
+        }
+    }
+
+    /// Tells the plugins that the keys may be others, of a keymap that they
+    /// have not heard of.
+    pub(super) fn tell_keys_changed(&mut self) {
+        if self.keys_told.as_ref() != Some(&self.keymap) {
+            self.keys_told = Some(self.keymap.clone());
+            self.plugins.post(lokyr_kernel::plugins::Event::KeysChanged);
         }
     }
 
@@ -575,6 +589,11 @@ const SHOW_AGENTS: &str = "command-palette.agents";
 /// The palette's sessions' switcher, which the Window menu's Sessions
 /// shows first.
 const SWITCH_SESSION: &str = "command-palette.sessions";
+
+/// The quick terminal's show and hide, for keys and shortcuts, which the
+/// Shell menu leaves out beside its toggle.
+const SHOW_QUICK_TERMINAL: &str = "window.show-quick-terminal";
+const HIDE_QUICK_TERMINAL: &str = "window.hide-quick-terminal";
 /// The arguments of `man` for the page that `text` names: its name, and
 /// its section before it when `text` ends with one in brackets, as
 /// `ls(1)`, after `--`; `None` for a text that is no page's name, which
@@ -708,6 +727,8 @@ pub(super) fn main_menu(
                     && command.name != NEXT_AGENT
                     && command.name != SHOW_AGENTS
                     && command.name != SWITCH_SESSION
+                    && command.name != SHOW_QUICK_TERMINAL
+                    && command.name != HIDE_QUICK_TERMINAL
                     && command.name != NEXT_WINDOW
                     && command.name != PREVIOUS_WINDOW
                     && !SESSIONS.contains(&command.name.as_str())
@@ -1292,12 +1313,18 @@ const TAB_GROUPS: [&str; 7] = [
     "tabs.ungroup",
 ];
 
+/// The `search` plugin's Find in All Tabs, which the menus part from its
+/// find bar's commands.
+const FIND_ALL: &str = "search.find-all";
+
 /// The family of the command `name` in the menus, a line between one and
-/// the next: its namespace, or the tabs' groups of their own, a name of a
-/// `.` that no namespace has.
+/// the next: its namespace, or the tabs' groups and Find in All Tabs of
+/// their own, a name of a `.` that no namespace has.
 fn family(name: &str) -> String {
     if TAB_GROUPS.contains(&name) {
         "tabs.groups".to_owned()
+    } else if name == FIND_ALL {
+        "search.all".to_owned()
     } else {
         namespace(name)
     }
@@ -1311,6 +1338,67 @@ const ITEM: &str = "menu-item:";
 /// the platform gives back as it is chosen.
 fn item_id(at: usize) -> String {
     format!("{ITEM}{at}")
+}
+
+/// The commands of the items of `menus` and of their submenus.
+fn menu_commands(menus: &[Menu]) -> std::collections::BTreeSet<&str> {
+    let mut found = std::collections::BTreeSet::new();
+    let mut left: Vec<&Menu> = menus.iter().collect();
+    while let Some(menu) = left.pop() {
+        for item in &menu.items {
+            match item {
+                MenuItem::Command { command, .. } => {
+                    found.insert(command.as_str());
+                }
+                MenuItem::Submenu(submenu) => left.push(submenu),
+                MenuItem::Standard { .. } | MenuItem::Separator => {}
+            }
+        }
+    }
+    found
+}
+
+/// The plugins' items of the menu bar, as a read of them tells, each of its
+/// menu item's id: its title, its own or its command's, and its keys as
+/// `writer` writes them, as the menu bar shows them; enabled, until the
+/// read takes each one's state of the menus.
+fn menu_bar(
+    commands: &Registry,
+    keymap: &Keymap,
+    items: &[MenuEntry],
+    writer: fn(Shortcut) -> String,
+) -> Vec<(String, MenuBarItem)> {
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(at, entry)| {
+            let MenuPlace::Bar(menu) = entry.place else {
+                return None;
+            };
+            let Invocation { command, args } = &entry.invocation;
+            let registered = commands.get(command)?;
+            Some((
+                item_id(at),
+                MenuBarItem {
+                    command: command.clone(),
+                    args: args.clone(),
+                    title: entry
+                        .title
+                        .clone()
+                        .unwrap_or_else(|| registered.title.clone()),
+                    submenu: entry.submenu.clone(),
+                    menu,
+                    keys: keymap
+                        .shortcut_with(command, args)
+                        .and_then(shortcut)
+                        .map(writer),
+                    enabled: true,
+                    ticked: entry.ticked,
+                    plugin: entry.plugin.clone(),
+                },
+            ))
+        })
+        .collect()
 }
 
 /// The contexts in which the commands of `commands` that tell one can run,

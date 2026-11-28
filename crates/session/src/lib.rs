@@ -221,6 +221,13 @@ impl Reader {
     pub fn wake(&self) {
         (self.shared.wake)();
     }
+
+    /// How many slices of output the I/O thread has parsed, which grows
+    /// under the terminal's lock, as each slice's parse ends: read under
+    /// the lock, it tells whether output changed the terminal since a look.
+    pub fn slices(&self) -> u64 {
+        self.shared.slices.load(Ordering::Acquire)
+    }
 }
 
 impl std::fmt::Debug for Reader {

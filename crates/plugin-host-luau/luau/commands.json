@@ -1051,6 +1051,35 @@
     "capabilities": [
       "terminal-read",
       "decorate",
+      "pane-view",
+      "workspace-write"
+    ],
+    "category": "find",
+    "name": "search.find-all",
+    "params": [],
+    "plugin": "lokyr/search",
+    "title": "Find in All Tabs…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "find",
+    "name": "search.move",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "delta"
+      }
+    ],
+    "plugin": "lokyr/search",
+    "title": "Move in Find in All Tabs",
+    "when": "search.find-all.focused"
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "decorate",
       "pane-view"
     ],
     "category": "find",
@@ -1068,7 +1097,29 @@
     ],
     "category": "find",
     "name": "search.open",
-    "params": [],
+    "params": [
+      {
+        "default": {
+          "string": ""
+        },
+        "kind": "string",
+        "name": "text"
+      },
+      {
+        "default": {
+          "integer": -1
+        },
+        "kind": "integer",
+        "name": "column"
+      },
+      {
+        "default": {
+          "integer": 0
+        },
+        "kind": "integer",
+        "name": "row"
+      }
+    ],
     "plugin": "lokyr/search",
     "title": "Find…",
     "when": null
@@ -1583,6 +1634,17 @@
   },
   {
     "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.hide-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Hide Quick Terminal",
+    "when": null
+  },
+  {
+    "capabilities": [
       "workspace-write"
     ],
     "category": "windows",
@@ -1685,6 +1747,17 @@
     "params": [],
     "plugin": null,
     "title": "Set Title…",
+    "when": null
+  },
+  {
+    "capabilities": [
+      "global-hotkey"
+    ],
+    "category": "windows",
+    "name": "window.show-quick-terminal",
+    "params": [],
+    "plugin": "lokyr/quick-terminal",
+    "title": "Show Quick Terminal",
     "when": null
   },
   {

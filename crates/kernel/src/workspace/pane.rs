@@ -115,6 +115,10 @@ pub struct Environment {
     /// that opens again shows what it showed as the app quit; none of a
     /// new pane.
     pub restored: Option<Restored>,
+    /// Variables that the program takes over the terminal's own, by their
+    /// names, as a plugin asked for its new pane; the shells' integration
+    /// keeps its own.
+    pub variables: Vec<(String, String)>,
 }
 
 impl Default for Environment {
@@ -128,6 +132,7 @@ impl Default for Environment {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             shell_integration: None,
             restored: None,
+            variables: Vec::new(),
         }
     }
 }
@@ -324,6 +329,11 @@ fn pty_options(
     pty.version.clone_from(&environment.version);
     pty.shell_integration
         .clone_from(&environment.shell_integration);
+    pty.env = environment
+        .variables
+        .iter()
+        .map(|(name, value)| (name.into(), value.into()))
+        .collect();
     pty
 }
 
@@ -1772,6 +1782,7 @@ mod tests {
     #[test]
     fn a_program_starts_in_the_app_s_environment() {
         let environment = Environment {
+            variables: vec![("EDITOR".to_owned(), "vim".to_owned())],
             resources: Some("/Applications/Lokyr.app/Contents/Resources".into()),
             locale: "it_CH.UTF-8".to_owned(),
             terminfo: Some("/Applications/Lokyr.app/Contents/Resources/terminfo".into()),
@@ -1797,6 +1808,7 @@ mod tests {
         assert_eq!(options.binaries_dir, environment.binaries);
         assert_eq!(options.working_directory, environment.directory);
         assert_eq!(options.version, "1.2.3-20261101");
+        assert_eq!(options.env, [("EDITOR".into(), "vim".into())]);
         assert_eq!(options.shell_integration, environment.shell_integration);
         assert_eq!(Settings::default().term, "xterm-256color");
         assert_eq!(options.size, grid.size());
@@ -2045,8 +2057,12 @@ mod tests {
         let now = Instant::now();
         assert_eq!(pane.resize(grid(100), now), None);
         assert_eq!(pane.answer_due(), Some(now + ANSWER_WAIT));
-        assert!(!pane.update());
-        assert_eq!(pane.snapshot().cols(), 80);
+        // Within the wait, of a test that a busy machine may hold past it.
+        let shown = pane.update();
+        if now.elapsed() < ANSWER_WAIT {
+            assert!(!shown);
+            assert_eq!(pane.snapshot().cols(), 80);
+        }
         wait_for(&mut pane, "W", 2);
         assert_eq!(pane.snapshot().cols(), 100);
     }

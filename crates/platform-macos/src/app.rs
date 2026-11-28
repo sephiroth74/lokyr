@@ -1,5 +1,6 @@
 //! The application, its delegate, and its run loop.
 
+use std::cell::RefCell;
 use std::panic;
 use std::rc::{Rc, Weak};
 
@@ -11,12 +12,37 @@ use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSApplicationDelegate,
     NSApplicationTerminateReply, NSWindow,
 };
-use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSURL};
+use objc2_foundation::{NSArray, NSNotification, NSObject, NSObjectProtocol, NSString, NSURL};
 
 use crate::appearance::AppearanceObserver;
 use crate::services::ServicesProvider;
 use crate::shared::{Pending, Shared};
 use crate::wake::WakeSource;
+
+thread_local! {
+    /// The running application's shared state, on the main thread, which
+    /// [`post_app_event`] reaches.
+    static RUNNING: RefCell<Weak<Shared>> = const { RefCell::new(Weak::new()) };
+}
+
+/// Hands the running application the automation's request `request` of
+/// the app `client`, as the system's scripts and shortcuts make them, from
+/// the main thread: `reply` takes its answer, once, as the app gives it.
+/// Whether an application ran to take it; `reply` goes unanswered without.
+pub fn post_automation(
+    client: lokyr_platform_core::automation::Client,
+    request: lokyr_platform_core::automation::Request,
+    reply: impl FnOnce(lokyr_platform_core::automation::Answer) + 'static,
+) -> bool {
+    if MainThreadMarker::new().is_none() {
+        return false;
+    }
+    let Some(shared) = RUNNING.with(|running| running.borrow().upgrade()) else {
+        return false;
+    };
+    // The bridges run of the system's events, outside the app's calls.
+    shared.post_automation(client, request, Box::new(reply))
+}
 
 /// Starts the application, as a regular one, with a Dock icon and a menu
 /// bar, calls [`Handler::started`] once it has launched, and hands the
@@ -48,6 +74,7 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     let make = Box::new(move || Box::new(make()) as Box<dyn Handler>);
     let shared = Shared::new(mtm, make, wake.waker());
     wake.set_target(&shared);
+    RUNNING.with(|running| *running.borrow_mut() = Rc::downgrade(&shared));
     let delegate = AppDelegate::new(mtm, Rc::downgrade(&shared));
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     // Before the launch, so that a service that starts the app reaches it.
@@ -56,10 +83,14 @@ pub fn run_with<H: Handler + 'static>(make: impl FnOnce() -> H + 'static) -> Res
     // of their signatures, and lives until it is taken away below.
     unsafe { app.setServicesProvider(Some(&services)) };
     let appearance = AppearanceObserver::start(mtm, Rc::downgrade(&shared));
+    // AppleScript's classes, which the dictionary names, before a script
+    // asks.
+    crate::scripting::register();
 
     app.run();
 
     appearance.stop();
+    RUNNING.with(|running| *running.borrow_mut() = Weak::new());
     // SAFETY: none takes its place.
     unsafe { app.setServicesProvider(None) };
     app.setDelegate(None);
@@ -80,6 +111,15 @@ define_class!(
 
     // SAFETY: `NSObjectProtocol` has no requirement.
     unsafe impl NSObjectProtocol for AppDelegate {}
+
+    impl AppDelegate {
+        /// AppleScript's windows of the application, of the dictionary's
+        /// key that the delegate answers.
+        #[unsafe(method_id(lokyrWindows))]
+        fn lokyr_windows(&self) -> Retained<NSArray<crate::scripting::ScriptWindow>> {
+            crate::scripting::windows(self.mtm())
+        }
+    }
 
     // SAFETY: `NSApplicationDelegate` has no requirement; each method has
     // AppKit's signature.
@@ -148,6 +188,13 @@ define_class!(
             if !links.is_empty() {
                 self.post(Pending::App(AppEvent::OpenUrls(links)));
             }
+        }
+
+        // AppleScript's windows, of the dictionary's key, which the
+        // delegate answers for the application.
+        #[unsafe(method(application:delegateHandlesKey:))]
+        fn application_delegate_handles_key(&self, _sender: &NSApplication, key: &NSString) -> Bool {
+            Bool::new(key.to_string() == crate::scripting::WINDOWS)
         }
 
         #[unsafe(method(applicationShouldTerminate:))]

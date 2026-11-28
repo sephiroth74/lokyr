@@ -151,12 +151,29 @@ fn a_when_holds_in_its_contexts() {
     assert!((context(&["pane.focused"])).holds_when(&when));
     assert!(!(context(&["pane.focused", "search.open"])).holds_when(&when));
     assert!((context(&["search.open", "search-plus.focused"])).holds_when(&when));
+    // And of one of a plugin's panels alone, by its id.
+    let when = When::parse("search.find-all.focused && !search.find.open").unwrap();
+    assert!((context(&["search.focused", "search.find-all.focused"])).holds_when(&when));
+    assert!(!(context(&["search.focused", "search.find.focused"])).holds_when(&when));
+    assert!(
+        !(context(&[
+            "search.find-all.focused",
+            "search.find.open",
+            "search.find-all.open"
+        ]))
+        .holds_when(&when)
+    );
     for text in [
         "focus",
         "pane.open",
         "pane.focsued",
         "search.shown",
         "search.open.now",
+        "search.find.selected",
+        "search.find.open.now",
+        "search.Find.open",
+        "search..open",
+        "pane.find.focused",
         "search",
         "9search.open",
         "selection.open",

@@ -20,6 +20,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 - [Sessions](sessions.md)
 - [Layouts](layouts.md)
 - [Links](links.md)
+- [Automation](automation.md)
 - [Plugins](plugins/README.md)
   - [Tab bar](plugins/tabs.md)
   - [Splits](plugins/splits.md)
@@ -35,6 +36,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
   - [Copy, paste and scrolling](plugins/core-actions.md)
   - [Settings window](plugins/settings.md)
   - [Plugin manager](plugins/plugin-manager.md)
+  - [Automation](plugins/automation.md)
 
 ## Reference
 
@@ -61,6 +63,7 @@ The pages of Lokyr's documentation, in their groups and their order: lokyr.dev s
 - [Security](SECURITY.md)
 - [Performance](PERFORMANCE.md)
 - [Measurements](bench/RELEASES.md)
+- [Releasing](releasing.md)
 - [Contributing](../CONTRIBUTING.md)
 - [Writing the documentation](WRITING-DOCS.md)
 - [Translating](../TRANSLATING.md)

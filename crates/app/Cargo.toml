@@ -22,6 +22,9 @@ dist-minimal = ["lokyr-app-core/dist-minimal"]
 # The end of what `cargo xtask gen-dist` writes.
 # Support for third-party plugins written in Luau.
 luau-plugins = ["dep:lokyr-plugin-host-luau"]
+# The system's App Intents, Shortcuts' and Spotlight's actions, of Swift
+# declarations that the build compiles with Xcode's toolchain (macOS).
+app-intents = []
 # Three drawables a window, rather than two, to measure against them.
 three-drawables = ["lokyr-render-metal/three-drawables"]
 # A plugin of a view in every slot of the windows, for a build of tests.

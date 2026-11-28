@@ -151,6 +151,11 @@ pane.toggle-floating
 pane.toggle-floating	cmd+alt+f		
 plugin-manager.open
 quick-tips.show
+search.find-all
+search.find-all	cmd+shift+f		
+search.move
+search.move	down	delta=1	search.find-all.focused
+search.move	up	delta=-1	search.find-all.focused
 search.next
 search.next	cmd+g		
 search.open
@@ -237,6 +242,7 @@ window.goto	cmd+alt+6	index=6
 window.goto	cmd+alt+7	index=7	
 window.goto	cmd+alt+8	index=8	
 window.goto	cmd+alt+9	index=9	
+window.hide-quick-terminal
 window.new
 window.new	cmd+n		
 window.new-session
@@ -251,6 +257,7 @@ window.rename-session
 window.save-layout
 window.set-title
 window.set-title	cmd+shift+i		
+window.show-quick-terminal
 window.switch-session
 window.switch-to-last-session
 window.switch-to-last-session	cmd+ctrl+l		

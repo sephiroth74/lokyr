@@ -226,6 +226,10 @@ pub struct Fake {
     drag_image_hides: Vec<Option<ScreenRect>>,
     focused: Option<WindowId>,
     menu: Option<MainMenu>,
+    /// How many times the app set the main menu, and how many windows were
+    /// open as it first did.
+    menu_sets: usize,
+    windows_at_first_menu: Option<usize>,
     /// The commands whose menu items are dimmed, and those whose items are
     /// ticked.
     disabled: std::collections::BTreeSet<String>,
@@ -276,6 +280,9 @@ pub struct Fake {
     alert_sounds: usize,
     /// The notifications that the app showed, from the first.
     notifications: Vec<FakeNotification>,
+    /// The answers that the app gave the automation's requests, in their
+    /// order.
+    automation_answers: Vec<(u64, crate::automation::Answer)>,
     /// The windows that the app asked to bring forward, from the first.
     focus_requests: Vec<WindowId>,
     /// The URLs and the paths that the app opened, and those that it
@@ -315,6 +322,8 @@ pub struct Fake {
     /// The keys that the app takes from every app, and those that another
     /// app takes, which the fake refuses.
     global_keys: Vec<GlobalKey>,
+    /// How many times the app gave its global keys.
+    global_key_sets: usize,
     taken_keys: Vec<GlobalKey>,
     /// The modifiers whose double taps the app watches, whether the
     /// system's leave to watch them is given, and the finder of their
@@ -364,6 +373,8 @@ impl Fake {
             drag_image_hides: Vec::new(),
             focused: None,
             menu: None,
+            menu_sets: 0,
+            windows_at_first_menu: None,
             disabled: std::collections::BTreeSet::new(),
             checked: std::collections::BTreeSet::new(),
             context_menus: Vec::new(),
@@ -388,6 +399,7 @@ impl Fake {
             badge: None,
             alert_sounds: 0,
             notifications: Vec::new(),
+            automation_answers: Vec::new(),
             focus_requests: Vec::new(),
             opened: Vec::new(),
             unhandled: Vec::new(),
@@ -406,6 +418,7 @@ impl Fake {
             posted_keys: Vec::new(),
             revealed: Vec::new(),
             global_keys: Vec::new(),
+            global_key_sets: 0,
             taken_keys: Vec::new(),
             double_taps: Vec::new(),
             taps_allowed: true,
@@ -483,9 +496,23 @@ impl Fake {
         self.screens = areas;
     }
 
-    /// Starts the application, as a backend's `run` does.
+    /// Starts the application, as a backend's `run` does: its start, then
+    /// the launch's end.
     pub fn start(&mut self, handler: &mut dyn Handler) {
+        self.start_opening(handler, Vec::new());
+    }
+
+    /// Starts the application as the system does to open files, folders
+    /// or links: its start, `events` that came before it, then the
+    /// launch's end.
+    pub fn start_opening(&mut self, handler: &mut dyn Handler, events: Vec<AppEvent>) {
         handler.started(self);
+        for event in events {
+            self.send_app(handler, event);
+        }
+        if !self.quit {
+            handler.launched(self);
+        }
     }
 
     /// Hands `handler` an event of `window`, once the fake has applied
@@ -764,6 +791,17 @@ impl Fake {
         self.menu.as_ref()
     }
 
+    /// How many times the app set the main menu.
+    pub fn main_menu_sets(&self) -> usize {
+        self.menu_sets
+    }
+
+    /// How many windows were open as the app first set the main menu, if
+    /// it set one.
+    pub fn windows_at_first_menu(&self) -> Option<usize> {
+        self.windows_at_first_menu
+    }
+
     /// Whether the menu items of `command` are enabled.
     pub fn command_enabled(&self, command: &str) -> bool {
         !self.disabled.contains(command)
@@ -850,6 +888,12 @@ impl Fake {
     /// How many times the app played the alert sound.
     pub fn alert_sounds(&self) -> usize {
         self.alert_sounds
+    }
+
+    /// The answers that the app gave the automation's requests, in their
+    /// order.
+    pub fn automation_answers(&self) -> &[(u64, crate::automation::Answer)] {
+        &self.automation_answers
     }
 
     /// The notifications that the app showed, from the first.
@@ -950,6 +994,11 @@ impl Fake {
     /// The keys that the app takes from every app, as it gave them last.
     pub fn global_keys(&self) -> &[GlobalKey] {
         &self.global_keys
+    }
+
+    /// How many times the app gave its global keys.
+    pub fn global_key_sets(&self) -> usize {
+        self.global_key_sets
     }
 
     /// Has another app take `key`, which the app cannot take from then on.
@@ -1289,6 +1338,7 @@ impl Platform for Fake {
 
     fn set_global_keys(&mut self, keys: &[GlobalKey]) -> Vec<usize> {
         self.global_keys = keys.to_vec();
+        self.global_key_sets += 1;
         // Another app's, or a function key past F20, which the Mac's
         // keyboards lack, as the backend refuses it.
         (0..keys.len())
@@ -1496,6 +1546,8 @@ impl Platform for Fake {
 
     fn set_main_menu(&mut self, menu: &MainMenu) {
         self.menu = Some(menu.clone());
+        self.menu_sets += 1;
+        self.windows_at_first_menu.get_or_insert(self.windows.len());
     }
 
     fn set_command_enabled(&mut self, command: &str, enabled: bool) {
@@ -1745,6 +1797,10 @@ impl Platform for Fake {
 
     fn play_alert_sound(&mut self) {
         self.alert_sounds += 1;
+    }
+
+    fn answer_automation(&mut self, id: u64, answer: crate::automation::Answer) {
+        self.automation_answers.push((id, answer));
     }
 
     fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str) {

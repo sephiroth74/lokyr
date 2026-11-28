@@ -266,6 +266,7 @@ impl App {
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             layouts: &Vec::new,
+            menu_bar: &Vec::new,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],
@@ -1035,7 +1036,10 @@ fn what_changes_the_app_waits_for_the_call_to_return() {
     assert_eq!(
         asked,
         [
-            Request::OpenWindow(None),
+            Request::OpenWindow {
+                directory: None,
+                environment: Default::default(),
+            },
             Request::Quit,
             Request::FontSize(Some(20.0)),
             Request::FontSize(None),
@@ -2265,6 +2269,7 @@ fn a_call_is_its_own_plugin_s() {
             bindings: Vec::new(),
             global_bindings: Vec::new(),
             menu_items: Vec::new(),
+            opened: std::collections::VecDeque::new(),
             catalogs: Vec::new(),
             texts: RefCell::new(None),
             views: BTreeMap::new(),
@@ -2274,6 +2279,8 @@ fn a_call_is_its_own_plugin_s() {
             held_cursors: std::collections::BTreeSet::new(),
             awake: host::Awake::Off,
             popups: BTreeMap::new(),
+            automations: BTreeSet::new(),
+            automations_forgotten: BTreeSet::new(),
             double_tap: None,
             images: (image::Budget::default(), None),
             quick_windows: Vec::new(),
@@ -4880,7 +4887,8 @@ fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
         "the first told"
     );
     std::thread::sleep(Duration::from_millis(100));
-    assert_eq!(pins(&app), before);
+    // The second's pin alone, of the row from which it follows output.
+    assert_eq!(pins(&app), before + 1);
     // A search ended lets its matches go; a read of it is refused.
     plugins
         .run("finder.x", Args::new(), &mut app.context())
@@ -4888,7 +4896,7 @@ fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
     let third = searched.borrow().last.unwrap();
     let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, third);
     assert_eq!(count, 5000);
-    assert_eq!(pins(&app), before + 2 * 5000);
+    assert_eq!(pins(&app), before + 2 * 5000 + 1);
     plugins
         .run("finder.end", Args::new(), &mut app.context())
         .unwrap();
@@ -6097,4 +6105,71 @@ fn a_popup_of_no_folder_there_or_of_a_hidden_window_opens_not_nor_does_a_floatin
     );
     // No pane started of them.
     assert_eq!(app.workspace.panes_of(window).len(), panes);
+}
+
+#[test]
+fn a_call_opens_sixteen_panes_and_a_plugin_sixty_four_a_second_at_most() {
+    let mut app = App::default();
+    let window = window(&mut app, "sleep 10");
+    let mut plugins = Plugins::new();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let seen = Rc::clone(&log);
+    plugins
+        .add(
+            "opener",
+            scripted(
+                |cx| {
+                    cx.register_command(command("opener.panes"))?;
+                    cx.register_command(command("opener.windows"))
+                },
+                move |cx, name, _| {
+                    let window = cx.focused_window().unwrap();
+                    let pane = cx.focused_pane().unwrap();
+                    let mut seen = seen.borrow_mut();
+                    if name == "opener.panes" {
+                        // Ten new tabs, then ten splits, which count together.
+                        for _ in 0..10 {
+                            seen.push(cx.new_tab(window, None).map(drop).map_err(|e| e.code));
+                        }
+                        for _ in 0..10 {
+                            let split =
+                                cx.split(pane, host::Direction::Horizontal, host::Side::Second);
+                            seen.push(split.map(drop).map_err(|e| e.code));
+                        }
+                    } else {
+                        // Windows, which the app opens of no process here.
+                        for _ in 0..16 {
+                            seen.push(cx.open_window().map_err(|e| e.code));
+                        }
+                    }
+                    Ok(())
+                },
+            ),
+        )
+        .unwrap();
+    assert!(plugins.activate(&mut app.context()).is_empty());
+    let mut go = |app: &mut App, name: &str| {
+        log.borrow_mut().clear();
+        plugins.run(name, Args::new(), &mut app.context()).unwrap();
+        let seen = log.borrow();
+        assert!(
+            seen.iter()
+                .all(|done| done.is_ok() || *done == Err(Code::Failed)),
+            "{seen:?}"
+        );
+        seen.iter().filter(|done| done.is_ok()).count()
+    };
+    // Sixteen of a call: the ten tabs and six splits, the rest refused, its
+    // other writes applied.
+    assert_eq!(go(&mut app, "opener.panes"), 16);
+    assert_eq!(app.workspace.window(window).unwrap().tabs().len(), 11);
+    // Sixty-four within a second of the host's time, of its calls together.
+    for _ in 0..3 {
+        assert_eq!(go(&mut app, "opener.windows"), 16);
+    }
+    app.wait(Duration::from_millis(999));
+    assert_eq!(go(&mut app, "opener.windows"), 0);
+    // A second after the first, sixteen again.
+    app.wait(Duration::from_millis(1));
+    assert_eq!(go(&mut app, "opener.windows"), 16);
 }

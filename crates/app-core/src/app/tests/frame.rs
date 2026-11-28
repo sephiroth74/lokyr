@@ -596,15 +596,19 @@ fn a_synchronized_update_shows_whole() {
 #[test]
 fn output_starts_the_blinking_again() {
     let mut fake = Fake::default();
-    let mut app = app(Config::default(), shell("sleep 0.3; printf x; sleep 10"));
+    let mut app = app(Config::default(), shell("sleep 1; printf x; sleep 10"));
     fake.start(&mut app);
     let window = fake.windows().next().unwrap();
-    let focused = Instant::now();
     fake.send(&mut app, window, WindowEvent::Focused(true));
+    let focused = app.windows[&window].blink.since();
     run_until(&mut fake, &mut app, |_, app| row(app, window, 0) == "x");
-    // The output came at least 0.3 s after the focus: 15.1 s after the
-    // focus, the cursor still blinks, as its timeout counts from it.
-    let later = focused + cursor::BLINK_TIMEOUT + Duration::from_millis(100);
+    // The frame that read the output, after the focus, started the
+    // blinking again: past the focus's timeout, the cursor still blinks, as
+    // its timeout counts from that frame. Of the times that the app took,
+    // whatever a slow machine's start and frames take.
+    let output = app.windows[&window].blink.since();
+    assert!(output > focused, "{focused:?} {output:?}");
+    let later = focused + cursor::BLINK_TIMEOUT + (output - focused) / 2;
     app.cursor(&mut fake, window, later).map(|(shape, _)| shape);
     assert!(app.windows[&window].blinking);
 }

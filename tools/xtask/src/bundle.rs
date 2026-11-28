@@ -11,7 +11,9 @@
 //! `Contents/Resources/licenses` the notices of the licenses of what the
 //! binary and the bundle hold of other projects: the crates', Sparkle's and
 //! the symbols' font's; and the shells' integration, its scripts for zsh,
-//! bash and fish, in `Contents/Resources/shell-integration`.
+//! bash and fish, in `Contents/Resources/shell-integration`; and the App
+//! Intents' metadata, `Contents/Resources/Metadata.appintents`, of the
+//! app's feature `app-intents`, which Shortcuts and Spotlight read.
 //! It is signed with the identity that `LOKYR_SIGN_IDENTITY` names, the
 //! maintainer's Developer ID, in the environment or in the untracked
 //! `private/lokyr.env`, so that macOS keeps the permissions that it gave the
@@ -23,8 +25,8 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
-use std::process::{Command, ExitCode};
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitCode, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail, ensure};
@@ -55,6 +57,17 @@ pub(crate) const SLEIP: &str = "sleip";
 const DOCK_TILE: &str = "LokyrDockTile.docktileplugin";
 const DOCK_TILE_EXECUTABLE: &str = "LokyrDockTile";
 const DOCK_TILE_CRATE: &str = "lokyr-platform-macos-docktile";
+
+/// The app's feature of the system's App Intents, which every bundle
+/// builds, and their metadata's folder, which the app's build script makes
+/// in its output folder and the bundle's resources hold.
+const APP_INTENTS: &str = "app-intents";
+
+/// AppleScript's dictionary, of the app's resources, which the bundle's
+/// resources hold by its name.
+const SCRIPTING: &str = "Lokyr.sdef";
+const SCRIPTING_SOURCE: &str = "crates/app/resources/Lokyr.sdef";
+const INTENTS_METADATA: &str = "metadata/Metadata.appintents";
 const DOCK_TILE_LIBRARY: &str = "liblokyr_platform_macos_docktile.dylib";
 const DOCK_TILE_CLASS: &str = "LokyrDockTilePlugIn";
 
@@ -238,11 +251,12 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         .canonicalize()
         .context("the workspace's root")?;
     let moment = build_moment(&root)?;
-    run_command(
+    let built = build_app(
         Command::new(env!("CARGO"))
             .args(["build", "--release", "--locked", "-p", "lokyr-app"])
             // The version's date, of the moment of the bundle's number.
             .env("SOURCE_DATE_EPOCH", moment.to_string())
+            .args(["--features", APP_INTENTS])
             .args(
                 features
                     .iter()
@@ -250,7 +264,6 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             )
             .args(bare.then_some("--no-default-features"))
             .current_dir(&root),
-        "building the app",
     )?;
     let app = root.join("target").join(format!("{NAME}.app"));
     if app.exists() {
@@ -293,6 +306,18 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         &resources.join("terminfo"),
     )?;
     copy_icons(&root.join(ICONS), &resources)?;
+    // The App Intents' metadata, which Shortcuts and Spotlight read.
+    let intents = built
+        .context("the app's build told no output folder of its build script")?
+        .join(INTENTS_METADATA);
+    ensure!(
+        intents.join("extract.actionsdata").is_file(),
+        "the app's build made no App Intents' metadata in {}",
+        intents.display()
+    );
+    copy_tree(&intents, &resources.join("Metadata.appintents"))?;
+    fs::copy(root.join(SCRIPTING_SOURCE), resources.join(SCRIPTING))
+        .with_context(|| format!("copying {SCRIPTING_SOURCE}"))?;
     copy_tree(
         &root.join(SHELL_INTEGRATION),
         &resources.join("shell-integration"),
@@ -423,6 +448,43 @@ pub(crate) fn size_of(path: &Path) -> u64 {
 /// `bytes` in megabytes, of a decimal, as a release's notes tell a size.
 pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+}
+
+/// Builds the app of `command`, a `cargo build` of `lokyr-app`, its
+/// diagnostics shown as they come: the output folder of its build script,
+/// which Cargo's messages tell.
+fn build_app(command: &mut Command) -> Result<Option<PathBuf>> {
+    // Cargo's progress, warnings and errors, and the build scripts', go to
+    // the terminal, as `output` would take them too.
+    let output = command
+        .arg("--message-format=json-render-diagnostics")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .output()
+        .context("building the app")?;
+    if !output.status.success() {
+        bail!("building the app failed: {}", output.status);
+    }
+    Ok(build_script_output(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+/// The output folder of `lokyr-app`'s build script, of Cargo's JSON
+/// messages `messages`, its last.
+fn build_script_output(messages: &str) -> Option<PathBuf> {
+    messages
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|message| message["reason"] == "build-script-executed")
+        .filter(|message| {
+            message["package_id"]
+                .as_str()
+                .is_some_and(|id| id.contains("#lokyr-app@"))
+        })
+        .filter_map(|message| message["out_dir"].as_str().map(PathBuf::from))
+        .next()
 }
 
 /// Runs `command`, which `what` describes, and fails if it fails.
@@ -556,7 +618,7 @@ pub(crate) fn told_version(binary: &Path) -> Result<String> {
 /// The moment of the build, in seconds since the epoch, as the app's build
 /// script takes it: `SOURCE_DATE_EPOCH`'s, when it is set, or else the time
 /// of HEAD's commit, or else, for a source without git, now.
-fn build_moment(root: &Path) -> Result<u64> {
+pub(crate) fn build_moment(root: &Path) -> Result<u64> {
     if let Ok(given) = std::env::var("SOURCE_DATE_EPOCH") {
         return given
             .trim()
@@ -653,6 +715,8 @@ fn info_plist(
         ("NSHumanReadableCopyright", copyright.to_owned()),
         ("NSPrincipalClass", "NSApplication".to_owned()),
         ("NSDockTilePlugIn", DOCK_TILE.to_owned()),
+        // AppleScript's dictionary, which Script Editor shows.
+        ("OSAScriptingDefinition", SCRIPTING.to_owned()),
     ];
     keys.push(("CFBundleIconFile", "AppIcon".to_owned()));
     let mut pairs: Vec<(String, String)> = keys
@@ -674,7 +738,7 @@ fn info_plist(
     plist.insert_str(
         at,
         &format!(
-            "\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
+            "\t<key>NSAppleScriptEnabled</key>\n\t<true/>\n\t<key>CFBundleLocalizations</key>\n\t<array>\n{languages}\t</array>\n{}{}{}",
             document_types(&source.types, &source.urls),
             services(&source.services),
             crate::sparkle::plist_entries()
@@ -884,6 +948,8 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
             .extension()
             .is_some_and(|extension| extension == "icns")
         {
+            let bytes = fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
+            check_icon(&bytes).with_context(|| format!("the icon {}", path.display()))?;
             let name = path.file_name().context("an icon's name")?;
             fs::copy(&path, variants.join(name))
                 .with_context(|| format!("copying {}", path.display()))?;
@@ -896,6 +962,48 @@ fn copy_icons(icons: &Path, resources: &Path) -> Result<()> {
     }
     fs::copy(&default, resources.join("AppIcon.icns"))
         .with_context(|| format!("copying {}", default.display()))?;
+    Ok(())
+}
+
+/// The types of an `.icns`'s images that macOS reads otherwise than their
+/// writers meant: `icp4`, `icp5` and `icp6`, which tools write of PNG data
+/// at 16, 32 and 64 pixels, and which the system's small icons, as a list's
+/// at a scale of 1, read as ARGB of runs, showing colored noise; `iconutil`
+/// writes `ic04` and `ic05` there.
+const MISREAD_ICON_TYPES: [&[u8; 4]; 3] = [b"icp4", b"icp5", b"icp6"];
+
+/// Checks the `.icns` of `bytes`: its header and its images' lengths
+/// whole, and none of [`MISREAD_ICON_TYPES`].
+fn check_icon(bytes: &[u8]) -> Result<()> {
+    let header = |at: usize| -> Option<(&[u8], usize)> {
+        let kind = bytes.get(at..at + 4)?;
+        let length = u32::from_be_bytes(bytes.get(at + 4..at + 8)?.try_into().ok()?);
+        Some((kind, usize::try_from(length).ok()?))
+    };
+    match header(0) {
+        Some((b"icns", length)) if length == bytes.len() => {}
+        _ => bail!("not an .icns of its whole length"),
+    }
+    let mut at = 8;
+    while at < bytes.len() {
+        let Some((kind, length)) = header(at).filter(|(_, length)| *length >= 8) else {
+            bail!("an image's header cut at byte {at}");
+        };
+        if MISREAD_ICON_TYPES
+            .iter()
+            .any(|misread| kind == misread.as_slice())
+        {
+            bail!(
+                "an image of the type `{}`, which macOS's small icons read as ARGB of runs, \
+                 showing noise: make it with `iconutil -c icns`",
+                String::from_utf8_lossy(kind)
+            );
+        }
+        at = at
+            .checked_add(length)
+            .filter(|end| *end <= bytes.len())
+            .with_context(|| format!("an image past the file's end at byte {at}"))?;
+    }
     Ok(())
 }
 
@@ -931,9 +1039,17 @@ fn localized_plist(catalog: &Catalog, source: &Catalog) -> String {
 /// The identity that signs the bundle: the one that `LOKYR_SIGN_IDENTITY`
 /// names, in the environment or in `private/lokyr.env`, or `-`, ad hoc.
 pub(crate) fn identity() -> Result<String> {
-    Ok(crate::private::variable(IDENTITY_VARIABLE)?
+    let identity = crate::private::variable(IDENTITY_VARIABLE)?
         .filter(|named| !named.is_empty())
-        .unwrap_or_else(|| "-".to_owned()))
+        .unwrap_or_else(|| "-".to_owned());
+    // On GitHub's runners, the log tells neither the identity nor its team.
+    if identity != "-" {
+        crate::ci::mask(&identity);
+        if let Some(team) = crate::ci::team_of(&identity) {
+            crate::ci::mask(team);
+        }
+    }
+    Ok(identity)
 }
 
 /// The plist of `entitlements`, each granted, as [`ENTITLEMENTS`], the
@@ -985,10 +1101,71 @@ fn sign(app: &Path, identity: &str, entitlements: &Path) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_app_s_build_script_tells_its_output_folder_of_cargo_s_messages() {
+        let messages = concat!(
+            r#"{"reason":"build-script-executed","package_id":"path+file:///w/crates/kernel#lokyr-kernel@1.5.0","out_dir":"/w/target/release/build/lokyr-kernel-1/out"}"#,
+            "\n",
+            r#"{"reason":"compiler-artifact","package_id":"path+file:///w/crates/app#lokyr-app@1.5.0"}"#,
+            "\n",
+            "not json\n",
+            r#"{"reason":"build-script-executed","package_id":"path+file:///w/crates/app#lokyr-app@1.5.0","out_dir":"/w/target/release/build/lokyr-app-2/out"}"#,
+            "\n",
+        );
+        assert_eq!(
+            build_script_output(messages),
+            Some(PathBuf::from("/w/target/release/build/lokyr-app-2/out"))
+        );
+        assert_eq!(build_script_output("{}\n"), None);
+    }
+
     /// The catalogs of the workspace's app.
     fn catalogs() -> BTreeMap<String, Catalog> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         usage_catalogs(&root.join(LOCALES)).unwrap()
+    }
+
+    #[test]
+    fn every_icon_variant_is_of_types_that_macos_reads_as_written() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut checked = 0;
+        for entry in fs::read_dir(root.join(ICONS)).unwrap() {
+            let path = entry.unwrap().path();
+            if path
+                .extension()
+                .is_some_and(|extension| extension == "icns")
+            {
+                check_icon(&fs::read(&path).unwrap())
+                    .unwrap_or_else(|error| panic!("{}: {error:#}", path.display()));
+                checked += 1;
+            }
+        }
+        assert!(checked >= 4, "{checked} variants");
+    }
+
+    #[test]
+    fn an_icon_of_png_at_16_pixels_as_icp4_is_refused() {
+        // An `.icns` of one image, of the type and of the bytes given.
+        let icns = |kind: &[u8; 4], body: &[u8]| {
+            let mut bytes = b"icns".to_vec();
+            bytes.extend_from_slice(&u32::try_from(16 + body.len()).unwrap().to_be_bytes());
+            bytes.extend_from_slice(kind);
+            bytes.extend_from_slice(&u32::try_from(8 + body.len()).unwrap().to_be_bytes());
+            bytes.extend_from_slice(body);
+            bytes
+        };
+        let png = b"\x89PNG\r\n\x1a\n";
+        assert!(check_icon(&icns(b"ic11", png)).is_ok());
+        for misread in MISREAD_ICON_TYPES {
+            let error = check_icon(&icns(misread, png)).unwrap_err().to_string();
+            assert!(error.contains("iconutil"), "{error}");
+        }
+        // Cut, or of a length that is not the file's.
+        let mut cut = icns(b"ic11", png);
+        cut.truncate(cut.len() - 1);
+        assert!(check_icon(&cut).is_err());
+        assert!(check_icon(b"icns\0\0\0\x10ic11\0\0\0\x40").is_err());
+        assert!(check_icon(b"not an icon").is_err());
     }
 
     #[test]
@@ -1215,6 +1392,15 @@ mod tests {
             );
         }
         assert!(plist.contains("<key>NSHighResolutionCapable</key>\n\t<true/>"));
+        // AppleScript's dictionary, of the bundle's resources.
+        assert!(plist.contains("<key>NSAppleScriptEnabled</key>\n\t<true/>"));
+        assert!(plist.contains("<key>OSAScriptingDefinition</key>\n\t<string>Lokyr.sdef</string>"));
+        assert!(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../..")
+                .join(SCRIPTING_SOURCE)
+                .is_file()
+        );
         assert!(plist.contains(
             "<key>CFBundleLocalizations</key>\n\t<array>\n\t\t<string>en</string>\n\t\t<string>it</string>\n\t</array>"
         ));

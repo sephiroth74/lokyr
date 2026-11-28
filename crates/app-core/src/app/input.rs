@@ -171,6 +171,62 @@ impl<B: Backend> App<B> {
         }
     }
 
+    /// Presses the key of `combo` in `pane` as the user presses it, as a
+    /// plugin asks of its call's `chain`: the pane takes its window's
+    /// keyboard; the keymap runs the command of the key's binding in its
+    /// context, in that window whatever window has the focus, as a
+    /// context menu's commands run, of the chain, which bounds it as a
+    /// run's; or holds it as a sequence's; else the pane's program takes
+    /// the key, pressed and released, Option acting as Meta, as a script
+    /// means it. A key that no US key types goes to the program alone.
+    pub(super) fn press_key(
+        &mut self,
+        platform: &mut dyn Platform,
+        pane: PaneId,
+        combo: lokyr_kernel::keymap::Combo,
+        chain: plugins::Chain,
+    ) {
+        let Some(window) = self.window_of(pane) else {
+            return;
+        };
+        self.focus_pane(platform, window, pane);
+        let pressed = platform_key(combo, KeyState::Pressed);
+        let taken = match &pressed {
+            Some(key) => self.resolve_key(window, key),
+            None => Taken::Program(Vec::new()),
+        };
+        // Its release, which the keymap takes as it took the press.
+        if let Some(released) = platform_key(combo, KeyState::Released) {
+            let _ = self.resolve_key(window, &released);
+        }
+        match taken {
+            Taken::Run(invocation) => {
+                let chain = match chain.id {
+                    0 => plugins::new_chain(),
+                    _ => chain,
+                };
+                if self.may_run(chain, &invocation.command) {
+                    let deeper = plugins::Chain {
+                        depth: chain.depth + 1,
+                        ..chain
+                    };
+                    let acting = self.acting.replace(window);
+                    self.chains.1.push(chain.id);
+                    self.run_deep(platform, &invocation.command, invocation.args, deeper);
+                    self.chains.1.pop();
+                    self.acting = acting;
+                }
+            }
+            Taken::Held => {}
+            Taken::Program(_) => {
+                if let Some(found) = self.workspace.pane(pane) {
+                    lokyr_kernel::typed::send(found, combo);
+                }
+                platform.request_frame(window);
+            }
+        }
+    }
+
     /// A key of a field that records a shortcut, which has `window`'s
     /// keyboard: whether it took the key. A press, but Tab's and Escape's
     /// of no modifier, which go as elsewhere, records its keys as the
@@ -447,7 +503,9 @@ impl<B: Backend> App<B> {
         }
         // The plugins' panels: `<namespace>.open` of each that shows, not
         // of one whose pane another tab or a zoomed pane hides, and
-        // `<namespace>.focused` of the one whose node has the keyboard.
+        // `<namespace>.focused` of the one whose node has the keyboard; and
+        // each of a panel of its own, `<namespace>.<panel>.open` and
+        // `<namespace>.<panel>.focused`, of the panel's id.
         let focused_view = match state.focus.target() {
             lokyr_ui_core::focus::Target::Node { panel, .. } => Some(panel),
             lokyr_ui_core::focus::Target::Pane => None,
@@ -458,11 +516,19 @@ impl<B: Backend> App<B> {
                 .placed
                 .as_ref()
                 .is_none_or(|placed| super::panels::anchor_shows(state, &placed.options.anchor));
-            if matches!(view.view, lokyr_kernel::plugins::ui::ViewId::Panel(_)) && shows {
+            let panel = match &view.view {
+                lokyr_kernel::plugins::ui::ViewId::Panel(panel) => Some(panel.0.as_str()),
+                _ => None,
+            };
+            if let (Some(panel), true) = (panel, shows) {
                 context.hold(format!("{namespace}.open"));
+                context.hold(format!("{namespace}.{panel}.open"));
             }
             if focused_view == Some(view.id) {
                 context.hold(format!("{namespace}.focused"));
+                if let Some(panel) = panel {
+                    context.hold(format!("{namespace}.{panel}.focused"));
+                }
             }
         }
         // A field that has the keyboard takes its editing keys before the
@@ -1714,6 +1780,54 @@ enum Taken {
     Held,
     /// It gives these keys to the program, in their order.
     Program(Vec<KeyEvent>),
+}
+
+/// The platform's key of `combo`, in `state`, as a US keyboard types it;
+/// none of a key that no US key types, a function key past F24, a click or
+/// a wheel's step.
+fn platform_key(combo: lokyr_kernel::keymap::Combo, state: KeyState) -> Option<KeyEvent> {
+    use lokyr_kernel::keymap::{Named, Press};
+    use lokyr_platform_core::KeyCode;
+    let code = match combo.press {
+        Press::Char(c) => KeyCode::from_base_layout(c)?,
+        Press::Named(named) => match named {
+            Named::Enter => KeyCode::Enter,
+            Named::Tab => KeyCode::Tab,
+            Named::Backspace => KeyCode::Backspace,
+            Named::Escape => KeyCode::Escape,
+            Named::Space => KeyCode::Space,
+            Named::Delete => KeyCode::Delete,
+            Named::Insert => KeyCode::Insert,
+            Named::Home => KeyCode::Home,
+            Named::End => KeyCode::End,
+            Named::PageUp => KeyCode::PageUp,
+            Named::PageDown => KeyCode::PageDown,
+            Named::Up => KeyCode::ArrowUp,
+            Named::Down => KeyCode::ArrowDown,
+            Named::Left => KeyCode::ArrowLeft,
+            Named::Right => KeyCode::ArrowRight,
+            Named::F(number) if number <= 24 => KeyCode::F(number),
+            Named::F(_) => return None,
+        },
+        Press::Wheel(_) | Press::Click => return None,
+    };
+    let (text, unmodified) = lokyr_kernel::typed::texts(combo)?;
+    let plain = code.base_layout().map(String::from).unwrap_or_default();
+    Some(KeyEvent {
+        code,
+        state,
+        mods: Modifiers {
+            shift: combo.mods.shift,
+            control: combo.mods.ctrl,
+            left_alt: combo.mods.alt,
+            super_key: combo.mods.cmd,
+            ..Modifiers::default()
+        },
+        text,
+        unmodified,
+        plain,
+        time: None,
+    })
 }
 
 /// The modifiers of `mods`, as bindings name them.

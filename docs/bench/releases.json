@@ -63,6 +63,13 @@
       "title": "1.5.0",
       "report": "ab-F5b-20.md",
       "against": "1.4.0"
+    },
+    {
+      "id": "1.6.0",
+      "label": "1.6.0",
+      "title": "1.6.0",
+      "report": "ab-F5b-67.md",
+      "against": "1.5.0"
     }
   ],
   "measures": [
@@ -81,7 +88,8 @@
         "1.0.0": 26.72,
         "1.3.0": 27.15,
         "1.4.0": 20.8,
-        "1.5.0": 55.0
+        "1.5.0": 55.0,
+        "1.6.0": 12.8
       },
       "baseline": {
         "0.7.0": 15.1,
@@ -90,7 +98,8 @@
         "1.0.0": 28.86,
         "1.3.0": 28.6,
         "1.4.0": 21.7,
-        "1.5.0": 54.6
+        "1.5.0": 54.6,
+        "1.6.0": 22.1
       },
       "sessions": {
         "0.7.0": {
@@ -104,7 +113,42 @@
         "1.5.0": {
           "title": "the startup of the releases' notarized DMGs",
           "report": "startup-F5b-21.md"
+        },
+        "1.6.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-68.md"
         }
+      }
+    },
+    {
+      "id": "startup-window-gap",
+      "name": "Startup, its window after the floor app's, of ttybench",
+      "unit": "ms",
+      "better": "lower",
+      "budget": 70,
+      "tolerance": 5,
+      "digits": 1,
+      "ttybench": {
+        "tool": "startup",
+        "metric": "window_gap_ms",
+        "stat": "median"
+      },
+      "values": {
+        "1.5.0": 70.4,
+        "1.6.0": 76.57
+      },
+      "sessions": {
+        "1.5.0": {
+          "title": "the startup beside a floor app",
+          "report": "startup-TB-23.md"
+        },
+        "1.6.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-68.md"
+        }
+      },
+      "baseline": {
+        "1.6.0": 80.93
       }
     },
     {
@@ -122,7 +166,8 @@
         "1.2.0": 16.61,
         "1.3.0": 17.276,
         "1.4.0": 13.59,
-        "1.5.0": 16.339
+        "1.5.0": 16.339,
+        "1.6.0": 11.421
       },
       "baseline": {
         "0.7.0": 19.59,
@@ -132,7 +177,8 @@
         "1.2.0": 17.68,
         "1.3.0": 17.261,
         "1.4.0": 14.5,
-        "1.5.0": 16.812
+        "1.5.0": 16.812,
+        "1.6.0": 11.414
       },
       "budget": 33.3,
       "budget_label": "2 refreshes, 33.3",
@@ -168,7 +214,8 @@
         "1.2.0": 31.47,
         "1.3.0": 31.485,
         "1.4.0": 27.45,
-        "1.5.0": 27.969
+        "1.5.0": 27.969,
+        "1.6.0": 24.536
       },
       "baseline": {
         "0.7.0": 38.45,
@@ -178,7 +225,8 @@
         "1.2.0": 31.15,
         "1.3.0": 32.358,
         "1.4.0": 29.76,
-        "1.5.0": 31.157
+        "1.5.0": 31.157,
+        "1.6.0": 26.326
       },
       "budget": 75,
       "budget_label": "4.5 refreshes, 75",
@@ -216,7 +264,8 @@
         "1.2.0": 28.4,
         "1.3.0": 27.592,
         "1.4.0": 28.7,
-        "1.5.0": 29.0
+        "1.5.0": 29.0,
+        "1.6.0": 28.4
       },
       "baseline": {
         "0.7.0": 28.05,
@@ -227,7 +276,8 @@
         "1.2.0": 27.95,
         "1.3.0": 27.403,
         "1.4.0": 28.7,
-        "1.5.0": 28.95
+        "1.5.0": 28.95,
+        "1.6.0": 28.5
       },
       "reference": {
         "name": "Alacritty",
@@ -253,7 +303,8 @@
         "1.2.0": 0.342,
         "1.3.0": 0.3583,
         "1.4.0": 0.35,
-        "1.5.0": 0.3309
+        "1.5.0": 0.3309,
+        "1.6.0": 0.3221
       },
       "baseline": {
         "0.7.0": 0.35,
@@ -264,7 +315,8 @@
         "1.2.0": 0.35,
         "1.3.0": 0.3583,
         "1.4.0": 0.346,
-        "1.5.0": 0.3476
+        "1.5.0": 0.3476,
+        "1.6.0": 0.3301
       },
       "reference": {
         "name": "Alacritty",
@@ -295,7 +347,8 @@
         "1.2.0": 0,
         "1.3.0": 0,
         "1.4.0": 0,
-        "1.5.0": 0.0
+        "1.5.0": 0.0,
+        "1.6.0": 0.0
       },
       "baseline": {
         "0.7.0": 0,
@@ -306,7 +359,8 @@
         "1.2.0": 0,
         "1.3.0": 0,
         "1.4.0": 0,
-        "1.5.0": 0.0
+        "1.5.0": 0.0,
+        "1.6.0": 0.0
       },
       "ttybench": {
         "tool": "idle",
@@ -329,7 +383,8 @@
         "1.2.0": 314.9,
         "1.3.0": 308.6,
         "1.4.0": 304.4,
-        "1.5.0": 313.938
+        "1.5.0": 313.938,
+        "1.6.0": 316.189
       },
       "baseline": {
         "0.7.0": 309.6,
@@ -339,7 +394,8 @@
         "1.2.0": 315.6,
         "1.3.0": 298.6,
         "1.4.0": 303.7,
-        "1.5.0": 313.032
+        "1.5.0": 313.032,
+        "1.6.0": 315.389
       },
       "budget": 275.0,
       "budget_label": "Ghostty's less 10 %, 275",
@@ -378,7 +434,9 @@
         "1.0.0": 220.9,
         "1.2.0": 217.9,
         "1.3.0": 218.3,
-        "1.4.0": 216.8
+        "1.4.0": 216.8,
+        "1.6.0": 227.4,
+        "1.5.0": 208.9
       },
       "baseline": {
         "0.7.0": 211.0,
@@ -387,7 +445,9 @@
         "1.0.0": 210.8,
         "1.2.0": 213.6,
         "1.3.0": 220.2,
-        "1.4.0": 218.4
+        "1.4.0": 218.4,
+        "1.6.0": 221.1,
+        "1.5.0": 185.8
       },
       "sessions": {
         "1.4.0": {
@@ -411,7 +471,8 @@
         "1.2.0": 286.3,
         "1.3.0": 285.15,
         "1.4.0": 281.1,
-        "1.5.0": 282.011
+        "1.5.0": 282.011,
+        "1.6.0": 283.152
       },
       "baseline": {
         "0.7.0": 285.3,
@@ -421,7 +482,8 @@
         "1.2.0": 286.4,
         "1.3.0": 278.95,
         "1.4.0": 271.8,
-        "1.5.0": 282.52
+        "1.5.0": 282.52,
+        "1.6.0": 278.501
       },
       "sessions": {
         "1.4.0": {
@@ -453,7 +515,8 @@
         "1.2.0": 214.9,
         "1.3.0": 213.15,
         "1.4.0": 216.1,
-        "1.5.0": 330.261
+        "1.5.0": 330.261,
+        "1.6.0": 324.862
       },
       "baseline": {
         "0.7.0": 214.5,
@@ -463,7 +526,8 @@
         "1.2.0": 214.6,
         "1.3.0": 217.2,
         "1.4.0": 217.2,
-        "1.5.0": 330.343
+        "1.5.0": 330.343,
+        "1.6.0": 328.0
       },
       "sessions": {
         "1.4.0": {
@@ -495,7 +559,8 @@
         "1.2.0": 0.298,
         "1.3.0": 0.27675,
         "1.4.0": 0.3225,
-        "1.5.0": 0.3595
+        "1.5.0": 0.3595,
+        "1.6.0": 0.2985
       },
       "baseline": {
         "0.7.0": 0.2755,
@@ -505,7 +570,8 @@
         "1.2.0": 0.2945,
         "1.3.0": 0.28125,
         "1.4.0": 0.31875,
-        "1.5.0": 0.3605
+        "1.5.0": 0.3605,
+        "1.6.0": 0.298
       }
     },
     {
@@ -524,7 +590,8 @@
         "1.2.0": 0.4225,
         "1.3.0": 0.41775,
         "1.4.0": 0.44525,
-        "1.5.0": 0.453
+        "1.5.0": 0.453,
+        "1.6.0": 0.459
       },
       "baseline": {
         "0.7.0": 0.479,
@@ -534,7 +601,8 @@
         "1.2.0": 0.439,
         "1.3.0": 0.42925,
         "1.4.0": 0.42525,
-        "1.5.0": 0.4505
+        "1.5.0": 0.4505,
+        "1.6.0": 0.4295
       }
     },
     {
@@ -552,7 +620,8 @@
         "1.2.0": 0.783,
         "1.3.0": 0.7272,
         "1.4.0": 0.67875,
-        "1.5.0": 0.7765
+        "1.5.0": 0.7765,
+        "1.6.0": 0.769
       },
       "baseline": {
         "0.7.0": 0.7005,
@@ -562,7 +631,8 @@
         "1.2.0": 0.758,
         "1.3.0": 0.7318,
         "1.4.0": 0.68475,
-        "1.5.0": 0.793
+        "1.5.0": 0.793,
+        "1.6.0": 0.757
       }
     },
     {
@@ -577,14 +647,16 @@
         "1.2.0": 57.1,
         "1.3.0": 58.3,
         "1.4.0": 58.4,
-        "1.5.0": 58.132
+        "1.5.0": 58.132,
+        "1.6.0": 57.97
       },
       "baseline": {
         "0.7.0": 57.2,
         "1.2.0": 57.7,
         "1.3.0": 58.1,
         "1.4.0": 57.5,
-        "1.5.0": 57.868
+        "1.5.0": 57.868,
+        "1.6.0": 58.076
       },
       "reference": {
         "name": "Ghostty",
@@ -637,14 +709,16 @@
         "1.2.0": 55.7,
         "1.3.0": 57.4,
         "1.4.0": 55.5,
-        "1.5.0": 58.819
+        "1.5.0": 58.819,
+        "1.6.0": 57.011
       },
       "baseline": {
         "0.7.0": 55.2,
         "1.2.0": 56.2,
         "1.3.0": 57.4,
         "1.4.0": 56.4,
-        "1.5.0": 58.823
+        "1.5.0": 58.823,
+        "1.6.0": 56.638
       },
       "reference": {
         "name": "Ghostty",
@@ -697,14 +771,16 @@
         "1.2.0": 33.0,
         "1.3.0": 15,
         "1.4.0": 36.0,
-        "1.5.0": 11.0
+        "1.5.0": 11.0,
+        "1.6.0": 28.0
       },
       "baseline": {
         "0.7.0": 42.0,
         "1.2.0": 31.5,
         "1.3.0": 20,
         "1.4.0": 26.0,
-        "1.5.0": 11.0
+        "1.5.0": 11.0,
+        "1.6.0": 31.5
       },
       "reference": {
         "name": "Ghostty",
@@ -757,14 +833,16 @@
         "1.2.0": 28.3,
         "1.3.0": 21.02,
         "1.4.0": 13.38,
-        "1.5.0": 27.918
+        "1.5.0": 27.918,
+        "1.6.0": 26.714
       },
       "baseline": {
         "0.7.0": 12.4,
         "1.2.0": 20.6,
         "1.3.0": 13.18,
         "1.4.0": 21.02,
-        "1.5.0": 26.483
+        "1.5.0": 26.483,
+        "1.6.0": 12.885
       },
       "reference": {
         "name": "Ghostty",
@@ -810,12 +888,18 @@
     {
       "file": "releases/start.svg",
       "title": "Starting and typing",
-      "subtitle": "The startup's gap to a minimal app; a key to its echo, at 60 Hz; the others' by Typometer",
+      "subtitle": "The startup's gap to a minimal app, then to ttybench's floor app; a key to its echo, at 60 Hz; the others' by Typometer",
       "panels": [
         {
           "title": "Startup's gap, ms",
           "series": [
             "startup-gap"
+          ]
+        },
+        {
+          "title": "Startup's gap to the floor app, ms",
+          "series": [
+            "startup-window-gap"
           ]
         },
         {
@@ -990,6 +1074,10 @@
               "1.5.0": [
                 "268.2",
                 "the mean of twelve rounds of the release's DMG, notarized, 1.4.0's DMG 267.8 in the same session, [startup-F5b-21](startup-F5b-21.md#results); 253.1 of bundles not notarized in the A/B, 1.4.0's tag 250.2, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
+              ],
+              "1.6.0": [
+                "237.7",
+                "the mean of eight rounds of the release's candidate's DMG, notarized, of the release's code, 1.5.0's DMG 247.0 in the same session, [startup-F5b-68](startup-F5b-68.md#results)"
               ]
             }
           },
@@ -1036,7 +1124,43 @@
               ],
               "1.5.0": [
                 "55.0",
-                "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
+                "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench); after a restart, 28.3 ms, then 51.5 within the same session as the minimal app's launch moved, of no change to the copies, [startup-F5b-45](startup-F5b-45.md#why-the-gap-moves)"
+              ],
+              "1.6.0": [
+                "12.8",
+                "of eight rounds of the notarized DMGs, 1.5.0's 22.1 in the same session, of a minimal app of 221 to 232 ms, [startup-F5b-68](startup-F5b-68.md#results)"
+              ]
+            }
+          },
+          {
+            "name": "Its window after the floor app's, of ttybench, ms",
+            "budget": "≤ 70",
+            "measure": "startup-window-gap",
+            "limit": {
+              "value": 70,
+              "better": "lower"
+            },
+            "cells": {
+              "1.5.0": [
+                "70.4",
+                "the median of 32 rounds of the release's DMG, notarized, each beside ttybench's floor app launched alike, lokyr-bench's gap 44.8 in the same session, moving from 70.6 to 24.2 between its rounds, [startup-TB-23](startup-TB-23.md#results)"
+              ],
+              "1.6.0": [
+                "76.6",
+                "the median of 32 rounds of the notarized DMGs, each beside ttybench's floor app launched alike, 1.5.0's 80.9 in the same session, past the budget for both; 86.0 against 92.5 of bundles not notarized in the A/B, an editor open beside them, [ab-F5b-67](ab-F5b-67.md#results)"
+              ]
+            }
+          },
+          {
+            "name": "From the launch to its window, of ttybench, ms",
+            "cells": {
+              "1.5.0": [
+                "330.6",
+                "the median of 32 rounds of the release's DMG, notarized, launched by `open`, [startup-TB-23](startup-TB-23.md#results)"
+              ],
+              "1.6.0": [
+                "327.7",
+                "the median of 32 rounds of the notarized DMGs, 1.5.0's 335.9 in the same session, [startup-F5b-68](startup-F5b-68.md#results); 357.5 against 354.6 of bundles not notarized in the A/B"
               ]
             }
           }
@@ -1071,6 +1195,10 @@
               "1.5.0": [
                 "16.3",
                 "of ttybench, its capture of the window and its keys at every phase of the refresh, eight runs of 100 keys, on a 5K display at 60 Hz; 1.4.0's 16.8 in the same session"
+              ],
+              "1.6.0": [
+                "11.4",
+                "of ttybench, eight runs of 100 keys, on a 4K display at 60 Hz and a scale of 2; 1.5.0's 11.4 in the same session"
               ]
             }
           },
@@ -1100,6 +1228,10 @@
               "1.5.0": [
                 "28.0",
                 "of ttybench; 1.4.0's 31.2 in the same session"
+              ],
+              "1.6.0": [
+                "24.5",
+                "of ttybench; 1.5.0's 26.3 in the same session"
               ]
             }
           },
@@ -1147,6 +1279,10 @@
               "1.5.0": [
                 "0",
                 "of ttybench, 30 s of each copy 20 s after its launch, in four cycles; 1.4.0's 0"
+              ],
+              "1.6.0": [
+                "0",
+                "of ttybench, 30 s of each copy 20 s after its launch, in four cycles, the automation's plugin running in 1.6.0's; 1.5.0's 0"
               ]
             }
           },
@@ -1170,6 +1306,10 @@
               "1.5.0": [
                 "0.33",
                 "of ttybench, the mean of its intervals of a second; 1.4.0's 0.35 in the same session"
+              ],
+              "1.6.0": [
+                "0.32",
+                "of ttybench, the mean of its intervals of a second; 1.5.0's 0.33 in the same session"
               ]
             }
           },
@@ -1205,6 +1345,10 @@
               "1.5.0": [
                 "29.0",
                 "the median of four rounds of `lokyr-bench`, 1.4.0's 28.9 in the same session"
+              ],
+              "1.6.0": [
+                "28.4",
+                "the median of four rounds of `lokyr-bench`, 1.5.0's 28.5 in the same session, [ab-F5b-67](ab-F5b-67.md#the-measures-of-lokyr-bench)"
               ]
             }
           },
@@ -1228,6 +1372,10 @@
               "1.5.0": [
                 "30.6",
                 "of a display at a scale of 2, as 1.4.0's in the same session"
+              ],
+              "1.6.0": [
+                "30.6",
+                "of a display at a scale of 2, as 1.5.0's in the same session"
               ]
             }
           }
@@ -1265,6 +1413,10 @@
               "1.5.0": [
                 "313.9",
                 "of ttybench, to the quiet, a window of 120 × 40 cells, 1.4.0's 313.0 in the same session; 270.4 against 277.1 of `lokyr-bench` in a window of 1920 × 1080"
+              ],
+              "1.6.0": [
+                "316.2",
+                "of ttybench, to the quiet, a window of 120 × 40 cells, 1.5.0's 315.4 in the same session; 318.7 against 322.8 in a window of 216 × 64 cells, eight cycles, and 311.4 against 308.0 of `lokyr-bench` in a window of 1920 × 1080"
               ]
             }
           },
@@ -1289,6 +1441,10 @@
               "1.5.0": [
                 "208.9",
                 "of `lokyr-bench`, of runs of 147 to 231, 1.4.0's 185.8 in the same session"
+              ],
+              "1.6.0": [
+                "227.4",
+                "of `lokyr-bench`, of runs of 219 to 233, 1.5.0's 221.1 in the same session"
               ]
             }
           },
@@ -1313,6 +1469,10 @@
               "1.5.0": [
                 "282.0",
                 "of ttybench's colored text, 1.4.0's 282.5 in the same session"
+              ],
+              "1.6.0": [
+                "283.2",
+                "of ttybench's colored text, 1.5.0's 278.5 in the same session"
               ]
             }
           },
@@ -1337,6 +1497,10 @@
               "1.5.0": [
                 "330.3",
                 "of ttybench's wide characters, two cells each, 1.4.0's 330.3 in the same session"
+              ],
+              "1.6.0": [
+                "324.9",
+                "of ttybench's wide characters, two cells each, 1.5.0's 328.0 in the same session"
               ]
             }
           }
@@ -1363,6 +1527,10 @@
               "1.5.0": [
                 "0.360",
                 "the mean of two rounds of `lokyr-bench`, 1.4.0's 0.361"
+              ],
+              "1.6.0": [
+                "0.299",
+                "the mean of two rounds of `lokyr-bench`, 1.5.0's 0.298"
               ]
             }
           },
@@ -1389,6 +1557,10 @@
               "1.5.0": [
                 "0.453",
                 "1.4.0's 0.451"
+              ],
+              "1.6.0": [
+                "0.459",
+                "1.5.0's 0.430"
               ]
             }
           },
@@ -1410,6 +1582,10 @@
               "1.5.0": [
                 "0.777",
                 "1.4.0's 0.793"
+              ],
+              "1.6.0": [
+                "0.769",
+                "1.5.0's 0.757"
               ]
             }
           }
@@ -1451,6 +1627,10 @@
               "1.5.0": [
                 "58.1",
                 "of ttybench, a window of 120 × 40 cells of Menlo at 13 points on a 5K display at 60 Hz and a scale of 2, four cycles of the drag alone; 1.4.0's 57.9 in the same session"
+              ],
+              "1.6.0": [
+                "58.0",
+                "of ttybench, a window of 120 × 40 cells of Menlo at 13 points on a 4K display at 60 Hz and a scale of 2, six cycles of the drag alone; 1.5.0's 58.1 in the same session"
               ]
             }
           },
@@ -1482,6 +1662,10 @@
               "1.5.0": [
                 "17.5",
                 "1.4.0's 20 in the same session"
+              ],
+              "1.6.0": [
+                "19",
+                "1.5.0's 18 in the same session"
               ]
             }
           },
@@ -1513,6 +1697,10 @@
               "1.5.0": [
                 "58.8",
                 "of ttybench, two cycles; 1.4.0's 58.8"
+              ],
+              "1.6.0": [
+                "57.0",
+                "of ttybench, two cycles; 1.5.0's 56.6"
               ]
             }
           },
@@ -1551,6 +1739,10 @@
               "1.5.0": [
                 "11",
                 "1.4.0's 11"
+              ],
+              "1.6.0": [
+                "28",
+                "1.5.0's 31.5"
               ]
             }
           },
@@ -1582,6 +1774,10 @@
               "1.5.0": [
                 "44",
                 "1.4.0's 44"
+              ],
+              "1.6.0": [
+                "40",
+                "1.5.0's 40"
               ]
             }
           },
@@ -1599,6 +1795,10 @@
               "1.5.0": [
                 "31",
                 "of ttybench, of the app's processes, 1.4.0's 32"
+              ],
+              "1.6.0": [
+                "31",
+                "of ttybench, of the app's processes, 1.5.0's 31"
               ]
             }
           },
@@ -1649,6 +1849,10 @@
               "1.5.0": [
                 "27.9",
                 "of ttybench, of runs of 13 and of 28 ms; 1.4.0's 26.5 in the same session"
+              ],
+              "1.6.0": [
+                "26.7",
+                "of ttybench, of runs of 13 and of 29 ms, as one run of the two was a refresh longer; 1.5.0's 12.9 in the same session, of runs of 13 ms"
               ]
             }
           },
@@ -1684,6 +1888,10 @@
               "1.5.0": [
                 "60.7",
                 "of ttybench, the frames that moved the text, smooth scrolling on, four cycles; 1.4.0's 60.7 in the same session; by rows 15.9 for both"
+              ],
+              "1.6.0": [
+                "60.8",
+                "of ttybench, the frames that moved the text, smooth scrolling on, four cycles; 1.5.0's 60.8 in the same session; by rows 15.9 for both"
               ]
             }
           },
@@ -1694,6 +1902,10 @@
               "1.5.0": [
                 "99.2",
                 "of Instruments' trace of the display, 1.4.0's 98.6 in the same session"
+              ],
+              "1.6.0": [
+                "99.0",
+                "of Instruments' trace of the display, 1.5.0's 98.9 in the same session"
               ]
             }
           },

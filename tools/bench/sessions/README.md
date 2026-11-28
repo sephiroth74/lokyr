@@ -38,9 +38,9 @@ The releases' A/B and the comparison of the terminals, as sessions of [ttybench]
    just release-charts
    ```
 
-   The startup's gap to a minimal app, the memory without the GPU's, `seq`'s throughput and a frame's time on the CPU have no ttybench record: they keep their values of the earlier tools, which their rows tell.
+   The startup's gap is ttybench's from 1.6.0 on, each round's window less ttybench's floor app's, launched alike, of `ab/1-start`; the gap to a minimal app's first window keeps its values up to 1.5.0. The memory without the GPU's, `seq`'s throughput and a frame's time on the CPU have no ttybench record: they keep their values of the earlier tools, which their rows tell.
 
-The budgets of the steps are the releases': the latency's 2 refreshes at the median and 4.5 at the 99th percentile of a display at 60 Hz, the interrupt wakeups at rest 0.5 a second at most and the package's none, of the mean of their intervals, as a wakeup comes a few times a minute and most intervals of a second hold none, and `cat`'s 275 MiB/s.
+The budgets of the steps are the releases': the startup's window 70 ms at most after the floor app's, of the median of its rounds, the latency's 2 refreshes at the median and 4.5 at the 99th percentile of a display at 60 Hz, the interrupt wakeups at rest 0.5 a second at most and the package's none, of the mean of their intervals, as a wakeup comes a few times a minute and most intervals of a second hold none, and `cat`'s 275 MiB/s.
 
 ## The scenarios of a release's features
 

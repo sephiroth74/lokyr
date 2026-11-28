@@ -18,7 +18,7 @@ lokyr_plugin_sdk::export_plugin!(KeymapMacos);
 /// The bindings, each of its keys and of the command that they run, in
 /// their order: a menu's item shows the first of its command's keys that no
 /// later binding takes.
-pub const BINDINGS: [(&str, &str); 55] = [
+pub const BINDINGS: [(&str, &str); 56] = [
     // The application's.
     ("cmd+,", "app.settings"),
     ("cmd+q", "app.quit"),
@@ -76,10 +76,11 @@ pub const BINDINGS: [(&str, &str); 55] = [
     ("cmd+end", "pane.scroll-bottom"),
     // The links'.
     ("cmd+click", "links.open"),
-    // The search's.
+    // The search's, and its Find in All Tabs.
     ("cmd+f", "search.open"),
     ("cmd+g", "search.next"),
     ("cmd+shift+g", "search.previous"),
+    ("cmd+shift+f", "search.find-all"),
     // The command palette's.
     ("cmd+shift+p", "command-palette.open"),
     // The copy mode's, as iTerm2's.
@@ -152,7 +153,7 @@ pub const DIRECTED: [(&str, &str, &str); 10] = [
 /// The bindings of a command of an argument, a whole number, that hold
 /// while a plugin's panel has the keyboard, after the others: each of its
 /// keys, the command, the argument's name and its value, and the context.
-pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
+pub const IN_PANELS: [(&str, &str, &str, i64, &str); 6] = [
     // The command palette's arrows, through its list while its field has
     // the keys.
     (
@@ -169,6 +170,10 @@ pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
         1,
         "command-palette.focused",
     ),
+    // Find in All Tabs' arrows, through its list while its field has the
+    // keys, of its own panel alone, as the find bar's field keeps its own.
+    ("up", "search.move", "delta", -1, "search.find-all.focused"),
+    ("down", "search.move", "delta", 1, "search.find-all.focused"),
     // The hints' action, through open, copy, type and select, while their
     // field has the keys.
     ("tab", "links.hints-action", "delta", 1, "links.focused"),

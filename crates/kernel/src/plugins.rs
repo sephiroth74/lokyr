@@ -34,6 +34,7 @@ use lokyr_pkg_model::manifest::{
 };
 use lokyr_pkg_model::schema::Schema;
 pub use lokyr_plugin_sdk::API_VERSION;
+pub use lokyr_plugin_sdk::automation;
 pub use lokyr_plugin_sdk::event::WorkspaceEvent;
 pub use lokyr_plugin_sdk::host;
 use lokyr_plugin_sdk::host::MOST_WRITES;
@@ -64,6 +65,7 @@ use crate::workspace::{
     Workspace,
 };
 
+mod mouse;
 mod search;
 mod worker;
 
@@ -96,9 +98,27 @@ pub enum Request {
         /// render's.
         chain: Chain,
     },
+    /// Press the key of `combo` in `pane` as the user presses it: the pane
+    /// takes its window's keyboard, and the keymap runs the key's command,
+    /// or the program takes it.
+    PressKey {
+        /// The pane.
+        pane: PaneId,
+        /// The key and its modifiers.
+        combo: lokyr_plugin_sdk::keys::Combo,
+        /// The chain of the command whose call asked it, as a run's, which
+        /// the command of the key's binding runs of.
+        chain: Chain,
+    },
     /// Open a window, its pane in `directory`, a path absolute or from `~`,
-    /// or in the folder of a file there, if given.
-    OpenWindow(Option<String>),
+    /// or in the folder of a file there, if given, its program taking
+    /// `environment` over the terminal's variables.
+    OpenWindow {
+        /// The folder of its pane.
+        directory: Option<String>,
+        /// Its pane's environment variables.
+        environment: host::Variables,
+    },
     /// Open the first window of the session `session`, which a plugin made,
     /// as [`Request::OpenWindow`] opens one, in that session, which shows:
     /// none of a session that a later write of the call took away.
@@ -330,6 +350,14 @@ pub enum Request {
         /// The job's id.
         id: u64,
     },
+    /// Give the script or the shortcut that made the automation's request
+    /// `id` its answer.
+    AnswerAutomation {
+        /// The request's id.
+        id: u64,
+        /// The answer.
+        answer: lokyr_plugin_sdk::automation::AutomationAnswer,
+    },
     /// Ask the name of a copy of the theme `name`, write it into the user's
     /// themes folder and name it in `[theme]`, the copy's name, or none,
     /// the answer that [`Plugins::answer`] gives the plugin.
@@ -498,6 +526,20 @@ pub trait Panes {
     /// given, a path absolute or from `~`, or the folder of a file there.
     fn spawn(&mut self, id: PaneId, near: Option<&Pane>, directory: Option<&str>) -> Pane;
 
+    /// A pane as [`Panes::spawn`] gives one, whose program takes
+    /// `environment` over the terminal's variables: a new pane's of a
+    /// factory that sets none.
+    fn spawn_with(
+        &mut self,
+        id: PaneId,
+        near: Option<&Pane>,
+        directory: Option<&str>,
+        environment: &host::Variables,
+    ) -> Pane {
+        let _ = environment;
+        self.spawn(id, near, directory)
+    }
+
     /// A popup's pane, as [`Panes::spawn`] gives a pane, whose program is
     /// the user's login shell running `command`: a new pane's of a factory
     /// that runs no command of its own.
@@ -559,6 +601,9 @@ pub struct Context<'a> {
     /// The names of the layouts of the config's folder, which the sessions'
     /// switcher lists, in their order.
     pub layouts: &'a dyn Fn() -> Vec<String>,
+    /// The items that the plugins added to the menu bar, as the menu bar
+    /// shows them now: titled, of their keys, enabled and ticked.
+    pub menu_bar: &'a dyn Fn() -> Vec<host::MenuBarItem>,
     /// The plugins, as a read of them tells, of [`Plugins::infos`] as the
     /// app took it before the calls.
     pub plugins: &'a [host::PluginInfo],
@@ -657,6 +702,9 @@ struct State {
     global_bindings: Vec<(keymap::Combo, Invocation)>,
     /// Its items of the menus, in their order.
     menu_items: Vec<host::MenuItem>,
+    /// When it opened its last panes, within the last second of the host's
+    /// time, [`host::MOST_PANES_A_SECOND`] at most.
+    opened: std::collections::VecDeque<Instant>,
     /// Its catalogs, of its commands' titles and its messages.
     catalogs: lokyr_plugin_sdk::plugin::Catalogs,
     /// Its catalogs' texts in the last language that they were asked in,
@@ -680,6 +728,11 @@ struct State {
     /// The popups that it opened, and the status of each one's command
     /// once it ended, which it hears as each closes.
     popups: BTreeMap<host::PaneId, Option<i32>>,
+    /// The automation's requests that it heard and has not answered.
+    automations: BTreeSet<u64>,
+    /// The automation's requests whose deadline passed, which the app
+    /// failed: a failed call gives none of them back.
+    automations_forgotten: BTreeSet<u64>,
     /// The modifier whose double tap it hears, which the app watches as
     /// it is active.
     double_tap: Option<host::Modifier>,
@@ -1303,6 +1356,10 @@ impl Drop for Cancel {
     }
 }
 
+/// The most automation's requests that a plugin keeps of those whose
+/// deadline passed, past which the oldest go.
+const MOST_FORGOTTEN_AUTOMATIONS: usize = 256;
+
 /// A write of a call, which the host applies as the call returns.
 enum Write {
     /// One that the plugin asked, as it asked it.
@@ -1314,6 +1371,7 @@ enum Write {
         tab: TabId,
         pane: PaneId,
         directory: Option<String>,
+        environment: host::Variables,
     },
     /// A split of `pane`, of the id that the host gave the new pane.
     Split {
@@ -1321,6 +1379,8 @@ enum Write {
         direction: Direction,
         side: Side,
         new: PaneId,
+        directory: Option<String>,
+        environment: host::Variables,
     },
     /// A popup over the active tab of `window`, the focused one's for none,
     /// of the id that the host gave its pane.
@@ -1832,6 +1892,7 @@ impl Plugins {
                 bindings: Vec::new(),
                 global_bindings: Vec::new(),
                 menu_items: Vec::new(),
+                opened: std::collections::VecDeque::new(),
                 catalogs,
                 texts: RefCell::new(None),
                 views: BTreeMap::new(),
@@ -1841,6 +1902,8 @@ impl Plugins {
                 held_cursors: BTreeSet::new(),
                 awake: host::Awake::Off,
                 popups: BTreeMap::new(),
+                automations: BTreeSet::new(),
+                automations_forgotten: BTreeSet::new(),
                 double_tap: None,
                 images: (image::Budget::default(), None),
                 quick_windows: Vec::new(),
@@ -3074,6 +3137,60 @@ impl Plugins {
         ));
     }
 
+    /// Hands the automation's request `request` of the app `client` to the
+    /// active plugin whose manifest asks for the capability `automation`,
+    /// and that holds it, as [`Event::Automation`] of `id` and of the
+    /// window in front `front`, for the next delivery, to it alone: whether
+    /// one takes it, as none does while the automation's plugin is off.
+    pub fn automation(
+        &mut self,
+        id: u64,
+        client: lokyr_plugin_sdk::automation::AutomationClient,
+        request: lokyr_plugin_sdk::automation::AutomationRequest,
+        front: Option<WindowId>,
+    ) -> bool {
+        let Some(entry) = self.entries.iter_mut().find(|entry| {
+            let state = &entry.state;
+            state.status == Status::Active
+                && state
+                    .manifest
+                    .as_ref()
+                    .is_some_and(|manifest| manifest.capabilities.contains(&Capability::Automation))
+                && state
+                    .granted
+                    .as_ref()
+                    .is_none_or(|granted| granted.contains(&Capability::Automation))
+        }) else {
+            return false;
+        };
+        entry.state.automations.insert(id);
+        self.out.events.push((
+            Some(entry.state.name.clone()),
+            Event::Automation {
+                id,
+                client,
+                request,
+                front: front.map(|window| host::WindowId(window.get())),
+            },
+        ));
+        true
+    }
+
+    /// Forgets the automation's request `id`, which the app failed as its
+    /// deadline passed: its plugin's answer, if it comes, is refused, and a
+    /// call that fails gives it back not.
+    pub fn forget_automation(&mut self, id: u64) {
+        for entry in &mut self.entries {
+            if entry.state.automations.remove(&id) {
+                entry.state.automations_forgotten.insert(id);
+                // Bounded: the oldest of those forgotten go.
+                while entry.state.automations_forgotten.len() > MOST_FORGOTTEN_AUTOMATIONS {
+                    entry.state.automations_forgotten.pop_first();
+                }
+            }
+        }
+    }
+
     /// Tells `plugin` the end of its job `id` of the packages' service,
     /// whether Sleip's command succeeded, for the next delivery, to it
     /// alone.
@@ -3572,7 +3689,10 @@ impl Plugins {
         for entry in &mut self.entries {
             let name = &entry.state.name;
             for search in &mut entry.state.searches {
-                for part in search.take() {
+                // Its parts, then, while its filter shows, the rows that new
+                // output brought, as its count.
+                let parts = search.take().into_iter().chain(search.follow());
+                for part in parts.collect::<Vec<_>>() {
                     let event = Event::Searched {
                         id: search.id,
                         pane: search.pane,
@@ -3840,10 +3960,13 @@ impl Plugins {
     /// main thread.
     pub fn waiting(&self) -> bool {
         !self.out.reads.is_empty()
-            || self
-                .entries
-                .iter()
-                .any(|entry| entry.state.searches.iter().any(search::Search::is_busy))
+            || self.entries.iter().any(|entry| {
+                entry
+                    .state
+                    .searches
+                    .iter()
+                    .any(|search| search.is_busy() || search.follows())
+            })
             || self
                 .entries
                 .iter()
@@ -4340,6 +4463,7 @@ struct Kept {
     quick_windows: Vec<WindowId>,
     timers: BTreeMap<u64, Timer>,
     question: Option<u64>,
+    automations: BTreeSet<u64>,
 }
 
 impl Kept {
@@ -4353,6 +4477,7 @@ impl Kept {
             quick_windows: state.quick_windows.clone(),
             timers: state.timers.clone(),
             question: state.question,
+            automations: state.automations.clone(),
         }
     }
 
@@ -4363,6 +4488,17 @@ impl Kept {
         state.gutter_marks = self.gutter_marks;
         state.held_cursors = self.held_cursors;
         state.quick_windows = self.quick_windows;
+        // The automation's requests that the call answered wait again, as
+        // its answers go with its writes; those that came meanwhile, of the
+        // app's, and those that the app forgot meanwhile, as their deadline
+        // passed, are as the app left them.
+        state.automations.extend(
+            self.automations
+                .difference(&state.automations)
+                .copied()
+                .filter(|id| !state.automations_forgotten.contains(id))
+                .collect::<Vec<_>>(),
+        );
         // The question that the call asked goes, as it never showed; one
         // that the user answered meanwhile stays answered, as a call of a
         // plugin's thread runs beside the main thread's answers, and the
@@ -4947,11 +5083,15 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 tab,
                 pane,
                 directory,
+                environment,
             } => {
                 if context.workspace.window(window).is_some() {
                     let near = context.workspace.active_pane(window);
                     let near = near.and_then(|near| context.workspace.pane(near));
-                    let new = context.panes.spawn(pane, near, directory.as_deref());
+                    let new =
+                        context
+                            .panes
+                            .spawn_with(pane, near, directory.as_deref(), &environment);
                     context
                         .workspace
                         .open_tab_as(window, new, index.unwrap_or(usize::MAX), tab);
@@ -4963,9 +5103,16 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 direction,
                 side,
                 new,
+                directory,
+                environment,
             } => {
                 if let Some(near) = context.workspace.pane(split) {
-                    let new = context.panes.spawn(new, Some(near), None);
+                    let new = context.panes.spawn_with(
+                        new,
+                        Some(near),
+                        directory.as_deref(),
+                        &environment,
+                    );
                     context.workspace.split(split, direction, new, side);
                 }
                 continue;
@@ -5081,6 +5228,23 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
                 let shown = kept.pane;
                 end_lingering(&mut state.lingering, shown, context.workspace);
             }
+            // The view of the matches' rows alone, or as it was, at the
+            // current match.
+            Asked::FilterMatches { search, filter } => {
+                let Some(kept) = state.searches.iter_mut().find(|kept| kept.id == search) else {
+                    continue;
+                };
+                let Some(found) = context.workspace.pane(PaneId::of(kept.pane.0)) else {
+                    continue;
+                };
+                let current = found.terminal().and_then(|mut terminal| {
+                    kept.filter(&mut terminal, filter);
+                    terminal.current_match(search).0
+                });
+                if let Some((_, (first, _))) = current {
+                    found.show_row(first.1);
+                }
+            }
             Asked::ClearScrollback(id) => {
                 if let Some(pane) = pane(id) {
                     pane.clear_scrollback();
@@ -5143,6 +5307,19 @@ fn apply(writes: Vec<Write>, context: &mut Context<'_>, out: &mut Outbox, state:
             Asked::SendText { pane: id, text } => {
                 if let Some(pane) = pane(id) {
                     pane.send_text(&text);
+                }
+            }
+            Asked::SendMouse { pane: id, input } => {
+                if let Some(pane) = pane(id) {
+                    mouse::send(pane, input);
+                }
+            }
+            // Its combination, which the request's check read.
+            Asked::SendKey { pane: id, keys } => {
+                if let (Some(pane), Ok(combo)) =
+                    (pane(id), lokyr_plugin_sdk::keys::typed_key(&keys))
+                {
+                    crate::typed::send(pane, combo);
                 }
             }
             // As the user's keys: to the pane and those that its window
@@ -5719,14 +5896,16 @@ fn own_call(state: &State, command: &str, args: Args) -> Result<Args, Error> {
     own.check_call(args)
 }
 
-/// Gives the commands that `requests` run the chain `chain`, of the
+/// Gives the commands that `requests` run, and the keys that they press,
+/// the chain `chain`, of the
 /// command whose call asked them, or a new chain, one for all of them, of a
 /// call of no command's, as `chain`'s id of 0 tells: so that each call's
 /// runs count against one chain's bound, however many it asks.
 fn deepen(requests: &mut [Request], chain: Chain) {
     let chain = if chain.id == 0 { new_chain() } else { chain };
     for request in requests {
-        if let Request::Run { chain: asked, .. } = request {
+        if let Request::Run { chain: asked, .. } | Request::PressKey { chain: asked, .. } = request
+        {
             *asked = chain;
         }
     }
@@ -5799,6 +5978,8 @@ pub(super) struct Tally {
     searches: Vec<u64>,
     /// How many images the call rendered.
     images: usize,
+    /// How many panes the call opened.
+    opened: usize,
     closed: Vec<PanelId>,
 }
 
@@ -6792,6 +6973,7 @@ impl Host<'_, '_> {
                     .collect();
                 Response::Commands(infos)
             }
+            Asked::MenuBarItems => Response::MenuBarItems((self.context.menu_bar)()),
             Asked::PaneTitle(pane) => {
                 let reads = self.state.reads_processes();
                 let title = self.pane(pane)?.header_title(reads);
@@ -6817,7 +6999,7 @@ impl Host<'_, '_> {
     fn queue(&mut self, request: Asked) -> Result<Response, Error> {
         self.within_writes()?;
         match &request {
-            Asked::ShowMatches { search, .. } => {
+            Asked::ShowMatches { search, .. } | Asked::FilterMatches { search, .. } => {
                 if !self.state.searches.iter().any(|kept| kept.id == *search) {
                     return Err(Error::new(
                         Code::NotFound,
@@ -6838,6 +7020,18 @@ impl Host<'_, '_> {
             | Asked::SendText { pane, .. }
             | Asked::Scroll { pane, .. } => {
                 self.known_pane(*pane)?;
+            }
+            Asked::SendKey { pane, keys } => {
+                lokyr_plugin_sdk::keys::typed_key(keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(*pane)?;
+            }
+            // Over a cell of the pane's screen.
+            Asked::SendMouse { pane, input } => {
+                let grid = self.pane(*pane)?.grid();
+                input
+                    .check(grid.columns, grid.rows)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
             }
             Asked::SetBroadcast { window, .. } => {
                 self.window(*window)?;
@@ -6929,6 +7123,7 @@ impl Host<'_, '_> {
                 window,
                 index,
                 directory,
+                environment,
             } => {
                 self.window(*window)?;
                 self.takes_tabs(*window)?;
@@ -6936,6 +7131,9 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                self.count_pane()?;
                 let (tab, pane) = (TabId::new(), PaneId::new());
                 self.writes.push(Write::NewTab {
                     window: WindowId::of(window.0),
@@ -6943,6 +7141,7 @@ impl Host<'_, '_> {
                     tab,
                     pane,
                     directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Tab {
                     tab: tab.into(),
@@ -6993,6 +7192,7 @@ impl Host<'_, '_> {
                     }
                     None => None,
                 };
+                self.count_pane()?;
                 let pane = PaneId::new();
                 self.writes.push(Write::OpenPopup {
                     window,
@@ -7008,7 +7208,15 @@ impl Host<'_, '_> {
                 pane,
                 direction: lying,
                 side: new_side,
+                directory,
+                environment,
             } => {
+                if let Some(directory) = directory {
+                    host::check_directory(directory)
+                        .map_err(|message| Error::new(Code::Failed, message))?;
+                }
+                host::check_variables(environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
                 self.known_pane(*pane)?;
                 // A floating pane splits not, of no layout of its own: its
                 // shell would start and go.
@@ -7024,12 +7232,15 @@ impl Host<'_, '_> {
                         lokyr_plugin_sdk::message::FLOATING_SPLITS_NOT,
                     ));
                 }
+                self.count_pane()?;
                 let new = PaneId::new();
                 self.writes.push(Write::Split {
                     pane: PaneId::of(pane.0),
                     direction: direction(*lying),
                     side: side(*new_side),
                     new,
+                    directory: directory.clone(),
+                    environment: environment.clone(),
                 });
                 return Ok(Response::Pane(Some(new.into())));
             }
@@ -7104,6 +7315,7 @@ impl Host<'_, '_> {
                     host::check_session_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let id = SessionId::new();
                 self.writes.push(Write::NewSession {
                     id,
@@ -7267,6 +7479,42 @@ impl Host<'_, '_> {
         Ok(Response::Done)
     }
 
+    /// Counts a pane that the call opens, or fails past
+    /// [`host::MOST_PANES_A_CALL`] of the call's, or past
+    /// [`host::MOST_PANES_A_SECOND`] of the plugin's within a second of the
+    /// host's time, as each pane forks a shell.
+    fn count_pane(&mut self) -> Result<(), Error> {
+        if self.tally.opened >= host::MOST_PANES_A_CALL {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a call opens {} panes at most, each a shell of its own",
+                    host::MOST_PANES_A_CALL
+                ),
+            ));
+        }
+        let now = self.context.now;
+        let opened = &mut self.state.opened;
+        while opened
+            .front()
+            .is_some_and(|&at| now.saturating_duration_since(at) >= Duration::from_secs(1))
+        {
+            opened.pop_front();
+        }
+        if opened.len() >= host::MOST_PANES_A_SECOND {
+            return Err(Error::new(
+                Code::Failed,
+                format!(
+                    "a plugin opens {} panes a second at most, each a shell of its own",
+                    host::MOST_PANES_A_SECOND
+                ),
+            ));
+        }
+        opened.push_back(now);
+        self.tally.opened += 1;
+        Ok(())
+    }
+
     /// Whether the call may write or ask the app once more: its writes and
     /// its requests of the app's, [`MOST_WRITES`] at most, wait for its
     /// end.
@@ -7339,6 +7587,7 @@ impl Host<'_, '_> {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
+                self.count_pane()?;
                 let window = WindowId::new();
                 // Those that closed are forgotten.
                 let workspace = &self.context.workspace;
@@ -7377,12 +7626,21 @@ impl Host<'_, '_> {
                     place,
                 }
             }
-            Asked::OpenWindow { directory } => {
+            Asked::OpenWindow {
+                directory,
+                environment,
+            } => {
                 if let Some(directory) = &directory {
                     host::check_directory(directory)
                         .map_err(|message| Error::new(Code::Failed, message))?;
                 }
-                Request::OpenWindow(directory)
+                host::check_variables(&environment)
+                    .map_err(|message| Error::new(Code::Failed, message))?;
+                self.count_pane()?;
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                }
             }
             Asked::PreviewTheme(name) => {
                 if let Some(name) = &name {
@@ -7614,6 +7872,16 @@ impl Host<'_, '_> {
                 Request::CloseWindow(id)
             }
             Asked::Quit => Request::Quit,
+            Asked::PressKey { pane, keys } => {
+                let combo = lokyr_plugin_sdk::keys::typed_key(&keys)
+                    .map_err(|message| Error::new(Code::WrongKind, message))?;
+                self.known_pane(pane)?;
+                Request::PressKey {
+                    pane: PaneId::of(pane.0),
+                    combo,
+                    chain: Chain::default(),
+                }
+            }
             Asked::SetText {
                 view,
                 key,
@@ -7733,6 +8001,16 @@ impl Host<'_, '_> {
                 plugin: self.state.name.clone(),
                 id,
             },
+            // An automation's request that the plugin heard, answered once.
+            Asked::AnswerAutomation { id, answer } => {
+                if !self.state.automations.remove(&id) {
+                    return Err(Error::new(
+                        Code::NotFound,
+                        format!("there is no automation's request {id} that waits for an answer"),
+                    ));
+                }
+                Request::AnswerAutomation { id, answer }
+            }
             // A notice of its bounds, a second at least after the plugin's
             // last, of the host's time, titled of its namespace without a
             // title of its own.

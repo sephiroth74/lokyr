@@ -1,0 +1,1947 @@
+{
+  "session": "ab-6-motion-2026-11-28-1051",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795859497,
+    1795860576
+  ],
+  "runs": {
+    "done": 12,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-a",
+      "version": "1.5.0 (202611250509)"
+    },
+    {
+      "name": "lokyr-b",
+      "version": "1.5.0 (202611280854)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-a",
+    "b": "lokyr-b"
+  },
+  "groups": [
+    {
+      "tool": "motion",
+      "metric": "frames_per_s",
+      "unit": "frames/s",
+      "title": "Frames a second of the motion",
+      "better": "higher",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "drag",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 58.29131766778991,
+            "median": 58.66155034943228,
+            "p95": 58.99475976291042,
+            "p99": 59.024378377441806,
+            "max": 59.03178303107465,
+            "mean": 58.66155034943228,
+            "stddev": 0.523588079612401,
+            "median_interval": [
+              58.29131766778991,
+              59.03178303107465
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 59.03178303107465
+            },
+            {
+              "cycle": 2,
+              "median": 58.29131766778991
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 57.4362072532357,
+            "median": 58.2339166569718,
+            "p95": 58.951855120334294,
+            "p99": 59.015671872633185,
+            "max": 59.03162606070791,
+            "mean": 58.2339166569718,
+            "stddev": 1.1281314575961525,
+            "median_interval": [
+              57.4362072532357,
+              59.03162606070791
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 57.4362072532357
+            },
+            {
+              "cycle": 2,
+              "median": 59.03162606070791
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 58.66155034943228,
+        "b": 58.2339166569718,
+        "change": -0.427633692460482,
+        "percent": -0.7289846414102156,
+        "interval": [
+          -1.5955757778389525,
+          0.7403083929179957
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "frames_per_s",
+      "unit": "frames/s",
+      "title": "Frames a second of the motion",
+      "better": "higher",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "resize",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 55.94593622971614,
+            "median": 56.63788397030052,
+            "p95": 57.26063693682647,
+            "p99": 57.31599275607322,
+            "max": 57.32983171088491,
+            "mean": 56.63788397030052,
+            "stddev": 0.9785618791878583,
+            "median_interval": [
+              55.94593622971614,
+              57.32983171088491
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 57.32983171088491
+            },
+            {
+              "cycle": 2,
+              "median": 55.94593622971614
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 56.79814799746642,
+            "median": 57.01100296073817,
+            "p95": 57.20257242768273,
+            "p99": 57.21960082474447,
+            "max": 57.223857924009906,
+            "mean": 57.01100296073817,
+            "stddev": 0.301022375877324,
+            "median_interval": [
+              56.79814799746642,
+              57.223857924009906
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 56.79814799746642
+            },
+            {
+              "cycle": 2,
+              "median": 57.223857924009906
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 56.63788397030052,
+        "b": 57.01100296073817,
+        "change": 0.3731189904376464,
+        "percent": 0.6587798912708331,
+        "interval": [
+          -0.531683713418488,
+          1.2779216942937666
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "missed_frames",
+      "unit": "frames",
+      "title": "Frames missed",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "drag",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 9.0,
+            "median": 12.5,
+            "p95": 15.649999999999999,
+            "p99": 15.93,
+            "max": 16.0,
+            "mean": 12.5,
+            "stddev": 4.949747468305833,
+            "median_interval": [
+              9.0,
+              16.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 9.0
+            },
+            {
+              "cycle": 2,
+              "median": 16.0
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 10.0,
+            "median": 17.0,
+            "p95": 23.299999999999997,
+            "p99": 23.86,
+            "max": 24.0,
+            "mean": 17.0,
+            "stddev": 9.899494936611665,
+            "median_interval": [
+              10.0,
+              24.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 24.0
+            },
+            {
+              "cycle": 2,
+              "median": 10.0
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 12.5,
+        "b": 17.0,
+        "change": 4.5,
+        "percent": 36.0,
+        "interval": [
+          -6.0,
+          15.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "missed_frames",
+      "unit": "frames",
+      "title": "Frames missed",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "resize",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 25.0,
+            "median": 31.5,
+            "p95": 37.35,
+            "p99": 37.87,
+            "max": 38.0,
+            "mean": 31.5,
+            "stddev": 9.192388155425117,
+            "median_interval": [
+              25.0,
+              38.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 25.0
+            },
+            {
+              "cycle": 2,
+              "median": 38.0
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 26.0,
+            "median": 28.0,
+            "p95": 29.8,
+            "p99": 29.96,
+            "max": 30.0,
+            "mean": 28.0,
+            "stddev": 2.8284271247461903,
+            "median_interval": [
+              26.0,
+              30.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 30.0
+            },
+            {
+              "cycle": 2,
+              "median": 26.0
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 31.5,
+        "b": 28.0,
+        "change": -3.5,
+        "percent": -11.11111111111111,
+        "interval": [
+          -12.0,
+          5.0
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "compositor_delay_ms",
+      "unit": "ms",
+      "title": "The compositor's delay",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "drag",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 1103,
+            "min": 5.45875,
+            "median": 13.355458,
+            "p95": 26.8752785,
+            "p99": 28.85334148,
+            "max": 30.396333,
+            "mean": 15.713391456029015,
+            "stddev": 5.303966309341158,
+            "median_interval": [
+              13.324125,
+              13.502834
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 13.335958
+            },
+            {
+              "cycle": 2,
+              "median": 13.4496665
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 1095,
+            "min": 9.837167,
+            "median": 13.138708,
+            "p95": 13.710229199999999,
+            "p99": 13.95186004,
+            "max": 14.362666,
+            "mean": 12.934994737899544,
+            "stddev": 0.660447322003401,
+            "median_interval": [
+              12.928921825,
+              13.272083
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 13.2551045
+            },
+            {
+              "cycle": 2,
+              "median": 12.948791
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 13.355458,
+        "b": 13.138708,
+        "change": -0.2167500000000011,
+        "percent": -1.6229319878060422,
+        "interval": [
+          -0.510627612500001,
+          -0.07480056249999972
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "compositor_delay_ms",
+      "unit": "ms",
+      "title": "The compositor's delay",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "resize",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 1065,
+            "min": 4.54325,
+            "median": 11.901083,
+            "p95": 12.8846002,
+            "p99": 28.593941759999996,
+            "max": 29.18825,
+            "mean": 12.04461560375587,
+            "stddev": 3.061763807620306,
+            "median_interval": [
+              11.6302915,
+              12.066167
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 11.9545
+            },
+            {
+              "cycle": 2,
+              "median": 11.875833499999999
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 1072,
+            "min": 4.293791,
+            "median": 12.053875,
+            "p95": 26.714129499999988,
+            "p99": 28.55897268,
+            "max": 30.670208,
+            "mean": 12.621780908582082,
+            "stddev": 4.043478462674034,
+            "median_interval": [
+              11.804625,
+              12.1708265625
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 11.935062
+            },
+            {
+              "cycle": 2,
+              "median": 12.121728999999998
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 11.901083,
+        "b": 12.053875,
+        "change": 0.15279199999999982,
+        "percent": 1.283849545457332,
+        "interval": [
+          -0.1605240750000012,
+          0.44225241250000014
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "terminal_cpu_percent",
+      "unit": "%",
+      "title": "Its CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "drag",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 3.4251467680708765,
+            "median": 3.6483904131625793,
+            "p95": 3.849309693745112,
+            "p99": 3.867169185352448,
+            "max": 3.871634058254282,
+            "mean": 3.6483904131625793,
+            "stddev": 0.31571419060229194,
+            "median_interval": [
+              3.4251467680708765,
+              3.871634058254282
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 3.871634058254282
+            },
+            {
+              "cycle": 2,
+              "median": 3.4251467680708765
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 4.307715543992697,
+            "median": 4.37685053716536,
+            "p95": 4.439072031020758,
+            "p99": 4.4446028304745715,
+            "max": 4.4459855303380245,
+            "mean": 4.37685053716536,
+            "stddev": 0.09777164497935233,
+            "median_interval": [
+              4.307715543992697,
+              4.4459855303380245
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 4.307715543992697
+            },
+            {
+              "cycle": 2,
+              "median": 4.4459855303380245
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 3.6483904131625793,
+        "b": 4.37685053716536,
+        "change": 0.728460124002781,
+        "percent": 19.96661654889398,
+        "interval": [
+          0.436081485738415,
+          1.020838762267148
+        ],
+        "verdict": "worse"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "terminal_cpu_percent",
+      "unit": "%",
+      "title": "Its CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "resize",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 30.856000332704443,
+            "median": 30.91949372501788,
+            "p95": 30.97663777809997,
+            "p99": 30.981717249485044,
+            "max": 30.982987117331312,
+            "mean": 30.91949372501788,
+            "stddev": 0.08979321653073459,
+            "median_interval": [
+              30.856000332704443,
+              30.982987117331312
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 30.856000332704443
+            },
+            {
+              "cycle": 2,
+              "median": 30.982987117331312
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 30.19675327997472,
+            "median": 30.50514019323265,
+            "p95": 30.782688415164788,
+            "p99": 30.807359368225423,
+            "max": 30.813527106490582,
+            "mean": 30.50514019323265,
+            "stddev": 0.43612495518774264,
+            "median_interval": [
+              30.19675327997472,
+              30.813527106490582
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 30.813527106490582
+            },
+            {
+              "cycle": 2,
+              "median": 30.19675327997472
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 30.91949372501788,
+        "b": 30.50514019323265,
+        "change": -0.41435353178523116,
+        "percent": -1.3401045161679521,
+        "interval": [
+          -0.786233837356594,
+          -0.04247322621386118
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "window_server_cpu_percent",
+      "unit": "%",
+      "title": "WindowServer's CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "drag",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 25.646052353474648,
+            "median": 27.362926609796624,
+            "p95": 28.908113440486403,
+            "p99": 29.04546338099216,
+            "max": 29.0798008661186,
+            "mean": 27.362926609796624,
+            "stddev": 2.4280268581797597,
+            "median_interval": [
+              25.646052353474648,
+              29.0798008661186
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 29.0798008661186
+            },
+            {
+              "cycle": 2,
+              "median": 25.646052353474648
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 33.5682722391134,
+            "median": 33.855444196572236,
+            "p95": 34.11389895828519,
+            "p99": 34.136872714881896,
+            "max": 34.142616154031074,
+            "mean": 33.855444196572236,
+            "stddev": 0.4061224769715186,
+            "median_interval": [
+              33.5682722391134,
+              34.142616154031074
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 33.5682722391134
+            },
+            {
+              "cycle": 2,
+              "median": 34.142616154031074
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 27.362926609796624,
+        "b": 33.855444196572236,
+        "change": 6.492517586775612,
+        "percent": 23.727423894968624,
+        "interval": [
+          4.488471372994798,
+          8.496563800556427
+        ],
+        "verdict": "worse"
+      }
+    },
+    {
+      "tool": "motion",
+      "metric": "window_server_cpu_percent",
+      "unit": "%",
+      "title": "WindowServer's CPU",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "amplitude": 200.0,
+        "awake": true,
+        "kind": "resize",
+        "rate": 120.0,
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0
+      },
+      "telling": [
+        "kind"
+      ],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 40.21513020618952,
+            "median": 40.29532402466424,
+            "p95": 40.36749846129149,
+            "p99": 40.37391396676947,
+            "max": 40.375517843138965,
+            "mean": 40.29532402466424,
+            "stddev": 0.11341118570543818,
+            "median_interval": [
+              40.21513020618952,
+              40.375517843138965
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 40.375517843138965
+            },
+            {
+              "cycle": 2,
+              "median": 40.21513020618952
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 39.46088559374536,
+            "median": 39.56201958113226,
+            "p95": 39.65304016978047,
+            "p99": 39.66113088877142,
+            "max": 39.66315356851916,
+            "mean": 39.56201958113226,
+            "stddev": 0.14302505657942122,
+            "median_interval": [
+              39.46088559374536,
+              39.66315356851916
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 39.46088559374536
+            },
+            {
+              "cycle": 2,
+              "median": 39.66315356851916
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 40.29532402466424,
+        "b": 39.56201958113226,
+        "change": -0.7333044435319778,
+        "percent": -1.8198251565941788,
+        "interval": [
+          -0.9146322493936054,
+          -0.5519766376703643
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frame_gpu_ms",
+      "unit": "ms",
+      "title": "A frame's GPU time",
+      "better": "lower",
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 1198,
+            "min": 0.265334,
+            "median": 0.272833,
+            "p95": 0.27634015,
+            "p99": 0.27791949000000005,
+            "max": 0.314417,
+            "mean": 0.2728852103505846,
+            "stddev": 0.00286189339050326,
+            "median_interval": [
+              0.272458,
+              0.273083
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.273
+            },
+            {
+              "cycle": 2,
+              "median": 0.272625
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 1201,
+            "min": 0.266,
+            "median": 0.273,
+            "p95": 0.27625,
+            "p99": 0.277334,
+            "max": 0.613375,
+            "mean": 0.27309012989175696,
+            "stddev": 0.010078128448267602,
+            "median_interval": [
+              0.27275,
+              0.27320849999999997
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.272876
+            },
+            {
+              "cycle": 2,
+              "median": 0.273084
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 0.272833,
+        "b": 0.273,
+        "change": 0.00016700000000002824,
+        "percent": 0.06120960441003407,
+        "interval": [
+          -0.0002489999999999992,
+          0.0005834999999999605
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_per_s",
+      "unit": "frames/s",
+      "title": "Frames a second on the GPU",
+      "better": null,
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 59.35333646642194,
+            "median": 59.45253338586092,
+            "p95": 59.54181061335599,
+            "p99": 59.54974636691111,
+            "max": 59.55173030529989,
+            "mean": 59.45253338586092,
+            "stddev": 0.14028562881622822,
+            "median_interval": [
+              59.35333646642194,
+              59.55173030529989
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 59.35333646642194
+            },
+            {
+              "cycle": 2,
+              "median": 59.55173030529989
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 59.551547074753564,
+            "median": 59.60118520497858,
+            "p95": 59.645859522181084,
+            "p99": 59.649830572599086,
+            "max": 59.65082333520358,
+            "mean": 59.60118520497858,
+            "stddev": 0.07019891697505,
+            "median_interval": [
+              59.551547074753564,
+              59.65082333520358
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 59.65082333520358
+            },
+            {
+              "cycle": 2,
+              "median": 59.551547074753564
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 59.45253338586092,
+        "b": 59.60118520497858,
+        "change": 0.14865181911766,
+        "percent": 0.2500344571574011,
+        "interval": [
+          -0.0001832305463267403,
+          0.29748686878163966
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frame_gap_ms",
+      "unit": "ms",
+      "title": "The gap between two frames",
+      "better": null,
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 1196,
+            "min": 11.983708,
+            "median": 16.420458,
+            "p95": 17.3533535,
+            "p99": 23.255266649999964,
+            "max": 26.905416,
+            "mean": 16.524074135451464,
+            "stddev": 1.078359757043374,
+            "median_interval": [
+              16.385178287499997,
+              16.448666
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 16.424792
+            },
+            {
+              "cycle": 2,
+              "median": 16.415291
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 1199,
+            "min": 15.021208,
+            "median": 16.422917,
+            "p95": 17.3346503,
+            "p99": 23.135597679999986,
+            "max": 26.357917,
+            "mean": 16.519737385321108,
+            "stddev": 1.0149744889195085,
+            "median_interval": [
+              16.3929585,
+              16.447584
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 16.434125
+            },
+            {
+              "cycle": 2,
+              "median": 16.416291
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 16.420458,
+        "b": 16.422917,
+        "change": 0.0024590000000017653,
+        "percent": 0.01497522176300908,
+        "interval": [
+          -0.03806772500000353,
+          0.040813087500000206
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "refreshes_with_frame",
+      "unit": "%",
+      "title": "Refreshes of a new frame",
+      "better": null,
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 98.59137993033428,
+            "median": 98.9221299011927,
+            "p95": 99.21980487496528,
+            "p99": 99.24626487263396,
+            "max": 99.25287987205112,
+            "mean": 98.9221299011927,
+            "stddev": 0.4677510945424839,
+            "median_interval": [
+              98.59137993033428,
+              99.25287987205112
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 98.59137993033428
+            },
+            {
+              "cycle": 2,
+              "median": 99.25287987205112
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 98.75631161538038,
+            "median": 99.00446275375563,
+            "p95": 99.22779877829336,
+            "p99": 99.24765086936338,
+            "max": 99.25261389213088,
+            "mean": 99.00446275375563,
+            "stddev": 0.35093870540859984,
+            "median_interval": [
+              98.75631161538038,
+              99.25261389213088
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 99.25261389213088
+            },
+            {
+              "cycle": 2,
+              "median": 98.75631161538038
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 98.9221299011927,
+        "b": 99.00446275375563,
+        "change": 0.08233285256292788,
+        "percent": 0.08322996345222769,
+        "interval": [
+          -0.49656825667074145,
+          0.6612339617965972
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_shown_per_s",
+      "unit": "frames/s",
+      "title": "Frames shown a second",
+      "better": null,
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 59.15483032439377,
+            "median": 59.35328031484683,
+            "p95": 59.53188530625459,
+            "p99": 59.54776130549083,
+            "max": 59.55173030529989,
+            "mean": 59.35328031484683,
+            "stddev": 0.2806506679515289,
+            "median_interval": [
+              59.15483032439377,
+              59.55173030529989
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 59.15483032439377
+            },
+            {
+              "cycle": 2,
+              "median": 59.55173030529989
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 59.2537893393798,
+            "median": 59.40268002836058,
+            "p95": 59.53668164844327,
+            "p99": 59.54859290356173,
+            "max": 59.55157071734135,
+            "mean": 59.40268002836058,
+            "stddev": 0.21056323166768548,
+            "median_interval": [
+              59.2537893393798,
+              59.55157071734135
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 59.55157071734135
+            },
+            {
+              "cycle": 2,
+              "median": 59.2537893393798
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 59.35328031484683,
+        "b": 59.40268002836058,
+        "change": 0.0493997135137505,
+        "percent": 0.08322996345223652,
+        "interval": [
+          -0.2979409659200911,
+          0.3967403929475779
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "frames",
+      "metric": "frames_dropped",
+      "unit": "frames",
+      "title": "Frames dropped",
+      "better": "lower",
+      "feature": "smooth-scroll",
+      "conditions": {
+        "awake": true,
+        "by": "pixels",
+        "feature": "smooth-scroll",
+        "refresh_hz": 60.0,
+        "rounds": 1,
+        "seconds": 10.0,
+        "workload": "scroll"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 2,
+            "min": 0.0,
+            "median": 1.0,
+            "p95": 1.9,
+            "p99": 1.98,
+            "max": 2.0,
+            "mean": 1.0,
+            "stddev": 1.4142135623730951,
+            "median_interval": [
+              0.0,
+              2.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 2.0
+            },
+            {
+              "cycle": 2,
+              "median": 0.0
+            }
+          ],
+          "runs": 2
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 2,
+            "min": 0.0,
+            "median": 1.0,
+            "p95": 1.9,
+            "p99": 1.98,
+            "max": 2.0,
+            "mean": 1.0,
+            "stddev": 1.4142135623730951,
+            "median_interval": [
+              0.0,
+              2.0
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 0.0
+            },
+            {
+              "cycle": 2,
+              "median": 2.0
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 1.0,
+        "b": 1.0,
+        "change": 0.0,
+        "percent": 0.0,
+        "interval": [
+          -2.0,
+          2.0
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [],
+  "judgements": [],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-motion-lokyr-a",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "motion",
+      "terminal": "lokyr-a",
+      "args": [
+        "--kind",
+        "drag",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795859497,
+      "seconds": 256.253013709,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.18798828125,
+        "after": 10.05224609375,
+        "busiest": [
+          {
+            "name": "epsext",
+            "cpu_percent": 46.8
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 29.4
+          },
+          {
+            "name": "Python",
+            "cpu_percent": 29.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-motion-lokyr-b",
+      "cycle": 1,
+      "run": 1,
+      "position": 2,
+      "tool": "motion",
+      "terminal": "lokyr-b",
+      "args": [
+        "--kind",
+        "drag",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795859756,
+      "seconds": 129.767660166,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 10.05224609375,
+        "after": 7.4736328125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 29.4
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 14.1
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 13.1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r2-motion-lokyr-a",
+      "cycle": 1,
+      "run": 2,
+      "position": 1,
+      "tool": "motion",
+      "terminal": "lokyr-a",
+      "args": [
+        "--kind",
+        "resize",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795859887,
+      "seconds": 89.668478334,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 7.1953125,
+        "after": 5.55908203125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 37.4
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 16.0
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 14.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r2-motion-lokyr-b",
+      "cycle": 1,
+      "run": 2,
+      "position": 2,
+      "tool": "motion",
+      "terminal": "lokyr-b",
+      "args": [
+        "--kind",
+        "resize",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795859979,
+      "seconds": 90.022729584,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.19384765625,
+        "after": 7.666015625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 32.8
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 16.0
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 14.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r3-frames-lokyr-a",
+      "cycle": 1,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-a",
+      "args": [
+        "--workload",
+        "scroll",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1",
+        "--feature",
+        "smooth-scroll"
+      ],
+      "started": 1795860071,
+      "seconds": 34.844848625,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 7.666015625,
+        "after": 5.93310546875,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 63.9
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 21.7
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 17.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r3-frames-lokyr-b",
+      "cycle": 1,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "scroll",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1",
+        "--feature",
+        "smooth-scroll"
+      ],
+      "started": 1795860108,
+      "seconds": 34.242151541,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.45751953125,
+        "after": 4.30517578125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 54.8
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 20.8
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 16.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-motion-lokyr-b",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "motion",
+      "terminal": "lokyr-b",
+      "args": [
+        "--kind",
+        "drag",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795860144,
+      "seconds": 83.897265959,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 4.2001953125,
+        "after": 6.53125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 29.2
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 21.2
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 17.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-motion-lokyr-a",
+      "cycle": 2,
+      "run": 1,
+      "position": 2,
+      "tool": "motion",
+      "terminal": "lokyr-a",
+      "args": [
+        "--kind",
+        "drag",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795860230,
+      "seconds": 83.4438335,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 6.53125,
+        "after": 5.9375,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 33.9
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 17.1
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 16.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r2-motion-lokyr-b",
+      "cycle": 2,
+      "run": 2,
+      "position": 1,
+      "tool": "motion",
+      "terminal": "lokyr-b",
+      "args": [
+        "--kind",
+        "resize",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795860316,
+      "seconds": 92.946481834,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.9375,
+        "after": 5.17431640625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 27.3
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 16.1
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 13.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r2-motion-lokyr-a",
+      "cycle": 2,
+      "run": 2,
+      "position": 2,
+      "tool": "motion",
+      "terminal": "lokyr-a",
+      "args": [
+        "--kind",
+        "resize",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795860411,
+      "seconds": 91.520722375,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.17431640625,
+        "after": 7.30712890625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 24.6
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 18.4
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 15.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r3-frames-lokyr-b",
+      "cycle": 2,
+      "run": 3,
+      "position": 1,
+      "tool": "frames",
+      "terminal": "lokyr-b",
+      "args": [
+        "--workload",
+        "scroll",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1",
+        "--feature",
+        "smooth-scroll"
+      ],
+      "started": 1795860504,
+      "seconds": 34.626706874999996,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 6.8017578125,
+        "after": 5.1640625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 69.1
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 22.5
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 18.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r3-frames-lokyr-a",
+      "cycle": 2,
+      "run": 3,
+      "position": 2,
+      "tool": "frames",
+      "terminal": "lokyr-a",
+      "args": [
+        "--workload",
+        "scroll",
+        "--seconds",
+        "10",
+        "--rounds",
+        "1",
+        "--feature",
+        "smooth-scroll"
+      ],
+      "started": 1795860541,
+      "seconds": 34.282364292,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.1640625,
+        "after": 3.97265625,
+        "busiest": [
+          {
+            "name": "wdavdaemon_enterprise",
+            "cpu_percent": 55.7
+          },
+          {
+            "name": "wdavdaemon",
+            "cpu_percent": 20.3
+          },
+          {
+            "name": "epsext",
+            "cpu_percent": 16.2
+          }
+        ]
+      }
+    }
+  ]
+}

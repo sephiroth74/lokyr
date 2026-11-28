@@ -4,6 +4,8 @@
 command-search-open = Find…
 command-search-next = Find Next
 command-search-previous = Find Previous
+command-search-find-all = Find in All Tabs…
+command-search-move = Move in Find in All Tabs
 
 # The find bar: its field's placeholder, the count of the matches, of
 # short numbers past 9999, and the labels and tooltips of its toggles and
@@ -16,8 +18,17 @@ find-invalid = Invalid regex
 find-case = Match Case
 find-regex = Regular Expression
 find-word = Whole Words
+find-filter = Show Matching Lines Only
 find-next = Find Next
 find-previous = Find Previous
 find-history = Recent Searches
 find-close = Close
 find-clear = Clear
+
+# Find in All Tabs: its field's placeholder, and what an accessibility
+# client calls its list.
+find-all-placeholder = Find in All Tabs
+find-all-matches = Matches
+
+# The notice of a match whose pane closed before Return went to it.
+find-all-gone = The pane of that match has closed.

@@ -55,6 +55,7 @@ use crate::watch::Watcher;
 use crate::window::{Surfaces, Window};
 
 mod access;
+mod automation;
 pub(crate) use access::TreeCursor;
 mod agents;
 mod asks;
@@ -727,6 +728,8 @@ pub struct App<B: Backend> {
     /// The timer past which a start that the system made to open files,
     /// folders or links opens a new window, if what it opened opened none.
     untitled_timer: Option<TimerId>,
+    /// The automation's requests that wait for its plugin's answers.
+    automations: automation::Automations,
     /// The timer of the next plugin that faulted to start again, and its
     /// time.
     restart_timer: Option<(TimerId, Instant)>,
@@ -899,10 +902,18 @@ pub struct App<B: Backend> {
     /// The plugins' items of the menus, titled, which the menus' items name
     /// by their places here.
     menu_items: Vec<lokyr_kernel::plugins::MenuEntry>,
+    /// The plugins' items of the menu bar, as a read of them tells, each of
+    /// its menu item's id: titled and of their keys as the menu bar shows
+    /// them, made as the menus are, their states read of `menu_enabled`.
+    menu_bar: Vec<(String, lokyr_kernel::plugins::host::MenuBarItem)>,
     /// The keymap that the plugins last heard of, as `keys-changed` told
     /// them, which a keymap made anew of the same bindings does not tell
     /// again.
     keys_told: Option<Keymap>,
+    /// Whether the launch goes on, from the start until its first windows
+    /// are open: the menu bar, the global keys, the Dock's icon, the
+    /// config's watch and the updates wait for its end.
+    launching: bool,
     /// The window that the last context menu opened on, whose pane marks
     /// the cell that it opened on, which its commands of a cell take.
     context_window: Option<WindowId>,
@@ -924,6 +935,10 @@ pub struct App<B: Backend> {
     /// chains, by their ids, and the chains whose commands run now, one
     /// within another.
     chains: (BTreeMap<u64, usize>, Vec<u64>),
+    /// The panes that the app's own commands opened, as plugins' runs
+    /// asked them: of each chain, by its id, and when, within the last
+    /// second, as the plugins' own panes are bounded.
+    plugin_panes: (BTreeMap<u64, usize>, std::collections::VecDeque<Instant>),
     /// Whether the cursors and the text that blinks blink as on layers of
     /// their own without them, as the tests' fake platform, which draws
     /// nothing, shows them.
@@ -1144,6 +1159,7 @@ impl<B: Backend> App<B> {
             exit_timer: None,
             bench_deadline: None,
             untitled_timer: None,
+            automations: automation::Automations::default(),
             restart_timer: None,
             closed_timer: None,
             kept_closes: BTreeMap::new(),
@@ -1211,11 +1227,14 @@ impl<B: Backend> App<B> {
             performance: None,
             performance_chosen: None,
             chains: (BTreeMap::new(), Vec::new()),
+            plugin_panes: (BTreeMap::new(), std::collections::VecDeque::new()),
             layers: false,
             menu_contexts: Vec::new(),
             menu_enabled: BTreeMap::new(),
             menu_items: Vec::new(),
+            menu_bar: Vec::new(),
             keys_told: None,
+            launching: true,
             context_window: None,
             acting: None,
             close_asks: BTreeMap::new(),
@@ -2549,6 +2568,19 @@ impl<B: Backend> App<B> {
         page: Option<String>,
         directory: Option<PathBuf>,
     ) -> Option<WindowId> {
+        self.open_window_running_with(platform, program, page, directory, Vec::new())
+    }
+
+    /// Opens a window as [`App::open_window_running`] does, its program
+    /// taking `variables` over the terminal's own.
+    fn open_window_running_with(
+        &mut self,
+        platform: &mut dyn Platform,
+        program: &Program,
+        page: Option<String>,
+        directory: Option<PathBuf>,
+        variables: Vec<(String, String)>,
+    ) -> Option<WindowId> {
         // The windows of a session left hide first, as a new session's
         // window opens.
         self.settle_sessions(platform);
@@ -2571,6 +2603,7 @@ impl<B: Backend> App<B> {
             .unwrap_or_else(|| self.size_of(platform.screen_scale(), cells));
         let environment = Environment {
             directory: directory.or_else(|| self.start_directory(platform)),
+            variables,
             ..self.environment.clone()
         };
         let attributes = WindowAttributes {
@@ -3441,6 +3474,43 @@ impl<B: Backend> App<B> {
 
     /// Counts a run of `chain`, which commands asked: whether it may run,
     /// within the chain's depth and its runs.
+    /// Whether the app's own command `command` may run, as to the panes
+    /// that it opens: a command of the user's own, or one that opens none,
+    /// runs; one that opens panes, as a plugin's run asks it, counts
+    /// against the chain under way's [`plugins::host::MOST_PANES_A_CALL`]
+    /// and the plugins' runs' [`plugins::host::MOST_PANES_A_SECOND`], as
+    /// a plugin's own panes do.
+    fn may_open_panes(&mut self, command: &str) -> bool {
+        const OPENS_PANES: [&str; 5] = [NEW_WINDOW, NEW_SESSION, NEW_FLOATING, POPUP, OPEN_LAYOUT];
+        let Some(&chain) = self.chains.1.last() else {
+            return true;
+        };
+        if !OPENS_PANES.contains(&command) {
+            return true;
+        }
+        let now = Instant::now();
+        let (of_chains, recent) = &mut self.plugin_panes;
+        while recent
+            .front()
+            .is_some_and(|&at| now.saturating_duration_since(at) >= Duration::from_secs(1))
+        {
+            recent.pop_front();
+        }
+        let opened = of_chains.get(&chain).copied().unwrap_or(0);
+        if opened >= plugins::host::MOST_PANES_A_CALL
+            || recent.len() >= plugins::host::MOST_PANES_A_SECOND
+        {
+            return false;
+        }
+        of_chains.insert(chain, opened + 1);
+        // The newest chains' counts alone, as the chains' runs are kept.
+        while of_chains.len() > CHAINS_KEPT {
+            of_chains.pop_first();
+        }
+        recent.push_back(now);
+        true
+    }
+
     fn may_run(&mut self, chain: plugins::Chain, command: &str) -> bool {
         if chain.depth >= COMMANDS_DEEP {
             eprintln!(
@@ -3506,6 +3576,16 @@ impl<B: Backend> App<B> {
                 }
                 ran
             }
+            // The app's own commands that open panes, as a plugin's run asks
+            // them, within the bounds of the panes that plugins open.
+            Ok(_) if !self.may_open_panes(name) => Err(Error::new(
+                Code::Failed,
+                format!(
+                    "`{name}` opens no pane, as plugins' runs open {} a call and {} a second at most",
+                    plugins::host::MOST_PANES_A_CALL,
+                    plugins::host::MOST_PANES_A_SECOND
+                ),
+            )),
             Ok(args) => match name {
                 QUIT => {
                     self.ask_quit(platform, false);
@@ -3871,6 +3951,18 @@ impl<B: Backend> App<B> {
         // focused pane settled them.
         let menu_enabled = &self.menu_enabled;
         let enabled = |command: &str| menu_enabled.get(command).copied().unwrap_or(true);
+        // The plugins' items of the menu bar, each enabled as the menus
+        // enable its item now.
+        let menu_bar_items = &self.menu_bar;
+        let menu_bar = || {
+            menu_bar_items
+                .iter()
+                .map(|(id, item)| lokyr_kernel::plugins::host::MenuBarItem {
+                    enabled: menu_enabled.get(id).copied().unwrap_or(true),
+                    ..item.clone()
+                })
+                .collect()
+        };
         // Whether a window of the workspace shows a save panel.
         let saves = &self.saves;
         let saving = |window: workspace::WindowId| saves.values().any(|save| save.window == window);
@@ -3912,6 +4004,7 @@ impl<B: Backend> App<B> {
             fonts: &fonts,
             font_styles: &font_styles,
             layouts: &layouts,
+            menu_bar: &menu_bar,
             plugins: &plugin_infos,
             config: &self.config,
             default_bindings: &self.default_bindings,
@@ -3940,11 +4033,17 @@ impl<B: Backend> App<B> {
             self.commands = commands(&self.texts, &self.plugins);
             self.default_bindings = bindings(&self.plugins, &self.commands);
             self.keymap = Keymap::with_config(self.default_bindings.clone(), &self.config.keys);
-            self.set_menu(platform);
-            // The plugins' global keys, which the benches leave to the
-            // user's Lokyr.
-            if !self.benched {
-                self.take_global_keys(platform);
+            // The menu bar and the global keys once the launch ends, which
+            // sets them once.
+            if self.launching {
+                self.tell_keys_changed();
+            } else {
+                self.set_menu(platform);
+                // The plugins' global keys, which the benches leave to the
+                // user's Lokyr.
+                if !self.benched {
+                    self.take_global_keys(platform);
+                }
             }
         }
         for request in self.plugins.take_requests() {
@@ -3966,7 +4065,10 @@ impl<B: Backend> App<B> {
                         self.chains.1.pop();
                     }
                 }
-                Request::OpenWindow(None) => self.open_window(platform),
+                Request::OpenWindow {
+                    directory: None,
+                    environment,
+                } if environment.is_empty() => self.open_window(platform),
                 Request::OpenQuickWindow {
                     window,
                     place,
@@ -3997,11 +4099,16 @@ impl<B: Backend> App<B> {
                     }
                 }
                 // A window in the folder that the plugin asked for, or a
-                // new window's of a path that is not there.
-                Request::OpenWindow(Some(directory)) => {
+                // new window's of a path that is not there, of the
+                // variables that it asked for.
+                Request::OpenWindow {
+                    directory,
+                    environment,
+                } => {
                     let program = self.program.clone();
-                    let folder = spawn::folder_of(&directory);
-                    self.open_window_running(platform, &program, None, folder);
+                    let folder = directory.as_deref().and_then(spawn::folder_of);
+                    let variables = environment.into_iter().collect();
+                    self.open_window_running_with(platform, &program, None, folder, variables);
                 }
                 Request::CloseWindow(window) => {
                     let shown = self
@@ -4014,6 +4121,9 @@ impl<B: Backend> App<B> {
                     }
                 }
                 Request::Quit => self.ask_quit(platform, false),
+                Request::PressKey { pane, combo, chain } => {
+                    self.press_key(platform, pane, combo, chain);
+                }
                 Request::FontSize(size) => self.set_font_size(platform, size),
                 Request::PreviewTheme(name) => self.preview_theme(platform, name),
                 Request::SetTheme { variant, name } => self.set_theme(platform, variant, &name),
@@ -4076,6 +4186,9 @@ impl<B: Backend> App<B> {
                     self.start_packages(platform, (plugin, id), &call);
                 }
                 Request::CancelPackages { plugin, id } => self.cancel_packages(&plugin, id),
+                Request::AnswerAutomation { id, answer } => {
+                    self.answer_automation(platform, id, answer);
+                }
                 // A theme copied, or one of the folder's `.itermcolors`
                 // converted, as the Theme Editor asks, of the user's answer.
                 Request::CopyTheme { plugin, id, name } => {
@@ -5327,29 +5440,17 @@ impl<B: Backend> App<B> {
         self.activate_plugins(platform);
         // The themes before the first window, whose panes take their colors.
         self.load_themes(platform);
-        self.set_menu(platform);
+        // The plugins hear of the keys before the first frame, which the
+        // tabs show; the menu bar waits for the launch's end.
+        self.tell_keys_changed();
         self.show_appearance(platform);
         self.show_performance(platform);
         self.tell_font(platform);
         self.tell_term(platform);
         let (left, right) = self.config.keyboard.option_as_meta.sides();
         platform.set_option_as_meta(left, right);
-        self.show_icon(platform);
-        // The benches leave the user's global keys to the user's Lokyr.
-        if !self.benched {
-            self.take_global_keys(platform);
-        }
         self.environment.locale =
             environment::utf8_locale(&self.preferred, &environment::system_locales());
-        if let Some(file) = &mut self.config_file {
-            if let Err(error) = crate::watch::make_directory(&file.path) {
-                eprintln!(
-                    "lokyr: the config's directory cannot be made, for {}: {error}",
-                    file.path.display()
-                );
-            }
-            file.watch(platform);
-        }
         // The windows kept as the app last quit, or a new one; none yet
         // where the system started the app to open files, folders or
         // links, whose events came before the start and follow it, which
@@ -5361,13 +5462,34 @@ impl<B: Backend> App<B> {
                 self.untitled_timer = Some(platform.start_timer(Instant::now() + UNTITLED_WAIT));
             }
         }
-        self.start_updates(platform);
         self.end_output_bench_unstarted(platform);
         self.end_startup_bench(platform);
         self.start_latency_bench(platform);
         if self.startup_bench.is_some() || self.latency_bench.is_some() {
             self.bench_deadline = Some(platform.start_timer(Instant::now() + BENCH_DEADLINE));
         }
+    }
+
+    /// The launch's end, its first windows open: what none of them needs,
+    /// each once, which the plugins' activation left to it.
+    fn end_launch(&mut self, platform: &mut dyn Platform) {
+        self.launching = false;
+        self.set_menu(platform);
+        self.show_icon(platform);
+        // The benches leave the user's global keys to the user's Lokyr.
+        if !self.benched {
+            self.take_global_keys(platform);
+        }
+        if let Some(file) = &mut self.config_file {
+            if let Err(error) = crate::watch::make_directory(&file.path) {
+                eprintln!(
+                    "lokyr: the config's directory cannot be made, for {}: {error}",
+                    file.path.display()
+                );
+            }
+            file.watch(platform);
+        }
+        self.start_updates(platform);
     }
 
     fn take_app_event(&mut self, platform: &mut dyn Platform, event: AppEvent) {
@@ -5482,12 +5604,14 @@ impl<B: Backend> App<B> {
                 self.arm_closed_timer(platform);
             }
             // The plugins' timers whose time came fire, whose events the
-            // turn's end delivers.
+            // turn's end delivers: as of the time that the platform's timer
+            // was armed for, at least, which came.
             AppEvent::Timer(timer)
                 if self.plugin_timer.is_some_and(|(armed, _)| armed == timer) =>
             {
-                self.plugin_timer = None;
-                self.plugins.timers_due(Instant::now());
+                let now = Instant::now();
+                let due = self.plugin_timer.take().map_or(now, |(_, at)| at.max(now));
+                self.plugins.timers_due(due);
                 self.arm_plugin_timer(platform);
             }
             AppEvent::Timer(timer)
@@ -5504,6 +5628,16 @@ impl<B: Backend> App<B> {
                 }
                 self.after_plugins(platform);
             }
+            AppEvent::Timer(timer) if self.automations.is_timer(timer) => {
+                let now = self.automations.fired_at(Instant::now());
+                self.automations_late(platform, now);
+            }
+            // A script's or a shortcut's request, to the automation's plugin.
+            AppEvent::Automation {
+                id,
+                client,
+                request,
+            } => self.take_automation(platform, id, client, request),
             AppEvent::Timer(timer) if self.untitled_timer == Some(timer) => {
                 self.untitled_timer = None;
                 if self
@@ -5924,6 +6058,11 @@ impl<B: Backend> App<B> {
 impl<B: Backend> Handler for App<B> {
     fn started(&mut self, platform: &mut dyn Platform) {
         self.start(platform);
+        self.end_turn(platform);
+    }
+
+    fn launched(&mut self, platform: &mut dyn Platform) {
+        self.end_launch(platform);
         self.end_turn(platform);
     }
 

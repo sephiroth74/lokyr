@@ -1,0 +1,708 @@
+{
+  "session": "ttybench-2026-11-28-1348",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795870233,
+    1795870576
+  ],
+  "runs": {
+    "done": 8,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "v150",
+      "version": "1.5.0 (202611242301)"
+    },
+    {
+      "name": "v160",
+      "version": "1.6.0 (202611281135)"
+    }
+  ],
+  "ab": {
+    "a": "v150",
+    "b": "v160"
+  },
+  "groups": [
+    {
+      "tool": "startup",
+      "metric": "window_ms",
+      "unit": "ms",
+      "title": "From the launch to its window",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 304.35325,
+            "median": 335.867354,
+            "p95": 352.87733385,
+            "p99": 353.80147426999997,
+            "max": 354.18125,
+            "mean": 334.9552473125,
+            "stddev": 10.248382653587534,
+            "median_interval": [
+              331.5519795,
+              337.202832325
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 333.54537500000004
+            },
+            {
+              "cycle": 2,
+              "median": 336.28083300000003
+            },
+            {
+              "cycle": 3,
+              "median": 330.8974995
+            },
+            {
+              "cycle": 4,
+              "median": 336.9243745
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "v160",
+          "summary": {
+            "count": 32,
+            "min": 302.7775,
+            "median": 327.67733350000003,
+            "p95": 332.7603439,
+            "p99": 339.71249404,
+            "max": 342.821458,
+            "mean": 325.46514062499995,
+            "stddev": 8.067749639189346,
+            "median_interval": [
+              322.263042,
+              330.64885400000003
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 328.5411255
+            },
+            {
+              "cycle": 2,
+              "median": 329.59445800000003
+            },
+            {
+              "cycle": 3,
+              "median": 323.145646
+            },
+            {
+              "cycle": 4,
+              "median": 326.8235215
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 335.867354,
+        "b": 327.67733350000003,
+        "change": -8.190020499999946,
+        "percent": -2.4384687593066716,
+        "interval": [
+          -13.24495491250003,
+          -2.405503825000005
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "startup",
+      "metric": "ready_ms",
+      "unit": "ms",
+      "title": "From the launch to running the payload",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 698.373875,
+            "median": 790.6437085,
+            "p95": 857.4999205,
+            "p99": 901.15429596,
+            "max": 914.247792,
+            "mean": 784.35940103125,
+            "stddev": 50.933975797968486,
+            "median_interval": [
+              728.691229,
+              823.599875
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 726.267396
+            },
+            {
+              "cycle": 2,
+              "median": 791.7775415
+            },
+            {
+              "cycle": 3,
+              "median": 790.698396
+            },
+            {
+              "cycle": 4,
+              "median": 821.378188
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "v160",
+          "summary": {
+            "count": 32,
+            "min": 694.12,
+            "median": 772.2779165,
+            "p95": 982.4090477999998,
+            "p99": 1182.6752391900002,
+            "max": 1209.923542,
+            "mean": 791.0508138125001,
+            "stddev": 109.35569478635587,
+            "median_interval": [
+              740.553875,
+              801.5152716875
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 780.841729
+            },
+            {
+              "cycle": 2,
+              "median": 778.3465625
+            },
+            {
+              "cycle": 3,
+              "median": 806.557146
+            },
+            {
+              "cycle": 4,
+              "median": 753.1269165
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 790.6437085,
+        "b": 772.2779165,
+        "change": -18.365792000000056,
+        "percent": -2.322891057318779,
+        "interval": [
+          -64.2019087000001,
+          56.5386341875
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "startup",
+      "metric": "floor_window_ms",
+      "unit": "ms",
+      "title": "From the launch to the floor app's window",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 228.759875,
+            "median": 255.3956045,
+            "p95": 269.74098315000003,
+            "p99": 271.69159977,
+            "max": 272.245208,
+            "mean": 254.79144265625,
+            "stddev": 10.35495320712374,
+            "median_interval": [
+              248.596667,
+              262.112625
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 251.72050000000002
+            },
+            {
+              "cycle": 2,
+              "median": 259.30960400000004
+            },
+            {
+              "cycle": 3,
+              "median": 255.3956045
+            },
+            {
+              "cycle": 4,
+              "median": 255.86320849999998
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "v160",
+          "summary": {
+            "count": 32,
+            "min": 222.482916,
+            "median": 251.762875,
+            "p95": 267.9626186,
+            "p99": 277.62570971,
+            "max": 280.369042,
+            "mean": 251.78642828125004,
+            "stddev": 12.28866417469054,
+            "median_interval": [
+              244.25475,
+              260.3583206625
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 250.5868955
+            },
+            {
+              "cycle": 2,
+              "median": 257.720896
+            },
+            {
+              "cycle": 3,
+              "median": 245.27325000000002
+            },
+            {
+              "cycle": 4,
+              "median": 259.257125
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 255.3956045,
+        "b": 251.762875,
+        "change": -3.632729499999982,
+        "percent": -1.4223931171845923,
+        "interval": [
+          -14.61529200000001,
+          8.46115436249999
+        ],
+        "verdict": "within-noise"
+      }
+    },
+    {
+      "tool": "startup",
+      "metric": "window_gap_ms",
+      "unit": "ms",
+      "title": "Its window after the floor app's",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 8,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 44.71704199999999,
+            "median": 80.93200049999999,
+            "p95": 107.38913124999999,
+            "p99": 114.2193125,
+            "max": 115.426375,
+            "mean": 80.16380465624998,
+            "stddev": 16.018889960402102,
+            "median_interval": [
+              73.89798887499997,
+              86.42810399999999
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 78.213375
+            },
+            {
+              "cycle": 2,
+              "median": 77.99214650000002
+            },
+            {
+              "cycle": 3,
+              "median": 72.09839550000001
+            },
+            {
+              "cycle": 4,
+              "median": 86.42810399999999
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "v160",
+          "summary": {
+            "count": 32,
+            "min": 25.182833000000016,
+            "median": 76.57191700000001,
+            "p95": 88.55830639999998,
+            "p99": 96.24607098000003,
+            "max": 99.24920900000004,
+            "mean": 73.67871234375002,
+            "stddev": 13.389346588344347,
+            "median_interval": [
+              67.71500000000003,
+              81.22285450000001
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 80.87550000000002
+            },
+            {
+              "cycle": 2,
+              "median": 71.76739599999999
+            },
+            {
+              "cycle": 3,
+              "median": 79.8005835
+            },
+            {
+              "cycle": 4,
+              "median": 73.72802100000003
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "stat": "median",
+        "a": 80.93200049999999,
+        "b": 76.57191700000001,
+        "change": -4.360083499999973,
+        "percent": -5.3873418092513035,
+        "interval": [
+          -14.559723724999996,
+          4.552343075
+        ],
+        "verdict": "within-noise"
+      }
+    }
+  ],
+  "budgets": [
+    {
+      "metric": "window_gap_ms",
+      "stat": "median",
+      "at-most": 70.0
+    }
+  ],
+  "judgements": [
+    {
+      "budget": 1,
+      "metric": "window_gap_ms",
+      "stat": "median",
+      "group": 3,
+      "terminal": "v150",
+      "limit": "≤ 70 ms",
+      "value": 80.93200049999999,
+      "percent": null,
+      "interval": null,
+      "held": false,
+      "note": null
+    },
+    {
+      "budget": 1,
+      "metric": "window_gap_ms",
+      "stat": "median",
+      "group": 3,
+      "terminal": "v160",
+      "limit": "≤ 70 ms",
+      "value": 76.57191700000001,
+      "percent": null,
+      "interval": null,
+      "held": false,
+      "note": null
+    }
+  ],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-startup-v150",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870233,
+      "seconds": 40.516641208,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.50830078125,
+        "after": 1.80810546875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 15.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-startup-v160",
+      "cycle": 1,
+      "run": 1,
+      "position": 2,
+      "tool": "startup",
+      "terminal": "v160",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870275,
+      "seconds": 40.765196166,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.80810546875,
+        "after": 1.84423828125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 19.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-startup-v160",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v160",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870318,
+      "seconds": 40.793257042,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.7763671875,
+        "after": 1.8046875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 18.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-startup-v150",
+      "cycle": 2,
+      "run": 1,
+      "position": 2,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870361,
+      "seconds": 41.18586375,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 1.8046875,
+        "after": 2.1962890625,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 16.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-startup-v150",
+      "cycle": 3,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870404,
+      "seconds": 41.024543459,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.42041015625,
+        "after": 5.26025390625,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 19.1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-startup-v160",
+      "cycle": 3,
+      "run": 1,
+      "position": 2,
+      "tool": "startup",
+      "terminal": "v160",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870447,
+      "seconds": 41.661482625,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 5.26025390625,
+        "after": 6.5029296875,
+        "busiest": [
+          {
+            "name": "BackgroundShortcutRunner",
+            "cpu_percent": 47.4
+          },
+          {
+            "name": "siriactionsd",
+            "cpu_percent": 46.8
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 14.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-startup-v160",
+      "cycle": 4,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v160",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870491,
+      "seconds": 40.901086667,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 6.5029296875,
+        "after": 3.84814453125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 19.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-startup-v150",
+      "cycle": 4,
+      "run": 1,
+      "position": 2,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "8"
+      ],
+      "started": 1795870534,
+      "seconds": 41.27523825,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.61962890625,
+        "after": 3.10107421875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 16.0
+          }
+        ]
+      }
+    }
+  ]
+}

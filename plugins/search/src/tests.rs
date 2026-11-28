@@ -151,7 +151,10 @@ const ROWS: [&str; 4] = ["a needle", "nothing", "needle one", "two needle"];
 fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, NEXT, PREVIOUS]);
+    assert_eq!(
+        commands,
+        [OPEN, NEXT, PREVIOUS, crate::all::FIND_ALL, crate::all::MOVE]
+    );
     let opened = run(&mut host, &mut plugin, OPEN);
     let options = host.panels().get(&PanelId::from(BAR)).expect("the bar");
     assert_eq!(
@@ -451,6 +454,92 @@ fn escape_ends_the_search_and_its_text_opens_the_bar_again_among_the_recent_ones
     );
 }
 
+/// Whether `requests` filter the pane's view of `search`, the last of them
+/// telling how.
+fn filtered(requests: &[Request], search: u64) -> Option<bool> {
+    requests.iter().rev().find_map(|request| match request {
+        Request::FilterMatches { search: of, filter } if *of == search => Some(*filter),
+        _ => None,
+    })
+}
+
+#[test]
+fn the_filter_shows_the_matches_lines_alone_and_escape_gives_the_view_back() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    run(&mut host, &mut plugin, OPEN);
+    typed(&mut host, &mut plugin, "needle");
+    let search = plugin.find.as_ref().unwrap().search.unwrap();
+    assert!(!host.filtered(search));
+    // On, of the search there is, which it does not search again.
+    let on = on_bar(
+        &mut host,
+        &mut plugin,
+        FILTER,
+        UiEventKind::Toggle { on: true },
+    );
+    assert_eq!(filtered(&on, search), Some(true));
+    assert!(
+        !on.iter()
+            .any(|request| matches!(request, Request::Search { .. }))
+    );
+    assert!(host.filtered(search));
+    // A new text's search filters from its first part, as the toggle stays.
+    typed(&mut host, &mut plugin, "two");
+    let other = plugin.find.as_ref().unwrap().search.unwrap();
+    assert!(host.filtered(other));
+    // Off, the view as it was.
+    let off = on_bar(
+        &mut host,
+        &mut plugin,
+        FILTER,
+        UiEventKind::Toggle { on: false },
+    );
+    assert_eq!(filtered(&off, other), Some(false));
+    assert!(!host.filtered(other));
+    // On again, then Escape: the view given back, the search ended, and
+    // the toggle kept for the next opening.
+    on_bar(
+        &mut host,
+        &mut plugin,
+        FILTER,
+        UiEventKind::Toggle { on: true },
+    );
+    host.take_done();
+    host.close_panel(&PanelId::from(BAR));
+    host.deliver(&mut plugin).unwrap();
+    let closed = host.take_done();
+    assert_eq!(filtered(&closed, other), Some(false));
+    assert!(!host.searches().contains(&other));
+    let Data::Map(state) = host.state() else {
+        panic!("a state: {:?}", host.state());
+    };
+    assert_eq!(state.get(STATE_FILTER), Some(&Data::Boolean(true)));
+    run(&mut host, &mut plugin, OPEN);
+    assert!(plugin.find.as_ref().unwrap().options.filter);
+}
+
+#[test]
+fn a_text_and_a_match_given_open_the_bar_of_them_the_match_the_current_one() {
+    let (mut host, mut plugin) = host(&ROWS, Data::Nil);
+    let given = |host: &mut FakeHost, plugin: &mut Search, column: i64, row: i64| {
+        host.take_done();
+        let mut args = Args::new();
+        args.insert("text".to_owned(), Value::String("needle".to_owned()));
+        args.insert("column".to_owned(), Value::Integer(column));
+        args.insert("row".to_owned(), Value::Integer(row));
+        host.command(plugin, OPEN, args).unwrap();
+        host.deliver(plugin).unwrap();
+        host.take_done()
+    };
+    // Of the middle match, which the last does not take the place of.
+    let opened = given(&mut host, &mut plugin, 0, 2);
+    assert_eq!(current(&opened), [((0, 2), (5, 2))]);
+    assert_eq!(plugin.find.as_ref().unwrap().text, "needle");
+    // Open, of another match, searched anew.
+    let again = given(&mut host, &mut plugin, 2, 0);
+    assert_eq!(current(&again), [((2, 0), (7, 0))]);
+}
+
 #[test]
 fn command_f_on_an_open_bar_gives_its_field_the_keys_and_a_step_opens_a_closed_one() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
@@ -508,6 +597,7 @@ fn the_bar_opens_of_the_options_of_the_last_search_as_the_state_keeps_them() {
         sensitive: false,
         regex: true,
         whole_word: true,
+        filter: false,
     };
     assert_eq!(plugin.find.as_ref().unwrap().options, options);
     let tree = host.render(&mut plugin, &bar()).expect("the bar");
@@ -655,3 +745,5 @@ fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
         assert_eq!(count(&mut host, &mut plugin), "No results");
     }
 }
+
+mod all;

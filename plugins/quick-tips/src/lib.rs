@@ -123,19 +123,22 @@ impl Arg {
 /// A curated tip: its id, which the state keeps, its text's message, and
 /// the command whose keys it names, as `$keys`, with its argument, which
 /// shows it only while they are bound; or none, of a feature that needs no
-/// keys; and a command that shows it only while it is there, of a plugin
-/// that may be off, as Blocks, which starts off.
+/// keys; a second command whose keys it names too, as `$also`, which shows
+/// it only while they are bound as well; and a command that shows it only
+/// while it is there, of a plugin that may be off, as Blocks, which starts
+/// off.
 #[derive(Clone, Copy, Debug)]
 struct Curated {
     id: &'static str,
     message: &'static str,
     command: Option<(&'static str, Arg)>,
+    also: Option<(&'static str, Arg)>,
     needs: Option<&'static str>,
 }
 
 /// The curated tips, the most useful first: a new action, feature or
 /// shortcut of the app adds its own, its message in every catalog.
-const CURATED: [Curated; 63] = [
+const CURATED: [Curated; 67] = [
     command("palette", "tip-palette", PALETTE, Arg::None),
     plain("agents", "tip-agents"),
     plain("agent-status", "tip-agent-status"),
@@ -161,6 +164,8 @@ const CURATED: [Curated; 63] = [
     command("switch-tab", "tip-switch-tab", "tabs.switch", Arg::None),
     command("reopen-tab", "tip-reopen-tab", "tabs.reopen", Arg::None),
     command("search", "tip-search", "search.open", Arg::None),
+    plain("search-filter", "tip-search-filter"),
+    command("find-all", "tip-find-all", "search.find-all", Arg::None),
     command(
         "split",
         "tip-split",
@@ -177,10 +182,14 @@ const CURATED: [Curated; 63] = [
         Arg::None,
     ),
     command("prompts", "tip-prompts", "pane.prompt-previous", Arg::None),
-    command(
-        "select-block",
-        "tip-select-block",
-        "blocks.select-previous",
+    and(
+        command(
+            "select-block",
+            "tip-select-block",
+            "blocks.select-previous",
+            Arg::None,
+        ),
+        "pane.copy",
         Arg::None,
     ),
     needing(BLOCKS, plain("block-header", "tip-block-header")),
@@ -198,7 +207,7 @@ const CURATED: [Curated; 63] = [
         Arg::Text("direction", "right"),
     ),
     plain("tab-menu", "tip-tab-menu"),
-    plain("pin-tab", "tip-pin-tab"),
+    command("pin-tab", "tip-pin-tab", "tabs.close", Arg::None),
     plain("tab-groups", "tip-tab-groups"),
     plain("restore-scrollback", "tip-restore-scrollback"),
     plain("sessions", "tip-sessions"),
@@ -215,13 +224,21 @@ const CURATED: [Curated; 63] = [
         "window.switch-to-last-session",
         Arg::None,
     ),
-    command(
-        "broadcast",
-        "tip-broadcast",
-        "window.broadcast-to-tab",
+    and(
+        command(
+            "broadcast",
+            "tip-broadcast",
+            "window.broadcast-to-tab",
+            Arg::None,
+        ),
+        "window.broadcast-to-window",
         Arg::None,
     ),
-    command("floating", "tip-floating", "pane.new-floating", Arg::None),
+    and(
+        command("floating", "tip-floating", "pane.new-floating", Arg::None),
+        "pane.toggle-floating",
+        Arg::None,
+    ),
     plain("popup", "tip-popup"),
     command("hints", "tip-hints", "links.hints", Arg::None),
     command(
@@ -245,6 +262,8 @@ const CURATED: [Curated; 63] = [
     command("clear", "tip-clear", "pane.clear", Arg::None),
     plain("look-up", "tip-look-up"),
     plain("services", "tip-services"),
+    plain("shortcuts", "tip-shortcuts"),
+    plain("applescript", "tip-applescript"),
     command("font-size", "tip-font-size", "font.bigger", Arg::None),
     plain("itermcolors", "tip-itermcolors"),
     plain("float", "tip-float"),
@@ -280,7 +299,17 @@ const fn command(id: &'static str, message: &'static str, name: &'static str, ar
         id,
         message,
         command: Some((name, arg)),
+        also: None,
         needs: None,
+    }
+}
+
+/// `tip`, which names the keys of the command `name` of `arg` too, as
+/// `$also`, shown only while they are bound.
+const fn and(tip: Curated, name: &'static str, arg: Arg) -> Curated {
+    Curated {
+        also: Some((name, arg)),
+        ..tip
     }
 }
 
@@ -298,6 +327,7 @@ const fn plain(id: &'static str, message: &'static str) -> Curated {
         id,
         message,
         command: None,
+        also: None,
         needs: None,
     }
 }
@@ -696,13 +726,21 @@ fn ready(cx: &mut Cx<'_>) -> Vec<Ready> {
                 args: Vec::new(),
             }),
             Some((name, arg)) => {
-                if let Ok(Some(keys)) = cx.keys_of(name, arg.args()) {
-                    tips.push(Ready {
-                        id: tip.id.to_owned(),
-                        message,
-                        args: vec![("keys", keys)],
-                    });
+                let Ok(Some(keys)) = cx.keys_of(name, arg.args()) else {
+                    continue;
+                };
+                let mut args = vec![("keys", keys)];
+                if let Some((also, arg)) = tip.also {
+                    let Ok(Some(keys)) = cx.keys_of(also, arg.args()) else {
+                        continue;
+                    };
+                    args.push(("also", keys));
                 }
+                tips.push(Ready {
+                    id: tip.id.to_owned(),
+                    message,
+                    args,
+                });
             }
         }
     }

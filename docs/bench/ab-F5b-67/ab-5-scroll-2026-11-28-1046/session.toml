@@ -1,0 +1,20 @@
+# A release's A/B, step 5 of 6, about 5 minutes: 10 seconds of a
+# trackpad's scroll, by rows, then of smooth scrolling. Leave the mouse and
+# the trackpad alone.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/ab-5-scroll-{date}"
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 1
+
+[[run]]
+tool = "scroll"
+args = ["--by", "pixels", "--seconds", "10"]
+rounds = 1
+feature = "smooth-scroll"

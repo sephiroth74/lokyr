@@ -984,7 +984,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lokyr-app"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-app-core",
  "lokyr-font-coretext",
@@ -1009,10 +1009,11 @@ dependencies = [
 
 [[package]]
 name = "lokyr-app-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "accesskit",
  "libc",
+ "lokyr-automation",
  "lokyr-blocks",
  "lokyr-command-header",
  "lokyr-command-palette",
@@ -1043,8 +1044,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lokyr-automation"
+version = "1.6.0"
+dependencies = [
+ "lokyr-plugin-sdk",
+]
+
+[[package]]
 name = "lokyr-bench"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -1056,7 +1064,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-blocks"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "unicode-width",
@@ -1064,28 +1072,28 @@ dependencies = [
 
 [[package]]
 name = "lokyr-command-header"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-command-palette"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-copy-mode"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-core-actions"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "unicode-width",
@@ -1093,7 +1101,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-differential"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -1104,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-e2e"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "libc",
@@ -1114,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-font-coretext"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-text-core",
  "objc2-app-kit 0.3.2",
@@ -1125,7 +1133,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-kernel"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "fluent-bundle",
  "fluent-syntax",
@@ -1149,14 +1157,14 @@ dependencies = [
 
 [[package]]
 name = "lokyr-keymap-macos"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-links"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "regex-automata",
@@ -1164,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-pkg-model"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "ruzstd",
@@ -1178,7 +1186,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-platform-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "accesskit",
  "raw-window-handle",
@@ -1187,7 +1195,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-platform-macos"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -1207,8 +1215,9 @@ dependencies = [
 
 [[package]]
 name = "lokyr-platform-macos-docktile"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
+ "libc",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -1216,7 +1225,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-plugin-host-luau"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
  "mlua",
@@ -1226,14 +1235,14 @@ dependencies = [
 
 [[package]]
 name = "lokyr-plugin-manager"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-plugin-sdk"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "serde",
  "serde_json",
@@ -1241,14 +1250,14 @@ dependencies = [
 
 [[package]]
 name = "lokyr-progress"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-pty"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "libc",
  "thiserror",
@@ -1256,25 +1265,25 @@ dependencies = [
 
 [[package]]
 name = "lokyr-quick-terminal"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-quick-tips"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-render-core"
-version = "1.5.0"
+version = "1.6.0"
 
 [[package]]
 name = "lokyr-render-metal"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "block2 0.6.2",
  "dispatch2",
@@ -1291,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-replay"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "insta",
@@ -1304,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-search"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "criterion",
  "lokyr-vt-core",
@@ -1315,14 +1324,14 @@ dependencies = [
 
 [[package]]
 name = "lokyr-search-plugin"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-session"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-pty",
  "lokyr-vt-core",
@@ -1331,28 +1340,28 @@ dependencies = [
 
 [[package]]
 name = "lokyr-settings"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-splits"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-tabs"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-plugin-sdk",
 ]
 
 [[package]]
 name = "lokyr-text-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -1361,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-themes"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "libc",
  "lokyr-plugin-sdk",
@@ -1371,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-ui-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "accesskit",
  "criterion",
@@ -1387,7 +1396,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-ui-gallery"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "accesskit",
  "lokyr-font-coretext",
@@ -1404,7 +1413,7 @@ dependencies = [
 
 [[package]]
 name = "lokyr-vt-core"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "criterion",
  "miniz_oxide 0.9.1",
@@ -1585,6 +1594,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08849bbd4767dfae9457696856ae1c84fe4e0281bbe4a7abff2d0e06fb7981f8"
 dependencies = [
  "objc2-encode",
+ "objc2-exception-helper",
 ]
 
 [[package]]
@@ -1611,6 +1621,7 @@ checksum = "d49e936b501e5c5bf01fda3a9452ff86dc3ea98ad5f283e1455153142d97518c"
 dependencies = [
  "bitflags",
  "block2 0.6.2",
+ "libc",
  "objc2 0.6.5",
  "objc2-core-foundation",
  "objc2-core-graphics",
@@ -1695,6 +1706,15 @@ name = "objc2-encode"
 version = "4.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef25abbcd74fb2609453eb695bd2f860d389e457f67dc17cafc8b8cbc89d0c33"
+
+[[package]]
+name = "objc2-exception-helper"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7a1c5fbb72d7735b076bb47b578523aedc40f3c439bea6dfd595c089d79d98a"
+dependencies = [
+ "cc",
+]
 
 [[package]]
 name = "objc2-foundation"
@@ -2465,7 +2485,7 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "sleip-analyzer"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "cc",
  "lokyr-plugin-host-luau",
@@ -2474,7 +2494,7 @@ dependencies = [
 
 [[package]]
 name = "sleip-cli"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "base64 0.22.1",
  "fluent-syntax",
@@ -2495,7 +2515,7 @@ dependencies = [
 
 [[package]]
 name = "sleip-index"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",
@@ -2511,7 +2531,7 @@ dependencies = [
 
 [[package]]
 name = "sleip-resolver"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "lokyr-pkg-model",
  "pubgrub",
@@ -3060,7 +3080,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "cargo_metadata",

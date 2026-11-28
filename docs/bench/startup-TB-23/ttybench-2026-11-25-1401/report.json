@@ -1,0 +1,286 @@
+{
+  "session": "ttybench-2026-11-25-1401",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 60.0
+  },
+  "span": [
+    1795611715,
+    1795611878
+  ],
+  "runs": {
+    "done": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "v150",
+      "version": "1.5.0 (202611242301)"
+    }
+  ],
+  "ab": null,
+  "groups": [
+    {
+      "tool": "startup",
+      "metric": "window_ms",
+      "unit": "ms",
+      "title": "From the launch to its window",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 16,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 300.024792,
+            "median": 330.6371875,
+            "p95": 346.1487064,
+            "p99": 349.94023177,
+            "max": 351.183125,
+            "mean": 329.25438678125,
+            "stddev": 10.618332339022619,
+            "median_interval": [
+              323.076771,
+              333.098584
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 331.3668955
+            },
+            {
+              "cycle": 2,
+              "median": 329.8357295
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": null
+    },
+    {
+      "tool": "startup",
+      "metric": "ready_ms",
+      "unit": "ms",
+      "title": "From the launch to running the payload",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 16,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 654.197542,
+            "median": 694.535625,
+            "p95": 713.9945083,
+            "p99": 718.5739465400001,
+            "max": 720.318833,
+            "mean": 695.7454896250001,
+            "stddev": 13.76216073661556,
+            "median_interval": [
+              690.4903334999999,
+              701.723375
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 700.2047915
+            },
+            {
+              "cycle": 2,
+              "median": 692.362792
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": null
+    },
+    {
+      "tool": "startup",
+      "metric": "floor_window_ms",
+      "unit": "ms",
+      "title": "From the launch to the floor app's window",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 16,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 203.0375,
+            "median": 259.77583300000003,
+            "p95": 272.69587705,
+            "p99": 280.61950973,
+            "max": 283.978334,
+            "mean": 255.59578787499998,
+            "stddev": 16.016258146793067,
+            "median_interval": [
+              252.888375,
+              263.742917
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 258.8343125
+            },
+            {
+              "cycle": 2,
+              "median": 260.229562
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": null
+    },
+    {
+      "tool": "startup",
+      "metric": "window_gap_ms",
+      "unit": "ms",
+      "title": "Its window after the floor app's",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "cols": 120,
+        "pause_s": 2.0,
+        "rounds": 16,
+        "rows": 40,
+        "season": 0
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "v150",
+          "summary": {
+            "count": 32,
+            "min": 47.047000000000025,
+            "median": 70.38322950000001,
+            "p95": 99.56274415,
+            "p99": 120.18578902000003,
+            "max": 128.065666,
+            "mean": 73.65859890625,
+            "stddev": 15.241648074732192,
+            "median_interval": [
+              67.08562500000001,
+              75.446063
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 72.276166
+            },
+            {
+              "cycle": 2,
+              "median": 69.40670799999998
+            }
+          ],
+          "runs": 2
+        }
+      ],
+      "skipped": [],
+      "change": null
+    }
+  ],
+  "budgets": [],
+  "judgements": [],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-startup-v150",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "16"
+      ],
+      "started": 1795611715,
+      "seconds": 80.276628291,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.46240234375,
+        "after": 9.720703125,
+        "busiest": [
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 22.5
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 16.8
+          },
+          {
+            "name": "tccd",
+            "cpu_percent": 13.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-startup-v150",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "startup",
+      "terminal": "v150",
+      "args": [
+        "--floor",
+        "--rounds",
+        "16"
+      ],
+      "started": 1795611797,
+      "seconds": 80.360169875,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 9.720703125,
+        "after": 3.763671875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 14.1
+          }
+        ]
+      }
+    }
+  ]
+}

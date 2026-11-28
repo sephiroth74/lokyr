@@ -20,6 +20,7 @@ use std::path::Path;
 pub type Quarantine = fn(&Path) -> std::io::Result<()>;
 use std::time::{Duration, Instant, SystemTime};
 
+pub mod automation;
 #[cfg(any(test, feature = "conformance"))]
 pub mod conformance;
 mod double_tap;
@@ -991,6 +992,11 @@ pub trait Platform {
     /// needs its bundle's identifier: from outside its bundle, nothing shows.
     fn notify(&mut self, window: WindowId, id: u64, title: &str, body: &str);
 
+    /// Gives the script or the shortcut that made the automation's request
+    /// `id`, which came as [`AppEvent::Automation`], its answer; a request
+    /// that does not wait, answered already, takes none.
+    fn answer_automation(&mut self, id: u64, answer: automation::Answer);
+
     /// What `target`, a URL or an absolute path, is, and where it leads: a
     /// `file` URL is its path's, if it names this machine; a path's links
     /// and the system's aliases are followed, so that what the app decides
@@ -1060,6 +1066,12 @@ pub struct PanelColor {
 pub trait Handler {
     /// The application started: the app opens its first window here.
     fn started(&mut self, platform: &mut dyn Platform);
+
+    /// The application's launch ended: after [`Handler::started`], and after
+    /// the events of the files, folders or links that the system started it
+    /// to open, whose windows the app opened. What no first window needs
+    /// comes here, so that the first windows show sooner.
+    fn launched(&mut self, _platform: &mut dyn Platform) {}
 
     /// Something happened to the application.
     fn app_event(&mut self, platform: &mut dyn Platform, event: AppEvent);

@@ -30,6 +30,9 @@ pub(crate) type MakeHandler = Box<dyn FnOnce() -> Box<dyn Handler>>;
 pub(crate) enum Pending {
     /// The application finished launching.
     Started,
+    /// The launch's end, once the events that came before the start were
+    /// handled.
+    Launched,
     /// An event of the application.
     App(AppEvent),
     /// An event of a window.
@@ -153,6 +156,28 @@ impl Shared {
 
     /// Queues `pending`, and hands it on now unless a dispatch is in
     /// progress, which will.
+    /// Keeps `reply` of an automation's request until the app answers it,
+    /// and posts the request: whether the backend took it, as it does
+    /// outside the app's calls.
+    pub(crate) fn post_automation(
+        &self,
+        client: lokyr_platform_core::automation::Client,
+        request: lokyr_platform_core::automation::Request,
+        reply: crate::backend::AutomationReply,
+    ) -> bool {
+        let Ok(mut backend) = self.backend.try_borrow_mut() else {
+            return false;
+        };
+        let id = backend.wait_automation(reply);
+        drop(backend);
+        self.post(Pending::App(lokyr_platform_core::AppEvent::Automation {
+            id,
+            client,
+            request,
+        }));
+        true
+    }
+
     pub(crate) fn post(&self, pending: Pending) {
         self.enqueue(pending);
         self.dispatch();
@@ -268,6 +293,8 @@ impl Shared {
             for event in early.into_iter().rev() {
                 queue.push_front(Pending::App(event));
             }
+            // What no first window needs, once those events opened theirs.
+            queue.push_back(Pending::Launched);
             drop(queue);
             match panic::catch_unwind(AssertUnwindSafe(make)) {
                 Ok(handler) => *self.handler.borrow_mut() = Some(handler),
@@ -286,6 +313,7 @@ impl Shared {
         let backend = &mut *backend;
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| match pending {
             Pending::Started => handler.started(backend),
+            Pending::Launched => handler.launched(backend),
             // A save panel that the app withdrew tells nothing of its end.
             Pending::App(AppEvent::SavePanelClosed { panel, path }) => {
                 if backend.take_save_panel(panel) {

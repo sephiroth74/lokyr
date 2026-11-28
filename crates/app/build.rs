@@ -7,6 +7,8 @@
 //! bundle, whose number is of the same moment; a source without git takes
 //! the build's date.
 
+#[path = "build/intents.rs"]
+mod intents;
 #[path = "build/version.rs"]
 mod version;
 
@@ -29,6 +31,14 @@ fn main() {
     match version::version(&version, release.as_deref(), seconds) {
         Ok(version) => println!("cargo:rustc-env=LOKYR_VERSION={version}"),
         Err(error) => panic!("{error}"),
+    }
+    if std::env::var_os("CARGO_FEATURE_APP_INTENTS").is_some()
+        && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+    {
+        let manifest =
+            std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo gives the manifest's folder");
+        let out = std::env::var_os("OUT_DIR").expect("Cargo gives the build's folder");
+        intents::build(Path::new(&manifest), Path::new(&out));
     }
 }
 

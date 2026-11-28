@@ -798,7 +798,11 @@ fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
             .iter()
             .find(|(_, state)| state.window == window)
             .unwrap();
-        assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+        // The kept scrollback, which the pane reads on its session's
+        // output thread.
+        run_until(&mut fake, &mut app, |_, app| {
+            rows_of(app, shown)[0].starts_with("kept in")
+        });
         assert!(!fake.window(shown).unwrap().hidden);
     }
     // Quit with api never shown: its window is kept as it was, of its
@@ -817,7 +821,9 @@ fn every_session_comes_back_the_hidden_ones_opening_as_they_first_show() {
         .iter()
         .find(|(_, state)| state.window == window)
         .unwrap();
-    assert!(rows_of(&app, shown)[0].starts_with("kept in"));
+    run_until(&mut fake, &mut app, |_, app| {
+        rows_of(app, shown)[0].starts_with("kept in")
+    });
     app.quit(&mut fake);
     let _ = std::fs::remove_dir_all(base);
 }

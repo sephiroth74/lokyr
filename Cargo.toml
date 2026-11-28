@@ -9,7 +9,7 @@ members = ["crates/*", "sleip/*", "plugins/*", "tools/*"]
 exclude = ["fuzz", "spikes", "tools/linux"]
 
 [workspace.package]
-version = "1.5.0"
+version = "1.6.0"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -144,6 +144,7 @@ lokyr-replay = { path = "tools/replay" }
 lokyr-search = { path = "crates/search" }
 lokyr-session = { path = "crates/session" }
 lokyr-progress = { path = "plugins/progress" }
+lokyr-automation = { path = "plugins/automation" }
 lokyr-quick-terminal = { path = "plugins/quick-terminal" }
 lokyr-quick-tips = { path = "plugins/quick-tips" }
 lokyr-plugin-manager = { path = "plugins/plugin-manager" }

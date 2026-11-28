@@ -130,6 +130,7 @@ fn a_new_tab_opens_after_the_others_and_shows() {
             window: WINDOW,
             index: None,
             directory: None,
+            ..
         },
         Request::ActivateTab(tab),
     ] = done[..]
@@ -586,6 +587,7 @@ fn the_bar_shows_a_window_s_tabs_and_its_clicks_select_close_and_open() {
                     window: WINDOW,
                     index: None,
                     directory: None,
+                    ..
                 },
                 Request::ActivateTab(_)
             ]
@@ -1604,4 +1606,14 @@ fn every_command_declares_the_capabilities_of_the_requests_that_it_makes() {
             );
         }
     }
+}
+
+#[test]
+fn a_tab_s_color_is_of_six_digits_or_of_three() {
+    assert_eq!(color("#ff8800"), Some(Color::Rgb(0xff, 0x88, 0x00)));
+    assert_eq!(color("ff8800"), Some(Color::Rgb(0xff, 0x88, 0x00)));
+    assert_eq!(color("#d14"), Some(Color::Rgb(0xdd, 0x11, 0x44)));
+    assert_eq!(color("#ff88"), None);
+    assert_eq!(color("#gg8800"), None);
+    assert_eq!(color("#é14"), None);
 }

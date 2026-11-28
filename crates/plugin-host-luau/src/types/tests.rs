@@ -36,7 +36,7 @@ fn every_request_is_a_function_of_cx_of_its_arguments_and_its_answer() {
     for line in [
         "    line_text: (pane: PaneId, row: number, reach: number) -> (LineText?, string?, number?),",
         "    focused_pane: () -> (PaneId?, string?, number?),",
-        "    new_tab: (window: WindowId, index: number?, directory: string?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),",
+        "    new_tab: (window: WindowId, index: number?, directory: string?, environment: { [string]: string }?) -> ({ tab: TabId, pane: PaneId }?, string?, number?),",
         "    register_command: (command: Command) -> (true?, string?, number?),",
         "    subscribe: (names: { string }) -> (true?, string?, number?),",
         "    emit: (name: string, schema: string, value: Data) -> (true?, string?, number?),",

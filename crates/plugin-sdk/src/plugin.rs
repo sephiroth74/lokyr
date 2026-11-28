@@ -398,6 +398,18 @@ impl<'a> Cx<'a> {
         self.done(Request::CancelPackages(id))
     }
 
+    /// Answers the automation's request `id`, which came as an
+    /// [`Event::Automation`](crate::message::Event::Automation), as
+    /// [`Request::AnswerAutomation`] says. Of the capability `automation`,
+    /// Lokyr's own plugins' alone.
+    pub fn answer_automation(
+        &mut self,
+        id: u64,
+        answer: crate::automation::AutomationAnswer,
+    ) -> Result<(), Error> {
+        self.done(Request::AnswerAutomation { id, answer })
+    }
+
     /// The settings: the app's sections of its config's schema, in its
     /// order, then each plugin's of a config schema, each key of its kind
     /// and its value in force. Of the capability `config`, Lokyr's own
@@ -613,6 +625,15 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Shows the rows of the plugin's search `search`'s matches alone in its
+    /// pane's view, each run of the rows between them a blank row, the rows
+    /// that new output brings searched as they come, or, of `filter`
+    /// false, the view as it was, at the search's current match: until the
+    /// search ends, which gives the view back too.
+    pub fn filter_matches(&mut self, search: u64, filter: bool) -> Result<(), Error> {
+        self.done(Request::FilterMatches { search, filter })
+    }
+
     /// Ends the plugin's search `search`, at once: it stops, and its
     /// matches go.
     pub fn end_search(&mut self, search: u64) -> Result<(), Error> {
@@ -643,6 +664,16 @@ impl<'a> Cx<'a> {
     pub fn commands(&mut self) -> Result<Vec<CommandInfo>, Error> {
         match self.request(Request::Commands) {
             Response::Commands(commands) => Ok(commands),
+            other => Err(failed(other)),
+        }
+    }
+
+    /// The items that the plugins added to the menu bar, in their menus'
+    /// order, each of its command's arguments, its title, its keys and its
+    /// state, of `user-commands`, as [`Request::MenuBarItems`] says.
+    pub fn menu_bar_items(&mut self) -> Result<Vec<crate::host::MenuBarItem>, Error> {
+        match self.request(Request::MenuBarItems) {
+            Response::MenuBarItems(items) => Ok(items),
             other => Err(failed(other)),
         }
     }
@@ -1198,6 +1229,36 @@ impl<'a> Cx<'a> {
         })
     }
 
+    /// Sends `pane`'s program the key of `keys`, as `ctrl+c` or `up`,
+    /// pressed and released, as this call returns, as
+    /// [`Request::SendKey`] says, which can run commands.
+    pub fn send_key(&mut self, pane: PaneId, keys: &str) -> Result<(), Error> {
+        self.done(Request::SendKey {
+            pane,
+            keys: keys.to_owned(),
+        })
+    }
+
+    /// Sends `pane`'s program the mouse event `input`, as this call returns,
+    /// as [`Request::SendMouse`] says.
+    pub fn send_mouse(
+        &mut self,
+        pane: PaneId,
+        input: crate::host::MouseInput,
+    ) -> Result<(), Error> {
+        self.done(Request::SendMouse { pane, input })
+    }
+
+    /// Presses the key of `keys` in `pane` as the user presses it, as this
+    /// call returns, as [`Request::PressKey`] says: its binding's command,
+    /// or the program.
+    pub fn press_key(&mut self, pane: PaneId, keys: &str) -> Result<(), Error> {
+        self.done(Request::PressKey {
+            pane,
+            keys: keys.to_owned(),
+        })
+    }
+
     /// The command line that `pane`'s shell edits at its prompt, as its
     /// cells show it, of no right prompt; empty of nothing typed; `None`
     /// while a command runs, a program's own screen shows, or the shell
@@ -1238,14 +1299,26 @@ impl<'a> Cx<'a> {
 
     /// Opens a window, once this call returns.
     pub fn open_window(&mut self) -> Result<(), Error> {
-        self.done(Request::OpenWindow { directory: None })
+        self.open_window_with(None, &crate::host::Variables::new())
     }
 
     /// Opens a window whose pane starts in `directory`, a path absolute or
     /// from `~`, or in the folder of a file there, once this call returns.
     pub fn open_window_in(&mut self, directory: &str) -> Result<(), Error> {
+        self.open_window_with(Some(directory), &crate::host::Variables::new())
+    }
+
+    /// Opens a window as [`open_window_in`](Self::open_window_in) does, in
+    /// `directory` if given, its pane's program taking `environment` over
+    /// the terminal's variables, which takes `pty-write` too.
+    pub fn open_window_with(
+        &mut self,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<(), Error> {
         self.done(Request::OpenWindow {
-            directory: Some(directory.to_owned()),
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         })
     }
 
@@ -1477,14 +1550,7 @@ impl<'a> Cx<'a> {
         window: WindowId,
         index: Option<usize>,
     ) -> Result<(TabId, PaneId), Error> {
-        match self.request(Request::NewTab {
-            window,
-            index,
-            directory: None,
-        }) {
-            Response::Tab { tab, pane } => Ok((tab, pane)),
-            other => Err(failed(other)),
-        }
+        self.new_tab_with(window, index, None, &crate::host::Variables::new())
     }
 
     /// Opens a tab as [`new_tab`](Self::new_tab) does, its pane in
@@ -1496,10 +1562,29 @@ impl<'a> Cx<'a> {
         index: Option<usize>,
         directory: &str,
     ) -> Result<(TabId, PaneId), Error> {
+        self.new_tab_with(
+            window,
+            index,
+            Some(directory),
+            &crate::host::Variables::new(),
+        )
+    }
+
+    /// Opens a tab as [`new_tab_in`](Self::new_tab_in) does, in `directory`
+    /// if given, its pane's program taking `environment` over the
+    /// terminal's variables, which takes `pty-write` too.
+    pub fn new_tab_with(
+        &mut self,
+        window: WindowId,
+        index: Option<usize>,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<(TabId, PaneId), Error> {
         match self.request(Request::NewTab {
             window,
             index,
-            directory: Some(directory.to_owned()),
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         }) {
             Response::Tab { tab, pane } => Ok((tab, pane)),
             other => Err(failed(other)),
@@ -1514,10 +1599,45 @@ impl<'a> Cx<'a> {
         direction: Direction,
         side: Side,
     ) -> Result<PaneId, Error> {
+        self.split_with(pane, direction, side, None, &crate::host::Variables::new())
+    }
+
+    /// Splits `pane` as [`split`](Self::split) does, the new pane in
+    /// `directory`, a path absolute or from `~`, or in the folder of a file
+    /// there.
+    pub fn split_in(
+        &mut self,
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+        directory: &str,
+    ) -> Result<PaneId, Error> {
+        self.split_with(
+            pane,
+            direction,
+            side,
+            Some(directory),
+            &crate::host::Variables::new(),
+        )
+    }
+
+    /// Splits `pane` as [`split_in`](Self::split_in) does, in `directory` if
+    /// given, the new pane's program taking `environment` over the
+    /// terminal's variables, which takes `pty-write` too.
+    pub fn split_with(
+        &mut self,
+        pane: PaneId,
+        direction: Direction,
+        side: Side,
+        directory: Option<&str>,
+        environment: &crate::host::Variables,
+    ) -> Result<PaneId, Error> {
         match self.request(Request::Split {
             pane,
             direction,
             side,
+            directory: directory.map(str::to_owned),
+            environment: environment.clone(),
         }) {
             Response::Pane(Some(pane)) => Ok(pane),
             other => Err(failed(other)),

@@ -9,15 +9,25 @@
 //! the bottom: its next match is the one above, its previous the one below.
 //! Escape closes the bar, its highlights going and the current match
 //! selected, ready for a copy; the bar opens again of the last search and
-//! its options. Like every built-in plugin, it depends only on the plugin
+//! its options. Find in All Tabs, Command-Shift-F, searches every pane of
+//! the session's windows of the bar's options as the user types, each match
+//! a row of its line and its tab's title; Return brings its pane forward,
+//! the match selected, and opens the bar there of the text, the match the
+//! current one. Like every built-in plugin, it depends only on the plugin
 //! SDK.
 
 #![forbid(unsafe_code)]
 
+mod all;
+
+pub use all::{AllTexts, AllView, find_all};
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error};
+use lokyr_plugin_sdk::command::{
+    Args, Capability, Category, Code, Command, Error, Kind as ParamKind, Param, Value,
+};
 use lokyr_plugin_sdk::host::{PaneId, SearchCase, SearchMatch, SearchQuery};
 use lokyr_plugin_sdk::message::{Data, Event};
 use lokyr_plugin_sdk::plugin::{Cx, Plugin};
@@ -50,6 +60,7 @@ const COUNT: &str = "count";
 const CASE: &str = "case";
 const REGEX: &str = "regex";
 const WORD: &str = "word";
+const FILTER: &str = "filter";
 const UP: &str = "up";
 const DOWN: &str = "down";
 const PAST: &str = "recent";
@@ -68,10 +79,11 @@ const STATE_RECENT: &str = "recent";
 const STATE_CASE: &str = "case-sensitive";
 const STATE_REGEX: &str = "regex";
 const STATE_WORD: &str = "whole-word";
+const STATE_FILTER: &str = "filter";
 
 /// The width of the search field, its glass, its text and its toggles, in
-/// points.
-const FIELD_WIDTH: f32 = 260.0;
+/// points: of 260 for its text beside three toggles, and of the filter's.
+const FIELD_WIDTH: f32 = 281.0;
 
 /// The width of the count, which its text never changes, in points: of
 /// `9999 of 9999`, the longest of its numbers, which go short past it,
@@ -98,14 +110,16 @@ static CATALOGS: [(&str, &str); 2] = [
     ("it", include_str!("../locales/it/search.ftl")),
 ];
 
-/// The texts of the bar, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 13] = [
+/// The texts of the bar and of Find in All Tabs, in English, where the
+/// host gives none.
+const ENGLISH: [(&str, &str); 17] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-invalid", "Invalid regex"),
     ("find-case", "Match Case"),
     ("find-regex", "Regular Expression"),
     ("find-word", "Whole Words"),
+    ("find-filter", "Show Matching Lines Only"),
     ("find-next", "Find Next"),
     ("find-previous", "Find Previous"),
     ("find-history", "Recent Searches"),
@@ -113,6 +127,9 @@ const ENGLISH: [(&str, &str); 13] = [
     ("find-clear", "Clear"),
     ("find-count-unknown", "{ $count } found"),
     ("find-count", "{ $current } of { $count }"),
+    ("find-all-placeholder", "Find in All Tabs"),
+    ("find-all-matches", "Matches"),
+    ("find-all-gone", "The pane of that match has closed."),
 ];
 
 /// The text of the message `id` of `args`, in the language shown, or
@@ -247,6 +264,8 @@ pub struct Options {
     pub regex: bool,
     /// Whether matches take whole words alone.
     pub whole_word: bool,
+    /// Whether the pane's view shows the matches' lines alone.
+    pub filter: bool,
 }
 
 /// Which way a step goes.
@@ -293,6 +312,9 @@ struct Find {
     /// The count's text as the bar showed it last, which a new search
     /// leaves until it tells something sure.
     shown: String,
+    /// The first cell of the match that its search makes the current one,
+    /// as the command that opened it asked, until a part tells it.
+    wanted: Option<(u16, i64)>,
 }
 
 impl Find {
@@ -313,22 +335,14 @@ impl Find {
             invalid: false,
             filling: false,
             shown: String::new(),
+            wanted: None,
         }
     }
 
     /// The query of its text and its options, of `settings`' case where
-    /// its toggle leaves case aside: smart, or insensitive.
+    /// its toggle leaves case aside.
     fn query(&self, settings: Settings) -> SearchQuery {
-        SearchQuery {
-            text: self.text.clone(),
-            regex: self.options.regex,
-            case: if self.options.sensitive {
-                SearchCase::Sensitive
-            } else {
-                settings.case
-            },
-            whole_word: self.options.whole_word,
-        }
+        query_of(&self.text, self.options, settings)
     }
 
     /// Takes the matches of a part of its search, which keep the rows'
@@ -357,6 +371,21 @@ impl Find {
     }
 }
 
+/// The query of `text` and `options`, of `settings`' case where the case
+/// toggle leaves case aside: smart, or insensitive.
+fn query_of(text: &str, options: Options, settings: Settings) -> SearchQuery {
+    SearchQuery {
+        text: text.to_owned(),
+        regex: options.regex,
+        case: if options.sensitive {
+            SearchCase::Sensitive
+        } else {
+            settings.case
+        },
+        whole_word: options.whole_word,
+    }
+}
+
 /// Where `found` starts, its row's number first, for the rows' order.
 fn place(found: &SearchMatch) -> (i64, u16) {
     (found.first.1, found.first.0)
@@ -371,6 +400,10 @@ pub struct BarView {
     pub count: String,
     /// Whether its field holds text, which its clear button empties.
     pub filled: bool,
+    /// Whether its pane shows the alternate screen, as a full-screen
+    /// program's, of no scrollback, whose rows the filter shows none of:
+    /// its toggle hidden.
+    pub alternate: bool,
 }
 
 /// The texts of the find bar, in the language shown: its field's
@@ -386,6 +419,8 @@ pub struct BarTexts {
     pub regex: String,
     /// The whole words toggle's label.
     pub word: String,
+    /// The filter toggle's label.
+    pub filter: String,
     /// The next match's button's label.
     pub next: String,
     /// The previous match's button's label.
@@ -412,6 +447,7 @@ impl Default for BarTexts {
             case: english("find-case"),
             regex: english("find-regex"),
             word: english("find-word"),
+            filter: english("find-filter"),
             next: english("find-next"),
             previous: english("find-previous"),
             recent: english("find-history"),
@@ -507,7 +543,7 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             text_size: Some(TextSize::Small),
             ..Style::default()
         });
-    let field = Node::container(vec![
+    let mut parts = vec![
         plain(
             Node::icon_button("magnifying-glass").key(PAST),
             IN_FIELD,
@@ -533,31 +569,42 @@ pub fn find_bar(view: &BarView, texts: &BarTexts) -> Node {
             options.regex,
             &texts.regex,
         ),
-        clear(view.filled, &texts.clear),
-    ])
-    .layout(Layout {
-        width: Length::Points(FIELD_WIDTH),
-        min_width: Length::Points(FIELD_WIDTH),
-        gap: 1.0,
-        padding: Edges::all(2.0),
-        align: Align::Center,
-        ..Layout::default()
-    })
-    .style(Style {
-        background: Some(Token::from("field.bg")),
-        border: Some(Border {
-            color: Token::from("field.border"),
-            width: 1.0,
-        }),
-        // Of a text field's rounded corners, rather than a search field's
-        // capsule, within the bar's own rounded box.
-        radius: 6.0,
-        // The ring of its text's focus round the whole field, and the
-        // I-beam over it, but over its buttons.
-        holds_ring: true,
-        pointer: Some(PointerShape::Text),
-        ..Style::default()
-    });
+    ];
+    // The filter, of the primary screen's rows, does nothing on the
+    // alternate screen's.
+    if !view.alternate {
+        parts.push(plain(
+            Node::toggle("filter", options.filter).key(FILTER),
+            IN_FIELD,
+            options.filter,
+            &texts.filter,
+        ));
+    }
+    parts.push(clear(view.filled, &texts.clear));
+    let field = Node::container(parts)
+        .layout(Layout {
+            width: Length::Points(FIELD_WIDTH),
+            min_width: Length::Points(FIELD_WIDTH),
+            gap: 1.0,
+            padding: Edges::all(2.0),
+            align: Align::Center,
+            ..Layout::default()
+        })
+        .style(Style {
+            background: Some(Token::from("field.bg")),
+            border: Some(Border {
+                color: Token::from("field.border"),
+                width: 1.0,
+            }),
+            // Of a text field's rounded corners, rather than a search field's
+            // capsule, within the bar's own rounded box.
+            radius: 6.0,
+            // The ring of its text's focus round the whole field, and the
+            // I-beam over it, but over its buttons.
+            holds_ring: true,
+            pointer: Some(PointerShape::Text),
+            ..Style::default()
+        });
     let count = Node::container(vec![Node::text(view.count.as_str()).key(COUNT).style(
         Style {
             color: Some(Token::from("text.secondary")),
@@ -628,6 +675,11 @@ pub struct Search {
     /// The closings of its bar that it asked for, to open it anew, whose
     /// events it leaves.
     reopening: usize,
+    /// Find in All Tabs, while it is open.
+    all: Option<all::All>,
+    /// The closings of Find in All Tabs that it asked for, as it went to a
+    /// match, whose events it leaves, as the command may open it anew.
+    all_closing: usize,
 }
 
 impl Plugin for Search {
@@ -648,6 +700,7 @@ impl Plugin for Search {
                 sensitive: on(STATE_CASE),
                 regex: on(STATE_REGEX),
                 whole_word: on(STATE_WORD),
+                filter: on(STATE_FILTER),
             };
         }
         self.settings = Settings::of(&cx.config()?);
@@ -656,6 +709,30 @@ impl Plugin for Search {
             (NEXT, "Find Next"),
             (PREVIOUS, "Find Previous"),
         ] {
+            // The bar's text, and the first cell of the match that its
+            // search makes the current one, of a column of 0 or more, as
+            // Find in All Tabs opens it.
+            let params = if name == OPEN {
+                vec![
+                    Param {
+                        name: "text".to_owned(),
+                        kind: ParamKind::String,
+                        default: Some(Value::String(String::new())),
+                    },
+                    Param {
+                        name: "column".to_owned(),
+                        kind: ParamKind::Integer,
+                        default: Some(Value::Integer(-1)),
+                    },
+                    Param {
+                        name: "row".to_owned(),
+                        kind: ParamKind::Integer,
+                        default: Some(Value::Integer(0)),
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
             cx.register_command(Command {
                 name: name.to_owned(),
                 title: title.to_owned(),
@@ -667,10 +744,37 @@ impl Plugin for Search {
                     Capability::Decorate,
                     Capability::PaneView,
                 ],
-                params: Vec::new(),
+                params,
                 when: None,
             })?;
         }
+        cx.register_command(Command {
+            name: all::FIND_ALL.to_owned(),
+            title: "Find in All Tabs…".to_owned(),
+            category: Category::Find,
+            // It reads every pane, and brings the match's forward, its tab and
+            // its window, before the find bar opens there.
+            capabilities: vec![
+                Capability::TerminalRead,
+                Capability::Decorate,
+                Capability::PaneView,
+                Capability::WorkspaceWrite,
+            ],
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
+            name: all::MOVE.to_owned(),
+            title: "Move in Find in All Tabs".to_owned(),
+            category: Category::Find,
+            capabilities: Vec::new(),
+            params: vec![Param {
+                name: "delta".to_owned(),
+                kind: ParamKind::Integer,
+                default: None,
+            }],
+            when: Some(format!("search.{}.focused", all::PANEL)),
+        })?;
         Ok(())
     }
 
@@ -682,17 +786,40 @@ impl Plugin for Search {
         Some(include_str!("../search.schema.json").into())
     }
 
-    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, _: Args) -> Result<(), Error> {
+    fn on_command(&mut self, cx: &mut Cx<'_>, name: &str, args: Args) -> Result<(), Error> {
         match name {
-            OPEN => self.open(cx),
+            OPEN => {
+                let text = match args.get("text") {
+                    Some(Value::String(text)) if !text.is_empty() => Some(text.clone()),
+                    _ => None,
+                };
+                let wanted = match (args.get("column"), args.get("row")) {
+                    (Some(Value::Integer(column)), Some(Value::Integer(row))) => {
+                        u16::try_from(*column).ok().map(|column| (column, *row))
+                    }
+                    _ => None,
+                };
+                self.open(cx, text, wanted)
+            }
             NEXT => self.step(cx, Step::Up),
             PREVIOUS => self.step(cx, Step::Down),
+            all::FIND_ALL => self.open_all(cx),
+            all::MOVE => {
+                let delta = match args.get("delta") {
+                    Some(Value::Integer(delta)) => *delta,
+                    _ => 0,
+                };
+                self.step_all(cx, delta)
+            }
             _ => Ok(()),
         }
     }
 
-    /// The bar, and its recent searches' menu.
+    /// The bar, its recent searches' menu, and Find in All Tabs.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view == all::panel() {
+            return self.render_all(cx);
+        }
         if *view == bar() {
             let find = self.find.as_mut()?;
             // The count of before stays while the search tells nothing sure,
@@ -700,10 +827,14 @@ impl Plugin for Search {
             if let Some(count) = count(cx, find) {
                 find.shown = count;
             }
+            let alternate = cx
+                .viewport(find.pane)
+                .is_ok_and(|viewport| viewport.alternate);
             let view = BarView {
                 options: find.options,
                 count: find.shown.clone(),
                 filled: !find.text.is_empty(),
+                alternate,
             };
             let texts = texts(cx);
             return Some(find_bar(&view, &texts));
@@ -728,6 +859,9 @@ impl Plugin for Search {
     /// to the next search; the buttons step or close the bar, and its
     /// glass shows the recent searches, one of which searches again.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        if event.view == all::panel() {
+            return self.on_all_event(cx, event);
+        }
         let key = event.key.0.as_str();
         if event.view == ViewId::Panel(PanelId::from(RECENT)) {
             let chosen = key
@@ -780,6 +914,17 @@ impl Plugin for Search {
                 self.keep(cx);
                 self.search(cx)
             }
+            // The pane's view of the matches' lines alone, or as it was, of
+            // the search there is, which no new search needs.
+            (UiEventKind::Toggle { on }, FILTER) => {
+                find.options.filter = *on;
+                self.options = find.options;
+                if let (true, Some(search)) = (find.told, find.search) {
+                    cx.filter_matches(search, *on)?;
+                }
+                self.keep(cx);
+                cx.request_render(bar())
+            }
             // Emptied by its button, as typing would empty it.
             (UiEventKind::Click, CLEAR) => {
                 find.text.clear();
@@ -809,19 +954,31 @@ impl Plugin for Search {
     }
 
     /// A part of the search comes, whose first match, of the nearest part
-    /// to the view, is the current one if none is; the bar's closing ends
-    /// the search; a change of the config takes its options, the matches
+    /// to the view, is the current one if none is, or of one of Find in All
+    /// Tabs' searches; the bar's closing ends the search, and Find in All
+    /// Tabs' its own; a change of the config takes its options, the matches
     /// shown as they say.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let mut all_parts = false;
         for event in events {
             match event {
                 Event::Searched {
                     id,
+                    pane,
                     matches,
                     count,
                     done,
                     ..
-                } => self.searched(cx, *id, matches, (*count, *done))?,
+                } => {
+                    if self.searched_all(cx, *id, *pane, (matches, *done))? {
+                        all_parts = true;
+                    } else {
+                        self.searched(cx, *id, matches, (*count, *done))?;
+                    }
+                }
+                Event::PanelClosed(id) if *id == PanelId::from(all::PANEL) => {
+                    self.closed_all(cx)?;
+                }
                 Event::PanelClosed(id) if *id == PanelId::from(BAR) => {
                     if self.reopening > 0 {
                         self.reopening -= 1;
@@ -843,6 +1000,10 @@ impl Plugin for Search {
                 _ => {}
             }
         }
+        // Find in All Tabs' searches that wait, once its parts are taken.
+        if all_parts {
+            self.searched_all_end(cx)?;
+        }
         Ok(())
     }
 }
@@ -860,6 +1021,7 @@ fn texts(cx: &mut Cx<'_>) -> BarTexts {
         case: text("find-case"),
         regex: text("find-regex"),
         word: text("find-word"),
+        filter: text("find-filter"),
         next: text("find-next"),
         previous: text("find-previous"),
         recent: text("find-history"),
@@ -904,12 +1066,45 @@ impl Search {
     /// it searches again, of its options; open already at the pane, its
     /// field takes the keys again, its text selected; at another pane, it
     /// moves there, its search ending.
-    fn open(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+    fn open(
+        &mut self,
+        cx: &mut Cx<'_>,
+        text: Option<String>,
+        wanted: Option<(u16, i64)>,
+    ) -> Result<(), Error> {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
-        if let Some(find) = &self.find {
+        self.open_at(cx, pane, text, wanted)
+    }
+
+    /// Opens the bar at `pane`, as [`Search::open`] does at the focused
+    /// one: of `text`, of the last options, searched anew in place of its
+    /// own, where given, the match at `wanted` the current one.
+    fn open_at(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        text: Option<String>,
+        wanted: Option<(u16, i64)>,
+    ) -> Result<(), Error> {
+        // Find in All Tabs, whose search of the pane the bar's would
+        // replace, closed.
+        self.close_all(cx)?;
+        if let Some(find) = &mut self.find {
             if find.pane == pane {
+                // Of a text given, searched anew in place of its own, of the
+                // last options, as Find in All Tabs searched, its field filled
+                // as it takes the keys, or at once where its view is there.
+                if let Some(text) = text {
+                    find.options = self.options;
+                    find.text.clone_from(&text);
+                    find.wanted = wanted;
+                    find.filling = true;
+                    find.revision += 1;
+                    let _ = cx.set_text(bar(), FIELD, &text, find.revision);
+                    self.search(cx)?;
+                }
                 return cx.focus_node(bar(), FIELD);
             }
             cx.close_panel(BAR)?;
@@ -933,7 +1128,8 @@ impl Search {
         // Its field, of no revision yet, takes its text as it takes the
         // keys, once the bar's view is there.
         let mut find = Find::new(pane, self.options);
-        find.text = self.recent.first().cloned().unwrap_or_default();
+        find.text = text.unwrap_or_else(|| self.recent.first().cloned().unwrap_or_default());
+        find.wanted = wanted;
         find.filling = true;
         self.find = Some(find);
         self.search(cx)
@@ -997,7 +1193,15 @@ impl Search {
         find.done = done;
         let mut show = !find.told;
         find.told = true;
-        if find.current.is_none()
+        // The match that the command that opened the bar asked for, as its
+        // part comes; else the last of the first part of any.
+        if let Some(wanted) = find.wanted
+            && let Some(found) = matches.iter().find(|found| found.first == wanted)
+        {
+            find.current = Some(*found);
+            find.wanted = None;
+            show = true;
+        } else if find.current.is_none()
             && let Some(last) = matches.last()
         {
             find.current = Some(*last);
@@ -1005,6 +1209,10 @@ impl Search {
         }
         if show {
             cx.show_matches(id, all, find.current)?;
+            // Its lines alone from its first part, as the filter shows.
+            if find.options.filter {
+                cx.filter_matches(id, true)?;
+            }
         }
         cx.request_render(bar())
     }
@@ -1018,7 +1226,7 @@ impl Search {
     fn step(&mut self, cx: &mut Cx<'_>, toward: Step) -> Result<(), Error> {
         let (wrap, all) = (self.settings.wrap_around, self.settings.highlight_all);
         let Some(find) = &mut self.find else {
-            return self.open(cx);
+            return self.open(cx, None, None);
         };
         let Some(search) = find.search else {
             return Ok(());
@@ -1051,6 +1259,10 @@ impl Search {
         let Some(find) = self.find.take() else {
             return Ok(());
         };
+        // The view as it was, at the current match, before the search ends.
+        if let (true, true, Some(search)) = (find.options.filter, find.told, find.search) {
+            cx.filter_matches(search, false)?;
+        }
         if let (Some(_), Some(search)) = (find.current, find.search)
             && let Some((_, now)) = cx.current_match(search)?.current
         {
@@ -1091,6 +1303,7 @@ impl Search {
                 STATE_WORD.to_owned(),
                 Data::Boolean(self.options.whole_word),
             ),
+            (STATE_FILTER.to_owned(), Data::Boolean(self.options.filter)),
         ]));
         // Without a state directory, they stay for this run.
         let _ = cx.set_state(state);

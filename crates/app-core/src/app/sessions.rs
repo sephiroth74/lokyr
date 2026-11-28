@@ -16,6 +16,7 @@ use lokyr_platform_core::{Alert, AlertId, AlertStyle, Platform, WindowId};
 
 use super::{App, LAST_SESSION};
 use crate::drawing::Backend;
+use lokyr_render_core::Surface as _;
 
 /// A question of the app's of a session.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -508,6 +509,7 @@ impl<B: Backend> App<B> {
             if let Some(state) = self.windows.get_mut(&window) {
                 state.session_hidden = true;
             }
+            self.let_frames_go(window);
         }
         // A session that has not shown since the app started opens its
         // windows, as they were kept, their shells starting now: after the
@@ -519,6 +521,7 @@ impl<B: Backend> App<B> {
             }
         }
         for &window in &shown {
+            self.draw_before_showing(platform, window);
             platform.set_window_hidden(window, false);
             if let Some(state) = self.windows.get_mut(&window) {
                 state.session_hidden = false;
@@ -538,6 +541,43 @@ impl<B: Backend> App<B> {
         }
         platform.set_command_enabled(LAST_SESSION, self.workspace.last_session().is_some());
         self.show_session_names(platform);
+    }
+
+    /// Lets every frame of `window`, which its session hides, go, the one
+    /// that it shows too, as a frame of a pixel of its background takes its
+    /// place: a hidden session's windows hold no drawables of their size,
+    /// and draw anew before they show, as [`App::draw_before_showing`]
+    /// does. A window that shows otherwise, as a notification's click
+    /// brings it forward, shows its background until its next frame.
+    fn let_frames_go(&mut self, window: WindowId) {
+        let Some(state) = self.windows.get_mut(&window) else {
+            return;
+        };
+        let background = state.shown.take().map(|shown| shown.background);
+        if let Some(surface) = &state.surface {
+            surface.release();
+            let pixel = background.unwrap_or_default();
+            if let Err(error) = surface.clear(pixel) {
+                eprintln!("lokyr: {error}");
+            }
+        }
+        state.text_layer.release();
+        state.cursor_layer.release();
+    }
+
+    /// Draws `window`, which its session shows again, before it shows, of
+    /// its size, as it let its frames go as it hid: it shows its frame of
+    /// now rather than none. The frame costs the switch its time, a few
+    /// milliseconds of each window.
+    fn draw_before_showing(&mut self, platform: &mut dyn Platform, window: WindowId) {
+        let Some(size) = platform.window_size(window) else {
+            return;
+        };
+        // It draws though the system has not told yet that it shows.
+        if let Some(state) = self.windows.get_mut(&window) {
+            state.occluded = false;
+        }
+        self.draw(platform, window, size);
     }
 
     /// Shows each window's session's name beside its number, as a session

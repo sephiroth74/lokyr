@@ -20,17 +20,18 @@
 
 use std::collections::BTreeMap;
 
+use lokyr_plugin_sdk::automation;
 use lokyr_plugin_sdk::command::{Args, Capability, Category, Code, Command, Error, Value};
 use lokyr_plugin_sdk::event::WorkspaceEvent;
 use lokyr_plugin_sdk::host::{
     Awake, BarPlace, Binding, Broadcast, BroadcastTo, Bytes, CapabilityDecision, Color,
     CommandInfo, Decision, DecorationLook, Direction, Edge, FloatingPanes, GroupId, GroupInfo,
-    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_SEARCHES, MOST_STATE,
-    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuItem, MenuPlace, Modifier, Packages,
-    PaneId, PluginInfo, PluginState, QuickLength, QuickPlace, ScreenPoint, Scroll, SearchMatch,
-    SearchQuery, SelectionKind, SessionFolders, SessionId, SessionInfo, ShellCommand, Side,
-    StyleRun, TabId, TabInfo, TextStyle, Underline, Viewport, WindowId, WindowInfo,
-    check_file_name,
+    LEAST_DELAY, Layout, Line, LineText, MOST_DELAY, MOST_PANES_A_CALL, MOST_SEARCHES, MOST_STATE,
+    MOST_TEMPORARY_BYTES, MOST_TIMERS, MOST_WRITES, MenuBarItem, MenuItem, MenuPlace, Modifier,
+    MouseButton, MouseDoes, MouseInput, Packages, PaneId, PluginInfo, PluginState, QuickLength,
+    QuickPlace, ScreenPoint, Scroll, SearchMatch, SearchQuery, SelectionKind, SessionFolders,
+    SessionId, SessionInfo, ShellCommand, Side, StyleRun, TabId, TabInfo, TextStyle, Underline,
+    Viewport, WindowId, WindowInfo, check_file_name,
 };
 use lokyr_plugin_sdk::image::{
     CellRow, IMAGES_BOUND, Image, ImageBackground, ImageSpec, MOST_IMAGES,
@@ -58,6 +59,23 @@ pub const CLIPBOARD: &str = "old";
 /// The world's window's title, as the app gives the system's titlebar, of
 /// its shown tab's folder and program.
 pub const WINDOW_TITLE: &str = "/ — sh";
+
+/// The items that the plugins added to the menu bar in the world, as the
+/// app gives them: a split of its direction, of its keys, and a tick.
+pub fn menu_bar() -> Vec<MenuBarItem> {
+    let item = |direction: &str, keys: Option<&str>, ticked: bool| MenuBarItem {
+        command: "splits.split".to_owned(),
+        args: Args::from([("direction".to_owned(), Value::String(direction.to_owned()))]),
+        title: format!("Split {direction}"),
+        submenu: Some("Split".to_owned()),
+        menu: Category::Panes,
+        keys: keys.map(str::to_owned),
+        enabled: true,
+        ticked,
+        plugin: "lokyr/splits".to_owned(),
+    };
+    vec![item("right", Some("⌘D"), false), item("left", None, true)]
+}
 
 /// The plugins of the world, as a read of them tells: an installed one,
 /// active, of a capability granted and one refused.
@@ -249,6 +267,7 @@ pub fn all(world: &World) -> Vec<Scenario> {
         pane_changes(world, true),
         pane_changes(world, false),
         bounds(world),
+        panes_a_call(world),
         images(),
         cells_and_saves(world),
         awake(true),
@@ -258,6 +277,8 @@ pub fn all(world: &World) -> Vec<Scenario> {
         notices(),
         packages(true),
         packages(false),
+        automation(true),
+        automation(false),
         pages(),
         settings_read(true),
         settings_read(false),
@@ -620,6 +641,72 @@ fn packages(allowed: bool) -> Scenario {
     }
 }
 
+/// The automation's requests: one that a script makes, to the plugin of
+/// `automation` alone, answered once, a second answer of it and one of a
+/// request that never came refused; without the capability, the plugin
+/// hears none and answers none.
+fn automation(allowed: bool) -> Scenario {
+    const ASKED: u64 = 7;
+    let request = Event::Automation {
+        front: Default::default(),
+        id: ASKED,
+        client: automation::AutomationClient {
+            id: "app:apple:com.apple.ScriptEditor2".to_owned(),
+            name: "Script Editor".to_owned(),
+            terminal: false,
+            waits: false,
+            fleeting: false,
+        },
+        request: automation::AutomationRequest::Workspace,
+    };
+    let lacks = || {
+        failed(
+            Code::MissingCapability,
+            "the plugin `acme/conformer` lacks the capability `automation`",
+        )
+    };
+    let waits = |id: u64| {
+        failed(
+            Code::NotFound,
+            &format!("there is no automation's request {id} that waits for an answer"),
+        )
+    };
+    let answer = |id: u64| Request::AnswerAutomation {
+        id,
+        answer: automation::AutomationAnswer::Text("ok".to_owned()),
+    };
+    let steps = vec![
+        Step {
+            wait: 0,
+            asks: Vec::new(),
+            posts: vec![request.clone()],
+            heard: if allowed { vec![request] } else { Vec::new() },
+        },
+        ask(if allowed {
+            vec![
+                (answer(ASKED), Response::Done),
+                (answer(ASKED), waits(ASKED)),
+                (answer(ASKED + 1), waits(ASKED + 1)),
+            ]
+        } else {
+            vec![(answer(ASKED), lacks())]
+        }),
+    ];
+    Scenario {
+        name: format!(
+            "the automation's requests, {} `automation`",
+            if allowed { "of" } else { "without" }
+        ),
+        capabilities: Some(if allowed {
+            vec![Capability::Automation]
+        } else {
+            Vec::new()
+        }),
+        subscriptions: Vec::new(),
+        steps,
+    }
+}
+
 /// The cells of a pane, an image on the clipboard and a file's save: the
 /// selection's cells, of none, and the view's, of `terminal-read`; a PNG on
 /// the clipboard in place of its text, of `clipboard-write`, and what is no
@@ -963,6 +1050,41 @@ fn bounds(world: &World) -> Scenario {
     }
 }
 
+/// A call's panes, sixteen at most: of seventeen new tabs, the last
+/// refused.
+fn panes_a_call(world: &World) -> Scenario {
+    let new_tab = || Request::NewTab {
+        environment: Default::default(),
+        window: world.window,
+        index: None,
+        directory: None,
+    };
+    let mut asks: Vec<(Request, Response)> = (0..u64::try_from(MOST_PANES_A_CALL).unwrap())
+        .map(|k| {
+            (
+                new_tab(),
+                Response::Tab {
+                    tab: tab(k),
+                    pane: pane(k),
+                },
+            )
+        })
+        .collect();
+    asks.push((
+        new_tab(),
+        failed(
+            Code::Failed,
+            &format!("a call opens {MOST_PANES_A_CALL} panes at most, each a shell of its own"),
+        ),
+    ));
+    Scenario {
+        name: "a call's panes, sixteen at most".to_owned(),
+        capabilities: None,
+        subscriptions: Vec::new(),
+        steps: vec![ask(asks)],
+    }
+}
+
 /// What a tab bar's plugin asks of a tab: a title and a color of its own,
 /// which a read of the tabs gives, and back; a text that the user is asked
 /// for, whose answer comes to the plugin alone; its bar's place, which a
@@ -1267,6 +1389,7 @@ fn tabs(world: &World) -> Scenario {
             ask(vec![
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: Some(0),
                         directory: None,
@@ -1278,6 +1401,7 @@ fn tabs(world: &World) -> Scenario {
                 ),
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: None,
                         directory: None,
@@ -1289,6 +1413,7 @@ fn tabs(world: &World) -> Scenario {
                 ),
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: w,
                         index: None,
                         directory: None,
@@ -1460,6 +1585,7 @@ fn sessions(world: &World) -> Scenario {
             ask(vec![
                 (
                     Request::NewTab {
+                        environment: Default::default(),
                         window: window(0),
                         index: None,
                         directory: None,
@@ -1471,9 +1597,11 @@ fn sessions(world: &World) -> Scenario {
                 ),
                 (
                     Request::Split {
+                        environment: Default::default(),
                         pane: pane(0),
                         direction: Direction::Vertical,
                         side: Side::Second,
+                        directory: None,
                     },
                     Response::Pane(Some(pane(1))),
                 ),
@@ -1561,6 +1689,7 @@ fn sessions(world: &World) -> Scenario {
                     (new("again", None), Response::Session(session(2))),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: window(0),
                             index: None,
                             directory: None,
@@ -1878,6 +2007,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -1889,6 +2019,7 @@ fn groups(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2084,6 +2215,7 @@ fn groups(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2119,6 +2251,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2178,6 +2311,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2215,6 +2349,7 @@ fn groups(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,
@@ -2662,6 +2797,36 @@ fn capabilities(world: &World) -> Scenario {
                 },
                 lacks("pty-write"),
             ),
+            (
+                Request::SendKey {
+                    pane: world.pane,
+                    keys: "up".to_owned(),
+                },
+                lacks("pty-write"),
+            ),
+            (
+                Request::PressKey {
+                    pane: world.pane,
+                    keys: "cmd+a".to_owned(),
+                },
+                lacks("user-commands"),
+            ),
+            (
+                Request::SendMouse {
+                    pane: world.pane,
+                    input: MouseInput {
+                        action: MouseDoes::Move,
+                        button: None,
+                        column: 0,
+                        row: 0,
+                        shift: false,
+                        control: false,
+                        alt: false,
+                        steps: None,
+                    },
+                },
+                lacks("pty-write"),
+            ),
             (Request::Open("https://lokyr.dev".to_owned()), lacks("open")),
             (
                 Request::OpenPopup {
@@ -2763,6 +2928,7 @@ fn capabilities(world: &World) -> Scenario {
             // a plugin draws over them; and the pointer.
             (
                 Request::NewTab {
+                    environment: Default::default(),
                     window: world.window,
                     index: None,
                     directory: None,
@@ -3116,6 +3282,65 @@ fn core_actions(world: &World) -> Scenario {
                     Response::Done,
                 ),
                 (
+                    Request::SendKey {
+                        pane,
+                        keys: "ctrl+c".to_owned(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::PressKey {
+                        pane,
+                        keys: "cmd+a".to_owned(),
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SendMouse {
+                        pane,
+                        input: MouseInput {
+                            action: MouseDoes::ScrollUp,
+                            button: None,
+                            column: 0,
+                            row: 0,
+                            shift: false,
+                            control: false,
+                            alt: false,
+                            steps: Some(3),
+                        },
+                    },
+                    Response::Done,
+                ),
+                (
+                    Request::SendMouse {
+                        pane,
+                        input: MouseInput {
+                            action: MouseDoes::Press,
+                            button: Some(MouseButton::Left),
+                            column: 9999,
+                            row: 0,
+                            shift: false,
+                            control: false,
+                            alt: false,
+                            steps: None,
+                        },
+                    },
+                    failed(
+                        Code::Failed,
+                        "the cell at column 9999 and row 0 is not on the pane's screen",
+                    ),
+                ),
+                (
+                    Request::SendKey {
+                        pane,
+                        keys: "wheel-up".to_owned(),
+                    },
+                    failed(
+                        Code::WrongKind,
+                        "`wheel-up` is a click or a wheel's step, not a key that a pane takes",
+                    ),
+                ),
+                (
                     Request::Scroll {
                         pane,
                         scroll: Scroll::Up(1),
@@ -3285,6 +3510,7 @@ fn declarations() -> Scenario {
                         .to_vec(),
                 ),
             ),
+            (Request::MenuBarItems, Response::MenuBarItems(menu_bar())),
             (
                 Request::RegisterCommand(ask_command()),
                 failed(
@@ -3788,7 +4014,13 @@ fn app_requests(world: &World) -> Scenario {
                     "`conformer.ask` takes no argument `n`",
                 ),
             ),
-            (Request::OpenWindow { directory: None }, Response::Done),
+            (
+                Request::OpenWindow {
+                    environment: Default::default(),
+                    directory: None,
+                },
+                Response::Done,
+            ),
             (
                 Request::OpenQuickWindow {
                     place: QuickPlace::default(),
@@ -3831,12 +4063,14 @@ fn app_requests(world: &World) -> Scenario {
             ),
             (
                 Request::OpenWindow {
+                    environment: Default::default(),
                     directory: Some("/tmp".to_owned()),
                 },
                 Response::Done,
             ),
             (
                 Request::OpenWindow {
+                    environment: Default::default(),
                     directory: Some("tmp".to_owned()),
                 },
                 failed(
@@ -3968,6 +4202,13 @@ fn state_and_rows(world: &World) -> Scenario {
                             search: NO_SEARCH,
                             all: true,
                             current: None,
+                        },
+                        failed(Code::NotFound, "there is no search 999999"),
+                    ),
+                    (
+                        Request::FilterMatches {
+                            search: NO_SEARCH,
+                            filter: true,
                         },
                         failed(Code::NotFound, "there is no search 999999"),
                     ),
@@ -4230,6 +4471,7 @@ fn workspace(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: Some("~/x".to_owned()),
@@ -4241,9 +4483,11 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::Split {
+                            environment: Default::default(),
                             pane: pane(0),
                             direction: Direction::Vertical,
                             side: Side::Second,
+                            directory: None,
                         },
                         Response::Pane(Some(pane(1))),
                     ),
@@ -4265,6 +4509,7 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: NO_WINDOW,
                             index: None,
                             directory: None,
@@ -4273,6 +4518,7 @@ fn workspace(world: &World) -> Scenario {
                     ),
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: Some("x".to_owned()),
@@ -4649,6 +4895,7 @@ fn workspace(world: &World) -> Scenario {
                 asks: vec![
                     (
                         Request::NewTab {
+                            environment: Default::default(),
                             window: w,
                             index: None,
                             directory: None,

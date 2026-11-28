@@ -116,7 +116,14 @@ pub(crate) struct Backend {
     /// exits that never end.
     full_screen: Deferral,
     full_screen_watchdog: Option<Retained<NSTimer>>,
+    /// The automation's requests that wait for the app's answers, by their
+    /// ids: what gives each answer back to its script or shortcut.
+    automation_replies: HashMap<u64, AutomationReply>,
 }
+
+/// What gives an automation's answer back to the script or the shortcut
+/// that asked, once.
+pub(crate) type AutomationReply = Box<dyn FnOnce(lokyr_platform_core::automation::Answer)>;
 
 impl Backend {
     pub(crate) fn new(mtm: MainThreadMarker, shared: Weak<Shared>, waker: Waker) -> Self {
@@ -146,6 +153,7 @@ impl Backend {
             color_target: None,
             full_screen: Deferral::default(),
             full_screen_watchdog: None,
+            automation_replies: HashMap::new(),
         }
     }
 
@@ -380,6 +388,14 @@ impl Backend {
             timer.invalidate();
         }
         std::mem::take(&mut self.windows).into_values().collect()
+    }
+
+    /// Keeps `reply` of an automation's request until the app answers it:
+    /// the request's id.
+    pub(crate) fn wait_automation(&mut self, reply: AutomationReply) -> u64 {
+        let id = self.next_id();
+        self.automation_replies.insert(id, reply);
+        id
     }
 
     fn next_id(&mut self) -> u64 {
@@ -1257,6 +1273,12 @@ impl Platform for Backend {
     fn close_color_panel(&mut self) {
         if let Some(target) = &self.color_target {
             target.close();
+        }
+    }
+
+    fn answer_automation(&mut self, id: u64, answer: lokyr_platform_core::automation::Answer) {
+        if let Some(reply) = self.automation_replies.remove(&id) {
+            reply(answer);
         }
     }
 

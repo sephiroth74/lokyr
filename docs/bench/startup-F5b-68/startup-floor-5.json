@@ -1,0 +1,74 @@
+{
+  "app": "spikes/wasmtime-notarized/build/Spike.app",
+  "executable": "spikes/wasmtime-notarized/build/Spike.app/Contents/MacOS/spike",
+  "warmup": 2,
+  "runs": [
+    {
+      "pid": 72752,
+      "from_start_ms": 210.7,
+      "from_request_ms": 239.8
+    },
+    {
+      "pid": 72755,
+      "from_start_ms": 231.9,
+      "from_request_ms": 262.1
+    },
+    {
+      "pid": 72760,
+      "from_start_ms": 219.9,
+      "from_request_ms": 249.3
+    },
+    {
+      "pid": 72763,
+      "from_start_ms": 223.9,
+      "from_request_ms": 253.9
+    },
+    {
+      "pid": 72766,
+      "from_start_ms": 215.5,
+      "from_request_ms": 245.3
+    },
+    {
+      "pid": 72769,
+      "from_start_ms": 226.0,
+      "from_request_ms": 256.4
+    },
+    {
+      "pid": 72773,
+      "from_start_ms": 228.8,
+      "from_request_ms": 259.3
+    },
+    {
+      "pid": 72776,
+      "from_start_ms": 225.8,
+      "from_request_ms": 255.9
+    },
+    {
+      "pid": 72779,
+      "from_start_ms": 221.9,
+      "from_request_ms": 251.3
+    },
+    {
+      "pid": 72782,
+      "from_start_ms": 222.8,
+      "from_request_ms": 252.3
+    }
+  ],
+  "summary": {
+    "from_start_ms": {
+      "min": 210.7,
+      "p10": 215.5,
+      "median": 223.35,
+      "p90": 228.8,
+      "max": 231.9
+    },
+    "from_request_ms": {
+      "min": 239.8,
+      "p10": 245.3,
+      "median": 253.1,
+      "p90": 259.3,
+      "max": 262.1
+    },
+    "spread": 0.06
+  }
+}

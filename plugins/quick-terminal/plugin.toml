@@ -9,5 +9,9 @@ description = "The quick terminal: a window that a global key slides in from an 
 global-hotkey = true
 
 [contributes]
-commands = [{ name = "window.toggle-quick-terminal", title = "Quick Terminal" }]
+commands = [
+    { name = "window.toggle-quick-terminal", title = "Quick Terminal" },
+    { name = "window.show-quick-terminal", title = "Show Quick Terminal" },
+    { name = "window.hide-quick-terminal", title = "Hide Quick Terminal" },
+]
 config-schema = "quick-terminal.schema.json"

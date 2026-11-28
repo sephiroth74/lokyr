@@ -729,6 +729,7 @@ impl Kernel {
             fonts: &lokyr_plugin_sdk::fake::fonts,
             font_styles: &lokyr_plugin_sdk::fake::font_styles,
             layouts: &Vec::new,
+            menu_bar: &scenarios::menu_bar,
             plugins: &self.plugin_infos,
             config: &self.config,
             default_bindings: &[],
@@ -888,6 +889,16 @@ fn on_kernel(
                     plugins.package_line(name(scenario), *id, &plain(line));
                 }
                 Event::PackagesEnded { id, ok } => plugins.packages_ended(name(scenario), *id, *ok),
+                // An automation's request, to the plugin of its capability.
+                Event::Automation {
+                    id,
+                    client,
+                    request,
+                    front,
+                } => {
+                    let front = front.map(|window| lokyr_kernel::workspace::WindowId::of(window.0));
+                    plugins.automation(*id, client.clone(), request.clone(), front);
+                }
                 Event::TabBarResized { width } => plugins.tab_bar_resized(name(scenario), *width),
                 Event::ColorPicked { color } => plugins.color_picked(name(scenario), *color),
                 Event::ColorPanelClosed => plugins.color_panel_closed(name(scenario)),
@@ -928,6 +939,7 @@ fn on_fake(scenario: &Scenario, world: &World, front: Front) -> Vec<Entry> {
         Some("main"),
     );
     host.set_plugins(scenarios::plugins());
+    host.set_menu_bar(scenarios::menu_bar());
     host.set_settings(scenarios::settings());
     host.focus(Some(world.pane));
     let pane = host.pane(world.pane);
@@ -1246,11 +1258,17 @@ fn kind(request: &Request) -> usize {
         Request::FloatingPanes(_) => 160,
         Request::OpenPopup { .. } => 161,
         Request::SendTextBroadcast { .. } => 162,
+        Request::MenuBarItems => 163,
+        Request::AnswerAutomation { .. } => 164,
+        Request::SendKey { .. } => 165,
+        Request::PressKey { .. } => 166,
+        Request::SendMouse { .. } => 167,
+        Request::FilterMatches { .. } => 168,
     }
 }
 
 /// How many kinds of requests the plugin API has.
-const KINDS: usize = 163;
+const KINDS: usize = 169;
 
 #[test]
 fn the_scenarios_hold_every_request_of_the_plugin_api() {

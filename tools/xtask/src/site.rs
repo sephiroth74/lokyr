@@ -89,7 +89,7 @@ const GENERATED: [(&str, &str, &str); 2] = [
 /// preview, where their heading alone says too little: the words that people
 /// search, of `TITLE_MOST` characters at most with the site's name. Their
 /// heading, the sidebar and the breadcrumbs keep the document's own.
-const TITLES: [(&str, &str); 15] = [
+const TITLES: [(&str, &str); 16] = [
     (
         "CHANGELOG.md",
         "Changelog: every change, release by release",
@@ -101,6 +101,10 @@ const TITLES: [(&str, &str); 15] = [
     (
         "docs/README.md",
         "Documentation of Lokyr, a terminal emulator for macOS",
+    ),
+    (
+        "docs/automation.md",
+        "Scripting Lokyr with AppleScript and Shortcuts",
     ),
     (
         "docs/blocks.md",
@@ -195,7 +199,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     let out = out.unwrap_or_else(|| root.join("target/site"));
-    let pages = build(&root, &out)?;
+    let appcast = crate::feed::latest_release_appcast()?;
+    let pages = build(&root, &out, appcast.as_deref())?;
     let broken = broken_links(&out)?;
     if !broken.is_empty() {
         for link in &broken {
@@ -401,9 +406,10 @@ fn collect_pages(folder: &Path, pages: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Builds the site of the documents of `root` into `out`, made anew: how
-/// many pages it wrote.
-pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
+/// Builds the site of the documents of `root` into `out`, made anew, its
+/// updates' feed `appcast`, the latest release's, where given: how many
+/// pages it wrote.
+pub(crate) fn build(root: &Path, out: &Path, appcast: Option<&str>) -> Result<usize> {
     let settings = settings(root)?;
     let documents = documents(root)?;
     let summary = summary(root, &documents)?;
@@ -412,6 +418,12 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     }
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
     copy_folder(&root.join("site/public"), out, &|_| true)?;
+    // The updates' feed: the latest published release's appcast, an asset
+    // of the release, in place of the site's own, which a release before
+    // the releases held it keeps.
+    if let Some(appcast) = appcast {
+        fs::write(out.join("appcast.xml"), appcast).context("writing the site's appcast")?;
+    }
     for file in ["style.css", "search.js", "site.js"] {
         fs::copy(root.join("site").join(file), out.join(file))
             .with_context(|| format!("copying {file}"))?;
@@ -2470,7 +2482,7 @@ mod tests {
     }
 
     #[test]
-    fn the_home_s_structured_data_is_of_the_latest_release() {
+    fn the_home_s_structured_data_is_of_the_workspace_s_version() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let home = fs::read_to_string(root.join("site/public/index.html")).unwrap();
         let start = r#"<script type="application/ld+json">"#;
@@ -2484,23 +2496,19 @@ mod tests {
             .iter()
             .find(|node| node["@type"] == "SoftwareApplication")
             .expect("a SoftwareApplication");
-        // The feed's latest release, which `just release` writes as the
-        // release is published.
-        let feed = fs::read_to_string(root.join("site/public/appcast.xml")).unwrap();
-        let version = regex::Regex::new(r"<sparkle:shortVersionString>([^<]+)<")
-            .unwrap()
-            .captures_iter(&feed)
-            .map(|found| found[1].to_owned())
-            .max_by_key(|version| {
-                version
-                    .split('.')
-                    .map(|part| part.parse::<u64>().unwrap_or(0))
-                    .collect::<Vec<_>>()
-            })
-            .expect("a release in the feed");
+        // The workspace's version, the latest release's until the commit
+        // that prepares the next one raises it with the home, as the
+        // release's merge deploys the site.
+        let version = env!("CARGO_PKG_VERSION");
         assert_eq!(
             app["softwareVersion"], version,
-            "the home's JSON-LD names another version than the feed's latest"
+            "the home's JSON-LD names another version than the workspace's"
+        );
+        assert!(
+            home.contains(&format!(
+                r#"<a class="pill" href="docs/releases/{version}.html">"#
+            )),
+            "the home's pill tells another release than the workspace's version"
         );
         assert_eq!(
             app["releaseNotes"],
@@ -3048,7 +3056,7 @@ mod tests {
             .canonicalize()
             .unwrap();
         let out = std::env::temp_dir().join(format!("lokyr-site-{}", std::process::id()));
-        let pages = build(&root, &out).unwrap();
+        let pages = build(&root, &out, None).unwrap();
         let documents = documents(&root).unwrap();
         assert_eq!(pages, documents.len());
         for document in &documents {

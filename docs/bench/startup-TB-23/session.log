@@ -1,0 +1,123 @@
+13:29:49 dry
+14:01:20 session: ttybench
+--- start of ttybench
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+14:01  up  5:19, 16 users, load averages: 1.88 2.22 2.34
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+54976  top              9.5 
+57376  studio           9.1 
+1445   wdavdaemon_unpri 7.1 
+0      kernel_task      5.5 
+707    AppleCentauriAlp 3.3 
+93736  2.1.329          2.5 
+629    netext           2.2 
+429    WindowServer     2.1 
+608    wdavdaemon       2.1 
+609    JamfDaemon       1.5 
+695    wdavdaemon_enter 1.2 
+624    epsext           1.2 
+14:01:22 load 1.88
+14:04:38 load { 3.76 3.90 3.08 }
+--- end of ttybench
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+14:04  up  5:22, 16 users, load averages: 3.76 3.90 3.08
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+1443   Google Chrome He 78.4
+429    WindowServer     18.9
+57376  studio           10.2
+56328  top              8.7 
+0      kernel_task      8.1 
+1445   wdavdaemon_unpri 4.6 
+707    AppleCentauriAlp 4.0 
+843    duetexpertd      3.0 
+1      launchd          2.8 
+608    wdavdaemon       2.1 
+629    netext           2.0 
+397    opendirectoryd   1.8 
+14:04:40 session done: ttybench
+14:05:54 session: lokyr-bench
+--- start of lokyr-bench
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+14:05  up  5:23, 16 users, load averages: 3.56 3.72 3.07
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+57376  studio           27.7
+429    WindowServer     14.1
+56997  top              8.8 
+0      kernel_task      7.5 
+93736  2.1.329          4.0 
+629    netext           3.3 
+707    AppleCentauriAlp 3.1 
+48879  SecurityPrivacyE 2.0 
+57088  adb              1.2 
+2338   Google Chrome He 1.0 
+56536  mdworker_shared  0.7 
+610    velociraptor     0.7 
+14:05:56 waiting for the load to settle: 3.56
+14:06:16 load 2.62
+14:06:18 lokyr-bench v150 1
+14:06:36 lokyr-bench floor 1
+14:06:50 load { 4.22 3.74 3.11 }
+14:06:52 lokyr-bench floor 2
+14:07:09 lokyr-bench v150 2
+14:07:24 load { 5.25 4.09 3.27 }
+14:07:26 lokyr-bench floor 3
+14:07:43 lokyr-bench v150 3
+14:07:58 load { 4.78 4.13 3.31 }
+14:08:00 lokyr-bench v150 4
+14:08:17 lokyr-bench floor 4
+14:08:33 load { 3.31 3.83 3.23 }
+14:08:35 lokyr-bench v150 5
+14:08:52 lokyr-bench floor 5
+14:09:07 load { 4.71 4.10 3.36 }
+14:09:09 lokyr-bench floor 6
+14:09:26 lokyr-bench v150 6
+14:09:42 load { 4.01 4.00 3.35 }
+--- end of lokyr-bench
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=24248419)	80%; AC attached; not charging present: true
+14:09  up  5:27, 16 users, load averages: 4.01 4.00 3.35
+Graphics/Displays:
+    Apple M5 Pro:
+      Displays:
+        DELL U3417W:
+          Resolution: 3440 x 1440 (UWQHD - Ultra-Wide Quad HD)
+          UI Looks like: 3440 x 1440 @ 60.00Hz
+          Main Display: Yes
+PID    COMMAND          %CPU
+429    WindowServer     16.1
+57376  studio           10.7
+60151  top              9.0 
+0      kernel_task      7.9 
+1445   wdavdaemon_unpri 7.9 
+843    duetexpertd      6.0 
+707    AppleCentauriAlp 3.8 
+608    wdavdaemon       3.4 
+93736  2.1.329          2.7 
+766    BiomeAgent       2.4 
+695    wdavdaemon_enter 2.2 
+624    epsext           1.7 
+14:09:43 session done: lokyr-bench

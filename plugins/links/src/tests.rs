@@ -253,6 +253,7 @@ fn copy_link_address_copies_what_would_open() {
 fn a_window_or_a_tab_opens_in_the_folder_of_the_path_at_the_cell() {
     let window = |folder: &str| {
         vec![Request::OpenWindow {
+            environment: Default::default(),
             directory: Some(folder.to_owned()),
         }]
     };
@@ -276,6 +277,7 @@ fn a_window_or_a_tab_opens_in_the_folder_of_the_path_at_the_cell() {
             window: opened_in,
             index: None,
             directory: Some(folder),
+            ..
         },
         Request::ActivateTab(_),
     ] = &done[..]

@@ -108,7 +108,7 @@ restore-scrollback = true      # their panes show what they showed when you quit
 - **Each window belongs to one session.** A window opens in the session that shows, and a tab or a pane that you drag out of a window opens in that window's session.
 - **The quick terminal, the settings window and man pages' windows belong to no session**: they show whichever session you're in. A tab or a pane that you drag out of one of them joins the session that shows.
 - **Each session numbers its own windows** from ⌥⌘1, and ⌘\` cycles through the windows of the session that shows. A man page's window takes a number that none of the sessions' windows has.
-- **A hidden window draws nothing**, so it costs no frames, but its programs keep running and its panes keep their scrollback in memory.
+- **A hidden window draws nothing**, so it costs no frames, but its programs keep running and its panes keep their scrollback in memory. It gives back most of the memory of its picture, and draws itself anew just before it shows again. · Since 1.6
 - **A window in full screen leaves full screen** as its session hides, and goes back into it when its session shows again.
 - **A session closes with its last window**, and the session you used before shows. A session with no window goes when you switch away from it.
 - **When Lokyr opens your windows again** as it starts, every session comes back with its name, and the one you used last shows. The windows of the other sessions open the first time you switch to each, their shells starting then. Lokyr keeps 100 windows and 256 panes at most as it quits, those of the session that shows first.

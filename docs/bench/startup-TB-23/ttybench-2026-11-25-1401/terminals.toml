@@ -1,0 +1,6 @@
+# The copy of startup-TB-23, of 1.5.0's notarized DMG.
+
+[terminals.v150]
+app = "$REPO/target/bench/startup-F5b-45/copies/v150/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "$REPO/target/bench/startup-TB-23/configs/base" }

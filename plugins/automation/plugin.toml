@@ -1,0 +1,14 @@
+# The manifest of the built-in plugin of the automation.
+[plugin]
+name = "lokyr/automation"
+kind = "builtin"
+license = "MIT"
+description = "The automation: what scripts and shortcuts of other apps ask of Lokyr, its windows, tabs and splits opened, text sent, commands run and the panes' text read"
+
+[capabilities]
+automation = true
+user-commands = true
+workspace-write = true
+pty-write = true
+terminal-read = true
+process-read = true

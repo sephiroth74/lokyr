@@ -1,0 +1,963 @@
+{
+  "session": "scenario-hidden-session-memory-2026-11-25-1147",
+  "machine": {
+    "model": "Mac17,8",
+    "cpu": "Apple M5 Pro",
+    "macos": "27.2.1",
+    "refresh_hz": 120.0
+  },
+  "span": [
+    1795603638,
+    1795603842
+  ],
+  "runs": {
+    "done": 16,
+    "failed": 0,
+    "skipped": 0
+  },
+  "terminals": [
+    {
+      "name": "lokyr-a",
+      "version": "1.5.0 (202611250509)"
+    },
+    {
+      "name": "lokyr-a-hidden-session",
+      "version": "1.5.0 (202611250509)"
+    },
+    {
+      "name": "lokyr-b",
+      "version": "1.5.0 (202611251020)"
+    },
+    {
+      "name": "lokyr-b-hidden-session",
+      "version": "1.5.0 (202611251020)"
+    }
+  ],
+  "ab": {
+    "a": "lokyr-a-hidden-session",
+    "b": "lokyr-b-hidden-session"
+  },
+  "groups": [
+    {
+      "tool": "memory",
+      "metric": "footprint_mib",
+      "unit": "MiB",
+      "title": "Its memory's footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 1,
+        "settle_s": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 4,
+            "min": 56.61138916015625,
+            "median": 56.88483810424805,
+            "p95": 57.13170166015625,
+            "p99": 57.16545166015625,
+            "max": 57.17388916015625,
+            "mean": 56.88873863220215,
+            "stddev": 0.2297721294528189,
+            "median_interval": [
+              56.61138916015625,
+              57.17388916015625
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 56.61138916015625
+            },
+            {
+              "cycle": 2,
+              "median": 56.87703704833984
+            },
+            {
+              "cycle": 3,
+              "median": 56.89263916015625
+            },
+            {
+              "cycle": 4,
+              "median": 57.17388916015625
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-a-hidden-session",
+          "summary": {
+            "count": 4,
+            "min": 96.09642791748048,
+            "median": 96.33082580566406,
+            "p95": 96.50039253234863,
+            "p99": 96.50227577209472,
+            "max": 96.50274658203124,
+            "mean": 96.31520652770996,
+            "stddev": 0.2100294399121071,
+            "median_interval": [
+              96.09642791748048,
+              96.50274658203124
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 96.50274658203124
+            },
+            {
+              "cycle": 2,
+              "median": 96.48705291748048
+            },
+            {
+              "cycle": 3,
+              "median": 96.17459869384766
+            },
+            {
+              "cycle": 4,
+              "median": 96.09642791748048
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 51.767616271972656,
+            "median": 54.37702560424805,
+            "p95": 56.93406829833984,
+            "p99": 56.95094329833984,
+            "max": 56.95516204833984,
+            "mean": 54.36920738220215,
+            "stddev": 2.906228034726642,
+            "median_interval": [
+              51.767616271972656,
+              56.95516204833984
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 56.81453704833984
+            },
+            {
+              "cycle": 2,
+              "median": 56.95516204833984
+            },
+            {
+              "cycle": 3,
+              "median": 51.767616271972656
+            },
+            {
+              "cycle": 4,
+              "median": 51.93951416015625
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-hidden-session",
+          "summary": {
+            "count": 4,
+            "min": 83.84647369384766,
+            "median": 85.22145080566406,
+            "p95": 86.40584526062011,
+            "p99": 86.42084800720215,
+            "max": 86.42459869384766,
+            "mean": 85.17849349975586,
+            "stddev": 1.3730079642383801,
+            "median_interval": [
+              83.84647369384766,
+              86.42459869384766
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 83.84647369384766
+            },
+            {
+              "cycle": 2,
+              "median": 86.42459869384766
+            },
+            {
+              "cycle": 3,
+              "median": 84.14332580566406
+            },
+            {
+              "cycle": 4,
+              "median": 86.29957580566406
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 96.33082580566406,
+        "b": 85.22145080566406,
+        "change": -11.109375,
+        "percent": -11.532523371502947,
+        "interval": [
+          -12.5,
+          -9.773426055908203
+        ],
+        "verdict": "better"
+      }
+    },
+    {
+      "tool": "memory",
+      "metric": "peak_mib",
+      "unit": "MiB",
+      "title": "Its memory's peak footprint",
+      "better": "lower",
+      "feature": null,
+      "conditions": {
+        "rounds": 1,
+        "settle_s": 10.0,
+        "workload": "rest"
+      },
+      "telling": [],
+      "rows": [
+        {
+          "terminal": "lokyr-a",
+          "summary": {
+            "count": 4,
+            "min": 213.56451416015625,
+            "median": 213.83015060424805,
+            "p95": 214.10045166015624,
+            "p99": 214.13420166015624,
+            "max": 214.14263916015625,
+            "mean": 213.84186363220215,
+            "stddev": 0.2377777201914806,
+            "median_interval": [
+              213.56451416015625,
+              214.14263916015625
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 213.56451416015625
+            },
+            {
+              "cycle": 2,
+              "median": 213.79891204833984
+            },
+            {
+              "cycle": 3,
+              "median": 213.86138916015625
+            },
+            {
+              "cycle": 4,
+              "median": 214.14263916015625
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-a-hidden-session",
+          "summary": {
+            "count": 4,
+            "min": 253.31524658203125,
+            "median": 253.52614974975586,
+            "p95": 253.68784446716307,
+            "p99": 253.68971122741698,
+            "max": 253.69017791748047,
+            "mean": 253.51443099975586,
+            "stddev": 0.195724159227164,
+            "median_interval": [
+              253.31524658203125,
+              253.69017791748047
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 253.67462158203125
+            },
+            {
+              "cycle": 2,
+              "median": 253.69017791748047
+            },
+            {
+              "cycle": 3,
+              "median": 253.31524658203125
+            },
+            {
+              "cycle": 4,
+              "median": 253.37767791748047
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b",
+          "summary": {
+            "count": 4,
+            "min": 213.72074127197263,
+            "median": 213.80671310424805,
+            "p95": 213.8145336151123,
+            "p99": 213.81453636169434,
+            "max": 213.81453704833984,
+            "mean": 213.78717613220215,
+            "stddev": 0.04489732689006548,
+            "median_interval": [
+              213.72074127197263,
+              213.81453704833984
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 213.79891204833984
+            },
+            {
+              "cycle": 2,
+              "median": 213.81453704833984
+            },
+            {
+              "cycle": 3,
+              "median": 213.72074127197263
+            },
+            {
+              "cycle": 4,
+              "median": 213.81451416015625
+            }
+          ],
+          "runs": 4
+        },
+        {
+          "terminal": "lokyr-b-hidden-session",
+          "summary": {
+            "count": 4,
+            "min": 259.73709869384766,
+            "median": 267.10427474975586,
+            "p95": 269.35193901062013,
+            "p99": 269.63506675720214,
+            "max": 269.70584869384766,
+            "mean": 265.91287422180176,
+            "stddev": 4.3005049175415735,
+            "median_interval": [
+              259.73709869384766,
+              269.70584869384766
+            ]
+          },
+          "cycles": [
+            {
+              "cycle": 1,
+              "median": 266.86209869384766
+            },
+            {
+              "cycle": 2,
+              "median": 269.70584869384766
+            },
+            {
+              "cycle": 3,
+              "median": 267.34645080566406
+            },
+            {
+              "cycle": 4,
+              "median": 259.73709869384766
+            }
+          ],
+          "runs": 4
+        }
+      ],
+      "skipped": [],
+      "change": {
+        "a": 253.52614974975586,
+        "b": 267.10427474975586,
+        "change": 13.578125,
+        "percent": 5.355709860068616,
+        "interval": [
+          6.210948944091797,
+          16.179698944091797
+        ],
+        "verdict": "worse"
+      }
+    }
+  ],
+  "budgets": [],
+  "judgements": [],
+  "unmeasured": [],
+  "runs_log": [
+    {
+      "id": "c1-r1-memory-lokyr-a",
+      "cycle": 1,
+      "run": 1,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-a",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603638,
+      "seconds": 11.002095125,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.5625,
+        "after": 3.32177734375,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 84.2
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 35.5
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 23.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-memory-lokyr-a-hidden-session",
+      "cycle": 1,
+      "run": 1,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-a-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603651,
+      "seconds": 10.859027875,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.2958984375,
+        "after": 3.330078125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 34.4
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 23.6
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 22.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-memory-lokyr-b",
+      "cycle": 1,
+      "run": 1,
+      "position": 3,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603664,
+      "seconds": 10.878552,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.330078125,
+        "after": 3.125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 31.2
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 21.2
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 16.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c1-r1-memory-lokyr-b-hidden-session",
+      "cycle": 1,
+      "run": 1,
+      "position": 4,
+      "tool": "memory",
+      "terminal": "lokyr-b-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603677,
+      "seconds": 10.819714916,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.87451171875,
+        "after": 2.94775390625,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 46.2
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 35.6
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 22.1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-memory-lokyr-a-hidden-session",
+      "cycle": 2,
+      "run": 1,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-a-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603689,
+      "seconds": 10.870823459,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.94775390625,
+        "after": 3.05810546875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 33.5
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 22.8
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 18.3
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-memory-lokyr-b",
+      "cycle": 2,
+      "run": 1,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603702,
+      "seconds": 10.859406333,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.05810546875,
+        "after": 3.4169921875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 32.4
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 28.3
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 22.4
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-memory-lokyr-b-hidden-session",
+      "cycle": 2,
+      "run": 1,
+      "position": 3,
+      "tool": "memory",
+      "terminal": "lokyr-b-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603715,
+      "seconds": 10.882717709,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.54345703125,
+        "after": 3.71240234375,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 90.1
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 33.4
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 18.7
+          }
+        ]
+      }
+    },
+    {
+      "id": "c2-r1-memory-lokyr-a",
+      "cycle": 2,
+      "run": 1,
+      "position": 4,
+      "tool": "memory",
+      "terminal": "lokyr-a",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603728,
+      "seconds": 10.744536625,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.71240234375,
+        "after": 4.04443359375,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 23.9
+          },
+          {
+            "name": "jetbrains-toolbox",
+            "cpu_percent": 23.7
+          },
+          {
+            "name": "Code Helper",
+            "cpu_percent": 14.6
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-memory-lokyr-b",
+      "cycle": 3,
+      "run": 1,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603741,
+      "seconds": 10.769186125,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.88037109375,
+        "after": 3.5107421875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 20.0
+          },
+          {
+            "name": "studio",
+            "cpu_percent": 11.1
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-memory-lokyr-b-hidden-session",
+      "cycle": 3,
+      "run": 1,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-b-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603754,
+      "seconds": 10.87167575,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.5107421875,
+        "after": 3.451171875,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 34.6
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 21.6
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 20.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-memory-lokyr-a",
+      "cycle": 3,
+      "run": 1,
+      "position": 3,
+      "tool": "memory",
+      "terminal": "lokyr-a",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603767,
+      "seconds": 10.883123291,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.3349609375,
+        "after": 2.9755859375,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 36.5
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 25.0
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 22.2
+          }
+        ]
+      }
+    },
+    {
+      "id": "c3-r1-memory-lokyr-a-hidden-session",
+      "cycle": 3,
+      "run": 1,
+      "position": 4,
+      "tool": "memory",
+      "terminal": "lokyr-a-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603780,
+      "seconds": 10.859781791,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 2.9755859375,
+        "after": 3.306640625,
+        "busiest": [
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 42.4
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 36.1
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 25.5
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-memory-lokyr-b-hidden-session",
+      "cycle": 4,
+      "run": 1,
+      "position": 1,
+      "tool": "memory",
+      "terminal": "lokyr-b-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603793,
+      "seconds": 10.88145875,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.306640625,
+        "after": 3.03173828125,
+        "busiest": [
+          {
+            "name": "deleted",
+            "cpu_percent": 68.2
+          },
+          {
+            "name": "backupd-helper",
+            "cpu_percent": 58.5
+          },
+          {
+            "name": "mds",
+            "cpu_percent": 45.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-memory-lokyr-a",
+      "cycle": 4,
+      "run": 1,
+      "position": 2,
+      "tool": "memory",
+      "terminal": "lokyr-a",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603806,
+      "seconds": 10.756082083,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.10888671875,
+        "after": 3.15283203125,
+        "busiest": [
+          {
+            "name": "backupd-helper",
+            "cpu_percent": 62.7
+          },
+          {
+            "name": "WindowServer",
+            "cpu_percent": 27.1
+          },
+          {
+            "name": "studio",
+            "cpu_percent": 11.8
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-memory-lokyr-a-hidden-session",
+      "cycle": 4,
+      "run": 1,
+      "position": 3,
+      "tool": "memory",
+      "terminal": "lokyr-a-hidden-session",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603818,
+      "seconds": 10.873728,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.15283203125,
+        "after": 3.048828125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 32.5
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 24.6
+          },
+          {
+            "name": "Code Helper (Renderer)",
+            "cpu_percent": 15.9
+          }
+        ]
+      }
+    },
+    {
+      "id": "c4-r1-memory-lokyr-b",
+      "cycle": 4,
+      "run": 1,
+      "position": 4,
+      "tool": "memory",
+      "terminal": "lokyr-b",
+      "args": [
+        "--settle",
+        "10",
+        "--rounds",
+        "1"
+      ],
+      "started": 1795603831,
+      "seconds": 10.867676208,
+      "status": "done",
+      "code": 0,
+      "load": {
+        "before": 3.04443359375,
+        "after": 2.876953125,
+        "busiest": [
+          {
+            "name": "WindowServer",
+            "cpu_percent": 31.7
+          },
+          {
+            "name": "wdavdaemon_unprivileged",
+            "cpu_percent": 24.6
+          },
+          {
+            "name": "MenuBarAgent",
+            "cpu_percent": 20.0
+          }
+        ]
+      }
+    }
+  ]
+}

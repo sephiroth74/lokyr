@@ -18,6 +18,10 @@ use crate::page::{PageList, PinId, Position};
 /// The most folds that a terminal keeps, which a snapshot looks at each.
 pub const MOST_FOLDS: usize = 4096;
 
+/// The command's id of a search's filter's spans, the runs of rows between
+/// its matches', which no command takes, and which no fold's mark tells.
+pub(super) const FILTERED: u64 = u64::MAX;
+
 /// A fold that a terminal keeps: its command's id, whether it folds the
 /// whole block, and the pins of its first row and its last.
 #[derive(Debug)]
@@ -284,13 +288,13 @@ impl<'a> ViewMap<'a> {
                     whole,
                     first,
                     rows,
-                } => Some(FoldMark {
+                } if command != FILTERED => Some(FoldMark {
                     command,
                     whole,
                     first: self.number(first),
                     last: self.number(first + rows - 1),
                 }),
-                ViewRow::Row(_) | ViewRow::Past => None,
+                ViewRow::Folded { .. } | ViewRow::Row(_) | ViewRow::Past => None,
             })
             .collect()
     }
@@ -521,6 +525,10 @@ impl Terminal {
     /// The folds' rows, by their indexes, in their order, but those whose
     /// rows left.
     pub(super) fn fold_spans(&self) -> Vec<Span> {
+        // A search's filter in place of the folds, while it shows.
+        if let Some(search) = self.filter {
+            return self.filter_spans(search);
+        }
         if self.folds.is_empty() {
             return Vec::new();
         }
@@ -564,12 +572,12 @@ impl Terminal {
     }
 
     /// The view of the primary screen's folds, if it keeps any: its rows
-    /// from its pinned first row, as far as they fill it, or else, as the
-    /// view follows the screen or meets its end, the rows that end at the
-    /// list's last; none of no fold, or on the alternate screen, whose view
+    /// from its pinned first row, as far as they fill it short of the
+    /// list's end, or else, as the view follows the screen or meets its
+    /// end, the rows that end at the list's last; none of no fold, or on the alternate screen, whose view
     /// is the list's rows from its top.
     pub(super) fn folded_view(&self) -> Option<FoldedView> {
-        if self.alternate_active || self.folds.is_empty() {
+        if self.alternate_active || (self.folds.is_empty() && self.filter.is_none()) {
             return None;
         }
         let spans = self.fold_spans();
@@ -583,9 +591,12 @@ impl Terminal {
             let position = rows.pin_position(pin)?;
             rows.row_index(position.page, position.row)
         });
+        // Its rows from its pinned row, where they fill it short of the
+        // list's end: one that meets the end follows it, as the view of no
+        // fold does at the screen.
         let below = pinned
             .map(|top| down_from(starting(&spans, top), &spans, total, height))
-            .filter(|(rows, _)| rows.len() == height);
+            .filter(|(rows, end)| rows.len() == height && *end < total);
         let (top, mut rows, following) = match below {
             Some((rows, _)) => (starting(&spans, pinned.unwrap_or(0)), rows, false),
             None => {

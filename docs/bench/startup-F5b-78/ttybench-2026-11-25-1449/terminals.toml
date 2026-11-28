@@ -1,0 +1,11 @@
+# The two copies of startup-F5b-78, signed alike.
+
+[terminals.a]
+app = "$REPO/target/bench/startup-F5b-78/copies/a/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "$REPO/target/bench/startup-F5b-78/configs/base" }
+
+[terminals.b]
+app = "$REPO/target/bench/startup-F5b-78/copies/b/Lokyr.app"
+launch = "open"
+env = { XDG_CONFIG_HOME = "$REPO/target/bench/startup-F5b-78/configs/base" }
