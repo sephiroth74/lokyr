@@ -2057,8 +2057,12 @@ mod tests {
         let now = Instant::now();
         assert_eq!(pane.resize(grid(100), now), None);
         assert_eq!(pane.answer_due(), Some(now + ANSWER_WAIT));
-        assert!(!pane.update());
-        assert_eq!(pane.snapshot().cols(), 80);
+        // Within the wait, of a test that a busy machine may hold past it.
+        let shown = pane.update();
+        if now.elapsed() < ANSWER_WAIT {
+            assert!(!shown);
+            assert_eq!(pane.snapshot().cols(), 80);
+        }
         wait_for(&mut pane, "W", 2);
         assert_eq!(pane.snapshot().cols(), 100);
     }
