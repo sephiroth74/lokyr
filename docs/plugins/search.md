@@ -28,6 +28,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 - **As you type**, it searches them all, nearest the bottom of each pane first, and lists each match as a row: the line that holds it, and its tab's title at the row's end. The rows go in the order of the windows, their tabs and their panes, then of the lines. It lists the first 1000 matches in that order.
 - **The toggles** at the field's end are the bar's: case, whole words and regular expressions. A change in either shows in the other, and the case of [`case`](../CONFIGURATION.md#pluginssearch) counts in both.
 - **↑ and ↓** move through the list while you type; **Return**, or a click, brings the match's pane forward, with its tab and its window, selects the match, and opens the bar there with your text, the match its current one, so that ⌘G goes on from it.
+- **The selected row** stays on its match as more matches come, and a new text selects its first. If the match's pane has closed by the time you press Return, a notice tells you so, its rows go, and the list stays open.
 - **The bar closes** as Find in All Tabs opens, as Escape would close it, and ⌘F closes Find in All Tabs: one search of a pane at a time.
 - **Escape**, or a click outside it, closes it, and the searches end.
 

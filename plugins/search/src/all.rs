@@ -16,7 +16,7 @@
 use std::collections::BTreeMap;
 
 use lokyr_plugin_sdk::command::{Args, Code, Error, Value};
-use lokyr_plugin_sdk::host::{MOST_SEARCHES, PaneId, SearchMatch, TabId, WindowId};
+use lokyr_plugin_sdk::host::{MOST_SEARCHES, NoticeLevel, PaneId, SearchMatch, TabId, WindowId};
 use lokyr_plugin_sdk::plugin::Cx;
 use lokyr_plugin_sdk::ui::{Anchor, Corner, PanelId, PanelOptions, Role, UiEvent, ViewId};
 use lokyr_plugin_sdk::view::{
@@ -84,7 +84,7 @@ pub(crate) struct Found {
 impl Found {
     /// Where it goes in the list: its pane's place, then its first cell's
     /// row and column.
-    fn order(&self) -> (usize, i64, u16) {
+    fn order(&self) -> Order {
         (self.place, self.found.first.1, self.found.first.0)
     }
 }
@@ -93,9 +93,10 @@ impl Found {
 /// searches, each of its pane's place, the places whose searches wait for
 /// a call of their own, as a call starts a few at most, the matches that
 /// they found so far, the field's text, the selected match's place in the
-/// list, whether the host refused the text, as of a regex that does not
-/// compile, and whether a search of the text started, past which a refusal
-/// is the host's bound of a call's searches.
+/// list and the match itself, by its place in the order, which keeps it
+/// selected as earlier matches come, whether the host refused the text, as
+/// of a regex that does not compile, and whether a search of the text
+/// started, past which a refusal is the host's bound of a call's searches.
 #[derive(Debug, Default)]
 pub(crate) struct All {
     pub(crate) places: Vec<Place>,
@@ -104,9 +105,22 @@ pub(crate) struct All {
     pub(crate) found: Vec<Found>,
     pub(crate) query: String,
     pub(crate) selected: usize,
+    pub(crate) chosen: Option<Order>,
     pub(crate) invalid: bool,
     pub(crate) started: bool,
 }
+
+impl All {
+    /// Selects the match at `at` of the list, of none past its end.
+    fn choose(&mut self, at: usize) {
+        self.selected = at.min(self.found.len().saturating_sub(1));
+        self.chosen = self.found.get(self.selected).map(Found::order);
+    }
+}
+
+/// A match's place in the list's order: its pane's place, its first
+/// cell's row and column.
+pub(crate) type Order = (usize, i64, u16);
 
 /// What Find in All Tabs shows: its toggles' states, the rows of its
 /// matches, each of its line and its tab's title, and whether its text is
@@ -224,6 +238,34 @@ fn read_lines(cx: &mut Cx<'_>, found: &mut [Found], place: (usize, PaneId)) -> b
         each.line = Some(line);
     }
     true
+}
+
+/// The place in `found` of the match `chosen`, as earlier matches came
+/// before it or later ones went, or of the one that took its place as it
+/// went; the first of none chosen; none of an empty list.
+fn reselect(found: &[Found], chosen: Option<Order>) -> Option<usize> {
+    let last = found.len().checked_sub(1)?;
+    let Some(chosen) = chosen else {
+        return Some(0);
+    };
+    Some(
+        found
+            .partition_point(|kept| kept.order() < chosen)
+            .min(last),
+    )
+}
+
+/// The window and the tab of `pane` now, as a tab moves to another window;
+/// none of a pane that closed.
+fn where_is(cx: &mut Cx<'_>, pane: PaneId) -> Result<Option<(WindowId, TabId)>, Error> {
+    for window in cx.windows()? {
+        for tab in cx.tabs(window.id)? {
+            if tab.panes.contains(&pane) {
+                return Ok(Some((window.id, tab.id)));
+            }
+        }
+    }
+    Ok(None)
 }
 
 /// `text`, of [`MOST_LINE`] characters at most, past which it ends in an
@@ -370,11 +412,11 @@ impl Search {
                 cx.request_render(panel())
             }
             (UiEventKind::Select { item }, LIST) => {
-                all.selected = (*item).min(all.found.len().saturating_sub(1));
+                all.choose(*item);
                 Ok(())
             }
             (UiEventKind::Activate { item }, LIST) => {
-                all.selected = (*item).min(all.found.len().saturating_sub(1));
+                all.choose(*item);
                 self.go(cx)
             }
             _ => Ok(()),
@@ -426,18 +468,39 @@ impl Search {
                 cx.end_search(id)?;
             }
         }
-        all.selected = all.selected.min(all.found.len().saturating_sub(1));
         Ok(true)
     }
 
     /// The parts of a delivery taken: the searches that wait start, as many
-    /// as a call starts, and the list shows them.
+    /// as a call starts, and the list shows them, its selected match kept,
+    /// or the first selected as the first come.
     pub(crate) fn searched_all_end(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         if self.all.is_none() {
             return Ok(());
         }
         self.start_pending(cx)?;
-        cx.request_render(panel())
+        cx.request_render(panel())?;
+        self.keep_selection(cx)
+    }
+
+    /// Selects the chosen match where it is now in the list, or the first of
+    /// none chosen yet, the list told where it moved.
+    fn keep_selection(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        let Some(all) = &mut self.all else {
+            return Ok(());
+        };
+        let Some(at) = reselect(&all.found, all.chosen) else {
+            all.selected = 0;
+            all.chosen = None;
+            return Ok(());
+        };
+        let chosen = Some(all.found[at].order());
+        if at == all.selected && chosen == all.chosen {
+            return Ok(());
+        }
+        all.selected = at;
+        all.chosen = chosen;
+        cx.select(panel(), LIST, at)
     }
 
     /// Closes it, of no choice, its searches ending, as the find bar opens.
@@ -474,7 +537,7 @@ impl Search {
         let at = i64::try_from(all.selected)
             .unwrap_or(0)
             .saturating_add(delta);
-        all.selected = usize::try_from(at.max(0)).unwrap_or(0).min(last);
+        all.choose(usize::try_from(at.max(0)).unwrap_or(0).min(last));
         cx.select(panel(), LIST, all.selected)
     }
 
@@ -488,6 +551,7 @@ impl Search {
         all.searches.clear();
         all.found.clear();
         all.selected = 0;
+        all.chosen = None;
         all.pending.clear();
         all.invalid = false;
         all.started = false;
@@ -540,9 +604,10 @@ impl Search {
     }
 
     /// Goes to the selected match: its panel closes, its searches end, the
-    /// match's pane comes forward, its tab and its window, the match
-    /// selected, and the find bar opens there of the text, the match its
-    /// current one; of none, it stays.
+    /// match's pane comes forward, its tab and its window as they are now,
+    /// the match selected, and the find bar opens there of the text, the
+    /// match its current one; of none, it stays. A pane that closed
+    /// meanwhile tells so, its matches going, and the list stays.
     fn go(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
         let Some(all) = &self.all else {
             return Ok(());
@@ -553,11 +618,42 @@ impl Search {
         let Some(place) = all.places.get(found.place).cloned() else {
             return Ok(());
         };
+        let Some((window, tab)) = where_is(cx, place.pane)? else {
+            return self.gone(cx, found.place);
+        };
         let query = all.query.clone();
         self.close_all(cx)?;
-        bring(cx, place.window, place.tab, place.pane)?;
+        bring(cx, window, tab, place.pane)?;
         cx.select_cells(place.pane, found.found.first, found.found.last)?;
         self.open_at(cx, place.pane, Some(query), Some(found.found.first))
+    }
+
+    /// The pane at `place` closed: its matches go, its search ends, the
+    /// match after the selected one takes its place, and a notice tells so.
+    fn gone(&mut self, cx: &mut Cx<'_>, place: usize) -> Result<(), Error> {
+        let Some(all) = &mut self.all else {
+            return Ok(());
+        };
+        all.found.retain(|found| found.place != place);
+        let ended: Vec<u64> = all
+            .searches
+            .iter()
+            .filter(|&(_, &at)| at == place)
+            .map(|(&id, _)| id)
+            .collect();
+        for id in ended {
+            all.searches.remove(&id);
+            cx.end_search(id)?;
+        }
+        all.choose(all.selected);
+        let empty = all.found.is_empty();
+        let selected = all.selected;
+        cx.request_render(panel())?;
+        if !empty {
+            cx.select(panel(), LIST, selected)?;
+        }
+        let text = message(cx, "find-all-gone", &[]);
+        cx.notify(&text, NoticeLevel::Info, None)
     }
 }
 
@@ -736,5 +832,28 @@ mod tests {
         assert!(!admit(&mut found, 2, &[at(0)]));
         assert!(!admit(&mut found, 1, &[at(most)]));
         assert!(found.iter().all(|found| found.line.is_none()));
+    }
+
+    #[test]
+    fn the_chosen_match_stays_selected_as_earlier_ones_come() {
+        let at = |row: i64| SearchMatch {
+            first: (0, row),
+            last: (5, row),
+        };
+        let mut found = Vec::new();
+        assert_eq!(reselect(&found, None), None);
+        admit(&mut found, 1, &[at(2), at(4), at(6)]);
+        // None chosen yet: the first.
+        assert_eq!(reselect(&found, None), Some(0));
+        let chosen = Some(found[1].order());
+        // An earlier pane's, and an earlier row's of its own, before it.
+        admit(&mut found, 0, &[at(9)]);
+        admit(&mut found, 1, &[at(1)]);
+        assert_eq!(reselect(&found, chosen), Some(3));
+        assert_eq!(found[3].order(), (1, 4, 0));
+        // Gone, the one after it takes its place; the last's, the last.
+        found.remove(3);
+        assert_eq!(reselect(&found, chosen), Some(3));
+        assert_eq!(reselect(&found, Some((5, 0, 0))), Some(3));
     }
 }

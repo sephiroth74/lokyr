@@ -28,3 +28,6 @@ find-clear = Svuota
 # di accessibilità chiama la sua lista.
 find-all-placeholder = Trova in tutte le schede
 find-all-matches = Risultati
+
+# L'avviso di un risultato il cui pannello si è chiuso prima che Invio lo raggiungesse.
+find-all-gone = Il pannello di quel risultato è stato chiuso.

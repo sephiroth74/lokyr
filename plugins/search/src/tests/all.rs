@@ -537,3 +537,104 @@ fn find_in_all_tabs_and_the_find_bar_close_each_other_as_one_opens() {
     assert!(plugin.find.is_some());
     assert_eq!(host.searches().len(), 1);
 }
+
+/// Return in its field.
+fn returned_all(host: &mut FakeHost, plugin: &mut Search) -> Vec<Request> {
+    let text = plugin.all.as_ref().unwrap().query.clone();
+    on_all(
+        host,
+        plugin,
+        ALL_FIELD,
+        UiEventKind::Submit { text, shift: false },
+    )
+}
+
+/// The places in its list that `requests` select.
+fn list_selected(requests: &[Request]) -> Vec<usize> {
+    requests
+        .iter()
+        .filter_map(|request| match request {
+            Request::Select { key, item, .. } if key.0 == ALL_LIST => Some(*item),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_match_whose_pane_closed_is_told_and_the_list_stays() {
+    let (mut host, mut plugin) = all_host(Data::Nil);
+    opened(&mut host, &mut plugin);
+    typed_all(&mut host, &mut plugin, "error");
+    let delta = Args::from([("delta".to_owned(), Value::Integer(2))]);
+    host.command(&mut plugin, MOVE, delta).unwrap();
+    // The other window, of the match chosen, closes before Return.
+    host.close_window(WindowId(3));
+    host.deliver(&mut plugin).unwrap();
+    let requests = returned_all(&mut host, &mut plugin);
+    assert!(
+        !requests
+            .iter()
+            .any(|request| matches!(request, Request::ClosePanel(_))),
+        "{requests:?}"
+    );
+    assert!(host.panels().contains_key(&PanelId::from(PANEL)));
+    assert!(!host.panels().contains_key(&PanelId::from(BAR)));
+    assert_eq!(
+        lines(&mut host, &mut plugin),
+        ["error one", "an Error here"]
+    );
+    assert_eq!(plugin.all.as_ref().unwrap().selected, 1);
+    let told: Vec<&str> = host
+        .notices()
+        .iter()
+        .map(|notice| notice.text.as_str())
+        .collect();
+    assert_eq!(told, ["The pane of that match has closed."]);
+    // Return goes on to the one that took its place.
+    let requests = returned_all(&mut host, &mut plugin);
+    assert!(requests.contains(&Request::FocusPane(PaneId(20))));
+    assert!(plugin.all.is_none());
+}
+
+#[test]
+fn return_finds_a_tab_that_moved_to_another_window_where_it_is() {
+    let (mut host, mut plugin) = all_host(Data::Nil);
+    opened(&mut host, &mut plugin);
+    typed_all(&mut host, &mut plugin, "error");
+    let delta = Args::from([("delta".to_owned(), Value::Integer(2))]);
+    host.command(&mut plugin, MOVE, delta).unwrap();
+    // The other window's tab moves out into a third window, number 3.
+    host.pane(PaneId(30)).window = WindowId(5);
+    host.number_window(WindowId(5), Some(3), None);
+    let requests = returned_all(&mut host, &mut plugin);
+    assert!(requests.contains(&Request::ActivateTab(TabId(4))));
+    assert!(requests.contains(&Request::FocusPane(PaneId(30))));
+    // The window that holds it now comes forward.
+    assert!(
+        requests.iter().any(|request| matches!(
+            request,
+            Request::RunCommand { name, args }
+                if name == "window.goto" && args.get("index") == Some(&Value::Integer(3))
+        )),
+        "{requests:?}"
+    );
+    assert_eq!(plugin.find.as_ref().unwrap().pane, PaneId(30));
+}
+
+#[test]
+fn the_first_match_is_selected_as_a_new_text_s_first_come() {
+    let (mut host, mut plugin) = all_host(Data::Nil);
+    opened(&mut host, &mut plugin);
+    let typed = typed_all(&mut host, &mut plugin, "error");
+    assert_eq!(list_selected(&typed), [0]);
+    // The last, `errors three`, chosen.
+    let delta = Args::from([("delta".to_owned(), Value::Integer(3))]);
+    host.command(&mut plugin, MOVE, delta).unwrap();
+    assert_eq!(plugin.all.as_ref().unwrap().chosen, Some((2, 3, 0)));
+    // A new text: its first, `error two`.
+    let typed = typed_all(&mut host, &mut plugin, "error t");
+    assert_eq!(list_selected(&typed), [0]);
+    let all = plugin.all.as_ref().unwrap();
+    assert_eq!((all.selected, all.chosen), (0, Some((2, 2, 0))));
+    assert_eq!(lines(&mut host, &mut plugin), ["error two"]);
+}

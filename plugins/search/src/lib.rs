@@ -112,7 +112,7 @@ static CATALOGS: [(&str, &str); 2] = [
 
 /// The texts of the bar and of Find in All Tabs, in English, where the
 /// host gives none.
-const ENGLISH: [(&str, &str); 16] = [
+const ENGLISH: [(&str, &str); 17] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-invalid", "Invalid regex"),
@@ -129,6 +129,7 @@ const ENGLISH: [(&str, &str); 16] = [
     ("find-count", "{ $current } of { $count }"),
     ("find-all-placeholder", "Find in All Tabs"),
     ("find-all-matches", "Matches"),
+    ("find-all-gone", "The pane of that match has closed."),
 ];
 
 /// The text of the message `id` of `args`, in the language shown, or

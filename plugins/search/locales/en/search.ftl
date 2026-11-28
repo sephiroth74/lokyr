@@ -29,3 +29,6 @@ find-clear = Clear
 # client calls its list.
 find-all-placeholder = Find in All Tabs
 find-all-matches = Matches
+
+# The notice of a match whose pane closed before Return went to it.
+find-all-gone = The pane of that match has closed.
