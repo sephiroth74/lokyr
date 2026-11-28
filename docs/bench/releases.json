@@ -88,7 +88,8 @@
         "1.0.0": 26.72,
         "1.3.0": 27.15,
         "1.4.0": 20.8,
-        "1.5.0": 55.0
+        "1.5.0": 55.0,
+        "1.6.0": 12.8
       },
       "baseline": {
         "0.7.0": 15.1,
@@ -97,7 +98,8 @@
         "1.0.0": 28.86,
         "1.3.0": 28.6,
         "1.4.0": 21.7,
-        "1.5.0": 54.6
+        "1.5.0": 54.6,
+        "1.6.0": 22.1
       },
       "sessions": {
         "0.7.0": {
@@ -111,6 +113,10 @@
         "1.5.0": {
           "title": "the startup of the releases' notarized DMGs",
           "report": "startup-F5b-21.md"
+        },
+        "1.6.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-68.md"
         }
       }
     },
@@ -129,16 +135,20 @@
       },
       "values": {
         "1.5.0": 70.4,
-        "1.6.0": 85.956
+        "1.6.0": 76.57
       },
       "sessions": {
         "1.5.0": {
           "title": "the startup beside a floor app",
           "report": "startup-TB-23.md"
+        },
+        "1.6.0": {
+          "title": "the startup of the releases' notarized DMGs",
+          "report": "startup-F5b-68.md"
         }
       },
       "baseline": {
-        "1.6.0": 92.491
+        "1.6.0": 80.93
       }
     },
     {
@@ -1064,6 +1074,10 @@
               "1.5.0": [
                 "268.2",
                 "the mean of twelve rounds of the release's DMG, notarized, 1.4.0's DMG 267.8 in the same session, [startup-F5b-21](startup-F5b-21.md#results); 253.1 of bundles not notarized in the A/B, 1.4.0's tag 250.2, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench)"
+              ],
+              "1.6.0": [
+                "237.7",
+                "the mean of eight rounds of the release's candidate's DMG, notarized, of the release's code, 1.5.0's DMG 247.0 in the same session, [startup-F5b-68](startup-F5b-68.md#results)"
               ]
             }
           },
@@ -1111,6 +1125,10 @@
               "1.5.0": [
                 "55.0",
                 "of twelve rounds of the releases' notarized DMGs, 1.4.0's 54.6 in the same session, past the budget for both, of a minimal app of 209 to 216 ms, while 1.4.0's DMG had 20.8 on 22 November, [startup-F5b-21](startup-F5b-21.md#results); 34.6 at rest of bundles not notarized, 1.4.0's 34.9, and 47.8 in the A/B, [ab-F5b-20](ab-F5b-20.md#the-measures-of-lokyr-bench); after a restart, 28.3 ms, then 51.5 within the same session as the minimal app's launch moved, of no change to the copies, [startup-F5b-45](startup-F5b-45.md#why-the-gap-moves)"
+              ],
+              "1.6.0": [
+                "12.8",
+                "of eight rounds of the notarized DMGs, 1.5.0's 22.1 in the same session, of a minimal app of 221 to 232 ms, [startup-F5b-68](startup-F5b-68.md#results)"
               ]
             }
           },
@@ -1128,8 +1146,8 @@
                 "the median of 32 rounds of the release's DMG, notarized, each beside ttybench's floor app launched alike, lokyr-bench's gap 44.8 in the same session, moving from 70.6 to 24.2 between its rounds, [startup-TB-23](startup-TB-23.md#results)"
               ],
               "1.6.0": [
-                "86.0",
-                "the median of 32 rounds of bundles not notarized, each beside ttybench's floor app launched alike, 1.5.0's tag 92.5 in the same session, past the budget for both, an editor open beside them, [ab-F5b-67](ab-F5b-67.md#results)"
+                "76.6",
+                "the median of 32 rounds of the notarized DMGs, each beside ttybench's floor app launched alike, 1.5.0's 80.9 in the same session, past the budget for both; 86.0 against 92.5 of bundles not notarized in the A/B, an editor open beside them, [ab-F5b-67](ab-F5b-67.md#results)"
               ]
             }
           },
@@ -1141,8 +1159,8 @@
                 "the median of 32 rounds of the release's DMG, notarized, launched by `open`, [startup-TB-23](startup-TB-23.md#results)"
               ],
               "1.6.0": [
-                "357.5",
-                "the median of 32 rounds of a bundle not notarized, 1.5.0's tag of a bundle 354.6 in the same session, [ab-F5b-67](ab-F5b-67.md#results)"
+                "327.7",
+                "the median of 32 rounds of the notarized DMGs, 1.5.0's 335.9 in the same session, [startup-F5b-68](startup-F5b-68.md#results); 357.5 against 354.6 of bundles not notarized in the A/B"
               ]
             }
           }
