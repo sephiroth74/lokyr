@@ -13,7 +13,3 @@ appearance-write = true
 # that run, and the pane of the one chosen brought forward.
 process-read = true
 workspace-write = true
-# Find in All Tabs: the panes searched, each match's line read, and the
-# match chosen selected.
-terminal-read = true
-pane-view = true

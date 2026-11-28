@@ -1958,6 +1958,7 @@ fn the_find_bar_draws_as_its_golden_images() {
             },
             count: "3 of 12".to_owned(),
             filled: true,
+            alternate: false,
         },
         &BarTexts::default(),
     );

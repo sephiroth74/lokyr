@@ -3,12 +3,18 @@
 name = "lokyr/search"
 kind = "builtin"
 license = "MIT"
-description = "The find bar: a pane's search, of its history, its case, regexes and whole words, its matches counted and stepped through"
+description = "The find bar: a pane's search, of its history, its case, regexes and whole words, its matches counted and stepped through; and Find in All Tabs, a search of every pane"
 
 [capabilities]
 terminal-read = true
 pane-view = true
 decorate = true
+# Find in All Tabs: the match's pane, its tab and its window brought
+# forward.
+workspace-write = true
+
+[uses]
+commands = ["window.goto"]
 
 [contributes]
 config-schema = "search.schema.json"

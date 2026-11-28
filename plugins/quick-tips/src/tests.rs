@@ -415,6 +415,60 @@ fn the_first_party_namespaces_are_those_of_the_app_s_commands() {
 }
 
 #[test]
+fn every_tip_s_text_names_the_keys_of_its_commands() {
+    for tip in CURATED {
+        for (language, catalog) in &CATALOGS {
+            let line = catalog
+                .lines()
+                .find(|line| line.starts_with(&format!("{} = ", tip.message)))
+                .unwrap_or_default();
+            assert_eq!(
+                line.contains("{ $keys }"),
+                tip.command.is_some(),
+                "{} in {language}",
+                tip.message
+            );
+            assert_eq!(
+                line.contains("{ $also }"),
+                tip.also.is_some(),
+                "{} in {language}",
+                tip.message
+            );
+            // No keys written out, which a binding of others would make
+            // wrong, but Command held with the pointer over a link.
+            if !["tip-links", "tip-editor-line"].contains(&tip.message) {
+                assert!(
+                    !line.contains(['⌘', '⌥', '⌃', '⇧']),
+                    "{} in {language} writes its keys",
+                    tip.message
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn a_tip_of_two_commands_names_both_keys_and_waits_for_both() {
+    let (mut host, mut plugin) = host(fake::DAY, Data::Nil);
+    host.set_keys("window.broadcast-to-tab", Args::new(), Some("⌥⌘I"));
+    let seen = |host: &mut FakeHost, plugin: &mut Tips| {
+        let mut seen = Vec::new();
+        for _ in 0..CURATED.len() {
+            host.command(plugin, SHOW, Args::new()).unwrap();
+            seen.push(shown(host, plugin).unwrap());
+            host.ui_event(plugin, &ui(UiEventKind::Click, "dismiss"))
+                .unwrap();
+            host.deliver(plugin).unwrap();
+        }
+        seen
+    };
+    // The window's keys unbound: left out.
+    assert!(!seen(&mut host, &mut plugin).contains(&"tip-broadcast".to_owned()));
+    host.set_keys("window.broadcast-to-window", Args::new(), Some("⇧⌥⌘I"));
+    assert!(seen(&mut host, &mut plugin).contains(&"tip-broadcast".to_owned()));
+}
+
+#[test]
 fn every_tip_has_its_message_in_every_catalog() {
     let messages = CURATED.iter().map(|tip| tip.message).chain([
         "tip-plugin-keys",

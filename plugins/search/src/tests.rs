@@ -151,7 +151,10 @@ const ROWS: [&str; 4] = ["a needle", "nothing", "needle one", "two needle"];
 fn the_bar_opens_at_the_pane_s_top_right_and_searches_as_its_text_is_typed() {
     let (mut host, mut plugin) = host(&ROWS, Data::Nil);
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, NEXT, PREVIOUS]);
+    assert_eq!(
+        commands,
+        [OPEN, NEXT, PREVIOUS, crate::all::FIND_ALL, crate::all::MOVE]
+    );
     let opened = run(&mut host, &mut plugin, OPEN);
     let options = host.panels().get(&PanelId::from(BAR)).expect("the bar");
     assert_eq!(
@@ -742,3 +745,5 @@ fn the_count_of_before_stays_until_a_new_search_tells_something_sure() {
         assert_eq!(count(&mut host, &mut plugin), "No results");
     }
 }
+
+mod all;

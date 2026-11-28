@@ -152,6 +152,11 @@ impl CellPin {
     pub(super) fn is_alternate(&self) -> bool {
         self.alternate
     }
+
+    /// Its pin in its screen's list.
+    pub(super) fn pin(&self) -> PinId {
+        self.pin
+    }
 }
 
 impl Selection {

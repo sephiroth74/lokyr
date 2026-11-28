@@ -1149,6 +1149,222 @@ fn the_find_bar_s_filter_shows_the_matching_lines_alone_as_output_comes_and_esca
 }
 
 #[test]
+fn the_find_bar_s_filter_follows_output_after_a_resize_and_a_reset() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nnothing\\nneedle two\\n'; echo ready; read line; echo 'late needle'; read line; printf '\\033c'; echo 'reset needle'; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two"]
+    });
+    // A resize renumbers the rows: the filter follows new output still.
+    fake.send(&mut app, window, WindowEvent::Resized(points(560.0, 420.0)));
+    frames(&mut fake, &mut app, window);
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app) == ["a needle", "needle two", "late needle"]
+    });
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| count.ends_with(" of 3"))
+    });
+    // A reset takes the rows and the matches: the search starts again, its
+    // filter on, of the new output.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["reset needle"]);
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| count.ends_with(" of 1"))
+    });
+}
+
+#[test]
+fn the_find_bar_s_filter_follows_more_new_matches_than_the_view_holds() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nother\\n'; echo ready; sleep 3; seq 1 200 | sed 's/^/late needle /'; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["a needle"]);
+    // More matching lines than the view's rows, of no key typed, which
+    // would bring the view down: it follows them, the newest at its end.
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app)
+            .last()
+            .is_some_and(|line| line == "late needle 200")
+    });
+}
+
+#[test]
+fn a_search_of_the_alternate_screen_shows_no_filter_and_leaves_the_shell_s_view_whole() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell(
+        "printf 'a needle\\nother line\\n'; echo ready; read line; printf '\\033[?1049h'; echo 'alt needle'; read line; printf '\\033[?1049l'; echo done; read line",
+    );
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    let lines = |app: &App| -> Vec<String> {
+        screen(app, window)
+            .into_iter()
+            .map(|line| line.trim_end().to_owned())
+            .filter(|line| !line.is_empty())
+            .collect()
+    };
+    // The filter turned on of a search of the shell's lines, which the
+    // plugin keeps, then the bar closed.
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    let scale = fake.window(window).unwrap().size.scale;
+    let toggle = middle(node_frame(&app, window, "filter"), scale);
+    fake.send(&mut app, window, click(true, toggle, none, 1));
+    fake.send(&mut app, window, click(false, toggle, none, 1));
+    run_until(&mut fake, &mut app, |_, app| lines(app) == ["a needle"]);
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Escape, "\u{1b}", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        lines(app).iter().any(|line| line == "other line")
+    });
+    // A program's own screen: the bar of its recent text searches it, of
+    // no filter's toggle.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| {
+        shows(app, window, "alt needle")
+    });
+    command(&mut fake, &mut app, window, "search.open");
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 1")
+    });
+    frames(&mut fake, &mut app, window);
+    let has_toggle = |app: &App| {
+        app.windows[&window]
+            .chrome
+            .iter()
+            .find(|view| view.view == ViewId::Panel(PanelId::from("find")))
+            .is_some_and(|view| view.surface.tree.by_key(&"filter".into()).is_some())
+    };
+    assert!(
+        !has_toggle(&app),
+        "the filter's toggle on the alternate screen"
+    );
+    // The program ends, the bar open: the shell's lines all show, none
+    // hidden by a filter of the other screen's matches.
+    app.pane(window).send_text("\n");
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "done"));
+    frames(&mut fake, &mut app, window);
+    let shown = lines(&app);
+    assert!(
+        ["a needle", "other line", "ready", "done"]
+            .iter()
+            .all(|line| shown.iter().any(|shown| shown == line)),
+        "{shown:?}"
+    );
+}
+
+#[test]
+fn a_search_that_a_resize_cuts_short_starts_again_to_its_whole_count() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    fake.set_bar(28.0);
+    let program = shell("seq 1 6000 | sed 's/^/needle /'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    command(&mut fake, &mut app, window, "search.open");
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("needle".to_owned())),
+    );
+    // Resized while its parts come: the rows renumbered, it searches them
+    // all again rather than stop at the parts that it found.
+    fake.send(&mut app, window, WindowEvent::Resized(points(560.0, 420.0)));
+    fake.send(&mut app, window, WindowEvent::Resized(points(620.0, 460.0)));
+    let whole = |count: &str| count.replace(',', "").ends_with(" of 6000");
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).is_some_and(|count| whole(&count))
+    });
+}
+
+#[test]
 fn the_command_palette_opens_at_the_window_s_top_ranks_as_it_is_typed_and_runs_its_choice() {
     let none = Modifiers::NONE;
     let drawing = Drawing::new(FontConfig::default()).unwrap();
@@ -1757,6 +1973,156 @@ fn the_find_bar_s_field_leaves_option_command_and_an_arrow_to_the_panes_move() {
         key_event(KeyCode::ArrowLeft, "", option_command, false),
     );
     run_until(&mut fake, &mut app, |_, app| focused(app) == Some(first));
+}
+
+/// The field of the panel `panel` of `window`, of its key `query`.
+fn query_field(
+    app: &App,
+    window: WindowId,
+    panel: &str,
+) -> Option<lokyr_ui_core::field::FieldState> {
+    app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from(panel)))
+        .and_then(|view| view.surface.fields.state(&"query".into()))
+        .cloned()
+}
+
+/// The lines of Find in All Tabs' list in `window`, in their order, and
+/// the selected one's place.
+fn find_all_rows(app: &App, window: WindowId) -> (Vec<String>, Option<usize>) {
+    let Some(view) = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find-all")))
+    else {
+        return (Vec::new(), None);
+    };
+    let tree = &view.surface.tree;
+    let selected = view
+        .surface
+        .lists
+        .state(&"matches".into())
+        .and_then(lokyr_ui_core::list::ListState::selected);
+    let Some(list) = tree.by_key(&"matches".into()) else {
+        return (Vec::new(), selected);
+    };
+    match tree.kind(list) {
+        Some(lokyr_kernel::plugins::view::Kind::List(list)) => (
+            list.items
+                .iter()
+                .map(|item| item.texts[0].clone())
+                .collect(),
+            selected,
+        ),
+        _ => (Vec::new(), selected),
+    }
+}
+
+#[test]
+fn find_in_all_tabs_takes_its_arrows_and_the_find_bar_s_field_keeps_its_own() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'error one\\nerror two\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    let arrow = |fake: &mut Fake, app: &mut App, code: KeyCode| {
+        fake.send(app, window, key_event(code, "", none, true));
+        fake.send(app, window, key_event(code, "", none, false));
+        frames(fake, app, window);
+    };
+    // The find bar's field keeps ↑, which moves its caret to its start, as
+    // Find in All Tabs' arrows hold of its own panel alone.
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    arrow(&mut fake, &mut app, KeyCode::ArrowUp);
+    let field = query_field(&app, window, "find").expect("the bar's field");
+    assert_eq!((field.text(), field.selection()), ("error", 0..0));
+    // Command-Shift-F, the keymap's: the bar closes, and its panel takes the
+    // keys.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyF, "F", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "find").is_none());
+    assert!(panel_frame(&app, window, "find-all").is_some());
+    assert!(focused_in(&app, window, "find-all"));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_all_rows(app, window).0 == ["error one", "error two"]
+    });
+    // ↓ and ↑ move its selection, and its field's caret stays at its end.
+    arrow(&mut fake, &mut app, KeyCode::ArrowDown);
+    assert_eq!(find_all_rows(&app, window).1, Some(1));
+    arrow(&mut fake, &mut app, KeyCode::ArrowUp);
+    assert_eq!(find_all_rows(&app, window).1, Some(0));
+    let field = query_field(&app, window, "find-all").expect("its field");
+    assert_eq!(field.selection(), 5..5);
+    // Return: the find bar at the pane, of the match chosen, the current
+    // one, rather than the last.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 2")
+    });
+    assert!(panel_frame(&app, window, "find-all").is_none());
+    assert!(focused_in(&app, window, "find"));
+    assert_eq!(selected_text(&app, window).as_deref(), Some("error"));
+}
+
+#[test]
+fn find_in_all_tabs_lists_the_matches_of_every_window() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'error here\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, first, "ready"));
+    fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    app.windows.get_mut(&second).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, second, "ready"));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, first);
+    frames(&mut fake, &mut app, second);
+    command(&mut fake, &mut app, first, "search.find-all");
+    assert!(focused_in(&app, first, "find-all"));
+    fake.send(
+        &mut app,
+        first,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_all_rows(app, first).0 == ["error here", "error here"]
+    });
 }
 
 /// The titles of the palette's list in `window`, in their order.

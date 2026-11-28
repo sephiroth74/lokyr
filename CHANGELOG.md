@@ -13,12 +13,14 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - AppleScript: Lokyr's dictionary has its windows, their tabs and their terminals, each with its id, name and folder, and commands that create windows, tabs and splits in a folder with a command to run and environment variables, run a command line at the shell's prompt, send text, press a key as you would, such as `"ctrl+c"` or `"cmd+a"`, focus, close, count and test them, as `count terminals of tab 1` and `exists window 2`, and perform any of Lokyr's commands by its name and arguments.
 - Shortcuts: actions that open a window or a tab in a folder with a command to run and environment variables, split a terminal, run a command line in it, send it text or press a key in it as you would, send it mouse clicks, moves and scrolls, focus or close it, find terminals by their title or folder and get their details, show or hide the quick terminal, run any of Lokyr's commands by its name, or an entry of the palette's list, such as Split Right, switch to a session by its name, opening it when there is none, open a saved layout, and get a terminal's text or its selection. Spotlight finds New Window and New Tab too. Scripts and shortcuts stop working with `enabled = false` in `[plugins.automation]`.
 - Before an app's first script or shortcut controls Lokyr, Lokyr asks you whether to allow it, Don't Allow by default, and remembers your answer. It tells apps apart by their code signature, a script run from another app's terminal by that app, and asks for each program that runs in one of its own terminals, an answer that holds in that terminal until its shell exits, so that a script in one terminal can't drive your other terminals without your answer.
-- Find in All Tabs, ⇧⌘F or Edit › Find in All Tabs…: a search of every pane of the session's windows, each match a row of its line and its tab's title. Return brings the pane forward, the match selected, and opens the find bar there with your text.
+- Find in All Tabs, ⇧⌘F or Edit › Find in All Tabs…: a search of every pane of the session's windows, each match a row of its line and its tab's title, with the find bar's toggles of case, whole words and regular expressions, which the two share. Return brings the pane forward, the match selected, and opens the find bar there with your text.
+- A binding's `when` in `[keys]` can name one of a plugin's panels alone, by its id: `search.find-all.focused` holds while Find in All Tabs has the keyboard, and `search.find.focused` while the find bar has it, where `search.focused` holds of both.
 - The find bar's filter: a toggle that shows the lines that match alone, each run of the others a blank line, and the matching lines of new output as they come. Turn it off, or press Escape, and the pane shows every line again, at the current match.
 - `window.show-quick-terminal` and `window.hide-quick-terminal` show and hide the quick terminal, for a key or a shortcut of your own, where Quick Terminal toggles it.
 
 ### Changed
 
+- The command palette's magnifying glass sits nearer the panel's edge, further from the text you type.
 - The first window shows sooner at the start, some 7 to 11 ms, as the menu bar, the global keys and the updates' checks wait until it opens; when Lokyr starts to open a script, a folder or a link, that window no longer waits for them.
 - A hidden session's windows give back part of the memory of their pictures, some 10 MB a window on a Retina display and more of a larger window, and draw themselves anew just before they show again.
 
@@ -28,6 +30,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 - Kept in the Dock, Lokyr shows the icon's variant that `[app] icon` names after it quits too, where the Dock showed the bundle's own icon.
 - Lokyr's icon shows as itself in the system's lists of small icons, such as System Settings' privacy panes, where it showed as colored noise on a display of no scaling.
 - The command palette lists the menu bar's items that run a command with an argument, as Split Right, Split Down and Select Pane Above, with their keys, which only the menus had.
+- A search that a resize of the window, or a change of the font's size, interrupted while it went through a long scrollback finds every match, where the find bar counted those found before the resize alone.
 
 ### Security
 

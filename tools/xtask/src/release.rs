@@ -26,18 +26,21 @@
 //!   latest; a release's Homebrew cask, of the DMG's SHA-256; and
 //!   `target/releases/<version>/draft.md`, the draft's address, the DMG's
 //!   size and the deltas', which the CI tells the release's pull request;
-//! - `publish [--target <commit>] [--rehearsal]`: the draft, a draft
-//!   alone, moved to `<commit>`, as the merge of the release's pull request,
-//!   and published, its tag made there, a release the latest; a rehearsal's
-//!   a pre-release, never the latest, so that the feed, the site and the
-//!   updates keep the latest release; a release's candidates' drafts left
-//!   deleted.
+//! - `publish [--target <commit>] [--built <commit>] [--rehearsal]`: the
+//!   draft, a draft alone, of the commit `<built>` if given, as the head
+//!   that the release's pull request built, and of its DMG, and of its
+//!   appcast of a release; moved to `<target>`, as the merge of the
+//!   release's pull request, and published, its tag made there, a release
+//!   the latest; a rehearsal's a pre-release, never the latest, so that the
+//!   feed, the site and the updates keep the latest release; a release's
+//!   candidates' drafts left deleted.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result, bail, ensure};
+use serde::Deserialize;
 
 use crate::{bundle, cask, feed, sbom, sparkle};
 
@@ -48,7 +51,7 @@ const REPOSITORY: &str = "sephiroth74/lokyr";
 const APPCAST: &str = "private/feed/appcast.xml";
 
 /// What `release` takes.
-const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`; `publish` takes `--target <commit>` and `--rehearsal`";
+const USAGE: &str = "release takes a step, `check`, `build`, `draft` or `publish`, if one alone, the version, X.Y.Z-rc.N or X.Y.Z (the crate's of `check` and `build` without one), and `--without-feed`; `publish` takes `--target <commit>`, `--built <commit>` and `--rehearsal`";
 
 pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
     let args: Vec<String> = args.collect();
@@ -57,6 +60,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         version,
         without_feed,
         target,
+        built,
         rehearsal,
     } = parse(&args, env!("CARGO_PKG_VERSION"))?;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -71,6 +75,7 @@ pub fn run(args: impl Iterator<Item = String>) -> Result<ExitCode> {
         version,
         without_feed,
         target,
+        built,
         rehearsal,
     };
     match step {
@@ -107,12 +112,15 @@ struct Options {
     without_feed: bool,
     /// The commit that `publish` moves the draft to.
     target: Option<String>,
+    /// The commit that the draft that `publish` publishes must be of.
+    built: Option<String>,
     /// Whether `publish` rehearses, of a pre-release never the latest.
     rehearsal: bool,
 }
 
 /// What `args` ask: of `check` and `build` without a version, the crate's,
-/// `crate_version`; `--target` and `--rehearsal` of `publish` alone.
+/// `crate_version`; `--target`, `--built` and `--rehearsal` of `publish`
+/// alone.
 fn parse(args: &[String], crate_version: &str) -> Result<Options> {
     let (step, rest) = match args.first().map(String::as_str) {
         Some("check") => (Some(Step::Check), &args[1..]),
@@ -125,20 +133,26 @@ fn parse(args: &[String], crate_version: &str) -> Result<Options> {
     let mut version = None;
     let mut without_feed = false;
     let mut target = None;
+    let mut built = None;
     let mut rehearsal = false;
     let mut rest = rest.iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
             "--without-feed" => without_feed = true,
-            "--target" if publishing => {
+            flag @ ("--target" | "--built") if publishing => {
                 let commit = rest
                     .next()
-                    .with_context(|| format!("{USAGE}: `--target` of no commit"))?;
+                    .with_context(|| format!("{USAGE}: `{flag}` of no commit"))?;
                 ensure!(
                     !commit.is_empty() && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
                     "{USAGE}: `{commit}` is no commit's hash"
                 );
-                target = Some(commit.to_owned());
+                let place = if flag == "--target" {
+                    &mut target
+                } else {
+                    &mut built
+                };
+                *place = Some(commit.to_owned());
             }
             "--rehearsal" if publishing => rehearsal = true,
             other if other.starts_with('-') || version.is_some() => bail!("{USAGE}, not `{other}`"),
@@ -155,6 +169,7 @@ fn parse(args: &[String], crate_version: &str) -> Result<Options> {
         version,
         without_feed,
         target,
+        built,
         rehearsal,
     })
 }
@@ -167,6 +182,8 @@ struct Release {
     without_feed: bool,
     /// The commit that `publish` moves the draft to.
     target: Option<String>,
+    /// The commit that the draft that `publish` publishes must be of.
+    built: Option<String>,
     /// Whether `publish` rehearses, of a pre-release never the latest.
     rehearsal: bool,
 }
@@ -226,14 +243,14 @@ impl Release {
     }
 
     /// The feeds' appcasts, the tests' if it is there and the public one,
-    /// as one text; none of neither.
-    fn appcasts(&self) -> Option<String> {
+    /// as one text; none of neither. Fails as the public one's fetch does.
+    fn appcasts(&self) -> Result<Option<String>> {
         let appcasts: Vec<String> = fs::read_to_string(self.root.join(APPCAST))
             .ok()
             .into_iter()
-            .chain(feed::published_appcast(&self.root))
+            .chain(feed::published_appcast(&self.root)?)
             .collect();
-        (!appcasts.is_empty()).then(|| appcasts.join("\n"))
+        Ok((!appcasts.is_empty()).then(|| appcasts.join("\n")))
     }
 
     /// What a release takes before anything is built, of no secret.
@@ -289,20 +306,20 @@ impl Release {
                 .is_ok_and(|status| status.success()),
             "GitHub does not have the commit {commit}: push it first"
         );
+        // A draft, as the CI's, which the release's draft replaces, may be
+        // there; a published release may not.
         let tag = self.tag();
-        let released = Command::new("gh")
-            .args(["release", "view", &tag, "--repo", REPOSITORY])
-            .output()
-            .context("asking GitHub for the release")?;
-        ensure!(
-            !released.status.success(),
-            "{tag} has a release on GitHub already"
-        );
+        if let Some(viewed) = release_of(&tag)? {
+            ensure!(
+                viewed.is_draft,
+                "{tag} has a release on GitHub already: release another version"
+            );
+        }
         // The number that the build will take, of the commit's moment.
         let number: u64 = bundle::version::stamp(bundle::build_moment(&self.root)?)
             .parse()
             .context("the build's number")?;
-        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        above_the_feed(number, self.appcasts()?.as_deref(), self.without_feed)?;
         println!("release: {tag} of {commit}, build {number}, passes its checks");
         Ok(())
     }
@@ -325,7 +342,7 @@ impl Release {
         let number: u64 = plist_string(&info, "CFBundleVersion")
             .and_then(|number| number.parse().ok())
             .context("the bundle's CFBundleVersion")?;
-        above_the_feed(number, self.appcasts().as_deref(), self.without_feed)?;
+        above_the_feed(number, self.appcasts()?.as_deref(), self.without_feed)?;
         let out = self.out();
         if out.exists() {
             fs::remove_dir_all(&out).with_context(|| format!("removing {}", out.display()))?;
@@ -413,7 +430,7 @@ impl Release {
             );
             return Ok(());
         }
-        let previous = feed::published_appcast(root);
+        let previous = feed::published_appcast(root)?;
         let published = feed::publish(root, &dmg, previous.as_deref())?;
         status(
             Command::new("gh")
@@ -437,17 +454,13 @@ impl Release {
     /// fails of a published release of that tag.
     fn replace_draft(&self) -> Result<()> {
         let tag = self.tag();
-        let told = Command::new("gh")
-            .args(["release", "view", &tag, "--repo", REPOSITORY])
-            .args(["--json", "isDraft", "--jq", ".isDraft"])
-            .output()
-            .context("looking for the release on GitHub")?;
-        // None of that tag: `gh` fails, as it finds no release.
-        if !told.status.success() {
+        let Some(viewed) = release_of(&tag)? else {
             return Ok(());
-        }
-        let draft = String::from_utf8_lossy(&told.stdout).trim() == "true";
-        ensure!(draft, "{tag} is released already: release another version");
+        };
+        ensure!(
+            viewed.is_draft,
+            "{tag} is released already: release another version"
+        );
         println!("release: replacing {tag}'s draft");
         status(
             Command::new("gh").args(["release", "delete", &tag, "--repo", REPOSITORY, "--yes"]),
@@ -511,21 +524,29 @@ impl Release {
         fs::write(&file, text).with_context(|| format!("writing {}", file.display()))
     }
 
-    /// The draft, a draft alone, moved to the target if any, and
-    /// published, its tag made there: a candidate a pre-release, a release
-    /// the latest; a rehearsal's a pre-release, never the latest.
+    /// The draft, a draft alone, of the built commit if told and of its
+    /// assets, moved to the target if any, and published, its tag made
+    /// there: a candidate a pre-release, a release the latest; a
+    /// rehearsal's a pre-release, never the latest. A release published at
+    /// the target already passes, unchanged, as a publishing run again
+    /// after a later step failed.
     fn publish(&self) -> Result<()> {
         let tag = self.tag();
-        let draft = output(
-            Command::new("gh")
-                .args(["release", "view", &tag, "--repo", REPOSITORY])
-                .args(["--json", "isDraft", "--jq", ".isDraft"]),
-            "looking for the release's draft",
+        let viewed = release_of(&tag)?
+            .with_context(|| format!("{tag} has no draft: draft the release first"))?;
+        if !viewed.is_draft && self.target.as_deref() == Some(viewed.target_commitish.as_str()) {
+            println!(
+                "release: {tag} is published already, at {}: nothing to do",
+                viewed.target_commitish
+            );
+            return Ok(());
+        }
+        publishable(
+            &viewed,
+            &self.version,
+            self.built.as_deref(),
+            self.target.as_deref(),
         )?;
-        ensure!(
-            draft.trim() == "true",
-            "{tag} is no draft: published already, or of no draft"
-        );
         if let Some(target) = &self.target {
             status(
                 Command::new("gh")
@@ -545,7 +566,8 @@ impl Release {
         ]);
         command.args(publish_flags(self.is_candidate(), self.rehearsal));
         status(&mut command, "publishing the release")?;
-        if !self.is_candidate() {
+        // A rehearsal's leaves the real release's candidates as they are.
+        if !self.is_candidate() && !self.rehearsal {
             self.delete_candidates_drafts();
         }
         println!(
@@ -558,6 +580,95 @@ impl Release {
         );
         Ok(())
     }
+}
+
+/// The release of `tag` on GitHub, as [`Viewed`] tells it; none where
+/// GitHub has none of that tag. Fails of `gh`'s other failures, as of the
+/// network, rather than take them for no release.
+fn release_of(tag: &str) -> Result<Option<Viewed>> {
+    let told = Command::new("gh")
+        .args(["release", "view", tag, "--repo", REPOSITORY])
+        .args(["--json", "isDraft,targetCommitish,assets"])
+        .output()
+        .context("running gh")?;
+    viewed_of(
+        told.status.success(),
+        &String::from_utf8_lossy(&told.stdout),
+        &String::from_utf8_lossy(&told.stderr),
+    )
+}
+
+/// The release that `gh release view` told, of whether it `succeeded`, its
+/// `stdout` and its `stderr`, as [`release_of`] gives it.
+fn viewed_of(succeeded: bool, stdout: &str, stderr: &str) -> Result<Option<Viewed>> {
+    if succeeded {
+        return serde_json::from_str(stdout)
+            .map(Some)
+            .context("reading what GitHub tells of the release");
+    }
+    ensure!(
+        stderr.trim() == "release not found",
+        "asking GitHub for the release failed: {}",
+        stderr.trim()
+    );
+    Ok(None)
+}
+
+/// What `gh release view --json isDraft,targetCommitish,assets` tells of
+/// a release.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Viewed {
+    is_draft: bool,
+    /// The commit that it was drafted of, or moved to.
+    target_commitish: String,
+    assets: Vec<Asset>,
+}
+
+/// A release's asset, of its name.
+#[derive(Debug, Deserialize)]
+struct Asset {
+    name: String,
+}
+
+/// Whether `viewed`, the release `version`'s, may be published: a draft,
+/// of the commit `built` if told, which `target` stands for once a former
+/// publishing moved it there, and of its DMG, and of its appcast of a
+/// release, which its `draft` uploads last, so that a draft of a former
+/// push, or of a `draft` that failed or runs still, is refused.
+fn publishable(
+    viewed: &Viewed,
+    version: &str,
+    built: Option<&str>,
+    target: Option<&str>,
+) -> Result<()> {
+    let tag = format!("v{version}");
+    ensure!(
+        viewed.is_draft,
+        "{tag} is no draft: published already, or of no draft"
+    );
+    let of = viewed.target_commitish.as_str();
+    if let Some(built) = built {
+        ensure!(
+            of == built || Some(of) == target,
+            "{tag}'s draft is of {of}, not of {built}, the head that the release built: \
+             its `build` and `draft` of the head are left to run, or ran of a former push; \
+             run them again, then publish"
+        );
+    }
+    let has = |name: &str| viewed.assets.iter().any(|asset| asset.name == name);
+    let dmg = format!("{}-{version}.dmg", bundle::NAME);
+    let mut wanted = vec![dmg.as_str()];
+    if !version.contains('-') {
+        wanted.push("appcast.xml");
+    }
+    let missing: Vec<&str> = wanted.into_iter().filter(|name| !has(name)).collect();
+    ensure!(
+        missing.is_empty(),
+        "{tag}'s draft lacks {}: its `draft` failed, or runs still; run it again, then publish",
+        missing.join(" and ")
+    );
+    Ok(())
 }
 
 /// The tags of `tags` that are candidates of the release `version`,
@@ -782,6 +893,7 @@ mod tests {
             version: version.to_owned(),
             without_feed,
             target: None,
+            built: None,
             rehearsal: false,
         };
         assert_eq!(
@@ -814,6 +926,17 @@ mod tests {
                 ..options(Some(Step::Publish), "1.6.0", false)
             }
         );
+        assert_eq!(
+            parse(
+                &args("publish 1.6.0 --target 0123abcd --built 4567ef"),
+                "1.6.0"
+            )
+            .unwrap()
+            .built,
+            Some("4567ef".to_owned())
+        );
+        assert!(parse(&args("publish 1.6.0 --built"), "1.6.0").is_err());
+        assert!(parse(&args("draft 1.6.0 --built 4567ef"), "1.6.0").is_err());
         assert!(parse(&args("publish 1.6.0 --target"), "1.6.0").is_err());
         assert!(parse(&args("publish 1.6.0 --target main;rm"), "1.6.0").is_err());
         assert!(parse(&args("draft 1.6.0 --rehearsal"), "1.6.0").is_err());
@@ -821,6 +944,76 @@ mod tests {
         assert!(parse(&args(""), "1.6.0").is_err());
         assert!(parse(&args("1.6.0 1.6.1"), "1.6.0").is_err());
         assert!(parse(&args("check --fast"), "1.6.0").is_err());
+    }
+
+    #[test]
+    fn gh_s_failure_is_told_apart_from_no_release() {
+        let told =
+            r#"{"assets":[{"name":"Lokyr-1.6.0.dmg"}],"isDraft":true,"targetCommitish":"abc"}"#;
+        let viewed = viewed_of(true, told, "").unwrap().unwrap();
+        assert!(viewed.is_draft);
+        assert_eq!(viewed.target_commitish, "abc");
+        assert_eq!(viewed.assets[0].name, "Lokyr-1.6.0.dmg");
+        assert!(
+            viewed_of(false, "", "release not found\n")
+                .unwrap()
+                .is_none()
+        );
+        assert!(viewed_of(false, "", "HTTP 502: Bad Gateway").is_err());
+        assert!(viewed_of(false, "", "error connecting to api.github.com").is_err());
+    }
+
+    #[test]
+    fn a_draft_of_another_commit_or_of_no_feed_is_not_published() {
+        let viewed = |draft: bool, of: &str, assets: &[&str]| Viewed {
+            is_draft: draft,
+            target_commitish: of.to_owned(),
+            assets: assets
+                .iter()
+                .map(|name| Asset {
+                    name: (*name).to_owned(),
+                })
+                .collect(),
+        };
+        let whole = ["Lokyr-1.6.0.dmg", "appcast.xml", "Lokyr-1.6.0.dSYM.zip"];
+        // The built head's draft, of its DMG and appcast.
+        assert!(publishable(&viewed(true, "b", &whole), "1.6.0", Some("b"), Some("m")).is_ok());
+        // Moved to the merge already, by a former publishing that failed
+        // after.
+        assert!(publishable(&viewed(true, "m", &whole), "1.6.0", Some("b"), Some("m")).is_ok());
+        // Of a former push.
+        let stale = publishable(&viewed(true, "a", &whole), "1.6.0", Some("b"), Some("m"))
+            .unwrap_err()
+            .to_string();
+        assert!(stale.contains("is of a, not of b"), "{stale}");
+        // Of no appcast: its `draft` failed or runs still.
+        let partial = publishable(
+            &viewed(true, "b", &["Lokyr-1.6.0.dmg"]),
+            "1.6.0",
+            Some("b"),
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(partial.contains("lacks appcast.xml"), "{partial}");
+        assert!(
+            publishable(&viewed(true, "b", &[]), "1.6.0", None, None)
+                .unwrap_err()
+                .to_string()
+                .contains("lacks Lokyr-1.6.0.dmg and appcast.xml")
+        );
+        // A candidate has no feed; of no built commit told, by hand, any.
+        assert!(
+            publishable(
+                &viewed(true, "x", &["Lokyr-1.6.0-rc.1.dmg"]),
+                "1.6.0-rc.1",
+                None,
+                None
+            )
+            .is_ok()
+        );
+        // Published already.
+        assert!(publishable(&viewed(false, "b", &whole), "1.6.0", Some("b"), None).is_err());
     }
 
     #[test]

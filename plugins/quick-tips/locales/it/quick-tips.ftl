@@ -37,12 +37,12 @@ tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-
 tip-block-header = Sei risalito in un output lungo? Il prompt del comando resta in cima al pannello: fai clic per tornare al comando.
 tip-block-copy = Fai clic destro sull'output di un comando e apri Blocco per copiare il comando, il suo output o entrambi, o per selezionarne l'output o tutto il blocco. Lo stesso menu si apre col clic destro sulle righe fissate in cima.
 tip-block-details = Fai clic destro sull'output di un comando e scegli Blocco › Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
-tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
+tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, { $also } lo copia ed Esc termina la selezione.
 tip-block-rerun = Fai clic destro sull'output di un comando e scegli Blocco › Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
 tip-block-spacing = Vuoi più spazio fra i comandi? Imposta spacing = true in [plugins.blocks] per una riga vuota prima di ogni prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
-tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.
+tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né { $keys } né Chiudi gli altri tab lo chiudono.
 tip-tab-groups = Fai clic destro su un tab e scegli Nuovo gruppo con il tab per raccogliere i tab sotto un nome e un colore. Fai clic sulla pillola del gruppo per comprimerlo, o trascina un tab subito dopo per metterlo dentro.
 tip-restore-scrollback = Imposta restore-windows = "always" e restore-scrollback = true nella sezione [app] della config: le finestre si riaprono come le hai lasciate, e ogni pane mostra ciò che mostrava quando sei uscito, comandi compresi.
 tip-hints = Premi { $keys } per etichettare link, percorsi e hash sullo schermo, poi scrivi un'etichetta per aprirlo; in maiuscolo lo copi.
@@ -61,9 +61,9 @@ tip-sessions = Finestra › Sessioni › Nuova sessione apre una sessione a sé,
 tip-layouts = Finestra › Sessioni › Salva sessione come layout… salva finestre, tab e split in un file; aggiungi un comando a un pane lì, e il selettore apre il layout come nuova sessione che lo esegue.
 tip-session-switcher = Premi { $keys } per passare a una sessione o aprirne una nella cartella di un progetto: aggiungi folders = ["~/src/*"] a una sezione [sessions] della config per elencare i tuoi progetti.
 tip-last-session = Premi { $keys } per passare alla sessione che usavi prima, con le sue finestre dove le avevi lasciate.
-tip-floating = Premi { $keys } per un pannello che fluttua sopra il tab, per esempio una shell di appoggio; trascinane il titolo per spostarlo, e premi ⌥⌘F per nasconderlo e mostrarlo di nuovo.
+tip-floating = Premi { $keys } per un pannello che fluttua sopra il tab, per esempio una shell di appoggio; trascinane il titolo per spostarlo, e premi { $also } per nasconderlo e mostrarlo di nuovo.
 tip-popup = Associa un tasto a `pane.popup` con un comando, per esempio lazygit, per eseguirlo in un popup sopra il tab che si chiude quando il comando finisce.
-tip-broadcast = Premi { $keys } per scrivere in tutti i pannelli del tab insieme, per esempio lo stesso comando su più server; un anello rosso segna ogni pannello, e gli stessi tasti la fermano.
+tip-broadcast = Premi { $keys } per scrivere in tutti i pannelli del tab insieme, o { $also } per tutti quelli della finestra, per esempio lo stesso comando su più server; un anello rosso segna ogni pannello, e gli stessi tasti la fermano.
 tip-smooth-scroll = Imposta smooth-scroll = true in [window] nella config, e il trackpad scorre il testo a pixel, continuando a scivolare quando alzi le dita; anche lo scatto della rotella del mouse scivola.
 tip-cursor-guide = Premi { $keys }, o Vista › Mostra la guida del cursore, per una banda sulla riga del cursore che mostra dov'è.
 tip-transparency = Premi { $keys }, o Vista › Usa la trasparenza, per mostrare opaca una finestra traslucida mentre leggi, e di nuovo per vederci attraverso; la config resta com'è.

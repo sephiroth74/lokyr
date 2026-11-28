@@ -199,7 +199,8 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     let out = out.unwrap_or_else(|| root.join("target/site"));
-    let pages = build(&root, &out)?;
+    let appcast = crate::feed::latest_release_appcast()?;
+    let pages = build(&root, &out, appcast.as_deref())?;
     let broken = broken_links(&out)?;
     if !broken.is_empty() {
         for link in &broken {
@@ -405,9 +406,10 @@ fn collect_pages(folder: &Path, pages: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Builds the site of the documents of `root` into `out`, made anew: how
-/// many pages it wrote.
-pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
+/// Builds the site of the documents of `root` into `out`, made anew, its
+/// updates' feed `appcast`, the latest release's, where given: how many
+/// pages it wrote.
+pub(crate) fn build(root: &Path, out: &Path, appcast: Option<&str>) -> Result<usize> {
     let settings = settings(root)?;
     let documents = documents(root)?;
     let summary = summary(root, &documents)?;
@@ -417,9 +419,9 @@ pub(crate) fn build(root: &Path, out: &Path) -> Result<usize> {
     fs::create_dir_all(out).with_context(|| format!("making {}", out.display()))?;
     copy_folder(&root.join("site/public"), out, &|_| true)?;
     // The updates' feed: the latest published release's appcast, an asset
-    // of the release, in place of the site's own, which a release of none
-    // keeps.
-    if let Some(appcast) = crate::feed::latest_release_appcast() {
+    // of the release, in place of the site's own, which a release before
+    // the releases held it keeps.
+    if let Some(appcast) = appcast {
         fs::write(out.join("appcast.xml"), appcast).context("writing the site's appcast")?;
     }
     for file in ["style.css", "search.js", "site.js"] {
@@ -3054,7 +3056,7 @@ mod tests {
             .canonicalize()
             .unwrap();
         let out = std::env::temp_dir().join(format!("lokyr-site-{}", std::process::id()));
-        let pages = build(&root, &out).unwrap();
+        let pages = build(&root, &out, None).unwrap();
         let documents = documents(&root).unwrap();
         assert_eq!(pages, documents.len());
         for document in &documents {

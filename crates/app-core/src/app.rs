@@ -5604,12 +5604,14 @@ impl<B: Backend> App<B> {
                 self.arm_closed_timer(platform);
             }
             // The plugins' timers whose time came fire, whose events the
-            // turn's end delivers.
+            // turn's end delivers: as of the time that the platform's timer
+            // was armed for, at least, which came.
             AppEvent::Timer(timer)
                 if self.plugin_timer.is_some_and(|(armed, _)| armed == timer) =>
             {
-                self.plugin_timer = None;
-                self.plugins.timers_due(Instant::now());
+                let now = Instant::now();
+                let due = self.plugin_timer.take().map_or(now, |(_, at)| at.max(now));
+                self.plugins.timers_due(due);
                 self.arm_plugin_timer(platform);
             }
             AppEvent::Timer(timer)

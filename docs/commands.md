@@ -152,7 +152,8 @@ The keys below show as macOS writes them, then as the config writes them. A key 
 
 | Command | Title | Arguments | Default keys |
 |---|---|---|---|
-| [`command-palette.find-all`](plugins/command-palette.md) | Find in All Tabs… |  | ⇧⌘F (`cmd+shift+f`) · not released yet |
+| [`search.find-all`](plugins/search.md) | Find in All Tabs… |  | ⇧⌘F (`cmd+shift+f`) · not released yet |
+| [`search.move`](plugins/search.md) | Move in Find in All Tabs | `delta`, whole number | ↑ (`up`), `delta = -1`, while `search.find-all.focused`; ↓ (`down`), `delta = 1`, while `search.find-all.focused` · not released yet |
 | [`search.next`](plugins/search.md) | Find Next |  | ⌘G (`cmd+g`) |
 | [`search.open`](plugins/search.md) | Find… | `text`, text, `""` by default; `column`, whole number, `-1` by default; `row`, whole number, `0` by default | ⌘F (`cmd+f`) |
 | [`search.previous`](plugins/search.md) | Find Previous |  | ⇧⌘G (`cmd+shift+g`) |

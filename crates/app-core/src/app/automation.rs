@@ -100,6 +100,7 @@ impl<B: Backend> App<B> {
             name: client.name,
             terminal: client.terminal,
             waits: client.waits,
+            fleeting: client.fleeting,
         };
         if !self.plugins.automation(id, client, request, front) {
             platform.answer_automation(

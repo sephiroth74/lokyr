@@ -514,13 +514,20 @@ pub const CONTEXTS: [&str; 3] = ["pane.focused", "selection", "alternate-screen"
 /// of its panels shows, `namespace.focused`, while one of them has the
 /// keyboard's focus, or `namespace.selected`, while it selects a block of
 /// the pane that has the keyboard, of the plugin's namespace, as
-/// `search.open`; not of the first part of a host's context, as `pane` or
-/// `selection`, whose names are those of [`CONTEXTS`] alone.
+/// `search.open`; or `namespace.panel.open` and `namespace.panel.focused`
+/// of one of its panels alone, by the panel's id, as
+/// `search.find-all.focused`; not of the first part of a host's context, as
+/// `pane` or `selection`, whose names are those of [`CONTEXTS`] alone.
 pub fn is_panel_context(name: &str) -> bool {
-    let Some((namespace, state)) = name.split_once('.') else {
-        return false;
+    let parts: Vec<&str> = name.split('.').collect();
+    let (namespace, states): (&str, &[&str]) = match parts[..] {
+        [namespace, _] => (namespace, &["open", "focused", "selected"]),
+        [namespace, panel, _] if crate::command::is_part(panel) => {
+            (namespace, &["open", "focused"])
+        }
+        _ => return false,
     };
-    matches!(state, "open" | "focused" | "selected")
+    parts.last().is_some_and(|state| states.contains(state))
         && crate::command::is_part(namespace)
         && !CONTEXTS
             .iter()

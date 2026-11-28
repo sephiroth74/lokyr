@@ -16,6 +16,7 @@ fn client() -> platform::Client {
         name: "Acme Script".to_owned(),
         terminal: false,
         waits: true,
+        fleeting: false,
     }
 }
 
@@ -657,14 +658,14 @@ fn a_request_that_waits_past_its_deadline_fails() {
     // A client that waits for the question waits up to its deadline.
     fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(60));
     assert!(fake.automation_answers().is_empty());
+    // The plugin fails it a second before the host's deadline, so that
+    // the user's later answer does it no more.
     fake.fire_timers(&mut app, Instant::now() + Duration::from_secs(111));
-    assert_eq!(
-        answered(&mut fake, &mut app, 7),
-        platform::Answer::Error {
-            code: Code::Failed.number(),
-            message: super::super::automation::LATE.to_owned(),
-        }
-    );
+    let platform::Answer::Error { code, message } = answered(&mut fake, &mut app, 7) else {
+        panic!("not failed");
+    };
+    assert_eq!(code, Code::Failed.number());
+    assert!(message.contains("waited too long"), "{message}");
     // The answer that comes after is the plugin's alone: the platform
     // took the request's.
     let question = fake.alerts()[0].id;

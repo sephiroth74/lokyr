@@ -126,7 +126,7 @@ pub fn run(mut args: impl Iterator<Item = String>) -> Result<ExitCode> {
             if let Some(arg) = args.next() {
                 bail!("feed publish takes the DMG alone, not `{arg}`");
             }
-            let previous = published_appcast(&root);
+            let previous = published_appcast(&root)?;
             let published = publish(&root, &dmg, previous.as_deref())?;
             for asset in published.deltas.iter().chain([&published.appcast]) {
                 println!("feed: {} to upload to its release", asset.display());
@@ -229,23 +229,87 @@ fn serve(root: &Path) -> Result<()> {
 }
 
 /// The public feed's appcast as it is now: the latest published release's
-/// asset, or, of a release of none, as before the releases held it, the
-/// site's; none of neither.
-pub(crate) fn published_appcast(root: &Path) -> Option<String> {
-    latest_release_appcast().or_else(|| fs::read_to_string(root.join(PUBLIC_APPCAST)).ok())
+/// asset, or, of a release before the releases held it, the site's; none
+/// of neither. Fails as [`latest_release_appcast`] does.
+pub(crate) fn published_appcast(root: &Path) -> Result<Option<String>> {
+    Ok(match latest_release_appcast()? {
+        Some(appcast) => Some(appcast),
+        None => fs::read_to_string(root.join(PUBLIC_APPCAST)).ok(),
+    })
 }
 
+/// The first release that holds its appcast as an asset: a latest release
+/// from it of none is a fault, not a release before the releases held it.
+const FIRST_OF_ITS_APPCAST: [u64; 3] = [1, 6, 0];
+
 /// The latest published release's appcast, an asset of the release, as
-/// GitHub serves it; none of a release of none, or offline.
-pub(crate) fn latest_release_appcast() -> Option<String> {
-    Command::new("curl")
-        .args(["--fail", "--silent", "--location", "--max-time", "60"])
+/// GitHub serves it, tried again of a failure that passes; none of a
+/// release before the releases held it, whose feed is the site's. Fails of
+/// the network's failure past its tries, of a latest release from
+/// [`FIRST_OF_ITS_APPCAST`] of no appcast, and of an answer that is no
+/// appcast, so that no feed of an old release is served, or built on, of a
+/// failure that tells nothing.
+pub(crate) fn latest_release_appcast() -> Result<Option<String>> {
+    let body =
+        std::env::temp_dir().join(format!("lokyr-latest-appcast-{}.xml", std::process::id()));
+    let output = Command::new("curl")
+        .args(["--silent", "--show-error", "--location", "--max-time", "60"])
+        .args(["--retry", "4", "--retry-delay", "5", "--retry-connrefused"])
+        .arg("--output")
+        .arg(&body)
+        .args(["--write-out", "%{http_code} %{url_effective}"])
         .arg(LATEST_APPCAST)
         .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
-        .filter(|text| text.contains("<rss"))
+        .context("running curl for the latest release's appcast")?;
+    let text = fs::read_to_string(&body).unwrap_or_default();
+    let _ = fs::remove_file(&body);
+    ensure!(
+        output.status.success(),
+        "the latest release's appcast could not be fetched: {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    latest_of(&String::from_utf8_lossy(&output.stdout), &text)
+}
+
+/// The latest release's appcast of curl's `told`, its answer's status and
+/// its last address, and of `text`, its answer's body, as
+/// [`latest_release_appcast`] tells it.
+fn latest_of(told: &str, text: &str) -> Result<Option<String>> {
+    let told = told.trim();
+    let (status, address) = told.split_once(' ').unwrap_or((told, ""));
+    match status {
+        "200" => {
+            ensure!(
+                text.contains("<rss"),
+                "the latest release's appcast, of {address}, is no appcast"
+            );
+            Ok(Some(text.to_owned()))
+        }
+        // No asset of that name: of the release that the redirect names.
+        "404" => {
+            let version = address
+                .split("/releases/download/v")
+                .nth(1)
+                .and_then(|rest| rest.split('/').next())
+                .with_context(|| {
+                    format!("GitHub found no latest release's appcast, of {address}")
+                })?;
+            let numbers: Vec<u64> = version
+                .split('-')
+                .next()
+                .unwrap_or_default()
+                .split('.')
+                .map(str::parse)
+                .collect::<Result<_, _>>()
+                .with_context(|| format!("`{version}` is no release's version"))?;
+            ensure!(
+                numbers.as_slice() < FIRST_OF_ITS_APPCAST.as_slice(),
+                "the latest release, v{version}, holds no appcast.xml: upload its appcast, `target/releases/{version}/appcast.xml`, to it"
+            );
+            Ok(None)
+        }
+        other => bail!("GitHub answered {other} of the latest release's appcast, of {address}"),
+    }
 }
 
 /// A release put into the public feed: the deltas made for it, and the
@@ -521,6 +585,50 @@ fn status(command: &mut Command, what: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_latest_release_s_appcast_is_told_apart_from_a_failure() {
+        let feed = "<?xml version=\"1.0\"?><rss><channel></channel></rss>";
+        let at = "https://objects.githubusercontent.com/appcast.xml";
+        // The release's asset.
+        assert_eq!(
+            latest_of(&format!("200 {at}"), feed).unwrap().as_deref(),
+            Some(feed)
+        );
+        // A release before the releases held it: the site's feed.
+        let before =
+            "404 https://github.com/sephiroth74/lokyr/releases/download/v1.5.0/appcast.xml";
+        assert_eq!(latest_of(before, "Not Found").unwrap(), None);
+        // A release from 1.6.0 of none: a fault, never the old feed.
+        let missing = latest_of(
+            "404 https://github.com/sephiroth74/lokyr/releases/download/v1.6.0/appcast.xml",
+            "Not Found",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            missing.contains("v1.6.0, holds no appcast.xml"),
+            "{missing}"
+        );
+        assert!(
+            latest_of(
+                "404 https://github.com/sephiroth74/lokyr/releases/download/v1.10.2/appcast.xml",
+                ""
+            )
+            .is_err()
+        );
+        // GitHub's failure, a page that is no appcast, and a 404 of no
+        // release's address.
+        assert!(latest_of(&format!("503 {at}"), "").is_err());
+        assert!(latest_of(&format!("200 {at}"), "<html>").is_err());
+        assert!(
+            latest_of(
+                "404 https://github.com/sephiroth74/lokyr/releases/latest",
+                ""
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn the_deltas_are_made_of_the_latest_releases_before() {

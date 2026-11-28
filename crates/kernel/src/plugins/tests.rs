@@ -4887,7 +4887,8 @@ fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
         "the first told"
     );
     std::thread::sleep(Duration::from_millis(100));
-    assert_eq!(pins(&app), before);
+    // The second's pin alone, of the row from which it follows output.
+    assert_eq!(pins(&app), before + 1);
     // A search ended lets its matches go; a read of it is refused.
     plugins
         .run("finder.x", Args::new(), &mut app.context())
@@ -4895,7 +4896,7 @@ fn a_search_that_the_next_one_ends_stops_and_lets_its_matches_go() {
     let third = searched.borrow().last.unwrap();
     let (_, count) = searched_until_done(&mut app, &mut plugins, &searched, third);
     assert_eq!(count, 5000);
-    assert_eq!(pins(&app), before + 2 * 5000);
+    assert_eq!(pins(&app), before + 2 * 5000 + 1);
     plugins
         .run("finder.end", Args::new(), &mut app.context())
         .unwrap();

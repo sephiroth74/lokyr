@@ -57,12 +57,14 @@ pub fn search_glyph(typeset: Typeset) -> f32 {
 
 /// The room of a search field's glyph of `glyph` points: from its edge to
 /// the glyph's box, the box's width, and the room after it, in points, as
-/// macOS 27's, 8, 16 and 2 of glyphs of 13.
+/// macOS 27's, 8, 16 and 2 of glyphs of 13; past 13, the room after it
+/// grows, 8 of glyphs of 18, so that a large field's text stands apart from
+/// its glass.
 fn search_room(glyph: f32) -> (f32, f32, f32) {
     (
         (glyph * 8.0 / 13.0).round(),
         (glyph * 16.0 / 13.0).round(),
-        2.0,
+        (2.0 + (glyph - 13.0).max(0.0) * 1.2).round(),
     )
 }
 
@@ -2329,5 +2331,28 @@ mod tests {
         let node = small.children(small.root().unwrap())[0];
         assert_eq!(search_glyph(small.typeset(node)), 11.0);
         assert_eq!(insets(&small, node), (7.0 + 14.0 + 2.0, 23.0));
+        // Of a large text, larger glyphs, and more room after its glass, so
+        // that its text stands apart from it.
+        let mut large = Tree::new();
+        let changes = large
+            .update(&Node::container(vec![
+                Node::field("Search")
+                    .key("search")
+                    .search()
+                    .style(lokyr_plugin_sdk::view::Style {
+                        text_size: Some(TextSize::Large),
+                        ..lokyr_plugin_sdk::view::Style::default()
+                    }),
+            ]))
+            .unwrap();
+        let node = large.children(large.root().unwrap())[0];
+        assert_eq!(search_glyph(large.typeset(node)), 18.0);
+        assert_eq!(insets(&large, node), (11.0 + 22.0 + 8.0, 41.0));
+        let mut layout = Layout::new(2.0);
+        layout.update(&large, &changes);
+        layout.compute(&large, None, None, &mut Fixed);
+        let frame = layout.frame(&large, node).unwrap();
+        let (glass, _) = search_parts(&large, &layout, node).unwrap();
+        assert_eq!((glass.x, glass.width), (frame.x + 22.0, 44.0));
     }
 }

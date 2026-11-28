@@ -484,6 +484,7 @@ export type AutomationClient = {
     name: string,
     terminal: boolean?,
     waits: boolean?,
+    fleeting: boolean?,
 }
 
 export type AutomationCommand = {

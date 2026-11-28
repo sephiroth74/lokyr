@@ -575,12 +575,14 @@ fn client() -> lokyr_platform_core::automation::Client {
     match pid {
         Some(pid) => crate::clients::of_pid(pid),
         // An event of no sender's process: one client of its own, which no
-        // process takes.
+        // process takes, its answer held while the app runs alone, as any
+        // such event shares it.
         None => lokyr_platform_core::automation::Client {
             id: "unknown".to_owned(),
             name: "an app".to_owned(),
             terminal: false,
             waits: false,
+            fleeting: true,
         },
     }
 }
