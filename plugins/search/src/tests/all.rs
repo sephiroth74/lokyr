@@ -427,7 +427,9 @@ fn find_in_all_tabs_searches_insensitive_of_the_config_s_case() {
 #[test]
 fn find_in_all_tabs_searches_more_panes_than_a_call_starts_searches() {
     let (mut host, mut plugin) = host(&[], Data::Nil);
-    let more = MOST_SEARCHES + 4;
+    // More than a delivery's parts start, as each part's call starts
+    // searches until the host's bound of a call refuses one.
+    let more = 2 * MOST_SEARCHES + 4;
     for at in 0..more {
         let id = if at == 0 {
             PANE
@@ -441,10 +443,11 @@ fn find_in_all_tabs_searches_more_panes_than_a_call_starts_searches() {
     opened(&mut host, &mut plugin);
     typed_all(&mut host, &mut plugin, "needle");
     // The first ones' parts bring the next ones' searches, at each call.
-    for _ in 0..4 {
+    for _ in 0..8 {
         host.deliver(&mut plugin).unwrap();
     }
     assert_eq!(rows(&mut host, &mut plugin).len(), more);
+    assert!(!plugin.all.as_ref().unwrap().invalid);
 }
 
 #[test]

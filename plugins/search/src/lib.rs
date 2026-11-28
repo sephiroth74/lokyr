@@ -973,7 +973,7 @@ impl Plugin for Search {
                     }
                 }
                 Event::PanelClosed(id) if *id == PanelId::from(all::PANEL) => {
-                    self.closed_all(cx)?
+                    self.closed_all(cx)?;
                 }
                 Event::PanelClosed(id) if *id == PanelId::from(BAR) => {
                     if self.reopening > 0 {

@@ -2095,6 +2095,36 @@ fn find_in_all_tabs_takes_its_arrows_and_the_find_bar_s_field_keeps_its_own() {
     assert_eq!(selected_text(&app, window).as_deref(), Some("error"));
 }
 
+#[test]
+fn find_in_all_tabs_lists_the_matches_of_every_window() {
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'error here\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let first = fake.windows().next().unwrap();
+    app.windows.get_mut(&first).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, first, "ready"));
+    fake.send_app(&mut app, AppEvent::Command("window.new".to_owned()));
+    run_until(&mut fake, &mut app, |fake, _| fake.windows().count() == 2);
+    let second = fake.windows().find(|&window| window != first).unwrap();
+    app.windows.get_mut(&second).unwrap().surface = Some(fakes::Surface::default());
+    run_until(&mut fake, &mut app, |_, app| shows(app, second, "ready"));
+    fake.send(&mut app, first, WindowEvent::Focused(true));
+    frames(&mut fake, &mut app, first);
+    frames(&mut fake, &mut app, second);
+    command(&mut fake, &mut app, first, "search.find-all");
+    assert!(focused_in(&app, first, "find-all"));
+    fake.send(
+        &mut app,
+        first,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_all_rows(app, first).0 == ["error here", "error here"]
+    });
+}
+
 /// The titles of the palette's list in `window`, in their order.
 fn palette_titles(app: &App, window: WindowId) -> Vec<String> {
     let Some(view) = app.windows[&window]

@@ -93,8 +93,9 @@ impl Found {
 /// searches, each of its pane's place, the places whose searches wait for
 /// a call of their own, as a call starts a few at most, the matches that
 /// they found so far, the field's text, the selected match's place in the
-/// list, and whether the host refused the text, as of a regex that does
-/// not compile.
+/// list, whether the host refused the text, as of a regex that does not
+/// compile, and whether a search of the text started, past which a refusal
+/// is the host's bound of a call's searches.
 #[derive(Debug, Default)]
 pub(crate) struct All {
     pub(crate) places: Vec<Place>,
@@ -104,6 +105,7 @@ pub(crate) struct All {
     pub(crate) query: String,
     pub(crate) selected: usize,
     pub(crate) invalid: bool,
+    pub(crate) started: bool,
 }
 
 /// What Find in All Tabs shows: its toggles' states, the rows of its
@@ -430,6 +432,7 @@ impl Search {
         all.selected = 0;
         all.pending.clear();
         all.invalid = false;
+        all.started = false;
         if all.query.is_empty() {
             return Ok(());
         }
@@ -457,6 +460,13 @@ impl Search {
             match cx.search(place.pane, query.clone()) {
                 Ok(id) => {
                     all.searches.insert(id, at);
+                    all.started = true;
+                }
+                // Past a search of the text that started, the host's bound
+                // of a call's searches: the place waits for the next call.
+                Err(error) if error.code == Code::Failed && all.started => {
+                    all.pending.push(at);
+                    break;
                 }
                 // A regex that does not compile, which no pane takes.
                 Err(error) if error.code == Code::Failed => {
