@@ -958,6 +958,7 @@ impl Plugin for Search {
     /// Tabs' its own; a change of the config takes its options, the matches
     /// shown as they say.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
+        let mut all_parts = false;
         for event in events {
             match event {
                 Event::Searched {
@@ -968,7 +969,9 @@ impl Plugin for Search {
                     done,
                     ..
                 } => {
-                    if !self.searched_all(cx, *id, *pane, matches)? {
+                    if self.searched_all(cx, *id, *pane, (matches, *done))? {
+                        all_parts = true;
+                    } else {
                         self.searched(cx, *id, matches, (*count, *done))?;
                     }
                 }
@@ -995,6 +998,10 @@ impl Plugin for Search {
                 }
                 _ => {}
             }
+        }
+        // Find in All Tabs' searches that wait, once its parts are taken.
+        if all_parts {
+            self.searched_all_end(cx)?;
         }
         Ok(())
     }

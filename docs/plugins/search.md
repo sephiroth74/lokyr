@@ -25,7 +25,7 @@ A bar at the top right of the pane that searches its screen and its scrollback a
 ## Find in All Tabs
 
 - **Edit › Find in All Tabs…**, ⇧⌘F, opens a search of every pane of the session's windows, the hidden tabs' too, in a panel near the top of the window · not released yet
-- **As you type**, it searches them all, nearest the bottom of each pane first, and lists each match as a row: the line that holds it, and its tab's title at the row's end. The rows go in the order of the windows, their tabs and their panes, then of the lines. It lists 1000 matches at most.
+- **As you type**, it searches them all, nearest the bottom of each pane first, and lists each match as a row: the line that holds it, and its tab's title at the row's end. The rows go in the order of the windows, their tabs and their panes, then of the lines. It lists the first 1000 matches in that order.
 - **The toggles** at the field's end are the bar's: case, whole words and regular expressions. A change in either shows in the other, and the case of [`case`](../CONFIGURATION.md#pluginssearch) counts in both.
 - **↑ and ↓** move through the list while you type; **Return**, or a click, brings the match's pane forward, with its tab and its window, selects the match, and opens the bar there with your text, the match its current one, so that ⌘G goes on from it.
 - **The bar closes** as Find in All Tabs opens, as Escape would close it, and ⌘F closes Find in All Tabs: one search of a pane at a time.

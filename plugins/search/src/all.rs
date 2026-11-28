@@ -73,12 +73,12 @@ pub(crate) struct Place {
 }
 
 /// A match: the place of its pane among the places, its cells, and its
-/// line's text.
+/// line's text, once read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Found {
     pub(crate) place: usize,
     pub(crate) found: SearchMatch,
-    pub(crate) line: String,
+    pub(crate) line: Option<String>,
 }
 
 impl Found {
@@ -175,31 +175,55 @@ fn places(cx: &mut Cx<'_>) -> Result<Vec<Place>, Error> {
     Ok(places)
 }
 
-/// Takes `matches`, of the pane at `place`, into `found`, in its order, of
-/// each one's line as the pane holds it, up to [`MOST_FOUND`] in all.
-fn take(
-    cx: &mut Cx<'_>,
-    found: &mut Vec<Found>,
-    place: (usize, PaneId),
-    matches: &[SearchMatch],
-) -> Result<(), Error> {
+/// Takes `matches`, of the pane at `place`, into `found`, each at its
+/// place in the list's order, [`MOST_FOUND`] at most, of no line yet: a
+/// match past the last of a full list is left out, and one before it puts
+/// the last out, so that a later pane's matches, which may come first, do
+/// not crowd out an earlier one's. Whether any came in.
+fn admit(found: &mut Vec<Found>, place: usize, matches: &[SearchMatch]) -> bool {
+    let mut came = false;
     for &each in matches {
-        if found.len() >= MOST_FOUND {
-            break;
-        }
-        let line = cx
-            .line_text(place.1, each.first.1, REACH)?
-            .map(|line| shortened(line.text.trim()))
-            .unwrap_or_default();
         let new = Found {
-            place: place.0,
+            place,
             found: each,
-            line,
+            line: None,
         };
+        if found.len() >= MOST_FOUND && found.last().is_some_and(|last| last.order() <= new.order())
+        {
+            continue;
+        }
         let at = found.partition_point(|kept| kept.order() < new.order());
         found.insert(at, new);
+        found.truncate(MOST_FOUND);
+        came = true;
     }
-    Ok(())
+    came
+}
+
+/// Reads the lines of the matches of `found` of the pane at `place` that
+/// have none yet, each row's once; false of a read that fails, as of a pane
+/// that another plugin closed meanwhile.
+fn read_lines(cx: &mut Cx<'_>, found: &mut [Found], place: (usize, PaneId)) -> bool {
+    let mut lines: BTreeMap<i64, String> = BTreeMap::new();
+    for each in found
+        .iter_mut()
+        .filter(|each| each.place == place.0 && each.line.is_none())
+    {
+        let row = each.found.first.1;
+        if let Some(line) = lines.get(&row) {
+            each.line = Some(line.clone());
+            continue;
+        }
+        let Ok(read) = cx.line_text(place.1, row, REACH) else {
+            return false;
+        };
+        let line = read
+            .map(|line| shortened(line.text.trim()))
+            .unwrap_or_default();
+        lines.insert(row, line.clone());
+        each.line = Some(line);
+    }
+    true
 }
 
 /// `text`, of [`MOST_LINE`] characters at most, past which it ends in an
@@ -310,7 +334,7 @@ impl Search {
                         .get(found.place)
                         .map(|place| place.title.clone())
                         .unwrap_or_default();
-                    (found.line.clone(), title)
+                    (found.line.clone().unwrap_or_default(), title)
                 })
                 .collect(),
             invalid: all.invalid,
@@ -358,14 +382,18 @@ impl Search {
     }
 
     /// Takes a part of the search `id`, if it is one of Find in All Tabs':
-    /// its matches in the list, of their lines; and starts the searches
-    /// that wait. Whether it was one of them.
+    /// its matches in the list, of their lines; the search ends at its last
+    /// part, or as its pane's lines no longer read, its matches going; and,
+    /// once the list is full, those of the places past its last match's,
+    /// which can bring none before it, end, and the places that wait go.
+    /// Whether it was one of them; the searches that wait start once the
+    /// delivery's parts are taken.
     pub(crate) fn searched_all(
         &mut self,
         cx: &mut Cx<'_>,
         id: u64,
         pane: PaneId,
-        matches: &[SearchMatch],
+        (matches, done): (&[SearchMatch], bool),
     ) -> Result<bool, Error> {
         let Some(all) = &mut self.all else {
             return Ok(false);
@@ -373,13 +401,43 @@ impl Search {
         let Some(&place) = all.searches.get(&id) else {
             return Ok(false);
         };
-        take(cx, &mut all.found, (place, pane), matches)?;
-        self.start_pending(cx)?;
-        if let Some(all) = &mut self.all {
-            all.selected = all.selected.min(all.found.len().saturating_sub(1));
+        let mut ended = done;
+        if admit(&mut all.found, place, matches) && !read_lines(cx, &mut all.found, (place, pane)) {
+            all.found
+                .retain(|each| each.place != place || each.line.is_some());
+            ended = true;
         }
-        cx.request_render(panel())?;
+        if ended {
+            all.searches.remove(&id);
+            cx.end_search(id)?;
+        }
+        if all.found.len() >= MOST_FOUND
+            && let Some(last) = all.found.last().map(|found| found.place)
+        {
+            all.pending.retain(|&at| at <= last);
+            let past: Vec<u64> = all
+                .searches
+                .iter()
+                .filter(|&(_, &at)| at > last)
+                .map(|(&id, _)| id)
+                .collect();
+            for id in past {
+                all.searches.remove(&id);
+                cx.end_search(id)?;
+            }
+        }
+        all.selected = all.selected.min(all.found.len().saturating_sub(1));
         Ok(true)
+    }
+
+    /// The parts of a delivery taken: the searches that wait start, as many
+    /// as a call starts, and the list shows them.
+    pub(crate) fn searched_all_end(&mut self, cx: &mut Cx<'_>) -> Result<(), Error> {
+        if self.all.is_none() {
+            return Ok(());
+        }
+        self.start_pending(cx)?;
+        cx.request_render(panel())
     }
 
     /// Closes it, of no choice, its searches ending, as the find bar opens.
@@ -652,5 +710,31 @@ mod tests {
         let short = shortened(&long);
         assert_eq!(short.chars().count(), MOST_LINE + 1);
         assert!(short.ends_with('…'));
+    }
+
+    #[test]
+    fn a_later_pane_s_matches_do_not_crowd_out_an_earlier_one_s() {
+        let at = |row: i64| SearchMatch {
+            first: (0, row),
+            last: (5, row),
+        };
+        let mut found = Vec::new();
+        let most = i64::try_from(MOST_FOUND).unwrap();
+        let later: Vec<SearchMatch> = (0..most).map(at).collect();
+        assert!(admit(&mut found, 1, &later));
+        assert_eq!(found.len(), MOST_FOUND);
+        // The earlier pane's, which came after them, go before them, the
+        // later's last ones out, in the rows' order.
+        assert!(admit(&mut found, 0, &[at(7), at(3)]));
+        assert_eq!(found.len(), MOST_FOUND);
+        let place = |found: &Found| (found.place, found.found.first.1);
+        assert_eq!(place(&found[0]), (0, 3));
+        assert_eq!(place(&found[1]), (0, 7));
+        assert_eq!(place(&found[2]), (1, 0));
+        assert_eq!(place(found.last().unwrap()), (1, most - 3));
+        // Past the last of a full list, left out.
+        assert!(!admit(&mut found, 2, &[at(0)]));
+        assert!(!admit(&mut found, 1, &[at(most)]));
+        assert!(found.iter().all(|found| found.line.is_none()));
     }
 }

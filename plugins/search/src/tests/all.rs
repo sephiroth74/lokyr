@@ -211,12 +211,13 @@ fn find_in_all_tabs_gathers_the_matches_of_every_pane_of_the_session_s_windows()
     typed_all(&mut host, &mut plugin, "");
     assert!(rows(&mut host, &mut plugin).is_empty());
     assert!(host.searches().is_empty());
-    // Escape ends them too.
+    // Each search ended at its last part, its matches kept; Escape closes
+    // it.
     typed_all(&mut host, &mut plugin, "error");
-    assert!(!host.searches().is_empty());
+    assert!(host.searches().is_empty());
+    assert_eq!(rows(&mut host, &mut plugin).len(), 4);
     host.close_panel(&PanelId::from(PANEL));
     host.deliver(&mut plugin).unwrap();
-    assert!(host.searches().is_empty());
     assert!(plugin.all.is_none());
 }
 
@@ -294,10 +295,10 @@ fn return_goes_to_the_match_s_pane_and_opens_the_find_bar_there_of_it() {
     assert!(plugin.all.is_some());
 }
 
-/// The query of Find in All Tabs' searches, if it searches.
+/// The query of Find in All Tabs' searches, if it has a text.
 fn all_query(plugin: &Search) -> Option<SearchQuery> {
     let all = plugin.all.as_ref()?;
-    (!all.searches.is_empty()).then(|| crate::query_of(&all.query, plugin.options, plugin.settings))
+    (!all.query.is_empty()).then(|| crate::query_of(&all.query, plugin.options, plugin.settings))
 }
 
 #[test]
@@ -319,14 +320,6 @@ fn find_in_all_tabs_searches_of_the_find_bar_s_toggles_and_its_case() {
     );
     assert!(plugin.options.sensitive);
     // Whole words and regexes, each pane searched anew of them.
-    let before: Vec<u64> = plugin
-        .all
-        .as_ref()
-        .unwrap()
-        .searches
-        .keys()
-        .copied()
-        .collect();
     on_all(
         &mut host,
         &mut plugin,
@@ -346,9 +339,8 @@ fn find_in_all_tabs_searches_of_the_find_bar_s_toggles_and_its_case() {
         whole_word: true,
     };
     assert_eq!(all_query(&plugin), Some(wanted.clone()));
-    let searches = &plugin.all.as_ref().unwrap().searches;
-    assert_eq!(searches.len(), 3);
-    assert!(searches.keys().all(|id| !before.contains(id)));
+    // Searched anew of them, the fake host finding literal text alone.
+    assert_eq!(rows(&mut host, &mut plugin).len(), 3);
     // The toggles show their states.
     let tree = host
         .render(&mut plugin, &panel())
@@ -427,9 +419,9 @@ fn find_in_all_tabs_searches_insensitive_of_the_config_s_case() {
 #[test]
 fn find_in_all_tabs_searches_more_panes_than_a_call_starts_searches() {
     let (mut host, mut plugin) = host(&[], Data::Nil);
-    // More than a delivery's parts start, as each part's call starts
-    // searches until the host's bound of a call refuses one.
-    let more = 2 * MOST_SEARCHES + 4;
+    // More than two calls' searches, which the parts of each delivery
+    // bring, once they are taken.
+    let more = 2 * MOST_SEARCHES + 8;
     for at in 0..more {
         let id = if at == 0 {
             PANE
@@ -447,7 +439,73 @@ fn find_in_all_tabs_searches_more_panes_than_a_call_starts_searches() {
         host.deliver(&mut plugin).unwrap();
     }
     assert_eq!(rows(&mut host, &mut plugin).len(), more);
-    assert!(!plugin.all.as_ref().unwrap().invalid);
+    let all = plugin.all.as_ref().unwrap();
+    assert!(!all.invalid && all.pending.is_empty());
+    // Each search ended at its last part, its matches kept.
+    assert!(host.searches().is_empty());
+}
+
+#[test]
+fn a_full_list_ends_the_searches_of_the_panes_past_its_last_match() {
+    let mut host = FakeHost::new(NAME).with_manifest(crate::MANIFEST);
+    let most = i64::try_from(crate::all::MOST_FOUND).unwrap();
+    let first = host.pane(PANE);
+    first.window = WindowId(1);
+    first.tab = TabId(1);
+    first.held = 0..most + 1;
+    for row in 0..=most {
+        first.rows.insert(row, (format!("needle {row}"), false));
+    }
+    // More later panes than a call searches, some of them waiting.
+    for at in 0..20 {
+        let later = host.pane(PaneId(20 + at));
+        later.window = WindowId(1);
+        later.tab = TabId(2 + at);
+        later.rows.insert(0, ("a later needle".to_owned(), false));
+    }
+    host.focus(Some(PANE));
+    let mut plugin = Search::default();
+    host.activate(&mut plugin).unwrap();
+    opened(&mut host, &mut plugin);
+    typed_all(&mut host, &mut plugin, "needle");
+    // The first pane's first 1000; the later panes' searches ended as the
+    // list filled, and those that waited never started, as they could
+    // bring nothing before its last.
+    let lines = lines(&mut host, &mut plugin);
+    assert_eq!(lines.len(), crate::all::MOST_FOUND);
+    assert_eq!(lines.first().map(String::as_str), Some("needle 0"));
+    assert_eq!(lines.last().map(String::as_str), Some("needle 999"));
+    assert!(host.searches().is_empty());
+    let all = plugin.all.as_ref().unwrap();
+    assert!(all.searches.is_empty() && all.pending.is_empty());
+}
+
+#[test]
+fn a_pane_that_closed_meanwhile_leaves_the_others_matches() {
+    let (mut host, mut plugin) = all_host(Data::Nil);
+    opened(&mut host, &mut plugin);
+    // Its parts owed, the other window closes, its pane's lines no longer
+    // read, before they come.
+    host.take_done();
+    host.ui_event(
+        &mut plugin,
+        &UiEvent {
+            view: panel(),
+            key: Key::from(ALL_FIELD),
+            kind: UiEventKind::InputChanged {
+                text: "error".to_owned(),
+                revision: 1,
+            },
+        },
+    )
+    .unwrap();
+    host.close_window(WindowId(3));
+    host.deliver(&mut plugin).unwrap();
+    assert_eq!(
+        lines(&mut host, &mut plugin),
+        ["error one", "an Error here"]
+    );
+    assert!(host.searches().is_empty());
 }
 
 #[test]
