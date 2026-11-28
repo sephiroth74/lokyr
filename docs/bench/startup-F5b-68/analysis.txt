@@ -1,0 +1,14 @@
+== startup, warm, first frame, 10 runs after 2, of notarized DMGs
+round 1: v150 254.4 (p90 265.4, spread 8.0%); v160 240.8 (p90 245.5, spread 5.3%); floor 229.0
+round 2: v150 249.0 (p90 264.1, spread 14.3%); v160 245.1 (p90 248.7, spread 8.3%); floor 223.8
+round 3: v150 250.2 (p90 270.3, spread 16.7%); v160 243.7 (p90 247.6, spread 10.5%); floor 232.2
+round 4: v150 248.9 (p90 262.0, spread 13.5%); v160 231.8 (p90 235.0, spread 2.8%); floor 223.4
+round 5: v150 247.2 (p90 269.9, spread 15.8%); v160 236.2 (p90 249.8, spread 7.3%); floor 223.3
+round 6: v150 231.7 (p90 249.2, spread 9.0%); v160 236.4 (p90 245.2, spread 7.1%); floor 222.1
+round 7: v150 245.9 (p90 253.3, spread 10.2%); v160 233.1 (p90 248.7, spread 7.3%); floor 221.0
+round 8: v150 248.9 (p90 249.3, spread 1.6%); v160 234.7 (p90 249.8, spread 8.4%); floor 224.9
+
+floor: median 223.6, mean 224.9 (sd 3.5), from 221.0 to 232.2
+v150: median of rounds 248.9, mean 247.0 (sd 6.3); gap median 24.5, mean 22.1 (sd 5.2)
+v160: median of rounds 236.3, mean 237.7 (sd 4.6); gap median 12.0, mean 12.8 (sd 3.7)
+v160 − v150 by round: -13.6, -3.9, -6.6, -17.1, -11.0, +4.7, -12.9, -14.3; mean -9.3 (sd 6.6), median -11.9; v160 longer in 1 of 8

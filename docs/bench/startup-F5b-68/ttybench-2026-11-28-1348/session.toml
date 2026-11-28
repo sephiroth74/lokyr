@@ -1,0 +1,17 @@
+# startup-F5b-68's part of ttybench: both copies beside the floor app.
+terminals = ["v150", "v160"]
+terminals-file = "terminals.toml"
+ab = { a = "v150", b = "v160" }
+pause = 2
+cycles = 4
+season = 30
+folder = "target/bench/startup-F5b-68/ttybench-{date}"
+
+[[run]]
+tool = "startup"
+rounds = 8
+args = ["--floor"]
+
+[[budget]]
+metric = "window_gap_ms"
+at-most = 70
