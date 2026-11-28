@@ -434,6 +434,15 @@ fn every_tip_s_text_names_the_keys_of_its_commands() {
                 "{} in {language}",
                 tip.message
             );
+            // No keys written out, which a binding of others would make
+            // wrong, but Command held with the pointer over a link.
+            if !["tip-links", "tip-editor-line"].contains(&tip.message) {
+                assert!(
+                    !line.contains(['⌘', '⌥', '⌃', '⇧']),
+                    "{} in {language} writes its keys",
+                    tip.message
+                );
+            }
         }
     }
 }

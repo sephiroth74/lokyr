@@ -182,10 +182,14 @@ const CURATED: [Curated; 67] = [
         Arg::None,
     ),
     command("prompts", "tip-prompts", "pane.prompt-previous", Arg::None),
-    command(
-        "select-block",
-        "tip-select-block",
-        "blocks.select-previous",
+    and(
+        command(
+            "select-block",
+            "tip-select-block",
+            "blocks.select-previous",
+            Arg::None,
+        ),
+        "pane.copy",
         Arg::None,
     ),
     needing(BLOCKS, plain("block-header", "tip-block-header")),
@@ -203,7 +207,7 @@ const CURATED: [Curated; 67] = [
         Arg::Text("direction", "right"),
     ),
     plain("tab-menu", "tip-tab-menu"),
-    plain("pin-tab", "tip-pin-tab"),
+    command("pin-tab", "tip-pin-tab", "tabs.close", Arg::None),
     plain("tab-groups", "tip-tab-groups"),
     plain("restore-scrollback", "tip-restore-scrollback"),
     plain("sessions", "tip-sessions"),

@@ -37,12 +37,12 @@ tip-editor-line = Imposta editor in [links] a "vscode", "cursor" o "zed", e ⌘-
 tip-block-header = Sei risalito in un output lungo? Il prompt del comando resta in cima al pannello: fai clic per tornare al comando.
 tip-block-copy = Fai clic destro sull'output di un comando e apri Blocco per copiare il comando, il suo output o entrambi, o per selezionarne l'output o tutto il blocco. Lo stesso menu si apre col clic destro sulle righe fissate in cima.
 tip-block-details = Fai clic destro sull'output di un comando e scegli Blocco › Dettagli del blocco per vederne lo stato d'uscita, l'ora d'inizio, la durata e la cartella in cui è stato eseguito.
-tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, ⌘C lo copia ed Esc termina la selezione.
+tip-select-block = Fai clic sul blocco di un comando, o premi { $keys } per l'ultimo, per selezionarlo: ↑ e ↓ passano agli altri, { $also } lo copia ed Esc termina la selezione.
 tip-block-rerun = Fai clic destro sull'output di un comando e scegli Blocco › Esegui di nuovo il comando per eseguirlo un'altra volta al prompt.
 tip-block-spacing = Vuoi più spazio fra i comandi? Imposta spacing = true in [plugins.blocks] per una riga vuota prima di ogni prompt.
 tip-tab-drag = Trascina un tab fuori dalla barra per una finestra tutta sua, o su un pannello per affiancarlo.
 tip-tab-menu = Fai clic destro su un tab per dargli un colore, o doppio clic per rinominarlo.
-tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né ⌘W né Chiudi gli altri tab lo chiudono.
+tip-pin-tab = Fai clic destro su un tab e scegli Fissa tab per tenerlo stretto all'inizio della barra. Né { $keys } né Chiudi gli altri tab lo chiudono.
 tip-tab-groups = Fai clic destro su un tab e scegli Nuovo gruppo con il tab per raccogliere i tab sotto un nome e un colore. Fai clic sulla pillola del gruppo per comprimerlo, o trascina un tab subito dopo per metterlo dentro.
 tip-restore-scrollback = Imposta restore-windows = "always" e restore-scrollback = true nella sezione [app] della config: le finestre si riaprono come le hai lasciate, e ogni pane mostra ciò che mostrava quando sei uscito, comandi compresi.
 tip-hints = Premi { $keys } per etichettare link, percorsi e hash sullo schermo, poi scrivi un'etichetta per aprirlo; in maiuscolo lo copi.

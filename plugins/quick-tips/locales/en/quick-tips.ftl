@@ -42,12 +42,12 @@ tip-editor-line = Set editor under [links] to "vscode", "cursor" or "zed", and �
 tip-block-header = Scrolled up through a long output? The command's prompt stays at the pane's top: click it to go back to the command.
 tip-block-copy = Right-click a command's output and open Block to copy the command, its output or both, or to select its output or its whole block. Right-click its pinned rows at the top for the same menu.
 tip-block-details = Right-click a command's output and choose Block › Block Details to see its exit status, when it started, how long it ran and the folder where it ran.
-tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, ⌘C copies it, and Escape ends the selection.
+tip-select-block = Click a command's block, or press { $keys } for the last one, to select it: ↑ and ↓ move to the others, { $also } copies it, and Escape ends the selection.
 tip-block-rerun = Right-click a command's output and choose Block › Run Command Again to run it once more at the prompt.
 tip-block-spacing = Want room between your commands? Set spacing = true in [plugins.blocks] for a blank row before each prompt.
 tip-tab-drag = Drag a tab out of the bar for a window of its own, or onto a pane to split beside it.
 tip-tab-menu = Right-click a tab to give it a color, or double-click it to rename it.
-tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither ⌘W nor Close Other Tabs will close it.
+tip-pin-tab = Right-click a tab and choose Pin Tab to keep it narrow at the start of the bar. Neither { $keys } nor Close Other Tabs will close it.
 tip-tab-groups = Right-click a tab and choose New Group with Tab to gather tabs under a name and a color. Click the group's pill to fold it, or drag a tab right after it to put it in.
 tip-restore-scrollback = Set restore-windows = "always" and restore-scrollback = true in your config's [app], and your windows open again as you left them, each pane showing what it showed when you quit, its commands too.
 tip-hints = Press { $keys } to label the links, paths and hashes on the screen, then type a label to open it; a capital copies it.
