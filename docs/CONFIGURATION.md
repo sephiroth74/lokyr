@@ -1702,7 +1702,7 @@ Each entry of the section is a binding: its name is the keys, in quotes, and its
   - `false`, which takes away the defaults of the keys.
 - **The context**, `when`, says when a binding holds: the names `pane.focused`, `selection` and `alternate-screen`, and those of the plugins' panels, with `!`, `&&`, `||` and parentheses, as `pane.focused && !selection`. A binding without `when` holds everywhere. An expression nests 32 levels deep at most.
   - `pane.focused` holds while the pane has the keyboard, and not while a panel's field or button has it; `alternate-screen` while a program such as vim or less shows its own screen.
-  - A plugin's panels, as the find bar, take the plugin's namespace: `search.open` holds while one of them shows, and `search.focused` while one of them has the keyboard, as `"enter" = { command = "search.next", when = "search.focused" }`. A panel of a pane behind another tab, or behind a zoomed pane, does not show. A plugin that selects a block of the pane that has the keyboard, as Blocks does of ⌘↑, takes `blocks.selected` too, which holds while the block is selected · Since 1.4. The copy mode's badge is a panel too: its keys hold in `copy-mode.open && pane.focused`, as `"x" = { command = "copy-mode.act", args = { action = "exit" }, when = "copy-mode.open && pane.focused" }`. A name of a plugin not installed reads, and never holds; `pane`, `selection` and `alternate-screen` have no names but these.
+  - A plugin's panels, as the find bar, take the plugin's namespace: `search.open` holds while one of them shows, and `search.focused` while one of them has the keyboard, as `"enter" = { command = "search.next", when = "search.focused" }`. Each panel takes its own id too, after the namespace, so that a binding holds of one of a plugin's panels alone: `search.find.focused` while the find bar has the keyboard, `search.find-all.open` and `search.find-all.focused` of Find in All Tabs · not released yet. A panel of a pane behind another tab, or behind a zoomed pane, does not show. A plugin that selects a block of the pane that has the keyboard, as Blocks does of ⌘↑, takes `blocks.selected` too, which holds while the block is selected · Since 1.4. The copy mode's badge is a panel too: its keys hold in `copy-mode.open && pane.focused`, as `"x" = { command = "copy-mode.act", args = { action = "exit" }, when = "copy-mode.open && pane.focused" }`. A name of a plugin not installed reads, and never holds; `pane`, `selection` and `alternate-screen` have no names but these.
 - **Which binding wins**: of those of the keys that hold, the last; your bindings come after the defaults.
 - A key that a binding takes runs its command again as it repeats, held down, and its release reaches nothing.
 - A click that a binding takes, a single one in the window that has the focus, runs its command before the selection, the menu of a Control click and the program; a command that takes the arguments `column` and `row` gets the cell under the pointer: its column, from `0` at the left, and the number of its row, which stays that row's as output scrolls it into the scrollback and the view scrolls, as the window showed it.
@@ -1787,9 +1787,10 @@ The defaults, of the built-in plugin `keymap-macos`, the shortcuts of macOS's ap
 | `cmd+f` | `search.open` | Opens the find bar at the top right of the pane, of your last search's text, selected, its field taking the keys, as [`[plugins.search]`](#pluginssearch) tells |
 | `cmd+g` | `search.next` | Makes the next match of the find bar's search the current one, the one above, the last after the first, and brings it into the view; it opens the bar while it is closed |
 | `cmd+shift+g` | `search.previous` | Makes the previous match the current one, the one below, the first after the last |
+| `cmd+shift+f` | `search.find-all` | Opens Find in All Tabs at the window's top: as you type, it searches every pane of the session's windows, of the find bar's options, which its toggles share, each match a row of its line and its tab's title, 1000 at most; Return brings the match's pane forward, the match selected, and opens the find bar there of the text, the match its current one; it closes the find bar as it opens, and the find bar's opening closes it; Edit › Find in All Tabs… runs it too · not released yet |
 | `cmd+shift+p` | `command-palette.open` | Opens the command palette, whose field ranks the commands as you type |
-| `cmd+shift+f` | `command-palette.find-all` | Opens Find in All Tabs in the palette: as you type, it searches every pane of the session's windows, each match a row of its line and its tab's title, 1000 at most; Return brings the match's pane forward, the match selected, and opens the find bar there of the text, the match its current one; Edit › Find in All Tabs… runs it too · not released yet |
 | `up`, `down` | `command-palette.move` | In the command palette, while its field has the keys: moves the selection up or down the list |
+| `up`, `down` | `search.move` | In Find in All Tabs, while its field has the keys: moves the selection up or down the list · not released yet |
 | `tab`, `shift+tab` | `links.hints-action` | While the hints show, as their field has the keys: moves what a pick does through open, copy, type and select, and back · Since 1.3 |
 | `cmd+shift+c` | `copy-mode.toggle` | Starts the copy mode in the pane, or ends it, as Edit › Copy Mode does: a cursor of its own, at the terminal's, or at the view's last row while the view is up in the scrollback, which the keys below move and select with, through the scrollback and the screen, without the mouse; a badge at the pane's bottom right tells the mode. While it runs, the keys that no binding takes go nowhere, rather than to the program, and ⌘C copies its selection, as always. It ends as another pane of the tab takes the keyboard, as a program such as vim shows its own screen, where it does not start, and as a resize lays the rows out anew; a click on the badge ends it too |
 | `h`, `left`, `l`, `right`, `k`, `up`, `j`, `down` | `copy-mode.move` | In the copy mode: moves its cursor a cell left or right, or a row up or down, `to` `left`, `right`, `up` or `down`, as far as the scrollback's first row and the screen's last; the view follows the cursor |
@@ -2145,14 +2146,14 @@ The find bar of the built-in plugin `lokyr/search`. `cmd+f` opens it at the top 
 
 <sub>Platforms: macOS</sub>
 
-Whether case counts while the find bar's case toggle is off; on, it always counts.
+Whether case counts while the case toggle is off, of the find bar and of Find in All Tabs, which share it; on, it always counts.
 
 | Values | Default |
 |---|---|
 | `smart`, `insensitive` | `smart` |
 
 - `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `insensitive` never counts it.
-- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them; a text that is no valid regular expression tells so in the bar, and finds nothing.
+- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them, Find in All Tabs' too; a text that is no valid regular expression tells so in the bar, and finds nothing.
 - It applies at the next search, as you save the file.
 
 ### `highlight-all`

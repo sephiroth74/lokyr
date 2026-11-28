@@ -162,12 +162,7 @@ const CURATED: [Curated; 67] = [
     command("reopen-tab", "tip-reopen-tab", "tabs.reopen", Arg::None),
     command("search", "tip-search", "search.open", Arg::None),
     plain("search-filter", "tip-search-filter"),
-    command(
-        "find-all",
-        "tip-find-all",
-        "command-palette.find-all",
-        Arg::None,
-    ),
+    command("find-all", "tip-find-all", "search.find-all", Arg::None),
     command(
         "split",
         "tip-split",

@@ -76,13 +76,13 @@ pub const BINDINGS: [(&str, &str); 56] = [
     ("cmd+end", "pane.scroll-bottom"),
     // The links'.
     ("cmd+click", "links.open"),
-    // The search's.
+    // The search's, and its Find in All Tabs.
     ("cmd+f", "search.open"),
     ("cmd+g", "search.next"),
     ("cmd+shift+g", "search.previous"),
-    // The command palette's, and its Find in All Tabs.
+    ("cmd+shift+f", "search.find-all"),
+    // The command palette's.
     ("cmd+shift+p", "command-palette.open"),
-    ("cmd+shift+f", "command-palette.find-all"),
     // The copy mode's, as iTerm2's.
     ("cmd+shift+c", "copy-mode.toggle"),
     // The hints of the links, of what the pane shows.
@@ -153,7 +153,7 @@ pub const DIRECTED: [(&str, &str, &str); 10] = [
 /// The bindings of a command of an argument, a whole number, that hold
 /// while a plugin's panel has the keyboard, after the others: each of its
 /// keys, the command, the argument's name and its value, and the context.
-pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
+pub const IN_PANELS: [(&str, &str, &str, i64, &str); 6] = [
     // The command palette's arrows, through its list while its field has
     // the keys.
     (
@@ -170,6 +170,10 @@ pub const IN_PANELS: [(&str, &str, &str, i64, &str); 4] = [
         1,
         "command-palette.focused",
     ),
+    // Find in All Tabs' arrows, through its list while its field has the
+    // keys, of its own panel alone, as the find bar's field keeps its own.
+    ("up", "search.move", "delta", -1, "search.find-all.focused"),
+    ("down", "search.move", "delta", 1, "search.find-all.focused"),
     // The hints' action, through open, copy, type and select, while their
     // field has the keys.
     ("tab", "links.hints-action", "delta", 1, "links.focused"),

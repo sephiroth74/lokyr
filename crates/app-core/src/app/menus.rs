@@ -1313,12 +1313,18 @@ const TAB_GROUPS: [&str; 7] = [
     "tabs.ungroup",
 ];
 
+/// The `search` plugin's Find in All Tabs, which the menus part from its
+/// find bar's commands.
+const FIND_ALL: &str = "search.find-all";
+
 /// The family of the command `name` in the menus, a line between one and
-/// the next: its namespace, or the tabs' groups of their own, a name of a
-/// `.` that no namespace has.
+/// the next: its namespace, or the tabs' groups and Find in All Tabs of
+/// their own, a name of a `.` that no namespace has.
 fn family(name: &str) -> String {
     if TAB_GROUPS.contains(&name) {
         "tabs.groups".to_owned()
+    } else if name == FIND_ALL {
+        "search.all".to_owned()
     } else {
         namespace(name)
     }

@@ -815,7 +815,8 @@ type MenuBarItem = {
 -- `keys`: e.g. "cmd+f" or "ctrl+a>c"; `when`: e.g. "pane.focused && !search.open", where a plugin's
 -- panels give `namespace.open` while one shows, not one of a pane behind another tab or a zoomed pane, and
 -- `namespace.focused` while one has the keyboard, and its selection of a block `namespace.selected` while the pane
--- that has the keyboard shows it · Since 1.4. A key taken from every
+-- that has the keyboard shows it · Since 1.4; each panel alone gives `namespace.panel.open` and
+-- `namespace.panel.focused` too, of its id, as "search.find-all.focused" · not released yet. A key taken from every
 -- app, with `global-hotkey`, starts with "global:", as "global:ctrl+`", without `when`: one key, by its place on the US
 -- layout, with Command, Control or Alt, or a function key; the config's global keys come first.
 type Binding = { keys: string, command: string, args: Args?, when: string? }

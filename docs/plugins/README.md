@@ -39,7 +39,7 @@ The plugins below come with the app. They are built into its binary, run on the 
 | [`links`](links.md) | ⌘-click opens a link, a URL or a path |
 | [`tabs`](tabs.md) | The tab bar, and the tabs' commands |
 | [`splits`](splits.md) | Split panes, and the commands that move between them, resize and zoom them |
-| [`search`](search.md) | The find bar: a pane's search, its matches highlighted |
+| [`search`](search.md) | The find bar: a pane's search, its matches highlighted; and Find in All Tabs, a search of every pane · not released yet |
 | [`command-palette`](command-palette.md) | The command palette: every command, ranked as you type |
 | [`quick-terminal`](quick-terminal.md) | The quick terminal: a window that a global key slides in over every app |
 | [`progress`](progress.md) | The programs' progress, in a thin bar across the window's top |

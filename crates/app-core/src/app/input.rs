@@ -503,7 +503,9 @@ impl<B: Backend> App<B> {
         }
         // The plugins' panels: `<namespace>.open` of each that shows, not
         // of one whose pane another tab or a zoomed pane hides, and
-        // `<namespace>.focused` of the one whose node has the keyboard.
+        // `<namespace>.focused` of the one whose node has the keyboard; and
+        // each of a panel of its own, `<namespace>.<panel>.open` and
+        // `<namespace>.<panel>.focused`, of the panel's id.
         let focused_view = match state.focus.target() {
             lokyr_ui_core::focus::Target::Node { panel, .. } => Some(panel),
             lokyr_ui_core::focus::Target::Pane => None,
@@ -514,11 +516,19 @@ impl<B: Backend> App<B> {
                 .placed
                 .as_ref()
                 .is_none_or(|placed| super::panels::anchor_shows(state, &placed.options.anchor));
-            if matches!(view.view, lokyr_kernel::plugins::ui::ViewId::Panel(_)) && shows {
+            let panel = match &view.view {
+                lokyr_kernel::plugins::ui::ViewId::Panel(panel) => Some(panel.0.as_str()),
+                _ => None,
+            };
+            if let (Some(panel), true) = (panel, shows) {
                 context.hold(format!("{namespace}.open"));
+                context.hold(format!("{namespace}.{panel}.open"));
             }
             if focused_view == Some(view.id) {
                 context.hold(format!("{namespace}.focused"));
+                if let Some(panel) = panel {
+                    context.hold(format!("{namespace}.{panel}.focused"));
+                }
             }
         }
         // A field that has the keyboard takes its editing keys before the

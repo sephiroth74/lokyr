@@ -5,12 +5,12 @@
   "description": "The find bar, its options and its recent searches.",
   "properties": {
     "case": {
-      "description": "Whether case counts while the find bar's case toggle is off: smart, of a text of a capital letter alone; or insensitive, never.",
+      "description": "Whether case counts while the case toggle is off, of the find bar and of Find in All Tabs: smart, of a text of a capital letter alone; or insensitive, never.",
       "type": "string",
       "enum": ["smart", "insensitive"],
       "default": "smart",
       "x-platforms": ["macos"],
-      "x-guide": "Whether case counts while the find bar's case toggle is off; on, it always counts.\n\n| Values | Default |\n|---|---|\n| `smart`, `insensitive` | `smart` |\n\n- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `insensitive` never counts it.\n- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them; a text that is no valid regular expression tells so in the bar, and finds nothing.\n- It applies at the next search, as you save the file.",
+      "x-guide": "Whether case counts while the case toggle is off, of the find bar and of Find in All Tabs, which share it; on, it always counts.\n\n| Values | Default |\n|---|---|\n| `smart`, `insensitive` | `smart` |\n\n- `smart` counts case of a text of a capital letter, and not otherwise: `error` finds `Error`, and `Error` does not find `error`; `insensitive` never counts it.\n- The toggles, of case, whole words and regular expressions, of the syntax of Rust's `regex`, keep their states from one search to the next, as Lokyr keeps them, Find in All Tabs' too; a text that is no valid regular expression tells so in the bar, and finds nothing.\n- It applies at the next search, as you save the file.",
       "x-example": "\"smart\"",
       "x-example-comment": "smart | insensitive: whether case counts while the bar's case toggle is off"
     },

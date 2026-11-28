@@ -1975,6 +1975,126 @@ fn the_find_bar_s_field_leaves_option_command_and_an_arrow_to_the_panes_move() {
     run_until(&mut fake, &mut app, |_, app| focused(app) == Some(first));
 }
 
+/// The field of the panel `panel` of `window`, of its key `query`.
+fn query_field(
+    app: &App,
+    window: WindowId,
+    panel: &str,
+) -> Option<lokyr_ui_core::field::FieldState> {
+    app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from(panel)))
+        .and_then(|view| view.surface.fields.state(&"query".into()))
+        .cloned()
+}
+
+/// The lines of Find in All Tabs' list in `window`, in their order, and
+/// the selected one's place.
+fn find_all_rows(app: &App, window: WindowId) -> (Vec<String>, Option<usize>) {
+    let Some(view) = app.windows[&window]
+        .chrome
+        .iter()
+        .find(|view| view.view == ViewId::Panel(PanelId::from("find-all")))
+    else {
+        return (Vec::new(), None);
+    };
+    let tree = &view.surface.tree;
+    let selected = view
+        .surface
+        .lists
+        .state(&"matches".into())
+        .and_then(lokyr_ui_core::list::ListState::selected);
+    let Some(list) = tree.by_key(&"matches".into()) else {
+        return (Vec::new(), selected);
+    };
+    match tree.kind(list) {
+        Some(lokyr_kernel::plugins::view::Kind::List(list)) => (
+            list.items
+                .iter()
+                .map(|item| item.texts[0].clone())
+                .collect(),
+            selected,
+        ),
+        _ => (Vec::new(), selected),
+    }
+}
+
+#[test]
+fn find_in_all_tabs_takes_its_arrows_and_the_find_bar_s_field_keeps_its_own() {
+    let none = Modifiers::NONE;
+    let drawing = Drawing::new(FontConfig::default()).unwrap();
+    let mut fake = Fake::default();
+    let program = shell("printf 'error one\\nerror two\\n'; echo ready; read line");
+    let mut app = App::new(Some(drawing), unpadded(), None).with_program(program);
+    fake.start(&mut app);
+    let window = fake.windows().next().unwrap();
+    app.windows.get_mut(&window).unwrap().surface = Some(fakes::Surface::default());
+    fake.send(&mut app, window, WindowEvent::Focused(true));
+    run_until(&mut fake, &mut app, |_, app| shows(app, window, "ready"));
+    frames(&mut fake, &mut app, window);
+    let arrow = |fake: &mut Fake, app: &mut App, code: KeyCode| {
+        fake.send(app, window, key_event(code, "", none, true));
+        fake.send(app, window, key_event(code, "", none, false));
+        frames(fake, app, window);
+    };
+    // The find bar's field keeps ↑, which moves its caret to its start, as
+    // Find in All Tabs' arrows hold of its own panel alone.
+    command(&mut fake, &mut app, window, "search.open");
+    assert!(focused_in(&app, window, "find"));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("2 of 2")
+    });
+    arrow(&mut fake, &mut app, KeyCode::ArrowUp);
+    let field = query_field(&app, window, "find").expect("the bar's field");
+    assert_eq!((field.text(), field.selection()), ("error", 0..0));
+    // Command-Shift-F, the keymap's: the bar closes, and its panel takes the
+    // keys.
+    let shifted = Modifiers { shift: true, ..CMD };
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::KeyF, "F", shifted, true),
+    );
+    frames(&mut fake, &mut app, window);
+    assert!(panel_frame(&app, window, "find").is_none());
+    assert!(panel_frame(&app, window, "find-all").is_some());
+    assert!(focused_in(&app, window, "find-all"));
+    fake.send(
+        &mut app,
+        window,
+        WindowEvent::Ime(Ime::Commit("error".to_owned())),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_all_rows(app, window).0 == ["error one", "error two"]
+    });
+    // ↓ and ↑ move its selection, and its field's caret stays at its end.
+    arrow(&mut fake, &mut app, KeyCode::ArrowDown);
+    assert_eq!(find_all_rows(&app, window).1, Some(1));
+    arrow(&mut fake, &mut app, KeyCode::ArrowUp);
+    assert_eq!(find_all_rows(&app, window).1, Some(0));
+    let field = query_field(&app, window, "find-all").expect("its field");
+    assert_eq!(field.selection(), 5..5);
+    // Return: the find bar at the pane, of the match chosen, the current
+    // one, rather than the last.
+    fake.send(
+        &mut app,
+        window,
+        key_event(KeyCode::Enter, "\r", none, true),
+    );
+    run_until(&mut fake, &mut app, |_, app| {
+        find_count(app, window).as_deref() == Some("1 of 2")
+    });
+    assert!(panel_frame(&app, window, "find-all").is_none());
+    assert!(focused_in(&app, window, "find"));
+    assert_eq!(selected_text(&app, window).as_deref(), Some("error"));
+}
+
 /// The titles of the palette's list in `window`, in their order.
 fn palette_titles(app: &App, window: WindowId) -> Vec<String> {
     let Some(view) = app.windows[&window]

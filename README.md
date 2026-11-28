@@ -124,7 +124,7 @@ Every feature beyond the terminal itself is a plugin, and these come with the ap
 | [`links`](docs/plugins/links.md) | ⌘-click opens a link, a URL or a path, as a compiler's `src/main.rs:42` |
 | [`tabs`](docs/plugins/tabs.md) | The tab bar: new, close, select, move, rename, color, and out to a window of its own |
 | [`splits`](docs/plugins/splits.md) | Split panes: split, focus by direction, resize, zoom, equalize, swap |
-| [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted |
+| [`search`](docs/plugins/search.md) | The find bar: a pane's search as you type, its matches highlighted; and Find in All Tabs, a search of every pane · not released yet |
 | [`command-palette`](docs/plugins/command-palette.md) | The command palette: every command, ranked as you type, the recent ones first |
 | [`quick-terminal`](docs/plugins/quick-terminal.md) | The quick terminal: a window that a global key slides in from an edge of the screen, over every app |
 | [`progress`](docs/plugins/progress.md) | The programs' progress, of OSC 9;4, in a thin bar across the window's top |

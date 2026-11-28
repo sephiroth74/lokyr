@@ -143,7 +143,7 @@ fn ran(requests: &[Request]) -> Vec<String> {
 fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_arguments() {
     let (mut host, mut plugin) = host();
     let commands: Vec<&str> = host.commands().iter().map(|c| c.name.as_str()).collect();
-    assert_eq!(commands, [OPEN, THEME, AGENTS, SESSIONS, FIND_ALL, MOVE]);
+    assert_eq!(commands, [OPEN, THEME, AGENTS, SESSIONS, MOVE]);
     run(&mut host, &mut plugin, OPEN, Args::new());
     let options = host
         .panels()
@@ -173,8 +173,7 @@ fn the_palette_opens_at_the_window_s_top_of_the_commands_that_run_without_argume
             "New Tab",
             "Choose Theme…",
             "Show Agents…",
-            "Switch Session…",
-            "Find in All Tabs…"
+            "Switch Session…"
         ]
     );
 }
@@ -220,7 +219,7 @@ fn the_arrows_move_the_selection_and_a_double_click_runs_its_command() {
     );
     // Not past the ends.
     run(&mut host, &mut plugin, MOVE, delta(10));
-    assert_eq!(plugin.open.as_ref().unwrap().selected, 7);
+    assert_eq!(plugin.open.as_ref().unwrap().selected, 6);
     run(&mut host, &mut plugin, MOVE, delta(-10));
     assert_eq!(plugin.open.as_ref().unwrap().selected, 0);
     run(&mut host, &mut plugin, MOVE, delta(2));
@@ -324,8 +323,7 @@ fn the_recent_commands_come_first_and_the_state_keeps_them() {
             "New Tab",
             "Choose Theme…",
             "Show Agents…",
-            "Switch Session…",
-            "Find in All Tabs…"
+            "Switch Session…"
         ]
     );
     let Data::Map(state) = host.state() else {
@@ -906,172 +904,4 @@ fn the_switcher_lists_the_layouts_after_the_sessions_and_opens_one() {
         )),
         "{requests:?}"
     );
-}
-
-/// The panes of the tests of Find in All Tabs: each of its window, its
-/// tab, its tab's title and its rows.
-fn find_all_host() -> (FakeHost, Palette) {
-    // The find bar's command, which Return runs, of its text and match.
-    let param = |name: &str, kind: Kind, default: Value| Param {
-        name: name.to_owned(),
-        kind,
-        default: Some(default),
-    };
-    let search_open = Command {
-        name: SEARCH_OPEN.to_owned(),
-        title: "Find…".to_owned(),
-        category: Category::Find,
-        capabilities: Vec::new(),
-        params: vec![
-            param("text", Kind::String, Value::String(String::new())),
-            param("column", Kind::Integer, Value::Integer(-1)),
-            param("row", Kind::Integer, Value::Integer(0)),
-        ],
-        when: None,
-    };
-    let (mut host, plugin) = host_of(
-        FakeHost::new(NAME)
-            .with_manifest(crate::MANIFEST)
-            .with_commands(vec![search_open]),
-    );
-    /// A pane: its id, its window's and its tab's, its tab's title and its
-    /// rows.
-    type Held<'a> = (PaneId, u64, u64, &'a str, &'a [(i64, &'a str)]);
-    let panes: [Held<'_>; 3] = [
-        (PANE, 1, 1, "build", &[(0, "error one"), (1, "fine")]),
-        (
-            PaneId(20),
-            1,
-            2,
-            "logs",
-            &[(5, "nothing"), (6, "an error here")],
-        ),
-        (
-            PaneId(30),
-            3,
-            4,
-            "server",
-            &[(2, "error two"), (3, "error three")],
-        ),
-    ];
-    for (id, window, tab, title, rows) in panes {
-        let pane = host.pane(id);
-        pane.window = WindowId(window);
-        pane.tab = TabId(tab);
-        pane.title = Some(title.to_owned());
-        for &(row, text) in rows {
-            pane.rows.insert(row, (text.to_owned(), false));
-        }
-    }
-    (host, plugin)
-}
-
-#[test]
-fn find_in_all_tabs_gathers_the_matches_of_every_pane_of_the_session_s_windows() {
-    let (mut host, mut plugin) = find_all_host();
-    run(&mut host, &mut plugin, FIND_ALL, Args::new());
-    assert!(shown(&mut host, &mut plugin).is_empty());
-    typed(&mut host, &mut plugin, "error");
-    // In the windows', the tabs' and the panes' order, then the rows', each
-    // of its tab's title at its end.
-    assert_eq!(
-        shown(&mut host, &mut plugin),
-        ["error one", "an error here", "error two", "error three"]
-    );
-    let open = plugin.open.as_ref().unwrap();
-    let titles: Vec<Option<String>> = open
-        .commands
-        .iter()
-        .map(|entry| entry.keys.clone())
-        .collect();
-    let titled = |title: &str| Some(title.to_owned());
-    assert_eq!(
-        titles,
-        [
-            titled("build"),
-            titled("logs"),
-            titled("server"),
-            titled("server")
-        ]
-    );
-    // A text of no match, and none, list nothing.
-    typed(&mut host, &mut plugin, "absent");
-    assert!(shown(&mut host, &mut plugin).is_empty());
-    typed(&mut host, &mut plugin, "");
-    assert!(shown(&mut host, &mut plugin).is_empty());
-    assert!(host.searches().is_empty());
-}
-
-#[test]
-fn return_goes_to_the_match_s_pane_selected_and_opens_the_find_bar_of_it() {
-    let (mut host, mut plugin) = find_all_host();
-    run(&mut host, &mut plugin, FIND_ALL, Args::new());
-    typed(&mut host, &mut plugin, "error");
-    // The third, of the other window's pane.
-    let delta = Args::from([("delta".to_owned(), Value::Integer(2))]);
-    run(&mut host, &mut plugin, MOVE, delta);
-    let requests = on_panel(
-        &mut host,
-        &mut plugin,
-        FIELD,
-        UiEventKind::Submit {
-            text: "error".to_owned(),
-            shift: false,
-        },
-    );
-    assert!(
-        requests.contains(&Request::ActivateTab(TabId(4))),
-        "{requests:?}"
-    );
-    assert!(
-        requests.contains(&Request::FocusPane(PaneId(30))),
-        "{requests:?}"
-    );
-    assert!(
-        requests.iter().any(|request| matches!(
-            request,
-            Request::SelectCells {
-                pane: PaneId(30),
-                first: (0, 2),
-                last: (4, 2),
-                ..
-            }
-        )),
-        "{requests:?}"
-    );
-    // The find bar of its text, the match its current one.
-    let opened = requests.iter().find_map(|request| match request {
-        Request::RunCommand { name, args } if name == SEARCH_OPEN => Some(args.clone()),
-        _ => None,
-    });
-    let args = opened.expect("the find bar opened");
-    assert_eq!(args.get("text"), Some(&Value::String("error".to_owned())));
-    assert_eq!(args.get("column"), Some(&Value::Integer(0)));
-    assert_eq!(args.get("row"), Some(&Value::Integer(2)));
-    // Its searches ended, and the palette closed.
-    assert!(host.searches().is_empty());
-    assert!(plugin.open.is_none());
-}
-
-#[test]
-fn find_in_all_tabs_searches_more_panes_than_a_call_starts_searches() {
-    let (mut host, mut plugin) = host();
-    let more = MOST_SEARCHES + 4;
-    for at in 0..more {
-        let id = if at == 0 {
-            PANE
-        } else {
-            PaneId(100 + at as u64)
-        };
-        let pane = host.pane(id);
-        pane.tab = TabId(1);
-        pane.rows.insert(0, (format!("needle {at}"), false));
-    }
-    run(&mut host, &mut plugin, FIND_ALL, Args::new());
-    typed(&mut host, &mut plugin, "needle");
-    // The first ones' parts bring the next ones' searches, at each call.
-    for _ in 0..4 {
-        host.deliver(&mut plugin).unwrap();
-    }
-    assert_eq!(shown(&mut host, &mut plugin).len(), more);
 }

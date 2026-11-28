@@ -9,10 +9,18 @@
 //! the bottom: its next match is the one above, its previous the one below.
 //! Escape closes the bar, its highlights going and the current match
 //! selected, ready for a copy; the bar opens again of the last search and
-//! its options. Like every built-in plugin, it depends only on the plugin
+//! its options. Find in All Tabs, Command-Shift-F, searches every pane of
+//! the session's windows of the bar's options as the user types, each match
+//! a row of its line and its tab's title; Return brings its pane forward,
+//! the match selected, and opens the bar there of the text, the match the
+//! current one. Like every built-in plugin, it depends only on the plugin
 //! SDK.
 
 #![forbid(unsafe_code)]
+
+mod all;
+
+pub use all::{AllTexts, AllView, find_all};
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -102,8 +110,9 @@ static CATALOGS: [(&str, &str); 2] = [
     ("it", include_str!("../locales/it/search.ftl")),
 ];
 
-/// The texts of the bar, in English, where the host gives none.
-const ENGLISH: [(&str, &str); 14] = [
+/// The texts of the bar and of Find in All Tabs, in English, where the
+/// host gives none.
+const ENGLISH: [(&str, &str); 16] = [
     ("find-placeholder", "Find"),
     ("find-none", "No results"),
     ("find-invalid", "Invalid regex"),
@@ -118,6 +127,8 @@ const ENGLISH: [(&str, &str); 14] = [
     ("find-clear", "Clear"),
     ("find-count-unknown", "{ $count } found"),
     ("find-count", "{ $current } of { $count }"),
+    ("find-all-placeholder", "Find in All Tabs"),
+    ("find-all-matches", "Matches"),
 ];
 
 /// The text of the message `id` of `args`, in the language shown, or
@@ -328,18 +339,9 @@ impl Find {
     }
 
     /// The query of its text and its options, of `settings`' case where
-    /// its toggle leaves case aside: smart, or insensitive.
+    /// its toggle leaves case aside.
     fn query(&self, settings: Settings) -> SearchQuery {
-        SearchQuery {
-            text: self.text.clone(),
-            regex: self.options.regex,
-            case: if self.options.sensitive {
-                SearchCase::Sensitive
-            } else {
-                settings.case
-            },
-            whole_word: self.options.whole_word,
-        }
+        query_of(&self.text, self.options, settings)
     }
 
     /// Takes the matches of a part of its search, which keep the rows'
@@ -365,6 +367,21 @@ impl Find {
         self.known
             .binary_search_by(|known| place(known).cmp(&place(&current)))
             .ok()
+    }
+}
+
+/// The query of `text` and `options`, of `settings`' case where the case
+/// toggle leaves case aside: smart, or insensitive.
+fn query_of(text: &str, options: Options, settings: Settings) -> SearchQuery {
+    SearchQuery {
+        text: text.to_owned(),
+        regex: options.regex,
+        case: if options.sensitive {
+            SearchCase::Sensitive
+        } else {
+            settings.case
+        },
+        whole_word: options.whole_word,
     }
 }
 
@@ -657,6 +674,11 @@ pub struct Search {
     /// The closings of its bar that it asked for, to open it anew, whose
     /// events it leaves.
     reopening: usize,
+    /// Find in All Tabs, while it is open.
+    all: Option<all::All>,
+    /// The closings of Find in All Tabs that it asked for, as it went to a
+    /// match, whose events it leaves, as the command may open it anew.
+    all_closing: usize,
 }
 
 impl Plugin for Search {
@@ -725,6 +747,33 @@ impl Plugin for Search {
                 when: None,
             })?;
         }
+        cx.register_command(Command {
+            name: all::FIND_ALL.to_owned(),
+            title: "Find in All Tabs…".to_owned(),
+            category: Category::Find,
+            // It reads every pane, and brings the match's forward, its tab and
+            // its window, before the find bar opens there.
+            capabilities: vec![
+                Capability::TerminalRead,
+                Capability::Decorate,
+                Capability::PaneView,
+                Capability::WorkspaceWrite,
+            ],
+            params: Vec::new(),
+            when: None,
+        })?;
+        cx.register_command(Command {
+            name: all::MOVE.to_owned(),
+            title: "Move in Find in All Tabs".to_owned(),
+            category: Category::Find,
+            capabilities: Vec::new(),
+            params: vec![Param {
+                name: "delta".to_owned(),
+                kind: ParamKind::Integer,
+                default: None,
+            }],
+            when: Some(format!("search.{}.focused", all::PANEL)),
+        })?;
         Ok(())
     }
 
@@ -753,12 +802,23 @@ impl Plugin for Search {
             }
             NEXT => self.step(cx, Step::Up),
             PREVIOUS => self.step(cx, Step::Down),
+            all::FIND_ALL => self.open_all(cx),
+            all::MOVE => {
+                let delta = match args.get("delta") {
+                    Some(Value::Integer(delta)) => *delta,
+                    _ => 0,
+                };
+                self.step_all(cx, delta)
+            }
             _ => Ok(()),
         }
     }
 
-    /// The bar, and its recent searches' menu.
+    /// The bar, its recent searches' menu, and Find in All Tabs.
     fn render(&mut self, cx: &mut Cx<'_>, view: &ViewId) -> Option<Node> {
+        if *view == all::panel() {
+            return self.render_all(cx);
+        }
         if *view == bar() {
             let find = self.find.as_mut()?;
             // The count of before stays while the search tells nothing sure,
@@ -798,6 +858,9 @@ impl Plugin for Search {
     /// to the next search; the buttons step or close the bar, and its
     /// glass shows the recent searches, one of which searches again.
     fn on_ui_event(&mut self, cx: &mut Cx<'_>, event: &UiEvent) -> Result<(), Error> {
+        if event.view == all::panel() {
+            return self.on_all_event(cx, event);
+        }
         let key = event.key.0.as_str();
         if event.view == ViewId::Panel(PanelId::from(RECENT)) {
             let chosen = key
@@ -890,19 +953,28 @@ impl Plugin for Search {
     }
 
     /// A part of the search comes, whose first match, of the nearest part
-    /// to the view, is the current one if none is; the bar's closing ends
-    /// the search; a change of the config takes its options, the matches
+    /// to the view, is the current one if none is, or of one of Find in All
+    /// Tabs' searches; the bar's closing ends the search, and Find in All
+    /// Tabs' its own; a change of the config takes its options, the matches
     /// shown as they say.
     fn on_event(&mut self, cx: &mut Cx<'_>, events: &[Event]) -> Result<(), Error> {
         for event in events {
             match event {
                 Event::Searched {
                     id,
+                    pane,
                     matches,
                     count,
                     done,
                     ..
-                } => self.searched(cx, *id, matches, (*count, *done))?,
+                } => {
+                    if !self.searched_all(cx, *id, *pane, matches)? {
+                        self.searched(cx, *id, matches, (*count, *done))?;
+                    }
+                }
+                Event::PanelClosed(id) if *id == PanelId::from(all::PANEL) => {
+                    self.closed_all(cx)?
+                }
                 Event::PanelClosed(id) if *id == PanelId::from(BAR) => {
                     if self.reopening > 0 {
                         self.reopening -= 1;
@@ -995,12 +1067,29 @@ impl Search {
         let Some(pane) = cx.focused_pane() else {
             return Ok(());
         };
+        self.open_at(cx, pane, text, wanted)
+    }
+
+    /// Opens the bar at `pane`, as [`Search::open`] does at the focused
+    /// one: of `text`, of the last options, searched anew in place of its
+    /// own, where given, the match at `wanted` the current one.
+    fn open_at(
+        &mut self,
+        cx: &mut Cx<'_>,
+        pane: PaneId,
+        text: Option<String>,
+        wanted: Option<(u16, i64)>,
+    ) -> Result<(), Error> {
+        // Find in All Tabs, whose search of the pane the bar's would
+        // replace, closed.
+        self.close_all(cx)?;
         if let Some(find) = &mut self.find {
             if find.pane == pane {
-                // Of a text given, searched anew in place of its own, its
-                // field filled as it takes the keys, or at once where its
-                // view is there.
+                // Of a text given, searched anew in place of its own, of the
+                // last options, as Find in All Tabs searched, its field filled
+                // as it takes the keys, or at once where its view is there.
                 if let Some(text) = text {
+                    find.options = self.options;
                     find.text.clone_from(&text);
                     find.wanted = wanted;
                     find.filling = true;

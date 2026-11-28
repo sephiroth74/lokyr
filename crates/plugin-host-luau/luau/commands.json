@@ -388,17 +388,6 @@
     "when": null
   },
   {
-    "capabilities": [
-      "terminal-read"
-    ],
-    "category": "find",
-    "name": "command-palette.find-all",
-    "params": [],
-    "plugin": "lokyr/command-palette",
-    "title": "Find in All Tabs…",
-    "when": null
-  },
-  {
     "capabilities": [],
     "category": "view",
     "name": "command-palette.move",
@@ -1057,6 +1046,35 @@
     "plugin": "lokyr/quick-tips",
     "title": "Show a Tip",
     "when": null
+  },
+  {
+    "capabilities": [
+      "terminal-read",
+      "decorate",
+      "pane-view",
+      "workspace-write"
+    ],
+    "category": "find",
+    "name": "search.find-all",
+    "params": [],
+    "plugin": "lokyr/search",
+    "title": "Find in All Tabs…",
+    "when": null
+  },
+  {
+    "capabilities": [],
+    "category": "find",
+    "name": "search.move",
+    "params": [
+      {
+        "default": null,
+        "kind": "integer",
+        "name": "delta"
+      }
+    ],
+    "plugin": "lokyr/search",
+    "title": "Move in Find in All Tabs",
+    "when": "search.find-all.focused"
   },
   {
     "capabilities": [
