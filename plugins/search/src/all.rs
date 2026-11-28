@@ -700,11 +700,12 @@ pub fn find_all(view: &AllView, texts: &AllTexts) -> Node {
     .layout(Layout {
         gap: 1.0,
         align: Align::Center,
+        // Its glass nearer the panel's edge than its text's room.
         padding: Edges {
             top: 10.0,
             right: 14.0,
             bottom: 10.0,
-            left: 14.0,
+            left: 8.0,
         },
         ..Layout::default()
     });

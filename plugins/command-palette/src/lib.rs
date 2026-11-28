@@ -898,11 +898,12 @@ fn palette(open: &Open, texts: &Texts) -> Node {
             }),
     ])
     .layout(Layout {
+        // Its glass nearer the panel's edge than its text's room.
         padding: Edges {
             top: 10.0,
             right: 14.0,
             bottom: 10.0,
-            left: 14.0,
+            left: 8.0,
         },
         ..Layout::default()
     });

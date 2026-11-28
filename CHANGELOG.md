@@ -20,6 +20,7 @@ from 1.0.0; before it, a minor version may change what a previous one did.
 
 ### Changed
 
+- The command palette's magnifying glass sits nearer the panel's edge, further from the text you type.
 - The first window shows sooner at the start, some 7 to 11 ms, as the menu bar, the global keys and the updates' checks wait until it opens; when Lokyr starts to open a script, a folder or a link, that window no longer waits for them.
 - A hidden session's windows give back part of the memory of their pictures, some 10 MB a window on a Retina display and more of a larger window, and draw themselves anew just before they show again.
 
