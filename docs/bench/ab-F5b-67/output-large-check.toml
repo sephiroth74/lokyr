@@ -1,0 +1,13 @@
+# `cat` of 1 GiB of plain text in a large window, of eight cycles, as the
+# step of four told B 2.6 % slower.
+terminals = ["lokyr-a-large", "lokyr-b-large"]
+terminals-file = "../../../tools/bench/sessions/terminals.toml"
+ab = { a = "lokyr-a-large", b = "lokyr-b-large" }
+pause = 2
+cycles = 8
+folder = "/tmp/lokyr/ttybench/sessions/output-large-check-{date}"
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain", "--mib", "1024"]
+rounds = 1

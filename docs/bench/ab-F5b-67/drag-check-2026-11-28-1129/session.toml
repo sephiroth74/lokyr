@@ -1,0 +1,13 @@
+# The drag alone of six cycles, as the motion's step of two cycles told
+# Lokyr's CPU and the window server's higher of B in the drag alone.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "/Users/taacral1/Documents/git/sephiroth74/rust/lokyr-workspace/lokyr/tools/bench/sessions/terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 6
+folder = "/tmp/lokyr/ttybench/sessions/drag-check-{date}"
+
+[[run]]
+tool = "motion"
+args = ["--kind", "drag", "--seconds", "10"]
+rounds = 1

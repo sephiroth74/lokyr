@@ -1,0 +1,21 @@
+## Memory at rest, four rounds
+round 1 v150: footprint w/o GPU 28.9 MB, GPU 30.6 MB
+round 1 v160: footprint w/o GPU 28.3 MB, GPU 30.6 MB
+round 2 v160: footprint w/o GPU 28.5 MB, GPU 30.6 MB
+round 2 v150: footprint w/o GPU 28.2 MB, GPU 30.6 MB
+round 3 v160: footprint w/o GPU 28.4 MB, GPU 30.6 MB
+round 3 v150: footprint w/o GPU 28.6 MB, GPU 30.6 MB
+round 4 v150: footprint w/o GPU 28.4 MB, GPU 30.6 MB
+round 4 v160: footprint w/o GPU 28.4 MB, GPU 30.6 MB
+v150: median 28.5 MB, mean 28.5 (sd 0.3)
+v160: median 28.4 MB, mean 28.4 (sd 0.1)
+v160 − v150 by round: -0.6, +0.3, -0.2, +0.1 MB
+## Throughput on screen (MiB/s, median of the runs of every round) and frames (ms)
+ascii v150: 308.0 MiB/s (runs 309.1, 321.1, 306.9, 305.0); total p50 0.298 p99 0.440, total p50 0.298 p99 0.419
+ascii v160: 311.4 MiB/s (runs 311.5, 314.2, 311.3, 309.3); total p50 0.298 p99 0.477, total p50 0.299 p99 0.441
+seq v150: 221.1 MiB/s (runs 214.9, 222.5, 219.7, 227.6); total p50 0.328 p99 5.330, total p50 0.291 p99 5.152
+seq v160: 227.4 MiB/s (runs 219.1, 232.5, 222.4, 233.2); total p50 0.277 p99 8.562, total p50 0.283 p99 6.237
+sgr v150: 282.5 MiB/s (runs 282.3, 294.5, 261.4, 282.6); total p50 0.573 p99 5.390, total p50 0.585 p99 8.384
+sgr v160: 252.9 MiB/s (runs 216.4, 236.6, 282.6, 269.1); total p50 0.504 p99 5.735, total p50 0.543 p99 5.193
+cjk v150: 214.6 MiB/s (runs 214.6, 217.6, 209.1, 214.5); total p50 0.769 p99 5.416, total p50 0.745 p99 7.186
+cjk v160: 214.8 MiB/s (runs 215.6, 213.5, 214.1, 219.5); total p50 0.797 p99 7.228, total p50 0.741 p99 6.534

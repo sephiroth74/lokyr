@@ -1,0 +1,28 @@
+# A release's A/B, step 4 of 6, about 4 minutes: 1 GiB of plain text, of
+# colored text and of wide characters printed on screen.
+terminals = ["lokyr-a", "lokyr-b"]
+terminals-file = "../terminals.toml"
+ab = { a = "lokyr-a", b = "lokyr-b" }
+pause = 2
+cycles = 4
+folder = "/tmp/lokyr/ttybench/sessions/ab-4-output-{date}"
+
+[[run]]
+tool = "throughput"
+args = ["--text", "plain", "--mib", "1024"]
+rounds = 1
+
+[[run]]
+tool = "throughput"
+args = ["--text", "colors", "--mib", "1024"]
+rounds = 1
+
+[[run]]
+tool = "throughput"
+args = ["--text", "wide", "--mib", "1024"]
+rounds = 1
+
+[[budget]]
+metric = "quiet_mib_s"
+conditions = { text = "plain" }
+at-least = 275
