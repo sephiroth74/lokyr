@@ -18,9 +18,9 @@ A tip as Lokyr starts, once a week at most, or as often as [`every`](#config) sa
 
 Each action, feature or shortcut that Lokyr gains has its tip, in the same change:
 
-1. Its text in [`locales/en/quick-tips.ftl`](../../plugins/quick-tips/locales/en/quick-tips.ftl), the source, and in each other language's catalog: a message `tip-<name>`, of `{ $keys }` where it names a command's keys, one or two sentences, as two lines of the card show them before More.
-2. Its entry in `CURATED`, in [`src/lib.rs`](../../plugins/quick-tips/src/lib.rs), the most useful first: `command(id, message, command, argument)` for a command's keys, which shows only while a key is bound to it, or `plain(id, message)` for a feature that needs no keys, and `needing(command, tip)` around either for a feature of a plugin that may be off, as Blocks, which starts off: the tip shows only while that command is there; the id, which the plugin's state keeps, never reused.
-3. The plugin's tests check that every tip has its message in every catalog and that the ids are unique.
+1. Its text in [`locales/en/quick-tips.ftl`](../../plugins/quick-tips/locales/en/quick-tips.ftl), the source, and in each other language's catalog: a message `tip-<name>`, of `{ $keys }` where it names a command's keys, and `{ $also }` where it names a second command's, never the keys written out, which a binding of other keys would make wrong, one or two sentences, as two lines of the card show them before More.
+2. Its entry in `CURATED`, in [`src/lib.rs`](../../plugins/quick-tips/src/lib.rs), the most useful first: `command(id, message, command, argument)` for a command's keys, which shows only while a key is bound to it, `and(tip, command, argument)` around it for a second command's, which shows only while both are bound, or `plain(id, message)` for a feature that needs no keys, and `needing(command, tip)` around either for a feature of a plugin that may be off, as Blocks, which starts off: the tip shows only while that command is there; the id, which the plugin's state keeps, never reused.
+3. The plugin's tests check that every tip has its message in every catalog, that each names `{ $keys }` and `{ $also }` as its commands do, and that the ids are unique.
 
 A plugin's own commands of no parameters have their tips by themselves, of their titles.
 
